@@ -1,0 +1,35 @@
+<!--
+  區塊職責：SCP_Core 的 .NET 端編譯設定（Senate 這側用；Unity 那側走 asmdef，不看這個檔）。
+  物理意義：⭐ 這個 csproj 最重要的功能不是「編出 dll」，是**把方言限制變成編譯錯誤**。
+            共用碼要能被 Unity 編（C# 9 / netstandard2.1、沒有 NuGet），
+            而「請記得別用 C# 10 的語法」是願望不是護欄 ——
+            所以 TargetFramework 與 LangVersion 釘在 Unity 吃得下的那一格：
+            寫了檔案級 namespace / record / raw string literal，**在 Senate 這邊就編不過**，
+            不會等到搬進 Unity 才發現。
+  數值影響：
+    · netstandard2.1 → net10.0 可以直接參照（單向相容），所以 Senate 不必降級。
+    · 刻意**零 PackageReference**：Unity 不吃 NuGet，共用碼碰了就是搬不進去。
+      這條沒有技術手段可以擋，只能靠這行註解與 review —— 加套件前先問「Unity 那邊哪來？」
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>SCP.Core</RootNamespace>
+    <AssemblyName>SCP_Core</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    只編 Runtime/ 底下的東西。Unity 的 .meta 檔與（未來的）Editor~ 目錄不進編譯。
+    ⚠ 預設 glob 會把 repo 根的任何 .cs 都吃進來 —— 顯式收斂，避免日後放個工具腳本就被一起編。
+  -->
+  <ItemGroup>
+    <Compile Remove="**/*.cs" />
+    <Compile Include="Runtime/**/*.cs" />
+  </ItemGroup>
+
+</Project>

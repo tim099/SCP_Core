@@ -10,3 +10,8 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+### .NET build 產物（restore/build 生成、帶機器絕對路徑，一律不入版控）
+bin/
+obj/
+
+### ⚠ .meta 檔**要**入版控 —— Unity 靠它記 GUID，各專案各生一套的話 reference 會斷
