@@ -17,15 +17,29 @@ namespace SCP.Core.Gui
     {
         public const int DefaultWidth = 96;
 
+        /// <summary>寬度直接給的版本（其餘排版參數用 <see cref="SCP_GuiStyle"/> 的預設）。</summary>
         public static string Render(SCP_GuiNode iRoot, int iWidth = DefaultWidth)
         {
+            var aStyle = new SCP_GuiStyle();
+            aStyle.TextWidth = iWidth;
+            return Render(iRoot, aStyle);
+        }
+
+        /// <summary>
+        /// 吃 <see cref="SCP_GuiStyle"/> 的版本 —— 寬度／縮排／欄距全從那一份統一設定來。
+        /// <para>⚠ 這裡只讀 style 的 <c>Text*</c> 欄位，**刻意不讀 Scale**：
+        /// 終端機的一格是字元不是像素，把它乘 2 只會讓表格超出視窗。</para>
+        /// </summary>
+        public static string Render(SCP_GuiNode iRoot, SCP_GuiStyle iStyle)
+        {
             var sb = new StringBuilder();
-            foreach (var child in iRoot.Children) RenderNode(child, sb, 0, iWidth);
+            foreach (var child in iRoot.Children) RenderNode(child, sb, 0, iStyle);
             return sb.ToString().TrimEnd('\n') + "\n";
         }
 
-        static void RenderNode(SCP_GuiNode iNode, StringBuilder oSb, int iIndent, int iWidth)
+        static void RenderNode(SCP_GuiNode iNode, StringBuilder oSb, int iIndent, SCP_GuiStyle iStyle)
         {
+            int iWidth = iStyle.TextWidth;
             string pad = new string(' ', iIndent);
             int inner = Math.Max(20, iWidth - iIndent);
 
@@ -69,18 +83,19 @@ namespace SCP.Core.Gui
                     if (aAllInline)
                     {
                         oSb.Append(pad)
-                           .Append(string.Join("   ", iNode.Children.Select(Inline)))
+                           .Append(string.Join(new string(' ', Math.Max(1, iStyle.TextInlineGap)),
+                                               iNode.Children.Select(Inline)))
                            .Append('\n');
                     }
                     else
                     {
-                        foreach (var c in iNode.Children) RenderNode(c, oSb, iIndent, iWidth);
+                        foreach (var c in iNode.Children) RenderNode(c, oSb, iIndent, iStyle);
                     }
                     break;
                 }
 
                 case SCP_GuiNodeKind.Column:
-                    foreach (var c in iNode.Children) RenderNode(c, oSb, iIndent, iWidth);
+                    foreach (var c in iNode.Children) RenderNode(c, oSb, iIndent, iStyle);
                     break;
 
                 case SCP_GuiNodeKind.Box:
@@ -88,17 +103,17 @@ namespace SCP.Core.Gui
                     string aTitle = string.IsNullOrEmpty(iNode.Text) ? "" : $" {iNode.Text} ";
                     oSb.Append(pad).Append('┌').Append(aTitle)
                        .Append(new string('─', Math.Max(0, inner - Width(aTitle) - 2))).Append('┐').Append('\n');
-                    foreach (var c in iNode.Children) RenderNode(c, oSb, iIndent + 2, iWidth);
+                    foreach (var c in iNode.Children) RenderNode(c, oSb, iIndent + Math.Max(0, iStyle.TextIndent), iStyle);
                     oSb.Append(pad).Append('└').Append(new string('─', Math.Max(0, inner - 2))).Append('┘').Append('\n');
                     break;
                 }
 
                 case SCP_GuiNodeKind.Table:
-                    RenderTable(iNode, oSb, iIndent);
+                    RenderTable(iNode, oSb, iIndent, iStyle);
                     break;
 
                 default:
-                    foreach (var c in iNode.Children) RenderNode(c, oSb, iIndent, iWidth);
+                    foreach (var c in iNode.Children) RenderNode(c, oSb, iIndent, iStyle);
                     break;
             }
         }
@@ -115,7 +130,7 @@ namespace SCP.Core.Gui
             _ => iNode.Text,
         };
 
-        static void RenderTable(SCP_GuiNode iTable, StringBuilder oSb, int iIndent)
+        static void RenderTable(SCP_GuiNode iTable, StringBuilder oSb, int iIndent, SCP_GuiStyle iStyle)
         {
             var rows = new List<List<string>>();
             if (iTable.Headers.Count > 0) rows.Add(iTable.Headers.ToList());
@@ -132,6 +147,7 @@ namespace SCP.Core.Gui
                 for (int i = 0; i < r.Count; i++) w[i] = Math.Max(w[i], Width(r[i]));
 
             string pad = new string(' ', iIndent);
+            string aGap = new string(' ', Math.Max(1, iStyle.TextColumnGap));
             for (int ri = 0; ri < rows.Count; ri++)
             {
                 var cells = new List<string>();
@@ -140,10 +156,10 @@ namespace SCP.Core.Gui
                     string cell = ci < rows[ri].Count ? rows[ri][ci] : "";
                     cells.Add(cell + new string(' ', Math.Max(0, w[ci] - Width(cell))));
                 }
-                oSb.Append(pad).Append(string.Join("  ", cells).TrimEnd()).Append('\n');
+                oSb.Append(pad).Append(string.Join(aGap, cells).TrimEnd()).Append('\n');
                 if (ri == 0 && iTable.Headers.Count > 0)
                     oSb.Append(pad)
-                       .Append(string.Join("  ", w.Select(x => new string('─', Math.Max(1, x)))))
+                       .Append(string.Join(aGap, w.Select(x => new string('─', Math.Max(1, x)))))
                        .Append('\n');
             }
         }
