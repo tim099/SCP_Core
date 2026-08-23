@@ -58,6 +58,20 @@ namespace SCP.Core.Gui
             return new Scope(this);
         }
 
+        /// <summary>
+        /// **只開 id 命名空間，版面上完全透明**（不畫框、不縮排）。
+        /// <para>用途：同一棵樹裡有兩個結構相同的區塊（兩頁、兩個清單項）時，
+        /// 沒傳顯式 key 的欄位會撞名 —— 撞了不會報錯，只會共用 session 值，
+        /// 於是「另一頁的欄位莫名有值」。⇒ 讓區塊自己帶一層命名空間。</para>
+        /// <para>⚠ 顯式 key（<c>Button(label, key)</c>）**不受本 scope 影響**（逐字採用是契約）。</para>
+        /// </summary>
+        public Scope IdScope(string iKey)
+        {
+            m_Ids.PushLevel(iKey);
+            Push(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Column });
+            return new Scope(this);
+        }
+
         // ── 表格 ──────────────────────────────────────────────────
         public Scope Table(params string[] iHeaders)
         {

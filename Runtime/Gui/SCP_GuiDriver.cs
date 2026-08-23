@@ -36,11 +36,19 @@ namespace SCP.Core.Gui
         }
     }
 
-    /// <summary>跨次操作要記住的東西（欄位值與勾選）。點擊是事件，不進狀態。</summary>
+    /// <summary>跨次操作要記住的東西（欄位值、勾選、現在停在哪一疊頁面）。點擊是事件，不進狀態。</summary>
     public sealed class SCP_GuiState
     {
         public Dictionary<string, string> Fields = new Dictionary<string, string>();
         public Dictionary<string, bool> Toggles = new Dictionary<string, bool>();
+
+        /// <summary>
+        /// 導覽路徑 —— 由下往上的 <see cref="SCP_GuiPage.Key"/>（見 SCP_GuiPageController.PathKeys）。
+        /// <para>為什麼是狀態而不是事件：每次 CLI 呼叫都是新 process，
+        /// 不存這個的話「進到細節頁再按裡面的東西」這種兩步操作根本不可能成立 ——
+        /// 而症狀是「我按了進去，下一道指令卻回到首頁」，看起來像按鈕失效。</para>
+        /// </summary>
+        public List<string> Nav = new List<string>();
 
         /// <summary>組成下一次 Draw 的輸入。iClickedId 是**這一次**的一次性事件。</summary>
         public SCP_GuiInput ToInput(string? iClickedId)
@@ -58,8 +66,11 @@ namespace SCP.Core.Gui
             foreach (var kv in Fields) aFields.Set(kv.Key, kv.Value);
             var aToggles = SCP_JsonData.NewObject();
             foreach (var kv in Toggles) aToggles.Set(kv.Key, kv.Value);
+            var aNav = SCP_JsonData.NewArray();
+            foreach (string k in Nav) aNav.Add(k);
             aRoot.Set("fields", aFields);
             aRoot.Set("toggles", aToggles);
+            aRoot.Set("nav", aNav);
             return aRoot;
         }
 
@@ -76,6 +87,10 @@ namespace SCP.Core.Gui
             var aToggles = iData["toggles"];
             if (aToggles.Exists)
                 foreach (string k in aToggles.Keys) aState.Toggles[k] = aToggles[k].AsBool();
+
+            var aNav = iData["nav"];
+            if (aNav.Exists)
+                for (int i = 0; i < aNav.Count; i++) aState.Nav.Add(aNav[i].AsString());
 
             return aState;
         }

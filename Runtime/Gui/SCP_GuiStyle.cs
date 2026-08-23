@@ -8,9 +8,11 @@
 //           但**刻意不照抄 GUIStyle 那層** —— 這裡沒有任何 UI 函式庫的型別，
 //           所以同一份設定 ImGui、純文字、（未來的）HTML renderer 都吃得下。
 // 數值影響：純資料，零 IO、零繪圖依賴。基準值（Base*）＝「scale 1.0 的樣子」，
-//           實際值＝基準 × <see cref="Scale"/>。⭐ 預設 scale ＝ 2.0：
-//           🩸 2026-08-23 Tim 實測 1.0（＝ImGui 原生預設＋18px 字）在桌面上太小到不想讀，
-//           而「不想讀」等於這些讀數沒寫。預設值要對準真的會被看的那一格，不是函式庫的出廠值。
+//           實際值＝基準 × <see cref="Scale"/>。
+//           ⭐ 預設 scale 的定案過程本身是判準：先照「太小到不想讀」的回報改成 2.0，
+//           Tim 在真的視窗裡把四段都按過一輪之後定回 **1.0**（「小的剛好」）。
+//           🩸 值得記的是那個順序 —— **改預設值的依據是實機上按過，不是任何一方的推測**
+//           （我第一版的 2.0 也是推的，只是推對了方向、推錯了幅度）。
 // ⚠ 文字模式的排版參數（<see cref="TextWidth"/> 等）**不吃 Scale** ——
 //   終端機的一格是字元不是像素，把它乘 2 只會讓表格超出視窗。
 //   （這正是「通則套在前提不成立的那群人身上會安靜地毀掉東西」的形狀，所以分開放。）
@@ -47,8 +49,11 @@ namespace SCP.Core.Gui
         public const float MinScale = 0.5f;
         public const float MaxScale = 4f;
 
-        /// <summary>預設縮放。⭐ 不是 1.0 —— 理由見檔頭（1.0 實測太小）。</summary>
-        public const float DefaultScale = 2f;
+        /// <summary>
+        /// 預設縮放。**1.0 是實測定案的值**（Tim 在視窗裡按過四段之後選的），
+        /// 不是「還沒調過的出廠值」—— 想改它請先在真的視窗裡看過，見檔頭。
+        /// </summary>
+        public const float DefaultScale = 1f;
 
         float m_Scale = DefaultScale;
 
