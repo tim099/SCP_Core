@@ -50,6 +50,15 @@ namespace SCP.Core.Gui
         /// <summary>Toggle 的當前狀態。</summary>
         public bool On { get; init; }
 
+        /// <summary>
+        /// 這個 Box 可以摺疊嗎。⚠ 摺疊狀態**不住在這裡**（節點用完就丟）——
+        /// 它是跨幀狀態，住在 <see cref="SCP_GuiInput.Folds"/> 與呼叫端的 session 裡。
+        /// </summary>
+        public bool Collapsible { get; init; }
+
+        /// <summary>展開中嗎（Collapsible 才有意義）。收合時**子節點根本沒有被建出來**。</summary>
+        public bool Open { get; init; } = true;
+
         /// <summary>Table 的表頭；其他 Kind 不使用。</summary>
         public IReadOnlyList<string> Headers { get; init; } = Array.Empty<string>();
 
@@ -75,6 +84,14 @@ namespace SCP.Core.Gui
 
         /// <summary>勾選覆寫：id → 狀態。</summary>
         public Dictionary<string, bool> Toggles { get; } = new();
+
+        /// <summary>
+        /// 摺疊狀態：Box 的 id → 展開中嗎。沒有的沿用呼叫端給的預設。
+        /// <para>⚠ 刻意跟 <see cref="Toggles"/> 分開：摺疊是**看畫面的人的偏好**，
+        /// 勾選是**資料**。混在一起的話「我把區塊收起來」會被存成一筆資料修改，
+        /// 而那會出現在 diff 裡（然後沒有人知道那是誰改的）。</para>
+        /// </summary>
+        public Dictionary<string, bool> Folds { get; } = new();
 
         public static SCP_GuiInput None => new();
     }

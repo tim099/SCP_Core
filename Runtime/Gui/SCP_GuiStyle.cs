@@ -126,6 +126,12 @@ namespace SCP.Core.Gui
         public const float BaseGrabMinSize = 12f;
         public const float BaseButtonMinWidth = 88f;
         public const float BaseTextFieldWidth = 220f;
+
+        /// <summary>
+        /// 標籤欄寬 —— 欄位名稱畫在**左邊**時的對齊位置。
+        /// 標籤比它長時就不對齊（寧可推開，也不要把名字裁掉：裁掉的字不會報錯）。
+        /// </summary>
+        public const float BaseLabelWidth = 150f;
         public const float BaseWindowRounding = 4f;
         public const float BaseFrameRounding = 3f;
         public const float BaseWindowWidth = 1280f;
@@ -156,6 +162,7 @@ namespace SCP.Core.Gui
         public float GrabMinSize { get { return Scaled(BaseGrabMinSize); } }
         public float ButtonMinWidth { get { return Scaled(BaseButtonMinWidth); } }
         public float TextFieldWidth { get { return Scaled(BaseTextFieldWidth); } }
+        public float LabelWidth { get { return Scaled(BaseLabelWidth); } }
         public float WindowRounding { get { return Scaled(BaseWindowRounding); } }
         public float FrameRounding { get { return Scaled(BaseFrameRounding); } }
 

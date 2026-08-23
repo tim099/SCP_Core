@@ -59,6 +59,33 @@ namespace SCP.Core.Gui
         }
 
         /// <summary>
+        /// 可摺疊區塊。用法（⚠ 收合時**不要建子節點** —— 那是這個 API 存在的理由）：
+        /// <code>
+        /// using (var aFold = g.Fold("執行環境", "doctor/env"))
+        ///     if (aFold.Open) { …畫內容… }
+        /// </code>
+        /// <para>摺疊狀態來自 <see cref="SCP_GuiInput.Folds"/>（沒有就用 iDefaultOpen），
+        /// 所以四種驅動方式都摺得起來：視窗點標題、CLI `--fold &lt;id&gt;`、程式直接塞 Folds。</para>
+        /// <para>id 走**顯式 key 逐字採用**（跟按鈕同一個契約）—— 收合狀態要存進 session，
+        /// 會漂的 id 會讓「我收起來的是哪一段」隔一版就跑掉。</para>
+        /// </summary>
+        public FoldScope Fold(string iTitle, string iKey, bool iDefaultOpen = true)
+        {
+            string aId = m_Ids.MakeExplicit(iKey);
+            bool aOpen = m_Input.Folds.TryGetValue(aId, out bool v) ? v : iDefaultOpen;
+            m_Ids.PushLevel(iKey);
+            Push(new SCP_GuiNode
+            {
+                Kind = SCP_GuiNodeKind.Box,
+                Text = iTitle,
+                Id = aId,
+                Collapsible = true,
+                Open = aOpen,
+            });
+            return new FoldScope(this, aOpen);
+        }
+
+        /// <summary>
         /// **只開 id 命名空間，版面上完全透明**（不畫框、不縮排）。
         /// <para>用途：同一棵樹裡有兩個結構相同的區塊（兩頁、兩個清單項）時，
         /// 沒傳顯式 key 的欄位會撞名 —— 撞了不會報錯，只會共用 session 值，
@@ -120,6 +147,18 @@ namespace SCP.Core.Gui
         {
             readonly SCP_Ui m_Ui;
             internal Scope(SCP_Ui iUi) { m_Ui = iUi; }
+            public void Dispose() { m_Ui.Pop(); m_Ui.m_Ids.PopLevel(); }
+        }
+
+        /// <summary>可摺疊區塊的 scope。<see cref="Open"/> 為 false 時呼叫端**應該跳過內容**。</summary>
+        public readonly struct FoldScope : IDisposable
+        {
+            readonly SCP_Ui m_Ui;
+
+            /// <summary>展開中嗎。false ⇒ 不要畫內容（畫了就等於沒摺，只是看不見而已）。</summary>
+            public bool Open { get; }
+
+            internal FoldScope(SCP_Ui iUi, bool iOpen) { m_Ui = iUi; Open = iOpen; }
             public void Dispose() { m_Ui.Pop(); m_Ui.m_Ids.PopLevel(); }
         }
     }

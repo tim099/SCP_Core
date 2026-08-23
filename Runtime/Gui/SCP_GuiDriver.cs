@@ -30,6 +30,7 @@ namespace SCP.Core.Gui
                     case SCP_GuiNodeKind.Button: return "--click " + Id;
                     case SCP_GuiNodeKind.Toggle: return "--toggle " + Id;
                     case SCP_GuiNodeKind.TextField: return "--set " + Id + "=<值>";
+                    case SCP_GuiNodeKind.Box: return "--fold " + Id;
                     default: return "";
                 }
             }
@@ -41,6 +42,12 @@ namespace SCP.Core.Gui
     {
         public Dictionary<string, string> Fields = new Dictionary<string, string>();
         public Dictionary<string, bool> Toggles = new Dictionary<string, bool>();
+
+        /// <summary>
+        /// 摺疊狀態：Box id → 展開中嗎。**只有跟預設不同的才需要存**，
+        /// 但這裡照樣全存 —— 省那幾個 byte 換來的是「預設值改了之後使用者的偏好悄悄變了」。
+        /// </summary>
+        public Dictionary<string, bool> Folds = new Dictionary<string, bool>();
 
         /// <summary>
         /// 導覽路徑 —— 由下往上的 <see cref="SCP_GuiPage.Key"/>（見 SCP_GuiPageController.PathKeys）。
@@ -56,6 +63,7 @@ namespace SCP.Core.Gui
             var aInput = new SCP_GuiInput { ClickedId = iClickedId };
             foreach (var kv in Fields) aInput.Fields[kv.Key] = kv.Value;
             foreach (var kv in Toggles) aInput.Toggles[kv.Key] = kv.Value;
+            foreach (var kv in Folds) aInput.Folds[kv.Key] = kv.Value;
             return aInput;
         }
 
@@ -66,10 +74,13 @@ namespace SCP.Core.Gui
             foreach (var kv in Fields) aFields.Set(kv.Key, kv.Value);
             var aToggles = SCP_JsonData.NewObject();
             foreach (var kv in Toggles) aToggles.Set(kv.Key, kv.Value);
+            var aFolds = SCP_JsonData.NewObject();
+            foreach (var kv in Folds) aFolds.Set(kv.Key, kv.Value);
             var aNav = SCP_JsonData.NewArray();
             foreach (string k in Nav) aNav.Add(k);
             aRoot.Set("fields", aFields);
             aRoot.Set("toggles", aToggles);
+            aRoot.Set("folds", aFolds);
             aRoot.Set("nav", aNav);
             return aRoot;
         }
@@ -87,6 +98,10 @@ namespace SCP.Core.Gui
             var aToggles = iData["toggles"];
             if (aToggles.Exists)
                 foreach (string k in aToggles.Keys) aState.Toggles[k] = aToggles[k].AsBool();
+
+            var aFolds = iData["folds"];
+            if (aFolds.Exists)
+                foreach (string k in aFolds.Keys) aState.Folds[k] = aFolds[k].AsBool();
 
             var aNav = iData["nav"];
             if (aNav.Exists)
@@ -108,9 +123,12 @@ namespace SCP.Core.Gui
 
         static void Walk(SCP_GuiNode iNode, List<SCP_GuiElement> oList)
         {
+            // 可摺疊的框也算「可互動」—— 看不見畫面的人要知道有東西被收起來了，
+            // 不然那一段內容在他眼裡等於不存在
             if (iNode.Kind == SCP_GuiNodeKind.Button
                 || iNode.Kind == SCP_GuiNodeKind.Toggle
-                || iNode.Kind == SCP_GuiNodeKind.TextField)
+                || iNode.Kind == SCP_GuiNodeKind.TextField
+                || (iNode.Kind == SCP_GuiNodeKind.Box && iNode.Collapsible))
             {
                 oList.Add(new SCP_GuiElement
                 {
@@ -118,7 +136,7 @@ namespace SCP.Core.Gui
                     Kind = iNode.Kind,
                     Label = iNode.Text,
                     Value = iNode.Value,
-                    On = iNode.On,
+                    On = iNode.Kind == SCP_GuiNodeKind.Box ? iNode.Open : iNode.On,
                 });
             }
             foreach (var c in iNode.Children) Walk(c, oList);

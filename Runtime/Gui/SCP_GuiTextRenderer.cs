@@ -100,7 +100,11 @@ namespace SCP.Core.Gui
 
                 case SCP_GuiNodeKind.Box:
                 {
-                    string aTitle = string.IsNullOrEmpty(iNode.Text) ? "" : $" {iNode.Text} ";
+                    // 可摺疊的框把狀態畫在標題上 —— 文字模式沒有滑鼠，
+                    // 沒有 ▼／▶ 的話「收起來了」與「裡面是空的」長得一模一樣
+                    string aMark = iNode.Collapsible ? (iNode.Open ? "▼ " : "▶ ") : "";
+                    string aTitle = string.IsNullOrEmpty(iNode.Text) && aMark.Length == 0
+                        ? "" : $" {aMark}{iNode.Text} ";
                     oSb.Append(pad).Append('┌').Append(aTitle)
                        .Append(new string('─', Math.Max(0, inner - Width(aTitle) - 2))).Append('┐').Append('\n');
                     foreach (var c in iNode.Children) RenderNode(c, oSb, iIndent + Math.Max(0, iStyle.TextIndent), iStyle);
