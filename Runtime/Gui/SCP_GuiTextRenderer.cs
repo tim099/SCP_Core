@@ -77,20 +77,25 @@ namespace SCP.Core.Gui
 
                 case SCP_GuiNodeKind.Row:
                 {
-                    // 一列 = 子節點的 inline 形式串起來。含群組的 Row 退化成逐項換行
-                    // （文字模式沒有真正的水平版位；硬排會讓巢狀內容互相蓋掉，寧可誠實地換行）。
-                    bool aAllInline = iNode.Children.All(IsInlineKind);
-                    if (aAllInline)
+                    // 一列 = **連續的 inline 子節點**串成一行；遇到群組（Box／Table／巢狀 Row）就換行。
+                    // ⚠ 舊版是「全部 inline 才併，否則整列逐項換行」——
+                    //   那讓「一顆鈕 ＋ 一個展開的下拉」連鈕都各自佔一行。
+                    //   分類走 SCP_GuiNode.IsInline（跟 ImGui renderer 同一份，不各判一次）。
+                    var aRun = new List<SCP_GuiNode>();
+                    bool aEmitted = false;
+                    foreach (var c in iNode.Children)
                     {
-                        oSb.Append(pad)
-                           .Append(string.Join(new string(' ', Math.Max(1, iStyle.TextInlineGap)),
-                                               iNode.Children.Select(Inline)))
-                           .Append('\n');
+                        if (SCP_GuiNode.IsInline(c.Kind)) { aRun.Add(c); continue; }
+                        if (FlushInlineRun(aRun, oSb, pad, iStyle)) aEmitted = true;
+                        // ⚠ 這一行是**誠實的註記不是模擬**：文字模式沒有水平版位，只能把群組換行印；
+                        //    但視窗那側（ImGui 的 BeginGroup）會把它排在前一項的右邊。
+                        //    不講的話，讀文字輸出的人會以為版面真的是上下排的 ——
+                        //    而我就是這樣漏掉了那次重疊（文字看起來正常，視窗疊成一團）。
+                        if (aEmitted) oSb.Append(pad).Append("· ⟨視窗模式：下面這塊排在上一行的右邊⟩").Append('\n');
+                        RenderNode(c, oSb, iIndent, iStyle);
+                        aEmitted = true;
                     }
-                    else
-                    {
-                        foreach (var c in iNode.Children) RenderNode(c, oSb, iIndent, iStyle);
-                    }
+                    FlushInlineRun(aRun, oSb, pad, iStyle);
                     break;
                 }
 
@@ -122,8 +127,16 @@ namespace SCP.Core.Gui
             }
         }
 
-        static bool IsInlineKind(SCP_GuiNode iNode) => iNode.Kind is SCP_GuiNodeKind.Label or SCP_GuiNodeKind.Note
-            or SCP_GuiNodeKind.Button or SCP_GuiNodeKind.Toggle or SCP_GuiNodeKind.TextField;
+        /// <summary>把累積到的 inline 子節點吐成一行並清空。回傳有沒有真的吐出東西。</summary>
+        static bool FlushInlineRun(List<SCP_GuiNode> ioRun, StringBuilder oSb, string iPad, SCP_GuiStyle iStyle)
+        {
+            if (ioRun.Count == 0) return false;
+            oSb.Append(iPad)
+               .Append(string.Join(new string(' ', Math.Max(1, iStyle.TextInlineGap)), ioRun.Select(Inline)))
+               .Append('\n');
+            ioRun.Clear();
+            return true;
+        }
 
         static string Inline(SCP_GuiNode iNode) => iNode.Kind switch
         {

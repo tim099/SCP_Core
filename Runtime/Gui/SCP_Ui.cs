@@ -23,8 +23,39 @@ namespace SCP.Core.Gui
         readonly Stack<SCP_GuiNode> m_Stack = new();
         readonly SCP_GuiIdScope m_Ids = new();
 
+        readonly List<KeyValuePair<string, string>> m_FieldWrites = new();
+
         /// <summary>id 組成過程中「只能靠出現順序」的節點 —— 那是會漂的東西，所以要看得見。</summary>
         public IReadOnlyList<string> Diagnostics => m_Ids.Diagnostics;
+
+        /// <summary>
+        /// 這一輪頁面**要求寫回**的欄位值（id → 值），由驅動端在 Draw 之後套進它的狀態。
+        /// <para>為什麼需要這條路：在這之前欄位值只有兩個來源 —— 使用者打字（renderer 寫）
+        /// 與呼叫端傳進來的預設（每輪重算）。於是「頁面自己想改一個欄位」做不到：
+        /// 清空搜尋框、下拉選了一項要把選擇記起來、翻頁 —— 全都沒有落點。</para>
+        /// <para>⚠ 只在**事件發生時**寫（按鈕被按下那一輪），不要每輪無條件寫 ——
+        /// 那會跟使用者正在打的字打架，而症狀是「我打的字自己跳回去」。</para>
+        /// </summary>
+        public IReadOnlyList<KeyValuePair<string, string>> FieldWrites => m_FieldWrites;
+
+        /// <summary>要求把某個欄位設成某值（見 <see cref="FieldWrites"/>）。本層不碰狀態，只記下請求。</summary>
+        public void SetField(string iId, string iValue)
+        {
+            m_FieldWrites.Add(new KeyValuePair<string, string>(iId, iValue));
+        }
+
+        /// <summary>
+        /// 讀一個欄位的現值 **而不畫任何東西** —— 複合元件（下拉、分頁）的內部狀態靠這條路。
+        /// <para>⚠ 同一輪已經 <see cref="SetField"/> 過的值優先（後寫的贏）：
+        /// 不這樣做的話「這一輪選了 A，同一輪後面卻讀到舊值 B」，
+        /// 而那種不一致在 immediate mode 裡是最難查的一種。</para>
+        /// </summary>
+        public string FieldValue(string iId, string iFallback = "")
+        {
+            for (int i = m_FieldWrites.Count - 1; i >= 0; i--)
+                if (m_FieldWrites[i].Key == iId) return m_FieldWrites[i].Value;
+            return m_Input.Fields.TryGetValue(iId, out string? v) ? v : iFallback;
+        }
 
         public SCP_GuiNode Root { get; }
 
@@ -48,13 +79,19 @@ namespace SCP.Core.Gui
         public void Space() => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Space });
 
         // ── 群組（using scope）─────────────────────────────────────
-        public Scope Column() { m_Ids.PushLevel("col"); Push(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Column }); return new Scope(this); }
+        /// <summary>垂直堆疊。iUniformWidth ⇒ 直接子節點等寬（見 <see cref="SCP_GuiNode.UniformWidth"/>）。</summary>
+        public Scope Column(bool iUniformWidth = false)
+        {
+            m_Ids.PushLevel("col");
+            Push(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Column, UniformWidth = iUniformWidth });
+            return new Scope(this);
+        }
         public Scope Row() { m_Ids.PushLevel("row"); Push(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Row }); return new Scope(this); }
 
-        public Scope Box(string iTitle = "", string? iKey = null)
+        public Scope Box(string iTitle = "", string? iKey = null, bool iUniformWidth = false)
         {
             m_Ids.PushLevel(iKey ?? iTitle);
-            Push(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Box, Text = iTitle });
+            Push(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Box, Text = iTitle, UniformWidth = iUniformWidth });
             return new Scope(this);
         }
 

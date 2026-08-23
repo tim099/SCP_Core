@@ -44,6 +44,16 @@ namespace SCP.Core.Gui
         /// <summary>這一頁是不是 controller 的最上方那頁（＝現在真的畫得出來的那頁）。</summary>
         public bool IsTop => Controller != null && ReferenceEquals(Controller.TopPage, this);
 
+        /// <summary>
+        /// 這一頁自己畫返回列嗎。true ⇒ controller **不再**自動畫那顆返回鈕。
+        /// <para>為什麼要有這個開關：<see cref="SCP_GuiToolPage"/> 把返回／首頁／自訂按鈕收成一排工具列，
+        /// 而 controller 原本也會畫一顆返回。兩邊都畫的症狀不是壞掉，是**畫面上有兩顆返回鈕**、
+        /// 其中一顆的 id 是 `page/back#2` —— 而 agent 照 `--list` 抄到那顆就會按到「看起來一樣的另一顆」。</para>
+        /// <para>⚠ 自己畫的人**必須沿用** <see cref="SCP_GuiPageController.BackButtonId"/> 這個固定 id
+        /// （那是契約，不是慣例）。</para>
+        /// </summary>
+        public virtual bool OwnsNavBar => false;
+
         /// <summary>畫這一頁。⚠ 只有最上方那頁會被呼叫。</summary>
         public abstract void Draw(SCP_Ui iUi);
 

@@ -100,6 +100,20 @@ namespace SCP.Core.Gui
         public void PopAll() { while (m_Pages.Count > 0) Pop(); }
 
         /// <summary>
+        /// 回到最底層那一頁（＝「回首頁」）。
+        /// <para>⚠ 這不是 <see cref="PopAll"/>。UCL 那側的「Close」是 PopAll，因為它的前提是
+        /// 「關掉整組面板」；這裡的前提是**最底層那頁就是入口頁**，PopAll 會清空堆疊 ⇒
+        /// 畫面變成 controller 的「頁面堆疊是空的」那一行。那不是關閉，那是空白。</para>
+        /// </summary>
+        /// <returns>pop 掉幾頁（本來就在最底層 ⇒ 0）。</returns>
+        public int PopToRoot()
+        {
+            int aCount = 0;
+            while (m_Pages.Count > 1) { Pop(); aCount++; }
+            return aCount;
+        }
+
+        /// <summary>
         /// 把某一頁從 stack 裡抽掉（可能在中間）。
         /// 抽掉的正好是 TopPage ⇒ 等同 <see cref="Pop"/>（新的 TopPage 會收到 OnResume）。
         /// </summary>
@@ -139,7 +153,9 @@ namespace SCP.Core.Gui
 
             if (ShowBreadcrumb && m_Pages.Count > 1) iUi.Note(PathText);
 
-            if (ShowBackBar && m_Pages.Count > 1)
+            // 頁面自己畫工具列時 controller 就不要再畫一顆 —— 兩顆返回鈕不會報錯，
+            // 只會讓第二顆變成 `page/back#2`，然後照清單抄指令的人按到另一顆。
+            if (ShowBackBar && m_Pages.Count > 1 && !aTop.OwnsNavBar)
             {
                 using (iUi.Row())
                 {
