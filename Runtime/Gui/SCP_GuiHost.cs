@@ -44,6 +44,24 @@ namespace SCP.Core.Gui
         /// （寫走 <c>clip.exe</c> 很容易，讀在 Windows 上要繞 PowerShell 或 Win32）。</para>
         /// </summary>
         public static Func<SCP_ClipboardRead>? ReadClipboard;
+
+        /// <summary>
+        /// 這個宿主會**不斷重畫**嗎（＝我啟動一個背景工作之後，還會有下一幀來顯示它的進度嗎）。
+        /// <para>⭐ 這是**唯一**能讓同一份頁面碼在兩種宿主上都正確的那格讀數：</para>
+        /// <list type="bullet">
+        ///   <item><b>true</b>（ImGui 視窗）＝ 連續 render loop ⇒ 長時間工作**丟到背景**，
+        ///   頁面每幀顯示進度。同步跑會讓視窗凍結成「沒有回應」。</item>
+        ///   <item><b>false</b>（純文字／指令驅動）＝ 畫幾趟就結束 process ⇒ 丟到背景等於**什麼都不會發生**
+        ///   （process 不會等它），所以頁面必須**同步跑完**才返回。</item>
+        /// </list>
+        /// <para>⚠ 預設 <c>false</c> 是刻意的保守值：猜錯成 true 的症狀是「按了沒事」
+        /// （背景工作還沒跑完 process 就結束了），而那是最難查的一種 —— 它跟「這顆鈕壞了」同形。
+        /// 猜錯成 false 的症狀只是「畫面卡住一陣子」，看得出來。</para>
+        /// <para>⚠ 它**不是**「支不支援背景執行緒」（那是 runtime 的事，兩邊都支援）——
+        /// 是「**背景工作跑完的時候，還有人在看嗎**」。名字要照著那個問題取，
+        /// 不然下一個人會在 CLI 模式把它設成 true。</para>
+        /// </summary>
+        public static bool RedrawsContinuously;
     }
 
     /// <summary>
