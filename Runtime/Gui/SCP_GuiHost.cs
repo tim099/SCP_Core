@@ -33,5 +33,34 @@ namespace SCP.Core.Gui
         /// 而 page key **不等於**類別名（`home` ↔ `HomePage`）。</para>
         /// </summary>
         public static Func<string, string>? CopyToClipboard;
+
+        /// <summary>
+        /// 從剪貼簿讀一段字。<c>null</c> ＝ 這個宿主沒有這個能力 ⇒ 相關按鈕**不會被畫出來**。
+        /// <para>⭐ 為什麼需要它：ImGui 的 <c>InputText</c> 在這個宿主上**吃不到 Ctrl+V**
+        /// （ImGui 的剪貼簿 callback 沒有被接上），所以「貼一段路徑進來」只能手打。
+        /// 一個要求使用者手打絕對路徑的欄位，實際上就是一個不會被用的欄位。</para>
+        /// <para>⚠ 這是**讀**的方向，跟 <see cref="CopyToClipboard"/> 是兩件事，
+        /// 所以刻意分成兩個委派 —— 一個宿主可能只做得到其中一邊
+        /// （寫走 <c>clip.exe</c> 很容易，讀在 Windows 上要繞 PowerShell 或 Win32）。</para>
+        /// </summary>
+        public static Func<SCP_ClipboardRead>? ReadClipboard;
+    }
+
+    /// <summary>
+    /// 讀剪貼簿的結果。
+    /// <para>⚠ 三格刻意分開，因為「剪貼簿是空的」與「我讀不到剪貼簿」**不得同形** ——
+    /// 壓成一個空字串之後，一個壞掉的能力會看起來像「使用者沒複製東西」，
+    /// 而那會讓人一直重按那顆鈕。</para>
+    /// </summary>
+    public sealed class SCP_ClipboardRead
+    {
+        /// <summary>讀到了嗎（＝這次操作本身成功，內容可以是空的）。</summary>
+        public bool Ok;
+
+        /// <summary>讀到的字（<see cref="Ok"/> 為 false 時無意義）。</summary>
+        public string Text = "";
+
+        /// <summary>一行人可讀的結果 —— **成功也要有話說**（效果發生在別的地方，畫面要說得出發生了什麼）。</summary>
+        public string Message = "";
     }
 }

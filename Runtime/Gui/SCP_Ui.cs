@@ -57,6 +57,22 @@ namespace SCP.Core.Gui
             return m_Input.Fields.TryGetValue(iId, out string? v) ? v : iFallback;
         }
 
+        /// <summary>
+        /// 讀一個勾選的現值 **而不畫任何東西** —— <see cref="FieldValue"/> 的勾選版。
+        /// <para>用途：摺疊起來的區塊**不建子節點**（那是 <see cref="Fold"/> 存在的理由），
+        /// 於是收合的那一輪讀不到裡面任何 <see cref="Toggle"/> 的回傳值。
+        /// 而那些勾選是**資料**（納入哪幾項、排除哪幾項）——
+        /// 讓它隨「我把區塊收起來」消失，等於使用者的設定被靜默丟掉，
+        /// 而丟掉之後的畫面跟「使用者本來就沒設」長得一模一樣。</para>
+        /// <para>⚠ 沒有 <c>SetToggle</c> 的對偶：勾選是使用者的資料，
+        /// 頁面自己改它要有非常好的理由，而目前沒有呼叫端需要 ⇒ 不先開那個口。
+        /// （欄位那側有 <see cref="SetField"/> 是因為複合元件的內部狀態非它不可。）</para>
+        /// </summary>
+        public bool ToggleValue(string iId, bool iFallback = false)
+        {
+            return m_Input.Toggles.TryGetValue(iId, out bool v) ? v : iFallback;
+        }
+
         public SCP_GuiNode Root { get; }
 
         public SCP_Ui(SCP_GuiInput? iInput = null)
