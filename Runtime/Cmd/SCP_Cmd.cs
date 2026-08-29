@@ -1,0 +1,88 @@
+// 區塊職責：**SCP_CMD 的指令基底與回傳型別** —— 一支 Cmd 是什麼、它回什麼。
+// 物理意義：這套系統跟 UCL_Core 的 AgentCommand 是同一個概念，但**沒有 queue**：
+//           CLI 直接呼叫 C#，同一個 process 同步跑完回來。
+//           ⇒ 沒有 trigger 檔、沒有 Watcher、沒有「從 queue 消失代表結束」那套推論，
+//             也就沒有那套推論會漂的那些坑。回傳值就是回傳值。
+// 數值影響：本檔零 IO。
+//
+// 📌 與 UCL_Core AgentCommand 的對照（有意保留的相同 / 有意不同）：
+//   相同：宣告式的參數規格、機器可讀的回報（📄 產出檔 / 🔢 純量）、help 由系統產生不是手寫。
+//   不同：① 無 queue（見上）② 未宣告的參數名一律擋（UCL 是靜默取預設 ⇒ BUG-14）
+//        ③ 不依賴 Unity —— 本組檔案只用 netstandard2.1 的東西，任何宿主都跑得動。
+using System;
+using System.Collections.Generic;
+
+namespace SCP.Core.Cmd
+{
+    /// <summary>一支 Cmd 的執行結果。</summary>
+    public sealed class SCP_CmdResult
+    {
+        /// <summary>0 ＝ 成功。非 0 ＝ 失敗（呼叫端可直接當 process exit code）。</summary>
+        public int ExitCode;
+
+        /// <summary>人可讀的輸出行。</summary>
+        public List<string> Lines = new List<string>();
+
+        /// <summary>產出檔的路徑（對應 run_cmd 的 `📄 回傳檔`）。**印出來的路徑才是真的**，不要背路徑。</summary>
+        public List<string> Outputs = new List<string>();
+
+        /// <summary>
+        /// 純量回報（對應 run_cmd 的 `🔢 key = value`）。
+        /// <para>⚠ 跟路徑**分開放**：混在一起會讓 seq 這種數字被當成路徑去開（UCL 端的血證）。</para>
+        /// </summary>
+        public List<KeyValuePair<string, string>> Values = new List<KeyValuePair<string, string>>();
+
+        public bool Ok => ExitCode == 0;
+
+        public static SCP_CmdResult Success(params string[] iLines)
+        {
+            var aResult = new SCP_CmdResult();
+            aResult.Lines.AddRange(iLines);
+            return aResult;
+        }
+
+        /// <summary>失敗。⚠ 訊息要說「哪一格不成立」，不是「失敗了」。</summary>
+        public static SCP_CmdResult Fail(int iExitCode, params string[] iLines)
+        {
+            var aResult = new SCP_CmdResult { ExitCode = iExitCode };
+            aResult.Lines.AddRange(iLines);
+            return aResult;
+        }
+
+        public SCP_CmdResult AddValue(string iKey, string iValue)
+        {
+            Values.Add(new KeyValuePair<string, string>(iKey, iValue));
+            return this;
+        }
+
+        public SCP_CmdResult AddOutput(string iPath) { Outputs.Add(iPath); return this; }
+    }
+
+    /// <summary>
+    /// 一支 Cmd。子類別只要有**公開無參數建構子**就會被 <see cref="SCP_CmdRegistry"/> 找到。
+    /// </summary>
+    public abstract class SCP_Cmd
+    {
+        /// <summary>指令名（呼叫端打的字）。⚠ 這是**契約**：進了別人的腳本就不能隨便改。</summary>
+        public abstract string Name { get; }
+
+        /// <summary>一句話說明這支 Cmd 做什麼（印在 help 清單）。</summary>
+        public abstract string Summary { get; }
+
+        /// <summary>參數規格。沒有參數就回空陣列（那也是一份宣告，不是「還沒寫」）。</summary>
+        public virtual IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => Array.Empty<SCP_CmdArgSpec>();
+
+        /// <summary>比 Summary 長的說明（印在 `help &lt;name&gt;`）。可留空。</summary>
+        public virtual string Details => "";
+
+        /// <summary>一行可以照抄的範例。可留空。</summary>
+        public virtual string Example => "";
+
+        /// <summary>
+        /// 執行。**參數已經驗過**（未宣告的名字、必填、Choices 都在 Registry 擋掉了）。
+        /// <para>⚠ 丟例外不是罪：Registry 會接住並轉成 exit code ＋ 型別名稱 ＋ 訊息。
+        /// 但**能講清楚的失敗請自己回 Fail** —— 例外的訊息是給維護者的，Fail 的訊息是給使用者的。</para>
+        /// </summary>
+        public abstract SCP_CmdResult Execute(SCP_CmdArgs iArgs);
+    }
+}
