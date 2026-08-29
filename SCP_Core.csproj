@@ -6,6 +6,10 @@
             所以 TargetFramework 與 LangVersion 釘在 Unity 吃得下的那一格：
             寫了檔案級 namespace / record / raw string literal，**在 Senate 這邊就編不過**，
             不會等到搬進 Unity 才發現。
+  ⭐ 2026-08-29 起：**組件名、根命名空間、檔案範圍、unsafe 開關、參照，全部從 asmdef 讀** ——
+     同一個組件邊界以前在這裡宣告一次、在 asmdef 又宣告一次，兩份現在一致不代表明天一致，
+     而漂掉的症狀是「Unity 編得過、Senate 編不過」（或反過來），兩邊都不會說是誰漂的。
+     ⇒ 真相源只留 asmdef 一份，這個檔只負責「把 asmdef 翻譯成 MSBuild」。
   數值影響：
     · netstandard2.1 → net10.0 可以直接參照（單向相容），所以 Senate 不必降級。
     · 刻意**零 PackageReference**：Unity 不吃 NuGet，共用碼碰了就是搬不進去。
@@ -18,18 +22,130 @@
     <LangVersion>9.0</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <RootNamespace>SCP.Core</RootNamespace>
-    <AssemblyName>SCP_Core</AssemblyName>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!-- SDK 的預設 .cs glob 關掉 —— 檔案範圍由下面的 asmdef 規則決定，不是「repo 根有什麼就編什麼」。 -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+
+    <!--
+      ⚠ 少了這一行，「分成多顆 dll」就只有一半：下游比對的會是實作 dll 而不是公開簽名，
+      改一行方法內文就會讓所有下游一起重編（2026-08-29 實測：關著時兩顆全重編，開著時只重編自己）。
+    -->
+    <ProduceReferenceAssembly>true</ProduceReferenceAssembly>
   </PropertyGroup>
 
   <!--
-    只編 Runtime/ 底下的東西。Unity 的 .meta 檔與（未來的）Editor~ 目錄不進編譯。
-    ⚠ 預設 glob 會把 repo 根的任何 .cs 都吃進來 —— 顯式收斂，避免日後放個工具腳本就被一起編。
+    ── asmdef 定位 ──────────────────────────────────────────────
+    ⚠ 這一行是**唯一**的重複宣告，而且刻意是「指路」不是「重述內容」：
+      MSBuild 的評估順序是**屬性全部先算完、item 才算**，所以屬性裡不可能去 glob 出 asmdef
+      （試過三種寫法：Condition 吃 item list → MSB4099；屬性值吃 item list → 拿到字面字串；
+       Directory.GetFiles 的遞迴多載 → MSB4186 找不到方法）。
+      ⇒ 要嘛在這裡寫一行路徑，要嘛引進外部產生器。選了前者：
+        名字／根命名空間／檔案範圍／unsafe／參照**全部還是從 asmdef 讀**，這裡只說「是哪一份」。
+    拆成多顆組件時：每顆一個 csproj，各自指自己那份 asmdef。
+  -->
+  <PropertyGroup>
+    <AsmdefFile>Runtime\SCP_Core.asmdef</AsmdefFile>
+    <AsmdefDir>$([System.IO.Path]::GetDirectoryName('$(MSBuildProjectDirectory)\$(AsmdefFile)'))</AsmdefDir>
+    <!-- ⚠ 一定要帶 Exists：少了它，檔不在時是評估期就 MSB4184 爆掉，
+         底下那個講人話的守衛永遠不會跑到 —— 那種守衛跟沒有一樣。 -->
+    <AsmdefText Condition="Exists('$(MSBuildProjectDirectory)\$(AsmdefFile)')">$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\$(AsmdefFile)'))</AsmdefText>
+
+    <!-- asmdef 欄位 → MSBuild 屬性（讀不到就留空，由下面的守衛出聲） -->
+    <AsmdefName>$([System.Text.RegularExpressions.Regex]::Match($(AsmdefText), '"name"\s*:\s*"([^"]+)"').Groups[1].Value)</AsmdefName>
+    <AsmdefRootNamespace>$([System.Text.RegularExpressions.Regex]::Match($(AsmdefText), '"rootNamespace"\s*:\s*"([^"]*)"').Groups[1].Value)</AsmdefRootNamespace>
+    <AsmdefUnsafe>$([System.Text.RegularExpressions.Regex]::Match($(AsmdefText), '"allowUnsafeCode"\s*:\s*(true|false)').Groups[1].Value)</AsmdefUnsafe>
+    <AsmdefRefsRaw>$([System.Text.RegularExpressions.Regex]::Match($(AsmdefText), '"references"\s*:\s*\[([^\]]*)\]').Groups[1].Value)</AsmdefRefsRaw>
+    <!-- ';A;B;' 形式，供底下的索引比對用（空 references 會得到 ';;'，Contains 判不到任何名字） -->
+    <AsmdefRefsCsv>;$([System.Text.RegularExpressions.Regex]::Replace($(AsmdefRefsRaw), '[^A-Za-z0-9_.,-]', '').Replace(',', ';'));</AsmdefRefsCsv>
+    <AsmdefRefsCount>$([System.Text.RegularExpressions.Regex]::Matches($(AsmdefRefsRaw), '[A-Za-z0-9_.-]+').Count)</AsmdefRefsCount>
+
+    <AssemblyName>$(AsmdefName)</AssemblyName>
+    <RootNamespace>$(AsmdefRootNamespace)</RootNamespace>
+    <AllowUnsafeBlocks Condition="'$(AsmdefUnsafe)' != ''">$(AsmdefUnsafe)</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!--
+    ── 檔案範圍：asmdef 的資料夾規則 ─────────────────────────────
+    asmdef 所在資料夾往下遞迴全收，**撞到子 asmdef 就停**（那塊是別顆組件的）。
+    ⚠ 額外要擋 bin/obj —— Unity 不會撞到這隻（obj 不在 Assets 底下），.NET 會：
+      SDK 會在 obj 底下自動生 .cs，收進來就是 CS2002 重複來源。
   -->
   <ItemGroup>
-    <Compile Remove="**/*.cs" />
-    <Compile Include="Runtime/**/*.cs" />
+    <NestedAsmdef Include="$(AsmdefDir)\**\*.asmdef" Exclude="$(MSBuildProjectDirectory)\$(AsmdefFile)" />
+    <Compile Include="$(AsmdefDir)\**\*.cs" Exclude="$(MSBuildProjectDirectory)\bin\**;$(MSBuildProjectDirectory)\obj\**" />
+    <Compile Remove="@(NestedAsmdef->'%(RootDir)%(Directory)**\*.cs')" />
   </ItemGroup>
+
+  <!--
+    ── references → ProjectReference ────────────────────────────
+    asmdef 用「組件名」互相參照，MSBuild 要的是 csproj 路徑 ⇒ 掃全 repo 的 asmdef 建
+    name → 同層 csproj 的索引，再用 asmdef 宣告的名字去挑。
+    ⚠ 射程（2026-08-29 實測）：目前 SCP_Core 的 references 是空的 ⇒
+      **「名字→csproj 解得到」這條正路在本 repo 沒有被走過**（正路的讀數在 Senate 外的 PoC：
+      App.asmdef 宣告 Poc_Lib ⇒ 自動連到 Lib.csproj，拿掉就 CS0234）。
+      本 repo 只驗過**反路**：暫時塞一個不存在的名字 ⇒ 底下的守衛大聲擋下並印出宣告 1 個／解到 0 個。
+      ⇒ 拆組件的第一天，先確認正路也真的接上，別拿反路的讀數當它的收據。
+  -->
+  <ItemGroup>
+    <AsmdefIndex Include="**\*.asmdef" Exclude="bin\**;obj\**">
+      <AsmName>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('%(FullPath)')), '"name"\s*:\s*"([^"]+)"').Groups[1].Value)</AsmName>
+      <Csproj>$([System.IO.Directory]::GetFiles('%(RootDir)%(Directory)', '*.csproj'))</Csproj>
+      <IsMyRef>$(AsmdefRefsCsv.Contains(';%(AsmName);'))</IsMyRef>
+    </AsmdefIndex>
+    <ProjectReference Include="@(AsmdefIndex->WithMetadataValue('IsMyRef','true')->'%(Csproj)')" />
+  </ItemGroup>
+
+  <!--
+    ── 守衛 ─────────────────────────────────────────────────────
+    ⛔ 讀不到就**大聲停**，不要靜默取預設值 —— 「asmdef 沒讀到」與「asmdef 說要這樣」
+       在產物上長得一模一樣（都是編得出一顆 dll），差別只在名字對不對，而沒人會去看名字。
+  -->
+  <Target Name="AsmdefGuard" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\$(AsmdefFile)')"
+           Text="AsmdefFile 指到的檔不存在：$(AsmdefFile)" />
+    <Error Condition="'$(AsmdefName)' == ''"
+           Text="asmdef 讀到了但沒有 name 欄位：$(AsmdefFile)" />
+
+    <!--
+      ── 政策 ①：Unity 也要編的碼不准碰 NuGet ─────────────────
+      判準不需要新欄位：**這個 csproj 讀 asmdef ⇒ 這塊碼 Unity 也在編** ⇒ Unity 沒有 NuGet。
+      以前這條只是檔頭一段註解（「沒有技術手段可以擋，只能靠 review」）——
+      而註解攔不下任何東西：加套件的人編得過、下週搬進 Unity 的人才發現搬不進去。
+      ⚠ 實測基準（2026-08-29）：本專案 @(PackageReference) 是 **0 筆**（netstandard2.1 在
+        .NET 10 SDK 走 targeting pack，不會塞隱性套件）⇒ 這個守衛不會誤報。
+    -->
+    <Error Condition="'@(PackageReference->Count())' != '0'"
+           Text="SCP_Core 讀 asmdef ⇒ 它是 Unity 也要編的碼，不准有 PackageReference（Unity 不吃 NuGet，加了就是搬不進去）。目前：@(PackageReference)" />
+
+    <!--
+      ── 政策 ②：擋跨層引用 ────────────────────────────────
+      同一個判準的另一半：Unity 編得到的碼，只能參照 Unity 也編得到的碼。
+      操作化＝**每一筆 ProjectReference 的目標資料夾底下必須有 asmdef**。
+      ⚠ 走本檔 asmdef 索引長出來的參照天生合格（索引只收有 asmdef 的資料夾）——
+        這個守衛擋的是**有人手寫一筆 ProjectReference 指到 Senate.***：
+        那種 csproj 編得過、Unity 那邊直接缺型別，而兩邊都不會說是誰的問題。
+    -->
+    <!-- ⚠ 一定要帶這個 Condition：清單空的時候 %(FullPath) 會批出一個空字串批次，
+         GetFiles('') 直接 MSB4184 —— 「沒有參照」跟「參照壞掉」變成同一種爆法。 -->
+    <ItemGroup Condition="'@(ProjectReference)' != ''">
+      <ProjectReferenceProbe Include="@(ProjectReference)">
+        <TargetAsmdef>$([System.IO.Directory]::GetFiles($([System.IO.Path]::GetDirectoryName('%(FullPath)')), '*.asmdef'))</TargetAsmdef>
+      </ProjectReferenceProbe>
+    </ItemGroup>
+    <!-- ⚠ 同一隻的第二現場：Error 也會對空清單批出一個空批次 ⇒ 零筆參照被判成「參照壞掉」。
+         必須先問清單非空，再問那一格是不是空的。 -->
+    <Error Condition="'@(ProjectReferenceProbe)' != '' And '%(ProjectReferenceProbe.TargetAsmdef)' == ''"
+           Text="跨層引用：%(ProjectReferenceProbe.Identity) 底下沒有 asmdef ⇒ Unity 端編不到它。Unity 也要編的模組只能參照同樣有 asmdef 的模組。" />
+    <!-- ⚠ 這段刻意排在跨層守衛**之後**：兩道都擋得住「手寫一筆沒宣告的參照」，
+         但本段的訊息是數字對帳（宣告 0 解到 1），跨層那段才講得出「Unity 端編不到它」。
+         先跑的那道就是使用者唯一會看到的那道 —— 2026-08-29 實測：排在前面時
+         跨層守衛一次都沒被走到，等於不存在。
+         宣告了 N 個 reference，就要解出 N 個 ProjectReference；少一個就是有名字對不上 -->
+    <Error Condition="'@(ProjectReference->Count())' != '$(AsmdefRefsCount)'"
+           Text="asmdef references 有名字解不到對應的 csproj：宣告 $(AsmdefRefsCount) 個（$(AsmdefRefsCsv)），解到 @(ProjectReference->Count()) 個（@(ProjectReference)）" />
+
+    <Message Importance="normal" Text="[asmdef] $(AsmdefFile) → AssemblyName=$(AssemblyName) RootNamespace=$(RootNamespace) refs=@(ProjectReference)" />
+  </Target>
 
 </Project>
