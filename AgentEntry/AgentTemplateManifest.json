@@ -1,0 +1,26 @@
+{
+  "//": "SCP_Core 的入口檔 manifest。UCL_Core 那份是 v1、由 install_skills.py 讀，兩份刻意不共用。",
+  "//mode": "append = 只維護受管區塊（使用者的檔）；full = 整檔覆寫（我們自己的檔）。缺省視為 full。",
+  "version": 2,
+  "entries": [
+    {
+      "target": "claude",
+      "mode": "append",
+      "fragment": "ClaudeTemplate/CLAUDE.fragment.md",
+      "destination": "CLAUDE.md"
+    },
+    {
+      "target": "codex",
+      "mode": "append",
+      "fragment": "CodexTemplate/AGENTS.fragment.md",
+      "destination": "AGENTS.md"
+    },
+    {
+      "//": "這個檔是為本機制生出來的，不會有使用者內容 ⇒ append 保護的是空集合，徒增七種狀態。",
+      "target": "antigravity",
+      "mode": "full",
+      "template": "AntigravityTemplate/Antigravity_Rules.md",
+      "destination": ".agents/rules/SCP_Core_Entry.md"
+    }
+  ]
+}

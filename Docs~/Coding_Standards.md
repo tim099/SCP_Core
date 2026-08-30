@@ -274,6 +274,38 @@ SCP_DataPaths.QueueFolder(new SCP_DataRoot(aDataRoot), aPersona);
 
 ---
 
+## §4.5 ⛔ 驗收：改完 code **先 build，再對 exe 實跑**（Tim 2026-08-30 拍板）
+
+這是 UCL 那側「改完 `.cs` 一律送 `Cmd_Recompile`」的對應條款 —— 同一個病，不同的宿主。
+
+| 你跑的 | 實際是什麼 |
+|---|---|
+| `dotnet run --project src/Senate.Cli` | **Debug**、framework-dependent 的 DLL |
+| 根層 `senate.exe`（PATH 上的 `senate` 也是它） | **Release**、self-contained、single-file |
+
+**兩個不同的二進位檔。** ⇒ 「Debug 全綠」與「你交付的那顆 exe 全綠」是**兩本帳**，
+而它們在畫面上長得一模一樣（憲法⑥的又一個實例：處置成功 ⊭ 結果安全）。
+
+```bash
+./build.sh                 # publish → 出廠驗收（doctor + selftest + 開窗）
+./senate.exe <要驗的事>     # 收工前的那一次，必須跑在這上面
+```
+
+`dotnet run` 是**迭代**用的（秒級），不是驗收用的。
+⚠ 只驗過 Debug 是**完全合法的交付狀態** —— 把它講成「驗過了」才不是。
+
+> 🩸 2026-08-30：agent 整個下午的驗證迴圈都是 `dotnet run`，而人每次要測都得自己
+> 先跑一次 `build.sh`。兩條路從來沒接起來，是他問「目前是如何驗證的」才現形。
+> 同日順手量到：published single-file 底下反射照常運作（`頁面發現` 在 exe 上也是 ✓）——
+> **那是讀數不是保證**，所以更要每次都跑。
+
+📌 修法不是只寫這條規則（第三階）：同日把 `selftest` 綁進 `build.sh` / `build.ps1`
+的出廠驗收（第二階，長在必經路上）。**規則只負責解釋為什麼，不負責被記得。**
+
+細節與三格驗收 → `<Senate>/Docs/Workflows/Setup_And_Build.md`。
+
+---
+
 ## §5 邊界：純函式優先，服務要有理由
 
 README 原本的判準是「只放純函式 ＋ 零依賴；檔案 IO、跑 git、log、UI 留在各自那邊」，

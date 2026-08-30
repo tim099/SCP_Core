@@ -62,5 +62,29 @@ namespace SCP.Core.Gui
         /// <para>空清單 ＝ 不做發現（那也是一個合法選擇，但畫面上就不會有「漏登記」的警示）。</para>
         /// </summary>
         IReadOnlyList<Assembly> PageAssemblies { get; }
+
+        /// <summary>
+        /// SCP_Core 自己的根（`Skills~/` 與 `AgentEntry/` 在它底下）。
+        /// <para>⚠ 由宿主給 —— 各專案掛載位置不同（`Assets/Plugins/SCP_Core` / `&lt;repo&gt;/SCP_Core`…），
+        /// 從 assembly location 反推跨消費端必壞，而且是靜默壞。</para>
+        /// </summary>
+        string CoreRoot { get; }
+
+        /// <summary>
+        /// **宿主自己**（它的 git root）—— skill 的**預設**安裝對象。
+        /// <para>🩸 為什麼它是預設而不是 <see cref="ManagedProjects"/>：
+        /// 我第一版照 UCL 那頁的模型假設「安裝對象＝被管理的專案」，
+        /// 但那個模型的前提是**頁面住在它要裝的那個專案裡**。這裡不是 ——
+        /// 這裡是外部工具，而在這裡跑的 agent 需要的是**這個 repo** 的 skill。
+        /// ⇒ 預設裝自己，管理的專案是額外選項。</para>
+        /// </summary>
+        SCP_GuiProjectRef HostProject { get; }
+
+        /// <summary>
+        /// 這個宿主管得到的**其他**專案（也可以裝進去，但不是預設）。
+        /// <para>Senate 管一批；Unity 那側就是它自己一個。
+        /// ⚠ 空清單是合法狀態（還沒設定），畫面要說出來 —— 不要畫成「沒有東西可裝」。</para>
+        /// </summary>
+        IReadOnlyList<SCP_GuiProjectRef> ManagedProjects { get; }
     }
 }
