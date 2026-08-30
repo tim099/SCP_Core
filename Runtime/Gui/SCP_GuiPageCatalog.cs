@@ -5,11 +5,21 @@
 //           ② 反射掃出來的清單會隨「哪些 assembly 剛好載入」而變，而那個差異不會報錯 ——
 //              症狀是「同一份程式在別台機器少了兩頁」
 //           ⇒ 顯式登記多打一行，換到的是「清單就是清單，不會因為環境而變形」。
-// 數值影響：純資料 ＋ 一次性的中繼資料探測（見下），零 IO。
+//
+//           ⭐ 2026-08-30 Tim 拍板補上**混合形狀**（不是推翻上面那兩條，是補它們的洞）：
+//           顯式登記治得了「清單會變形」，治不了「**我忘了登記**」—— 而忘記登記的症狀
+//           跟「本來就沒那頁」一模一樣。⇒ 加一支 <see cref="SCP_GuiPageCatalog.Discover"/>：
+//             · **反射只負責發現**（掃 SCP_GuiToolPage 的非抽象子類）
+//             · **建構仍然只走登記過的 factory**（反射建不出吃 context 的 ctor）
+//             · 掃到了卻沒有 factory ⇒ **列在畫面上標紅**，不是 log 一行然後跳過
+//           📌 最後一條是重點：UCL 那版是 LogWarning + continue，而 log 沒人讀、
+//             清單上少一行也沒人會發現。**要讓「少一頁」變成看得見的字。**
+// 數值影響：純資料 ＋ 一次性的中繼資料探測（見下），零 IO。Discover 另外吃一次反射成本。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 
 namespace SCP.Core.Gui
 {
@@ -140,6 +150,75 @@ namespace SCP.Core.Gui
 
         /// <summary>丟掉中繼資料快取（對應 UCL 選單上那顆「↻」）。下次要用時重新探測。</summary>
         public void Invalidate() { m_Entries = null; }
+
+        // 區塊職責：**反射發現**（不是反射建構）—— 找出「這份程式碼裡有、而目錄裡沒有」的頁。
+        // 物理意義: 頁面的 key 讀的是 `public const string PageKey`，**不是**建一個實例去問它。
+        //          理由：這裡的頁面建構要吃 context，Activator 生不出來（UCL 那版靠無參 ctor）。
+        //          ⇒ 於是 PageKey 這個常數從「方便」變成**契約**：沒有它就報一筆，
+        //            因為沒有它的頁永遠不會被這支查到，而查不到跟「沒問題」同形。
+        // 數值影響: 純反射，零 IO。assembly 清單由**呼叫端傳進來** ——
+        //          本層不呼叫 AppDomain.CurrentDomain.GetAssemblies()：.NET 是用到才載，
+        //          「現在載了哪些」會隨執行路徑變，而那個差異不報錯。
+        /// <summary>
+        /// 掃出繼承 <see cref="SCP_GuiToolPage"/> 但**沒有被登記**的頁。
+        /// <para>回傳的每一筆都該被畫出來（標紅）—— 這支的全部價值就在「讓漏掉的那頁看得見」。</para>
+        /// <para>空清單 ＝ 程式碼裡的頁跟目錄裡的頁對得起來。</para>
+        /// </summary>
+        public List<string> Discover(IEnumerable<Assembly> iAssemblies)
+        {
+            var aDefects = new List<string>();
+            if (iAssemblies == null) return aDefects;
+
+            var aRegistered = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var kv in m_Factories) aRegistered.Add(kv.Key);
+
+            Type aBase = typeof(SCP_GuiToolPage);
+            foreach (Assembly aAsm in iAssemblies)
+            {
+                Type[] aTypes;
+                // 部分 assembly 抓不到 type 是常態（dynamic / 缺相依）—— 但**要說出來**，
+                // 因為「這個 assembly 我沒掃到」與「這個 assembly 裡沒有頁」是兩件事。
+                try { aTypes = aAsm.GetTypes(); }
+                catch (ReflectionTypeLoadException e)
+                {
+                    aDefects.Add($"assembly `{aAsm.GetName().Name}` 只掃得到一部分（{e.Message}）—— 這不是「裡面沒有頁」");
+                    aTypes = e.Types;
+                }
+                catch (Exception e)
+                {
+                    aDefects.Add($"assembly `{aAsm.GetName().Name}` 掃不了（{e.GetType().Name}）—— 這不是「裡面沒有頁」");
+                    continue;
+                }
+
+                foreach (Type? aType in aTypes)
+                {
+                    if (aType == null || aType.IsAbstract || !aBase.IsAssignableFrom(aType)) continue;
+                    // 顯式排除（測試探針之類）—— 排除要看得見，不靠命名慣例猜
+                    if (aType.IsDefined(typeof(SCP_PageIgnoreAttribute), false)) continue;
+
+                    FieldInfo? aField = aType.GetField("PageKey", BindingFlags.Public | BindingFlags.Static);
+                    if (aField == null || aField.FieldType != typeof(string) || !aField.IsLiteral)
+                    {
+                        aDefects.Add($"`{aType.Name}` 沒有 `public const string PageKey` —— "
+                                     + "它不會出現在任何自動檢查裡（請補上，或說明為什麼不需要）");
+                        continue;
+                    }
+
+                    string? aKey = aField.GetRawConstantValue() as string;
+                    if (string.IsNullOrEmpty(aKey))
+                    {
+                        aDefects.Add($"`{aType.Name}` 的 PageKey 是空字串");
+                        continue;
+                    }
+                    if (!aRegistered.Contains(aKey!))
+                        aDefects.Add($"`{aType.Name}`（key `{aKey}`）**沒有登記進目錄** —— "
+                                     + "它建得出來但沒有人叫得到它；請在 BuildCatalog 補一行 Register");
+                }
+            }
+
+            aDefects.Sort(StringComparer.Ordinal);
+            return aDefects;
+        }
 
         /// <summary>
         /// 建一次實例讀中繼資料（標題／分組），然後丟掉。

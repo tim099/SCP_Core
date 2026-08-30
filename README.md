@@ -9,6 +9,12 @@
 
 ## 兩條規矩（都有護欄，不是靠記得）
 
+> [!IMPORTANT]
+> **本節只是摘要。** 完整撰寫規範（方言／JSON 一律走 `SCP_Json`／設定一律走專案層 prefs／
+> 純函式邊界／血證登記）在 [`Docs~/Coding_Standards.md`](Docs~/Coding_Standards.md) —— **動 code 前先讀那份。**
+> 要新增規則 → **寫進那份，不要寫在這裡**（README 是給第一次看到這個 repo 的人用的，
+> 規則長在 README 裡會讓它變成第二份規範，而兩份遲早各說各話）。
+
 ### ① 方言：C# 9 / netstandard2.1 / 零第三方套件
 
 共用碼必須是 **Unity 編得過的那個子集**，所以：

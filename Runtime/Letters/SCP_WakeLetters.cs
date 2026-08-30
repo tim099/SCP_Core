@@ -18,6 +18,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
+using SCP.Core.Paths;
+
 namespace SCP.Core.Letters
 {
     /// <summary>一封信在磁碟上的位置與它的排序鍵。</summary>
@@ -45,29 +47,34 @@ namespace SCP.Core.Letters
 
         // ── 地址 ──────────────────────────────────────────────────
 
+        // ⚠ 版面本體已搬到 SCP_LettersPaths（2026-08-30）——
+        //   本區塊只是既有呼叫端的相容外殼，**不要在這裡新增地址**。
+        //   同一個目錄兩處各算一次，改一處漏一處的症狀是靜默的（見 SCP_LettersPaths 檔頭血證）。
+        static SCP_LettersRoot R(string iLettersRoot) { return new SCP_LettersRoot(iLettersRoot); }
+
         public static string PersonaDir(string iLettersRoot, string iPersona)
-            => Path.Combine(iLettersRoot, iPersona);
+            => SCP_LettersPaths.PersonaDir(R(iLettersRoot), iPersona);
 
         public static string ConstitutionPath(string iLettersRoot, string iPersona)
-            => Path.Combine(PersonaDir(iLettersRoot, iPersona), "_constitution.md");
+            => SCP_LettersPaths.ConstitutionPath(R(iLettersRoot), iPersona);
 
         public static string KeysOpenPath(string iLettersRoot, string iPersona)
-            => Path.Combine(PersonaDir(iLettersRoot, iPersona), "_keys_open.md");
+            => SCP_LettersPaths.KeysOpenPath(R(iLettersRoot), iPersona);
 
         public static string LatestPointerPath(string iLettersRoot, string iPersona)
-            => Path.Combine(PersonaDir(iLettersRoot, iPersona), "_latest.md");
+            => SCP_LettersPaths.LatestPointerPath(R(iLettersRoot), iPersona);
 
         public static string LongtermDir(string iLettersRoot, string iPersona)
-            => Path.Combine(PersonaDir(iLettersRoot, iPersona), "longterm");
+            => SCP_LettersPaths.LongtermDir(R(iLettersRoot), iPersona);
 
         public static string ForestDir(string iLettersRoot, string iPersona)
-            => Path.Combine(LongtermDir(iLettersRoot, iPersona), "forest");
+            => SCP_LettersPaths.ForestDir(R(iLettersRoot), iPersona);
 
         public static string WakesDir(string iLettersRoot, string iPersona)
-            => Path.Combine(PersonaDir(iLettersRoot, iPersona), "wakes");
+            => SCP_LettersPaths.WakesDir(R(iLettersRoot), iPersona);
 
         public static string RestsDir(string iLettersRoot, string iPersona)
-            => Path.Combine(PersonaDir(iLettersRoot, iPersona), "rests");
+            => SCP_LettersPaths.RestsDir(R(iLettersRoot), iPersona);
 
         // ── 清單 ──────────────────────────────────────────────────
 
