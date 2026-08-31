@@ -335,8 +335,21 @@ namespace SCP.Core.Letters
         {
             string aDir = SCP_LettersPaths.WakesDir(new SCP_LettersRoot(iLettersRoot), iPersona);
             if (!Directory.Exists(aDir)) return 0;
-            return Directory.GetFiles(aDir, "*.md").Length;
+            int aCount = 0;
+            foreach (string aFile in Directory.GetFiles(aDir, "*.md"))
+                if (s_WakeLetterName.IsMatch(Path.GetFileName(aFile))) aCount++;
+            return aCount;
         }
+
+        /// <summary>
+        /// 收尾信的檔名規則 —— **與 python `_WAKE_LETTER_RE` 及 UCL 端 `s_WakeLetterRe` 逐字對齊**。
+        /// <para>🩸 2026-08-31 全庫對拍抓到：第一版寫成「數 `wakes/` 底下所有 `*.md`」，
+        /// 而 gura 的 `wakes/` 裡有一個 `20260804_wake22.md`（**8 位數前綴，不符規則**）
+        /// ⇒ 她的 wake_count 被多算一歲（47 → 48），**而其他 20 人完全正常**。
+        /// 一個人的資料就能觸發，而那個人的歲數會安靜地漂掉。</para>
+        /// <para>⇒ 判準：檔名規則是**跨三端的契約**（python / UCL / SCP），不是「數一數那個目錄」。</para>
+        /// </summary>
+        static readonly Regex s_WakeLetterName = new Regex(@"^\d{6}_.*\.md$");
 
         /// <summary>與 python `utcnow_iso()` 同形：微秒 ＋ 尾綴 Z。</summary>
         public static string UtcNowIso()
