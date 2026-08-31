@@ -41,6 +41,9 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("persona", "以誰的視角統計「跟我有關的未關單」（選填）"),
             new SCP_CmdArgSpec("status", "只列這個狀態（wire 名，如 todo / in_review）"),
             new SCP_CmdArgSpec("out_json", "把完整資料落成 JSON 的路徑（巢狀資料走檔案，不進 values）"),
+            new SCP_CmdArgSpec("wrapup",
+                "`1` ＝ 改印**收工閘**候選（這次上線後動過／還開著／我是參與者／收工紀錄已過期）。"
+                + "需要 persona"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -76,8 +79,18 @@ namespace SCP.Core.Cmd
                 return aResult;
             }
 
+            string aPersona0 = iArgs.Get("persona");
+            if (iArgs.Get("wrapup").Trim() == "1")
+            {
+                if (aPersona0.Length == 0)
+                    return SCP_CmdResult.Fail(2, "✗ wrapup=1 需要 --arg persona=<誰>",
+                        "  收工閘是「**我**這次上線後動過的單」—— 沒有 persona 這個問題沒有答案");
+                AppendWrapup(aResult, aRoot, aPersona0, aAll, aWarnings);
+                return aResult;
+            }
+
             string aStatusFilter = iArgs.Get("status");
-            string aPersona = iArgs.Get("persona");
+            string aPersona = aPersona0;
             var aRows = new List<SCP_TaskEntry>();
             int aOpen = 0, aMine = 0, aMineOpen = 0;
             var aByStatus = new Dictionary<string, int>();
@@ -122,6 +135,37 @@ namespace SCP.Core.Cmd
             }
             EmitJson(aResult, iArgs, aRows);
             return aResult;
+        }
+
+        // ===========================================================
+        // 區塊職責：收工閘的 CLI 讀數 —— 判準本體在 `SCP_TaskReconcile`（**不在本檔重算**）。
+        // 物理意義：這一格存在的理由是**對拍**：UCL 端晚安 step=check 的⑤也印同一件事，
+        //          兩邊該給出同一份清單。⛔ 只印不改（同 UCL 端的契約）。
+        // ===========================================================
+        static void AppendWrapup(SCP_CmdResult oResult, SCP_DataRoot iRoot, string iPersona,
+                                 List<SCP_TaskEntry> iAll, List<string> ioWarnings)
+        {
+            DateTime aSince = SCP_TaskReconcile.SessionStartUtc(iRoot, iPersona, out string aOrigin);
+            List<SCP_TaskEntry> aPending = SCP_TaskReconcile.PendingWrapups(iRoot, iPersona, aSince, ioWarnings.Add);
+            oResult.Lines.Add("# 🛑 收工閘 —— " + iPersona);
+            oResult.Lines.Add("· session 起點：" + aOrigin);
+            oResult.Lines.Add("· 掃到 " + iAll.Count + " 張單 ⇒ **會擋下線的 " + aPending.Count + " 張**");
+            oResult.Lines.Add("· 判準：還開著 ∧ 我是參與者 ∧ updated_at > session 起點 ∧ "
+                              + "（沒收過工 ∨ updated_at > 最後一次 wrapup）—— **零日曆**");
+            oResult.Lines.Add("");
+            foreach (SCP_TaskEntry e in aPending)
+            {
+                DateTime aWrap = SCP_TaskReconcile.LastWrapupUtc(iRoot, e);
+                oResult.Lines.Add("- " + e.Id + "　" + e.status + "　" + e.title);
+                oResult.Lines.Add("    updated_at " + e.updated_at + "　最後收工 "
+                                  + (aWrap == DateTime.MinValue ? "（從未）" : aWrap.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)));
+            }
+            if (aPending.Count == 0)
+                oResult.Lines.Add("（沒有單會擋下線 —— 這是讀數，不是「沒量」）");
+            AppendWarnings(oResult, ioWarnings);
+            oResult.AddValue("task_total", iAll.Count.ToString(CultureInfo.InvariantCulture));
+            oResult.AddValue("pending_wrapups", aPending.Count.ToString(CultureInfo.InvariantCulture));
+            oResult.AddValue("bad_field_warnings", ioWarnings.Count.ToString(CultureInfo.InvariantCulture));
         }
 
         static void AppendOne(SCP_CmdResult oResult, SCP_DataRoot iRoot, SCP_TaskEntry e,
