@@ -14,6 +14,7 @@
 //
 // ⚠ enum 的 `all` / `open` 是**篩選成員不是狀態** —— 落盤檔帶著它們＝壞檔。
 //   解析端要出聲退回（見 SCP_TaskIO），不是靜默接受。
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.Globalization;

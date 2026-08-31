@@ -18,6 +18,7 @@
 // ⚠ 讀檔一律走 **ReadAllLines**（不是自己 split "\n"）——
 //   🩸 2026-08-31 我第一版的對帳腳本自己 split，於是 96 張裡 **13 張 CRLF** 的值尾巴留著 `\r`
 //   （`'todo\r'`），對拍出 13 個假不符。**壞的是我的尺，不是被量的碼。**
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.Globalization;

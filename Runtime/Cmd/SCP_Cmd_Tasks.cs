@@ -8,6 +8,7 @@
 // ⚠ 回傳形狀照 Tim 2026-08-31 拍板：**values 只放平的純量；巢狀資料走寫檔（JSON）**。
 //   ⇒ `--arg out_json=<路徑>` 才落 JSON，路徑進 outputs；不給就只印人讀的摘要與純量。
 //   不變式：**摘要與 JSON 同源同一份資料**（同一次 LoadAll 的結果），不是各算一次。
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.Globalization;
