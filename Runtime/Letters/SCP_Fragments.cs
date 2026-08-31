@@ -147,10 +147,40 @@ namespace SCP.Core.Letters
             return 99;
         }
 
-        /// <summary>見根索引全文（純機械生成）。</summary>
+        /// <summary>見根索引全文（純機械生成）＝ frontmatter ＋ H1 ＋ <see cref="RootIndexBody"/>。</summary>
         public static string RenderRootIndex(string iLettersRoot, string iPersona,
                                              int iShowLimit = RootIndexShowLimit)
         {
+            var L = new List<string>
+            {
+                "---", "type: root_index", "persona: " + iPersona,
+                "generated: mechanical   # 掃 fragments/ frontmatter 產生 — 手改會被下次生成覆寫",
+                "fragment_total: " + Load(iLettersRoot, iPersona).Count, "---", "",
+                "# 🌱 見根 — " + iPersona + " 必讀關鍵記憶索引", "",
+            };
+            L.AddRange(RootIndexBody(iLettersRoot, iPersona, iShowLimit));
+            // ⚠ 行尾用平台預設 —— python 那端是 `write_text()`（文字模式），
+            //   在 Windows 生 CRLF、在 Linux 生 LF。索引是**整份覆寫**，
+            //   兩端行尾不一致的症狀是「換一支工具跑就整份翻動」，diff 上長得像有人改了記憶。
+            return string.Join(Environment.NewLine, L) + Environment.NewLine;
+        }
+
+        // 區塊職責：見根索引的**內文**（不含 frontmatter 與 H1）——
+        //          索引檔與 wake brief §1 共用**同一份渲染器**。
+        // 物理意義：兩處各寫一份的話，症狀是「索引說 18 筆、brief 說 17 筆」而兩邊都不報錯
+        //          （UCL 那側 2026-08-31 的活體：commands_schema 宣告的 op 集合與 handler 的
+        //           case 集合早已分岔，而輸出看起來完全正常）。
+        // 數值影響：純讀不寫。
+        /// <summary>見根索引的內文（給索引檔與 wake brief §1 共用）。</summary>
+        /// <param name="iHeadingPrefix">內文小節的標題層級。索引檔用 `##`（它自己有 H1）；
+        /// wake brief §1 用 `###`（那裡 `##` 已經被區塊標題占掉）——
+        /// ⚠ 這個參數存在的理由是**同一份內容要進兩個不同深度的框**，
+        /// 不是為了讓呼叫端自由發揮：層級錯了 markdown 目錄會把小節提到跟區塊同級。</param>
+        public static List<string> RootIndexBody(string iLettersRoot, string iPersona,
+                                                 int iShowLimit = RootIndexShowLimit,
+                                                 string iHeadingPrefix = "##")
+        {
+            string H = iHeadingPrefix;
             List<SCP_Fragment> aFrags = Load(iLettersRoot, iPersona);
             var aOpen = new List<SCP_Fragment>();
             var aInternalized = new List<SCP_Fragment>();
@@ -168,13 +198,9 @@ namespace SCP.Core.Letters
 
             var L = new List<string>
             {
-                "---", "type: root_index", "persona: " + iPersona,
-                "generated: mechanical   # 掃 fragments/ frontmatter 產生 — 手改會被下次生成覆寫",
-                "fragment_total: " + aFrags.Count, "---", "",
-                "# 🌱 見根 — " + iPersona + " 必讀關鍵記憶索引", "",
                 "> 機械生成 → 零漂移、可隨時重建、可 diff 驗證。事實來源永遠是 fragment 檔本身；",
                 "> 見根/樹/叢/林/森都只是視圖。排序＝踩過次數降冪。closed 不列但不刪檔。", "",
-                "## 必讀（status: open，" + aOpen.Count + " 筆）", "",
+                H + " 必讀（status: open，" + aOpen.Count + " 筆）", "",
                 "| 次數 | 類型 | 關鍵記憶 | 涉及層 | 檔案 |", "|---|---|---|---|---|",
             };
             for (int i = 0; i < aOpen.Count && i < iShowLimit; i++)
@@ -191,7 +217,7 @@ namespace SCP.Core.Letters
                 L.AddRange(new[] { "", "⚠ **另有 " + aHidden + " 筆 open 未顯示**（顯示上限 "
                                        + iShowLimit + "）— 全清單見本目錄。" });
 
-            L.AddRange(new[] { "", "## 已內化（status: internalized，取踩過次數最多的 3 筆）", "" });
+            L.AddRange(new[] { "", H + " 已內化（status: internalized，取踩過次數最多的 3 筆）", "" });
             for (int i = 0; i < aInternalized.Count && i < 3; i++)
             {
                 SCP_Fragment f = aInternalized[i];
@@ -204,15 +230,12 @@ namespace SCP.Core.Letters
 
             L.AddRange(new[]
             {
-                "", "## 共享狀態", "",
+                "", H + " 共享狀態", "",
                 "- shared（可被其他 persona / 外部 reference）：" + aShared + " 筆",
                 "- private：" + (aFrags.Count - aShared) + " 筆",
             });
 
-            // ⚠ 行尾用平台預設 —— python 那端是 `write_text()`（文字模式），
-            //   在 Windows 生 CRLF、在 Linux 生 LF。索引是**整份覆寫**，
-            //   兩端行尾不一致的症狀是「換一支工具跑就整份翻動」，diff 上長得像有人改了記憶。
-            return string.Join(Environment.NewLine, L) + Environment.NewLine;
+            return L;
         }
 
         /// <summary>

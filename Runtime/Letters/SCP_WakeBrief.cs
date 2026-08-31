@@ -108,6 +108,7 @@ namespace SCP.Core.Letters
 
             var aSections = new List<SCP_BriefSection>
             {
+                RootSection(iLettersRoot, iPersona),
                 KeysSection(iLettersRoot, iPersona),
                 ForestSection(iLettersRoot, iPersona),
                 DigestSection(iLettersRoot, iPersona),
@@ -202,6 +203,25 @@ namespace SCP.Core.Letters
             }
             aOut.Add("");
             return aOut;
+        }
+
+        // 區塊職責：§1 見根 —— 必讀關鍵記憶索引。
+        // 物理意義：**渲染器不在本檔** —— 直接用 SCP_Fragments.RootIndexBody，
+        //          也就是 `_root_index.md` 那份檔用的同一支。索引檔與 brief §1 是
+        //          **同一份內容的兩個框**，不是兩份各自算的清單。
+        //          🩸 為什麼堅持共用：兩處各寫一份的話，症狀是「索引說 18 筆、brief 說 17 筆」，
+        //          而兩邊都不報錯 —— 同族活體見 UCL 那側的 commands_schema（宣告 30 op／實作 39 分支）。
+        // 數值影響：純讀。無 fragment 時 body 仍會印表頭與 0 筆 —— 那是「這個人還沒留碎片」的
+        //          誠實讀數，不是缺陷（⚠ 與 WriteRootIndex 的「0 筆不建檔」刻意不同：
+        //          不建檔是因為一份 0 筆的**檔案**跟沒開始長得一樣，而 brief 裡那一節缺席才是誤導）。
+        static SCP_BriefSection RootSection(string iLettersRoot, string iPersona)
+        {
+            var aSection = new SCP_BriefSection
+            {
+                Title = "🌱 §1 見根 — 必讀關鍵記憶（`_root_index.md`）",
+            };
+            aSection.Lines.AddRange(SCP_Fragments.RootIndexBody(iLettersRoot, iPersona, iHeadingPrefix: "###"));
+            return aSection;
         }
 
         static SCP_BriefSection KeysSection(string iLettersRoot, string iPersona)
