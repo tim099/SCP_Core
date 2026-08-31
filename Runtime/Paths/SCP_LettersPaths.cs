@@ -30,6 +30,15 @@ namespace SCP.Core.Paths
         public const string RestsDirName = "rests";
         public const string CmdDirName = "cmd";
 
+        /// <summary>見根：關鍵記憶碎片目錄（python memory.fragments_dir 同名）。</summary>
+        public const string FragmentsDirName = "fragments";
+
+        /// <summary>
+        /// 見根索引檔名。⚠ 底線開頭是**產物檔的標記** —— 掃碎片時要跳過底線開頭的檔，
+        /// 否則索引會把自己也算成一筆碎片（而且每重建一次都合理地多一筆）。
+        /// </summary>
+        public const string RootIndexFileName = "_root_index.md";
+
         // ── 版面 ──────────────────────────────────────────────────
 
         public static string PersonaDir(SCP_LettersRoot iRoot, string iPersona)
@@ -46,6 +55,12 @@ namespace SCP.Core.Paths
 
         public static string LatestPointerPath(SCP_LettersRoot iRoot, string iPersona)
             => PersonaDir(iRoot, iPersona) + "/" + LatestPointerFileName;
+
+        public static string FragmentsDir(SCP_LettersRoot iRoot, string iPersona)
+            => PersonaDir(iRoot, iPersona) + "/" + FragmentsDirName;
+
+        public static string RootIndexPath(SCP_LettersRoot iRoot, string iPersona)
+            => FragmentsDir(iRoot, iPersona) + "/" + RootIndexFileName;
 
         public static string LongtermDir(SCP_LettersRoot iRoot, string iPersona)
             => PersonaDir(iRoot, iPersona) + "/" + LongtermDirName;

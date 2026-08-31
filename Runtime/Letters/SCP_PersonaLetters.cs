@@ -237,6 +237,33 @@ namespace SCP.Core.Letters
             return aScan;
         }
 
+        /// <summary>
+        /// 讀**單一** persona 的 lock（給熱路徑用：<see cref="Scan"/> 會列整個信件夾，
+        /// 而 <c>GetRaw</c> 一次只問一個人）。
+        /// <para>回 null ＝ 沒有 lock 檔 or 量不到 <c>_session</c>；
+        /// 回的物件 <c>Online != Online</c> ＝ 檔在但讀不了（<c>LockError</c> 有值）。
+        /// **兩者不同形** —— 「沒上線」與「量不到」不可以壓成同一個答案。</para>
+        /// <para>⚠ 解析走同一支 <see cref="ReadLock"/>：兩支解析器對同一顆 lock 給出不同答案時，
+        /// 不會有任何一層報錯。</para>
+        /// </summary>
+        public static SCP_PersonaStatus? ReadPersonaLock(string iLettersRoot, string iPersona,
+                                                         string? iConfiguredSessionDir = null)
+        {
+            if (string.IsNullOrWhiteSpace(iPersona)) return null;
+            string aRoot = CleanPath(iLettersRoot ?? "");
+            if (aRoot.Length == 0) return null;
+
+            (string aSessionDir, bool _) = ResolveSessionDir(aRoot, iConfiguredSessionDir);
+            if (aSessionDir.Length == 0 || !Directory.Exists(aSessionDir)) return null;
+
+            string aPath = Path.Combine(aSessionDir, SCP_LettersPaths.LockFileName(iPersona));
+            if (!File.Exists(aPath)) return null;
+
+            var aStatus = new SCP_PersonaStatus { Name = iPersona, LockPath = CleanPath(aPath) };
+            ReadLock(aPath, aStatus);
+            return aStatus;
+        }
+
         // 區塊職責：讀一顆 lock 檔。
         // 物理意義：解析失敗 ⇒ Unknown ＋ LockError（**不是 Offline**：檔明明在）。
         // 數值影響：走 SCP_Json 的**帶預設值** getter —— 這裡是刻意用寬鬆版：

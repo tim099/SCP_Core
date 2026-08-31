@@ -14,6 +14,30 @@ using System.Collections.Generic;
 
 namespace SCP.Core.Cmd
 {
+    /// <summary>
+    /// 這支 Cmd 的工作**實際在哪裡發生** —— 移植進度的機器可讀欄位。
+    /// <para>⚠ 存在的理由是《無定語的成功》：一支委派出去的 Cmd 跑完之後，輸出長得跟原生的
+    /// 一模一樣，於是「我在 CLI 上跑完了」與「Editor 替我跑完了」變成同一句話 ——
+    /// 而後者在 Editor 沒開時會失敗，且失敗訊息看起來像 CLI 自己的 bug。</para>
+    /// <para>📌 它同時是**待移植清單的唯一落點**：清單由 <c>help</c> 從這個欄位印出來，
+    /// 不另外維護一份 md —— 兩份清單遲早各說各話，而且兩邊都不報錯。</para>
+    /// </summary>
+    public enum SCP_CmdPortStatus
+    {
+        /// <summary>本 process 自己跑完，不需要任何外部宿主。</summary>
+        Native = 0,
+
+        /// <summary>
+        /// 委派給 Unity Editor 執行（走 AgentCommand 檔案協議）。
+        /// <para>⚠ 這代表 **Editor 沒開就跑不完** —— 宣告成這個值的 Cmd 有義務在輸出裡
+        /// 講出「這一步是誰跑的、在哪個資料根」。</para>
+        /// </summary>
+        DelegatedToUnity = 1,
+
+        /// <summary>還沒有實作 —— **登記在案的缺口**，不是「打錯名字」。</summary>
+        NotPorted = 2,
+    }
+
     /// <summary>一支 Cmd 的執行結果。</summary>
     public sealed class SCP_CmdResult
     {
@@ -77,6 +101,21 @@ namespace SCP.Core.Cmd
 
         /// <summary>一行可以照抄的範例。可留空。</summary>
         public virtual string Example => "";
+
+        /// <summary>
+        /// 這支的工作實際在哪裡發生（預設 <see cref="SCP_CmdPortStatus.Native"/>）。
+        /// <para>⚠ 預設值是 Native 而不是「未宣告」——因為絕大多數 Cmd 真的是本地跑完；
+        /// 而委派或缺口是**特例**，特例才該被要求開口。</para>
+        /// </summary>
+        public virtual SCP_CmdPortStatus PortStatus => SCP_CmdPortStatus.Native;
+
+        /// <summary>
+        /// 非 Native 時：**還差哪一塊才能原生化**（印在 help）。一句話，講的是缺口不是願望。
+        /// <para>例：「profile 接縫 → email registry → lock/token/memo」。</para>
+        /// <para>⚠ Native 的 Cmd 留空 —— 有值代表「這裡還欠著東西」，
+        /// 而一個永遠有值的欄位等於沒有欄位。</para>
+        /// </summary>
+        public virtual string PortNote => "";
 
         /// <summary>
         /// 執行。**參數已經驗過**（未宣告的名字、必填、Choices 都在 Registry 擋掉了）。

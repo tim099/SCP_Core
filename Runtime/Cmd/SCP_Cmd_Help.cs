@@ -72,16 +72,55 @@ namespace SCP.Core.Cmd
                     if (aSpec.Required || aSpec.PresenceRequired) aRequired.Add(aSpec.Name);
                 if (aRequired.Count > 0) aLine.Append("　［必填：").Append(string.Join(" , ", aRequired)).Append("］");
 
+                // 執行位置擺在**行尾**而不是行首：Native 是多數，讓多數那群保持乾淨，
+                // 特例才長出一截 —— 掃這份清單的人要找的是特例。
+                string aTag = PortTag(aCmd.PortStatus);
+                if (aTag.Length > 0) aLine.Append("　").Append(aTag);
+
                 oResult.Lines.Add(aLine.ToString());
             }
+
+            // 統計要印，而且**非 Native 是零的時候也印**——「沒有待移植」與「這欄還沒接上」
+            // 在輸出上必須分得出來（讀取失敗與真的 0 不可同形）。
+            int aDelegated = 0, aNotPorted = 0;
+            foreach (SCP_Cmd aCmd in aAll)
+            {
+                if (aCmd.PortStatus == SCP_CmdPortStatus.DelegatedToUnity) aDelegated++;
+                else if (aCmd.PortStatus == SCP_CmdPortStatus.NotPorted) aNotPorted++;
+            }
             oResult.Lines.Add("");
+            oResult.Lines.Add("執行位置：本地 " + (aAll.Count - aDelegated - aNotPorted)
+                              + " ／ ⤷Unity " + aDelegated + " ／ ⛔未實作 " + aNotPorted
+                              + "　（⤷Unity ＝ **Editor 沒開就跑不完**；待移植的缺口見 help <name>）");
+            oResult.AddValue("delegated_count", aDelegated.ToString());
+            oResult.AddValue("not_ported_count", aNotPorted.ToString());
+
             oResult.Lines.Add("單支詳細：" + SCP_CmdRegistry.Invoke("help <name>"));
+        }
+
+        /// <summary>執行位置的行尾標記。Native 回空字串 —— 多數不必被標。</summary>
+        static string PortTag(SCP_CmdPortStatus iStatus)
+        {
+            if (iStatus == SCP_CmdPortStatus.DelegatedToUnity) return "⤷Unity";
+            if (iStatus == SCP_CmdPortStatus.NotPorted) return "⛔未實作";
+            return "";
         }
 
         static void AppendDetail(SCP_CmdResult oResult, SCP_Cmd iCmd)
         {
             oResult.Lines.Add("── " + iCmd.Name + " ──");
             oResult.Lines.Add(iCmd.Summary);
+
+            // 執行位置在 Summary 正下方：它決定「這支現在能不能跑」，
+            // 比參數更早該知道（參數對了而 Editor 沒開，一樣跑不完）。
+            if (iCmd.PortStatus == SCP_CmdPortStatus.DelegatedToUnity)
+                oResult.Lines.Add("執行位置：⤷ Unity Editor（走 AgentCommand 檔案協議）"
+                                  + "　⚠ **Editor 沒開就跑不完**");
+            else if (iCmd.PortStatus == SCP_CmdPortStatus.NotPorted)
+                oResult.Lines.Add("執行位置：⛔ 還沒有實作 —— 這是登記在案的缺口，不是打錯名字");
+            if (iCmd.PortNote.Length > 0)
+                oResult.Lines.Add("待移植：" + iCmd.PortNote);
+
             if (iCmd.Details.Length > 0) { oResult.Lines.Add(""); oResult.Lines.Add(iCmd.Details); }
 
             oResult.Lines.Add("");
