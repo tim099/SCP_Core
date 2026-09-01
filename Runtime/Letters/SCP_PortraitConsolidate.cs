@@ -52,15 +52,14 @@ namespace SCP.Core.Letters
         /// <summary>
         /// 折一版。<paramref name="iBody"/> 必須是**親筆**內文（工具不代筆 —— 見人是判斷不是統計）。
         /// </summary>
-        /// <param name="iWakeRange">本版涵蓋的 wake 區間，例如 `33-49`。⚠ 主體由 <paramref name="iBy"/> 帶。</param>
-        /// <param name="iAllowSingle">
-        /// 只有一幅素材時是否放行。
-        /// ⚠ 預設不放行的理由：折一幅等於複製一份等值檔，而它會佔一個版號、讓後面每一版都多一層轉述。
-        /// （這一格是 basecamp 的建議，**Tim 尚未拍板** —— 所以留成可覆寫的旗標而不是硬規則。）
+        /// <param name="iWakeRange">
+        /// 本版是在**哪個 wake 區間折的**（例如 `33-49`），Tim 2026-09-01 拍板 ——
+        /// **不是素材的產出區間**。素材的真實日期在 `inputs.raw_portraits` 的檔名裡看得到，
+        /// 不必在這一格再編一次（一個欄位兩種語意，讀的人分不出手上那個是哪一種）。
         /// </param>
         public static SCP_ConsolidateResult Run(string iLettersRoot, string iPersona, string iTarget,
                                                 string iWakeRange, string iBody, string iBy,
-                                                bool iAllowSingle = false, bool iArchive = true)
+                                                bool iArchive = true)
         {
             var aResult = new SCP_ConsolidateResult();
 
@@ -115,13 +114,13 @@ namespace SCP.Core.Letters
                                   + "  一版沒有素材的濃縮，跟一版憑印象寫的濃縮，從外面看一模一樣。";
                 return aResult;
             }
-            if (aRaw.Count == 1 && aView.Latest == null && !iAllowSingle)
-            {
-                aResult.Blocked = "✗ 只有 1 幅素材而且還沒有前一版 ⇒ 折出來等於複製一份等值檔。\n"
-                                  + "  ⇒ 想照樣折就帶 `allow_single=1`（這一格是建議不是拍板）；"
-                                  + "否則直接用那幅原檔就好。";
-                return aResult;
-            }
+            // ⛔ 這裡曾經有一道「只有 1 幅就擋」的閘（basecamp 的建議），**已於 2026-09-01 移除**。
+            //   🩸 Tim 的拍板：**見林時把根層未歸檔的全折完，一幅也折，複製沒錯。**
+            //   而我那道閘造成的後果是實害不是理論：gura 照我的建議少折 17 幅（summit 10／Sirius 6／
+            //   apex-one 1），而那 17 幅既不會被任何一版吃進去、又因為見人只看近 14 天而看不見
+            //   ⇒ 那不是「自然衰減」，是**靜默遺棄**。
+            //   📌 一般形：**「衰減」講的是新版取代舊版的內容，不是「不折」。**
+            //     把顯示規則（只讀 max(v)＋未歸檔）推導成寫入規則（舊的不必折）＝跨層推論。
 
             int aVersion = (aView.Latest?.Version ?? 0) + 1;   // 掃目錄取 max + 1，不用外部計數器
             string aPath = SCP_LettersPaths.ConsolidatedPortraitPath(

@@ -26,6 +26,8 @@ namespace SCP.Core.Cmd
             + "見人是判斷不是統計，工具代筆的看法不是妳的。\n"
             + "三道守衛都是擋下來不是幫你修：①目錄名大小寫變體 ②同一個 wake_range 想再寫一版\n"
             + "③根層沒有未歸檔畫像（沒有輸入）。\n"
+            + "⚠ **一幅也折**（Tim 2026-09-01 拍板：見林時把根層未歸檔的全折完，複製沒錯）——\n"
+            + "   舊的 `allow_single` 旗標已移除，帶了會被參數預檢擋下（大聲失敗優於靜默忽略）。\n"
             + "⚠ 順序：**先寫成功、才搬檔** —— 反過來的話寫入失敗時那個人會從 §6.5 消失而且沒有紅燈。";
 
         public override string Example =>
@@ -37,10 +39,9 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根目錄（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("persona", "誰的 sketchbook（＝誰的看法）", iRequired: true),
             new SCP_CmdArgSpec("target", "折對誰的看法。⚠ 用 canonical id；大小寫變體會被擋", iRequired: true),
-            new SCP_CmdArgSpec("wake_range", "本版涵蓋的 wake 區間，例如 `33-49`", iRequired: true),
+            new SCP_CmdArgSpec("wake_range", "本版**在哪個 wake 區間折的**，例如 `33-49`（不是素材產出區間）", iRequired: true),
             new SCP_CmdArgSpec("body", "濃縮內文（**親筆**）。長文走 --arg-file", iRequired: true),
             new SCP_CmdArgSpec("by", "wake 編號的主體（不給＝persona 自己）—— 數字要帶著定語走"),
-            new SCP_CmdArgSpec("allow_single", "1 ＝ 只有一幅素材也照折（預設擋：折一幅等於複製等值檔）"),
             new SCP_CmdArgSpec("no_archive", "1 ＝ 只寫版本檔、**不搬** raw（讀取端還沒上線時的過渡用法）"),
         };
 
@@ -52,7 +53,6 @@ namespace SCP.Core.Cmd
             string aRange = iArgs.Get("wake_range");
             string aBody = iArgs.Get("body");
             string aBy = iArgs.Get("by");
-            bool aAllowSingle = iArgs.Get("allow_single") == "1";
             bool aArchive = iArgs.Get("no_archive") != "1";
 
             string aPersonaDir = SCP_LettersPaths.PersonaDir(new SCP_LettersRoot(aLettersRoot), aPersona);
@@ -63,7 +63,7 @@ namespace SCP.Core.Cmd
 
             SCP_ConsolidateResult aRes = SCP_PortraitConsolidate.Run(
                 aLettersRoot, aPersona, aTarget, aRange, aBody,
-                aBy.Length > 0 ? aBy : aPersona, aAllowSingle, aArchive);
+                aBy.Length > 0 ? aBy : aPersona, aArchive);
 
             if (aRes.Blocked != null)
             {
