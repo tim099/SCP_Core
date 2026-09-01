@@ -32,6 +32,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根目錄（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("persona", "要讀誰的信件庫", iRequired: true),
             new SCP_CmdArgSpec("wake", "這次是第幾次醒來（印在標題上）。不給＝0，本 Cmd 不替你推導"),
+            new SCP_CmdArgSpec("data_root", "資料根（給了才數缺陷單）。不給＝§6 那行寫「未量」，不印 0"),
             new SCP_CmdArgSpec("out_dir", "落檔目錄（wake_brief.md / wake_brief_part2.md）。不給＝只回摘要不寫檔"),
         };
 
@@ -40,6 +41,7 @@ namespace SCP.Core.Cmd
             string aLettersRoot = iArgs.Get("letters_root");
             string aPersona = iArgs.Get("persona");
             string aOutDir = iArgs.Get("out_dir");
+            string aDataRoot = iArgs.Get("data_root");
             int aWake = iArgs.GetInt("wake", 0, out string aWakeWhy);
 
             string aPersonaDir = SCP_WakeLetters.PersonaDir(aLettersRoot, aPersona);
@@ -56,13 +58,15 @@ namespace SCP.Core.Cmd
             if (aOutDir.Length > 0)
             {
                 (string aPath, SCP_WakeBriefResult aRes) =
-                    SCP_WakeBrief.Write(aLettersRoot, aPersona, aWake, aOutDir);
+                    SCP_WakeBrief.Write(aLettersRoot, aPersona, aWake, aOutDir,
+                                        aDataRoot.Length > 0 ? aDataRoot : null);
                 aBrief = aRes;
                 aWrittenTo = aPath;
             }
             else
             {
-                aBrief = SCP_WakeBrief.Build(aLettersRoot, aPersona, aWake);
+                aBrief = SCP_WakeBrief.Build(aLettersRoot, aPersona, aWake,
+                                             aDataRoot.Length > 0 ? aDataRoot : null);
             }
 
             var aResult = new SCP_CmdResult();

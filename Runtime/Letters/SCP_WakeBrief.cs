@@ -16,6 +16,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using SCP.Core.Paths;
+using SCP.Core.Tasks;
 
 namespace SCP.Core.Letters
 {
@@ -77,7 +78,12 @@ namespace SCP.Core.Letters
         /// ⚠ 「用 `wakes/` 的信數當 wake_count」是錯的：實測 basecamp 信數 78 而 wake_count 79
         /// （這一次的信還沒寫）。推導出來的數字會**每天都差一**，而且一路正常地印在標題上。
         /// </param>
-        public static SCP_WakeBriefResult Build(string iLettersRoot, string iPersona, int iWakeCount)
+        /// <param name="iDataRoot">
+        /// 資料根（給了才數缺陷單）。⚠ 不給**不是**零張 —— §6 會明說「這台沒給資料根」，
+        /// 因為印 0 會被讀成「沒有 bug」，而那是一句沒有讀數的話。
+        /// </param>
+        public static SCP_WakeBriefResult Build(string iLettersRoot, string iPersona, int iWakeCount,
+                                               string? iDataRoot = null)
         {
             var aResult = new SCP_WakeBriefResult();
 
@@ -116,7 +122,7 @@ namespace SCP.Core.Letters
                 DigestSection(iLettersRoot, iPersona),
                 TreeSection(iLettersRoot, iPersona, aPointer),
                 RecallSection(iLettersRoot, iPersona, iWakeCount),
-                MaintenanceSection(iLettersRoot, iPersona, iWakeCount),
+                MaintenanceSection(iLettersRoot, iPersona, iWakeCount, iDataRoot),
                 PeopleSection(iLettersRoot, iPersona),
                 BookshelfSection(iLettersRoot, iPersona, iWakeCount),
                 NextActionsSection(iLettersRoot, iPersona, iWakeCount),
@@ -162,9 +168,9 @@ namespace SCP.Core.Letters
         /// 讀到的是一份格式完整、內容過期的檔（「舊快照假綠」的同族）。
         /// </remarks>
         public static (string Path, SCP_WakeBriefResult Result) Write(
-            string iLettersRoot, string iPersona, int iWakeCount, string iOutDir)
+            string iLettersRoot, string iPersona, int iWakeCount, string iOutDir, string? iDataRoot = null)
         {
-            SCP_WakeBriefResult aResult = Build(iLettersRoot, iPersona, iWakeCount);
+            SCP_WakeBriefResult aResult = Build(iLettersRoot, iPersona, iWakeCount, iDataRoot);
             Directory.CreateDirectory(iOutDir);
 
             string aMainPath = Path.Combine(iOutDir, "wake_brief.md");
@@ -361,7 +367,8 @@ namespace SCP.Core.Letters
         // 區塊職責：機械判定「該不該去濃縮了」。最短、必讀。
         // 物理意義：見林一單位 = DigestSpan 個 wake ⇒ gap = 本次 wake − 最後一份見林涵蓋到的 wake。
         // 數值影響：只印不改檔；**不替沒有讀數的格子填 0** —— 缺讀數與零是兩件事。
-        static SCP_BriefSection MaintenanceSection(string iLettersRoot, string iPersona, int iWakeCount)
+        static SCP_BriefSection MaintenanceSection(string iLettersRoot, string iPersona, int iWakeCount,
+                                                   string? iDataRoot)
         {
             List<string> aDigests = SCP_WakeLetters.ListDigests(iLettersRoot, iPersona);
             List<string> aForests = SCP_WakeLetters.ListForests(iLettersRoot, iPersona);
@@ -389,8 +396,7 @@ namespace SCP.Core.Letters
             aLines.Add("- " + (aForests.Count > 0
                        ? "見森已折到第 " + aForests.Count + " 份（gen" + aForests.Count + "）"
                        : "見森：尚未折過（見林 " + aDigests.Count + " 份）"));
-            aLines.Add("- 🐛 缺陷單讀數**不在本檔**：`cmd tasks` 要資料根，而本支只吃信件夾 ——"
-                       + "缺讀數與零張是兩件事，所以這裡不印 0。");
+            aLines.Add(BugCountLine(iDataRoot));
             return new SCP_BriefSection { Title = "📋 §6 記憶維護狀態", Lines = aLines, Essential = true };
         }
 
@@ -716,6 +722,31 @@ namespace SCP.Core.Letters
 
         /// <summary>閱讀卡目錄名（跨端契約：python `wake_brief.BOOKSHELF_DIR_NAME` 同名）。</summary>
         public const string BookshelfDirName = "bookshelf";
+
+        /// <summary>
+        /// §6 的缺陷單那一行。<paramref name="iDataRoot"/> 為空 ⇒ **說出「沒給資料根」而不是印 0**。
+        /// <para>🩸 缺讀數與零張在畫面上同形，而其中一個會讓人以為沒有 bug。</para>
+        /// </summary>
+        static string BugCountLine(string? iDataRoot)
+        {
+            if (string.IsNullOrEmpty(iDataRoot))
+                return "- 🐛 缺陷單張數：**未量**（本次沒給資料根 —— 未量 ≠ 零張）";
+            try
+            {
+                var aRoot = new SCP_DataRoot(iDataRoot!);
+                List<SCP_TaskEntry> aAll = SCP_TaskIO.LoadAll(aRoot);
+                int aOpen = 0;
+                foreach (SCP_TaskEntry aEntry in aAll)
+                    if (aEntry.type == SCP_TaskType.bug && !aEntry.IsClosed()) aOpen++;
+                return "- 🐛 缺陷單（type=bug）：open **" + aOpen.ToString(CultureInfo.InvariantCulture) + "** 張"
+                       + "（清單 → `cmd tasks --arg data_root=<root> --arg type=bug`）";
+            }
+            catch (Exception e)
+            {
+                // 讀失敗要出聲：靜默回 0 會把「量不到」講成「沒有」。
+                return "- 🐛 缺陷單張數：**量不到**（" + e.GetType().Name + ": " + e.Message + "）";
+            }
+        }
 
         // ── 讀檔小工具 ────────────────────────────────────────────
 
