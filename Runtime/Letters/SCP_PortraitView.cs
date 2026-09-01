@@ -398,7 +398,13 @@ namespace SCP.Core.Letters
             iRef.ConsolidatedAt = SCP_LetterText.ReadFrontmatterField(iRef.Path, "consolidated_at");
 
             // 檔頭的 version 只是給人看的派生值 —— 不一致時**不採用它**，但要說出來。
+            // 🩸 行尾註解要先剝掉：寫入端刻意在那一格寫 `1   # 派生值，權威是檔名`，
+            //   而第一版的比較拿整串去 parse ⇒ **每一個自己寫出來的檔都被判定不一致**。
+            //   一個對每份正常檔案都喊狼來了的警語，等於把這格警語關掉（2026-09-01 fixture 實測）。
             string aHeader = SCP_LetterText.ReadFrontmatterField(iRef.Path, "version");
+            int aComment = aHeader.IndexOf('#');
+            if (aComment >= 0) aHeader = aHeader.Substring(0, aComment);
+            aHeader = aHeader.Trim();
             if (aHeader.Length > 0
                 && (!int.TryParse(aHeader, NumberStyles.None, CultureInfo.InvariantCulture, out int aValue)
                     || aValue != iRef.Version))
