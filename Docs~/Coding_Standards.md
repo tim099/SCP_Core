@@ -1,7 +1,7 @@
 ---
 title: SCP 專案撰寫規範
 description: SCP_Core 與其消費端（Senate / Unity）共用的 C# 撰寫規則 —— 方言限制、JSON 一律走 SCP_Json、設定一律走專案層 prefs、純函式邊界、路徑單一落點。
-last_updated: 2026-08-30
+last_updated: 2026-09-01
 target_audience: [AI_Agent, Tools_Maintainer, Backend_Programmer]
 related:
   - ../README.md | SCP_Core README | 兩條規矩的來源（方言 / 邊界）
@@ -168,7 +168,7 @@ if (!aData.TryGetString("session_key", out string aKey)) { /* 沒設定，不是
 ### 3.4 機器路徑不入版控
 
 `lettersRoot` 這類值是**機器絕對路徑**。存放要沿用既有的兩份形狀
-（`config/senate.local.example.json` 入版控 ／ `senate.local.json` 不入版控）：
+（`SenateData/config/senate.local.example.json` 入版控 ／ `SenateData/config/senate.local.json` 不入版控）：
 
 - 入版控的那份：跨機器成立的預設值，**不得含絕對路徑**
 - 不入版控的那份：本機實際值
@@ -219,7 +219,7 @@ prefs 只動自己那格  根層註解保留=True／別的 section 保留=True�
 ## §4 ⛔ 路徑：**同一個路徑不准在兩個地方各解析一次**（Tim 2026-08-30 拍板）
 
 規則的重點不是「路徑一定要在 Core 算」，是**一個路徑只能有一個決定點**。
-宿主專屬的檔（Senate 的 `senate.pages.local.json`、`build/ui_session.json`）留在宿主沒問題 ——
+宿主專屬的檔（Senate 的 `SenateData/prefs/senate.pages.local.json`、`SenateData/runtime/ui_session.json`）留在宿主沒問題 ——
 只要它在那邊也只有一個決定點。**跨端契約的版面才必須進 SCP_Core**（兩邊都要走的東西，
 各拼一次就是兩把尺）。
 

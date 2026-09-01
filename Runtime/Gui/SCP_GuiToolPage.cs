@@ -38,8 +38,24 @@ namespace SCP.Core.Gui
         /// <summary>「複製類別名」鈕的固定 id（開不了檔案總管時的退路）。</summary>
         public const string CopyClassButtonId = "page/copy-class";
 
-        /// <summary>上一次按「原始碼」的結果（成功也要有話說 —— 見 SCP_GuiHost）。</summary>
+        /// <summary>把上一則訊息關掉的鈕的固定 id。</summary>
+        public const string DismissMessageButtonId = "page/message-dismiss";
+
+        /// <summary>
+        /// 上一次按「原始碼」／「複製類別名」的結果。**null ＝ 沒有話要說**。
+        /// <para>⚠ 空字串與 null 在這裡是同一件事，一律經 <see cref="SetMessage"/> 正規化 ——
+        /// 🩸 2026-09-01：宿主改成「成功時回空字串」，而顯示條件寫的是 <c>!= null</c>
+        /// ⇒ 空字串照樣過關，畫面上多出一條**內容為空的 Note**（一條看不出來源的空行）。
+        /// 「沒有話要說」與「有一句空話」在型別上不同形，在畫面上卻同形。</para>
+        /// </summary>
         string? m_SourceMessage;
+
+        /// <summary>
+        /// 設定訊息，**空白一律收斂成 null**（＝沒有話要說）。
+        /// 呼叫端不要直接寫 <c>m_SourceMessage</c> —— 那就是上面那隻空行的入口。
+        /// </summary>
+        void SetMessage(string? iText)
+            => m_SourceMessage = string.IsNullOrWhiteSpace(iText) ? null : iText;
 
         /// <summary>
         /// 這一頁的原始碼檔**精確路徑** —— 編譯時由 <see cref="CallerFilePathAttribute"/> 烤進來。
@@ -173,14 +189,32 @@ namespace SCP.Core.Gui
             else if (aAction == 3) SourceButtonClicked();
             else if (aAction == 4) CopyClassButtonClicked();
 
-            if (m_SourceMessage != null) iUi.Note(m_SourceMessage);
+            // ⚠ 條件是「有沒有話要說」不是「欄位是不是 null」（見 m_SourceMessage 的血證）。
+            if (m_SourceMessage != null)
+            {
+                // 關閉鈕：訊息會一直留到下一次按鈕為止，而**失敗訊息通常比它的原因活得久** ——
+                // 使用者修好問題之後那行字還掛在那裡，看起來像「還是失敗」。
+                // ⇒ 給一個把它收掉的動作。⚠ 沿用工具列的規矩：先收集、離開 Row 再執行。
+                bool aDismiss = false;
+                using (iUi.Row())
+                {
+                    iUi.Note(m_SourceMessage);
+                    // ⚠ 標籤刻意是純文字不是 ✕：缺字不報錯，只會變成一個方塊（同工具列那條）。
+                    if (iUi.Button("關閉", DismissMessageButtonId)) aDismiss = true;
+                }
+                if (aDismiss) SetMessage(null);
+            }
         }
 
         /// <summary>
         /// 原始碼鈕按下去做什麼（預設：請宿主在檔案總管裡顯示這一頁的 .cs）。
-        /// <para>⚠ 結果一定要落到畫面上。這個動作的效果**發生在別的視窗**，
-        /// 所以按下去之後這個畫面本身不會有任何變化 —— 沒有那一行字的話，
-        /// 「開起來了」與「什麼都沒發生」在這裡完全同形。</para>
+        /// <para>⚠ **失敗**一定要落到畫面上：這個動作的效果發生在別的視窗，
+        /// 沒有那一行字的話，「開不起來」與「什麼都沒發生」在這裡完全同形。</para>
+        /// <para>成功要不要說話**由宿主決定**（回空字串＝不說）。原本這裡硬性要求成功也留一行，
+        /// Tim 2026-09-01 拍板改掉：在有視窗的宿主上，**跳出來的檔案總管本身就是那個讀數**，
+        /// 再補一行字只是每按一次就多一條沒有人會讀的訊息。
+        /// ⚠ 代價要說出來：在沒有人看得到桌面的宿主（headless／自動化）上，
+        /// 成功這一格從此**沒有讀數** —— selftest 目前也只覆蓋失敗那條路。</para>
         /// </summary>
         protected virtual void SourceButtonClicked()
         {
@@ -188,7 +222,7 @@ namespace SCP.Core.Gui
             if (aReveal == null)
             {
                 // ShowSourceButton 擋過一次了，會走到這裡代表狀態在兩次繪製之間變了
-                m_SourceMessage = "⚠ 這個環境開不了檔案總管";
+                SetMessage("⚠ 這個環境開不了檔案總管");
                 return;
             }
             // 精確路徑優先；沒有就交類別名讓宿主去找（找到多個要由宿主停手，不是這裡猜）
@@ -196,7 +230,8 @@ namespace SCP.Core.Gui
 
             if (!aResult.StartsWith("⚠", StringComparison.Ordinal))
             {
-                m_SourceMessage = aResult;
+                // 成功。宿主回空字串 ⇒ 什麼都不畫（連空行都不要）。
+                SetMessage(aResult);
                 return;
             }
 
@@ -208,13 +243,13 @@ namespace SCP.Core.Gui
             Func<string, string>? aCopy = SCP_GuiHost.CopyToClipboard;
             if (aCopy == null)
             {
-                m_SourceMessage = aResult + $"（類別：{SourceClassName}）";
+                SetMessage(aResult + $"（類別：{SourceClassName}）");
                 return;
             }
             string aCopied = aCopy(SourceClassName);
-            m_SourceMessage = aCopied.StartsWith("⚠", StringComparison.Ordinal)
+            SetMessage(aCopied.StartsWith("⚠", StringComparison.Ordinal)
                 ? aResult + $"／也複製不了 —— 類別是 {SourceClassName}"
-                : aResult + $"／已改為複製類別名：{SourceClassName}";
+                : aResult + $"／已改為複製類別名：{SourceClassName}");
         }
 
         /// <summary>
@@ -224,9 +259,9 @@ namespace SCP.Core.Gui
         protected virtual void CopyClassButtonClicked()
         {
             Func<string, string>? aCopy = SCP_GuiHost.CopyToClipboard;
-            m_SourceMessage = aCopy == null
+            SetMessage(aCopy == null
                 ? $"⚠ 這個環境也沒有剪貼簿 —— 類別是 {SourceClassName}"
-                : aCopy(SourceClassName);
+                : aCopy(SourceClassName));
         }
 
         /// <summary>子類在工具列上加自己的鈕（對應 UCL 的 <c>TopBarButtons</c>）。</summary>
