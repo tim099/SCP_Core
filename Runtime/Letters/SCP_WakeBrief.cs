@@ -499,7 +499,13 @@ namespace SCP.Core.Letters
                     if (aItem.Path.Length == 0)
                     {
                         // 只有濃縮、近期沒畫 —— 這一格就是「搬 raw 之後 §6.5 不會空」的落點。
-                        aLines.Add("_(近 " + PeoplePortraitDays + " 天沒有未歸檔畫像；上面那版濃縮就是目前的看法)_");
+                        // 🩸 而「不會空」不等於「有內容」：第一版只印了指標，於是折完人的隔天
+                        //   §6.5 變成十行檔名 —— 空的反面不是有用，是**看起來有東西但讀不到看法**。
+                        //   ⇒ 沒有近期畫像時，**濃縮本文就是目前的看法**，照印。
+                        aLines.Add("_(近 " + PeoplePortraitDays + " 天沒有未歸檔畫像 —— 下面是濃縮本文)_");
+                        aLines.Add("");
+                        if (aItem.Consolidated != null)
+                            aLines.AddRange(SCP_LetterText.DemoteHeadings(BodyLines(aItem.Consolidated.Path)));
                         aLines.Add("");
                         continue;
                     }

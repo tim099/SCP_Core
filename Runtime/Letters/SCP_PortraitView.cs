@@ -85,6 +85,13 @@ namespace SCP.Core.Letters
         public List<string> Private = new List<string>();
 
         public SCP_ConsolidatedRef? Consolidated;
+
+        /// <summary>
+        /// 份量 —— 這個對象累積過幾幅畫像（未歸檔 ＋ 已歸檔）。
+        /// <para>⚠ 只用在**同時間的排序第二鍵**，不進任何顯示文字：它是「我畫過他幾次」，
+        /// 不是「我多在意他」—— 兩者相關但不相等，印出來會被讀成後者。</para>
+        /// </summary>
+        public int Weight;
     }
 
     public static class SCP_PortraitView
@@ -298,10 +305,21 @@ namespace SCP.Core.Letters
                 if (aItem.Path.Length == 0 && aItem.Consolidated == null) continue;   // 這人近期沒畫、也沒濃縮
                 if (aItem.At.Length == 0 && aItem.Consolidated != null)
                     aItem.At = aItem.Consolidated.ConsolidatedAt;
+                aItem.Weight = aView.UnarchivedPaths.Count + aView.ArchivedRawCount;
                 aItems.Add(aItem);
             }
 
-            aItems.Sort((a, b) => string.CompareOrdinal(b.At, a.At));   // 新 → 舊
+            // 新 → 舊；⚠ 第二鍵是**歸檔幅數**（份量重的先）——
+            //   🩸 折人那天所有人的 `consolidated_at` 都是同一天，只用時間排會讓
+            //     「只畫過一幅的人」跟「畫過十六幅的人」平手，然後 top-5 由插入順序決定
+            //     ⇒ 畫面上留下的是最不重要的那幾位，而每一格讀數都正常。
+            aItems.Sort((a, b) =>
+            {
+                int aCmp = string.CompareOrdinal(b.At, a.At);
+                if (aCmp != 0) return aCmp;
+                aCmp = b.Weight.CompareTo(a.Weight);
+                return aCmp != 0 ? aCmp : string.Compare(a.About, b.About, StringComparison.OrdinalIgnoreCase);
+            });
             if (aItems.Count > iCount) aItems.RemoveRange(iCount, aItems.Count - iCount);
             return aItems;
         }
