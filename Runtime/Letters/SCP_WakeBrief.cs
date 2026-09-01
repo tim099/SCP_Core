@@ -13,7 +13,9 @@
 //   ⇒ 這份 C# brief 與 python brief **不是同一份輸出**，不要拿其中一份當另一份的驗收。
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using SCP.Core.Paths;
 
 namespace SCP.Core.Letters
 {
@@ -113,6 +115,11 @@ namespace SCP.Core.Letters
                 ForestSection(iLettersRoot, iPersona),
                 DigestSection(iLettersRoot, iPersona),
                 TreeSection(iLettersRoot, iPersona, aPointer),
+                RecallSection(iLettersRoot, iPersona, iWakeCount),
+                MaintenanceSection(iLettersRoot, iPersona, iWakeCount),
+                PeopleSection(iLettersRoot, iPersona),
+                BookshelfSection(iLettersRoot, iPersona, iWakeCount),
+                NextActionsSection(iLettersRoot, iPersona, iWakeCount),
             };
 
             // 組裝 ＋ 上限處理：超出上限的「非必讀」區塊整段移進續讀檔（不砍內容）
@@ -349,6 +356,366 @@ namespace SCP.Core.Letters
 
             return new SCP_BriefSection { Title = aTitle, Lines = aBody, Essential = false };
         }
+
+        // ── §6 記憶維護狀態 ───────────────────────────────────────
+        // 區塊職責：機械判定「該不該去濃縮了」。最短、必讀。
+        // 物理意義：見林一單位 = DigestSpan 個 wake ⇒ gap = 本次 wake − 最後一份見林涵蓋到的 wake。
+        // 數值影響：只印不改檔；**不替沒有讀數的格子填 0** —— 缺讀數與零是兩件事。
+        static SCP_BriefSection MaintenanceSection(string iLettersRoot, string iPersona, int iWakeCount)
+        {
+            List<string> aDigests = SCP_WakeLetters.ListDigests(iLettersRoot, iPersona);
+            List<string> aForests = SCP_WakeLetters.ListForests(iLettersRoot, iPersona);
+            var aLines = new List<string>();
+
+            int aCovered = aDigests.Count > 0 ? LastCoveredWake(aDigests[aDigests.Count - 1]) : 0;
+            if (aDigests.Count == 0)
+            {
+                aLines.Add("- 見林進度：尚無見林（本次 wake " + iWakeCount + "）");
+            }
+            else if (aCovered <= 0)
+            {
+                // 🩸 檔名解析不出來時**不准假裝 gap 是 0** —— 那會讓「該濃縮了」永遠不出現。
+                aLines.Add("- ⚠ 見林進度：最後一份是 `" + Path.GetFileName(aDigests[aDigests.Count - 1])
+                           + "`，但檔名解不出涵蓋到第幾個 wake ⇒ **gap 量不到**（不是 0）");
+            }
+            else
+            {
+                int aGap = iWakeCount - aCovered;
+                string aMark = aGap >= DigestGapOverdue ? "🔴 **OVERDUE**" : "✓";
+                aLines.Add("- " + aMark + " 見林進度：gap=" + aGap + "/" + DigestGapOverdue
+                           + "（上次到 wake " + aCovered + "）");
+            }
+
+            aLines.Add("- " + (aForests.Count > 0
+                       ? "見森已折到第 " + aForests.Count + " 份（gen" + aForests.Count + "）"
+                       : "見森：尚未折過（見林 " + aDigests.Count + " 份）"));
+            aLines.Add("- 🐛 缺陷單讀數**不在本檔**：`cmd tasks` 要資料根，而本支只吃信件夾 ——"
+                       + "缺讀數與零張是兩件事，所以這裡不印 0。");
+            return new SCP_BriefSection { Title = "📋 §6 記憶維護狀態", Lines = aLines, Essential = true };
+        }
+
+        /// <summary>見林一單位幾個 wake（gap 到這個數就算 OVERDUE）。對齊 python BRIEF 那側的 10。</summary>
+        public const int DigestGapOverdue = 10;
+
+        /// <summary>從見林檔名（`wake_072-081.md`）取涵蓋到的最後一個 wake。解不出來回 0。</summary>
+        static int LastCoveredWake(string iPath)
+        {
+            string aName = Path.GetFileNameWithoutExtension(iPath);
+            int aDash = aName.LastIndexOf('-');
+            if (aDash < 0 || aDash + 1 >= aName.Length) return 0;
+            string aTail = aName.Substring(aDash + 1);
+            return int.TryParse(aTail, NumberStyles.None, CultureInfo.InvariantCulture, out int aValue)
+                   ? aValue : 0;
+        }
+
+        // ── §6.5 見人 ─────────────────────────────────────────────
+        // 區塊職責：回答「我認識誰」—— 見根答我是誰、見叢答我要做什麼、見樹答我昨天經歷什麼，
+        //           **沒有一層答『這些同事是誰』**（Tim 2026-08-01）。
+        // 物理意義：三段 —— (a) 在線同事＋好感＋最近看法 (b) 離線前 N 高 (c) 我畫的印象（全文）。
+        //           ⭐ (c) 走 SCP_PortraitView.LatestPerPerson ⇒ **與 `cmd people` 同一支邏輯**
+        //             （TASK-0097「一份實作、兩個消費端」）。兩處各組一次的症狀不是報錯，
+        //             是「CLI 說信任、brief 說 65」而兩邊都不紅。
+        // 數值影響：非必讀。分數即時讀 relationship，本段**不快照** ——
+        //           分數由事件重算，抄一份就是第二個真相源。
+        static SCP_BriefSection PeopleSection(string iLettersRoot, string iPersona)
+        {
+            var aLines = new List<string>();
+            SCP_RelationshipSet aRel = SCP_Relationship.Load(iLettersRoot, iPersona);
+            SCP_PersonaScan aScan = SCP_PersonaLetters.Scan(iLettersRoot, null);
+
+            var aOnline = new List<string>();
+            foreach (SCP_PersonaStatus aStatus in aScan.Personas)
+            {
+                if (aStatus.Online != SCP_PersonaOnline.Online) continue;
+                if (string.Equals(aStatus.Name, iPersona, StringComparison.OrdinalIgnoreCase)) continue;
+                aOnline.Add(aStatus.Name);
+            }
+            aOnline.Sort((a, b) => ScoreOf(aRel, b).CompareTo(ScoreOf(aRel, a)));
+
+            if (aOnline.Count > 0)
+            {
+                aLines.Add("**🟢 現在在線（" + aOnline.Count + " 人）**");
+                foreach (string aName in aOnline) aLines.AddRange(PersonBlock(aRel, aName));
+                aLines.Add("");
+            }
+            else
+            {
+                // ⚠ 空要說出是哪一種空：真的沒人 vs lock 量不到。合成一句就是拿未知冒充事實。
+                aLines.Add(aScan.UnknownCount > 0 || aScan.Problems.Count > 0
+                           ? "**🟢 現在在線**：(量不到 —— lock 未知 " + aScan.UnknownCount
+                             + " 人；**未知 ≠ 沒人**)"
+                           : "**🟢 現在在線**：(掃到 " + aScan.Personas.Count + " 人，其他人都離線)");
+                aLines.Add("");
+            }
+
+            var aOffline = new List<SCP_RelationshipEntry>();
+            foreach (SCP_RelationshipEntry aEntry in aRel.Entries)
+            {
+                if (ContainsName(aOnline, aEntry.Target)) continue;
+                if (string.Equals(aEntry.Target, iPersona, StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(aEntry.Target, "Tim", StringComparison.OrdinalIgnoreCase)) continue;
+                aOffline.Add(aEntry);
+            }
+            aOffline.Sort((a, b) => b.SurfaceScore.CompareTo(a.SurfaceScore));
+            if (aOffline.Count > 0)
+            {
+                aLines.Add("**⚪ 離線・好感前 " + PeopleOfflineTop + "**");
+                for (int i = 0; i < aOffline.Count && i < PeopleOfflineTop; i++)
+                    aLines.AddRange(PersonBlock(aRel, aOffline[i].Target));
+                aLines.Add("");
+            }
+
+            List<SCP_PortraitItem> aItems = SCP_PortraitView.LatestPerPerson(
+                iLettersRoot, iPersona, PeoplePortraitCount, PeoplePortraitDays);
+            if (aItems.Count > 0)
+            {
+                aLines.Add("**🖼 最近印象最深的 " + aItems.Count + " 位（我的 sketchbook，近 "
+                           + PeoplePortraitDays + " 天・全文）**");
+                aLines.Add("");
+                foreach (SCP_PortraitItem aItem in aItems)
+                {
+                    string aWhen = aItem.At.Length >= 10 ? aItem.At.Substring(0, 10) : aItem.At;
+                    aLines.Add("### 🖼 " + aItem.About + "　_" + aWhen + "_"
+                               + (aItem.Headline.Length > 0 ? "　" + aItem.Headline : ""));
+                    if (aItem.Consolidated != null)
+                    {
+                        SCP_ConsolidatedRef aRef = aItem.Consolidated;
+                        aLines.Add("> ⚓ 另有濃縮 **v" + aRef.Version + "**"
+                                   + (aRef.WakeRange.Length > 0
+                                      ? "（" + (aRef.By.Length > 0 ? aRef.By + " " : "") + aRef.WakeRange + "）"
+                                      : "（區間不明）")
+                                   + "　`" + Path.GetFileName(aRef.Path) + "`");
+                    }
+                    aLines.Add("");
+                    if (aItem.Path.Length == 0)
+                    {
+                        // 只有濃縮、近期沒畫 —— 這一格就是「搬 raw 之後 §6.5 不會空」的落點。
+                        aLines.Add("_(近 " + PeoplePortraitDays + " 天沒有未歸檔畫像；上面那版濃縮就是目前的看法)_");
+                        aLines.Add("");
+                        continue;
+                    }
+                    aLines.AddRange(SCP_PortraitView.StripChrome(aItem.Body, aItem.About, aItem.Headline));
+                    aLines.Add("");
+                    if (aItem.Private.Count > 0)
+                    {
+                        // 私層只存在自己的 sketchbook ⇒ brief 要印：藏起來等於當初白寫。
+                        aLines.Add("> 🔒 **只給我自己看**（不在對方那份裡）");
+                        aLines.Add(">");
+                        foreach (string aLine in aItem.Private)
+                            aLines.Add(aLine.Trim().Length > 0 ? "> " + aLine : ">");
+                        aLines.Add("");
+                    }
+                }
+            }
+            else
+            {
+                aLines.Add("**🖼 印象**：近 " + PeoplePortraitDays + " 天還沒畫過任何人 ——"
+                           + "晚安時挑 1~3 位今天印象最深的同事寫下。");
+                aLines.Add("");
+            }
+
+            if (aRel.Entries.Count == 0)
+                aLines.Add(aRel.LoadError != null
+                           ? "⚠ 關係讀取失敗（" + aRel.LoadError
+                             + "）—— **這不代表沒有關係紀錄**，是這一區沒生成出來。"
+                           : "_(還沒有關係紀錄 —— 跟同事互動後走 `ucl-relationship` 寫一筆)_");
+
+            return new SCP_BriefSection { Title = "🧑 §6.5 見人 — 我認識誰", Lines = aLines, Essential = false };
+        }
+
+        /// <summary>每人印幾筆最近看法。</summary>
+        public const int PeopleOpinionCount = 2;
+
+        /// <summary>離線同事取前幾高好感。</summary>
+        public const int PeopleOfflineTop = 3;
+
+        /// <summary>(c) 段印幾位。</summary>
+        public const int PeoplePortraitCount = 5;
+
+        /// <summary>(c) 段只看近 N 天 —— 時效讓舊印象自然退場，不變成常駐標籤。</summary>
+        public const int PeoplePortraitDays = 14;
+
+        static int ScoreOf(SCP_RelationshipSet iRel, string iName)
+        {
+            SCP_RelationshipEntry? aEntry = iRel.Find(iName);
+            return aEntry == null ? 0 : aEntry.SurfaceScore;
+        }
+
+        static List<string> PersonBlock(SCP_RelationshipSet iRel, string iName)
+        {
+            var aOut = new List<string>();
+            SCP_RelationshipEntry? aEntry = iRel.Find(iName);
+            // ⚠ 沒有關係紀錄時印 `—` 不印 0：0 分是一個判斷，沒紀錄是**沒有**判斷。
+            string aScore = aEntry == null ? "—"
+                            : (aEntry.ScoreParsed ? aEntry.SurfaceScore.ToString(CultureInfo.InvariantCulture) : "?");
+            string aTier = (aEntry != null && aEntry.Tier.Length > 0) ? "（" + aEntry.Tier + "）" : "";
+            aOut.Add("- **" + iName + "**　好感 " + aScore + aTier);
+            if (aEntry == null) return aOut;
+            int aFrom = Math.Max(0, aEntry.Opinions.Count - PeopleOpinionCount);
+            for (int i = aFrom; i < aEntry.Opinions.Count; i++)
+            {
+                string aText = aEntry.Opinions[i].Replace("\r\n", " ").Replace("\n", " ").Trim();
+                if (aText.Length > 0) aOut.Add("    · " + aText);
+            }
+            return aOut;
+        }
+
+        static bool ContainsName(List<string> iList, string iName)
+        {
+            foreach (string aItem in iList)
+                if (string.Equals(aItem, iName, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        // ── §9 今日動作清單 ───────────────────────────────────────
+        // 區塊職責：把 §6 的機械判定翻成**當場可執行的一行**。必讀、最短。
+        // 物理意義：只列「現在就成立」的動作 —— 不成立的動作寫上去會被當成待辦而永遠躺著。
+        static SCP_BriefSection NextActionsSection(string iLettersRoot, string iPersona, int iWakeCount)
+        {
+            List<string> aDigests = SCP_WakeLetters.ListDigests(iLettersRoot, iPersona);
+            var aLines = new List<string>();
+
+            int aCovered = aDigests.Count > 0 ? LastCoveredWake(aDigests[aDigests.Count - 1]) : 0;
+            int aGap = aCovered > 0 ? iWakeCount - aCovered : -1;
+            if (aGap >= DigestGapOverdue)
+                aLines.Add("- 🔴 **見林 OVERDUE**（gap=" + aGap + "）⇒ `cmd consolidate --arg letters_root=<root>"
+                           + " --arg persona=" + iPersona + "`（不給 digest_body ＝ 只看狀態）");
+            else if (aGap < 0)
+                aLines.Add("- ⚠ 見林 gap 量不到（檔名解不出涵蓋範圍）⇒ 去看 `longterm/` 那幾份的檔名");
+            else
+                aLines.Add("- 記憶維護無待辦（見 §6）。");
+
+            aLines.Add("- 隨時可丟未解線（不限儀式）：`cmd keys --arg letters_root=<root> --arg persona="
+                       + iPersona + " --arg add=<一句話>`");
+            aLines.Add("- 對同事的看法（濃縮＋未歸檔，**與本檔 §6.5 同一支邏輯**）：`cmd people --arg letters_root=<root>"
+                       + " --arg persona=" + iPersona + " --arg online=1`");
+            aLines.Add("- 本檔是機械產物，**手改無效**（下次覆寫）—— 要改去改 fragment / letter / 見叢原檔。");
+            return new SCP_BriefSection { Title = "🎯 §9 今日動作清單", Lines = aLines, Essential = true };
+        }
+
+        // ── §5.5 回憶（Recall）───────────────────────────────────
+        // 區塊職責：在見樹（最近的連續日子）之外，額外端**一封遠方的**收尾信全文。
+        // 物理意義：見樹解決「接得上昨天」，回憶解決另一個問題 ——
+        //           長壽 persona 的中段記憶會沉底：見林把它濃縮成幾行結論，原信從此沒人再讀。
+        //           所以本段刻意端**原信全文**而不是摘要（摘要見林已經有了，再摘一次沒有新資訊）。
+        // 數值影響：只影響顯示，不寫任何檔。抽不到（池空）就整段不出現，**不印空殼**。
+        //
+        // ⚠ 抽籤是 deterministic 的：種子 = (persona, wake_count)。
+        //   brief 每次 morning 重生成，若用真隨機，同一個 wake 重跑就換一封信 ⇒
+        //   「今天回憶到哪一封」不可複驗、git diff 也會無故翻動。
+        // 🩸 **與 python 抽到的不會是同一封，這是規格差異不是 bug**：
+        //   python 用 `random.Random("<persona>:<wake>")`（MT19937 ＋ 字串種子），
+        //   .NET 沒有同一顆 PRNG ⇒ 要位元組對拍就得在 C# 重造 python 的抽法。
+        //   本檔改採「穩定雜湊取模」（FNV-1a）：同一個 wake 必抽同一封、可複驗、跨端可重算，
+        //   而**抽到哪一封本身不是規格的一部分**（回憶的用途是「想起遠方」，不是「想起特定那封」）。
+        static SCP_BriefSection RecallSection(string iLettersRoot, string iPersona, int iWakeCount)
+        {
+            var aEmpty = new SCP_BriefSection { Title = "", Lines = new List<string>() };
+            if (iWakeCount <= RecallMinWake) return aEmpty;      // 新生 persona 沒有「遠方」
+
+            List<SCP_LetterRef> aLetters = SCP_WakeLetters.RecentSelfLetters(iLettersRoot, iPersona);
+            var aPool = new List<SCP_LetterRef>();
+            foreach (SCP_LetterRef aRef in aLetters)
+            {
+                int aWake = WakeNoOf(aRef.FileName);
+                if (aWake <= 0) continue;                        // 解不出 wake 編號 ⇒ 算不出距離
+                if (iWakeCount - aWake < RecallMinAgeWakes) continue;
+                aPool.Add(aRef);
+            }
+            if (aPool.Count == 0) return aEmpty;                 // 空池是常態，不是異常
+
+            aPool.Sort((a, b) => string.CompareOrdinal(a.FileName, b.FileName));   // 可複驗要先定序
+            int aPick = (int)(StableHash(iPersona + ":" + iWakeCount) % (uint)aPool.Count);
+            SCP_LetterRef aChosen = aPool[aPick];
+            int aChosenWake = WakeNoOf(aChosen.FileName);
+
+            var aLines = new List<string>
+            {
+                "> 🎲 穩定抽出（種子＝persona+wake_count，同一次醒來必抽同一封，可複驗）",
+                "> 來源：wake #" + aChosenWake + "（距今 " + (iWakeCount - aChosenWake) + " 個 wake）"
+                + (aChosen.Day.Length > 0 ? " · 📅 " + aChosen.Day : "")
+                + " · `" + aChosen.FileName + "`",
+                ">",
+                "> 這是我自己寫的，只是久到已經被見林濃縮過了 —— 對照一下結論與現場。",
+                "",
+            };
+            aLines.AddRange(SCP_LetterText.DemoteHeadings(BodyLines(aChosen.Path)));
+            return new SCP_BriefSection
+            {
+                Title = "🕯 §5.5 回憶 — 一封遠方的收尾信",
+                Lines = aLines,
+                Essential = false,
+            };
+        }
+
+        /// <summary>wake_count 超過這個數才開始有回憶（新生 persona 的信全在見樹／見林射程內）。</summary>
+        public const int RecallMinWake = 20;
+
+        /// <summary>「遠方」的門檻：距今至少幾個 wake。15 ＝ 見林一單位的 1.5 倍。</summary>
+        public const int RecallMinAgeWakes = 15;
+
+        /// <summary>從 `000058_<ts>.md` 取 wake 編號。解不出來回 0。</summary>
+        static int WakeNoOf(string iFileName)
+        {
+            int aUnderscore = iFileName.IndexOf('_');
+            if (aUnderscore <= 0) return 0;
+            string aHead = iFileName.Substring(0, aUnderscore);
+            return int.TryParse(aHead, NumberStyles.None, CultureInfo.InvariantCulture, out int aValue)
+                   ? aValue : 0;
+        }
+
+        /// <summary>
+        /// FNV-1a 32-bit —— 抽籤用的穩定雜湊。
+        /// <para>⚠ 不可以用 <c>string.GetHashCode()</c>：.NET Core 起它**每個 process 都不一樣**
+        /// （randomized hashing）⇒ 同一個 wake 重跑會換一封信，而那正是本段要避免的事。
+        /// 這種壞法不會報錯，只會讓「可複驗」這句話變成假的。</para>
+        /// </summary>
+        static uint StableHash(string iValue)
+        {
+            uint aHash = 2166136261u;
+            foreach (char aChar in iValue)
+            {
+                aHash ^= aChar;
+                aHash *= 16777619u;
+            }
+            return aHash;
+        }
+
+        // ── §6.6 見書 ─────────────────────────────────────────────
+        // 區塊職責：回答「我讀到哪」—— 見人答『我認識誰』，本段答『我在讀什麼』（Tim 2026-08-07）。
+        // 物理意義：閱讀卡是 reader.json 的機械投影，本段是**唯讀消費端**；
+        //           要改內容去改 reader.json 再 Sync。
+        // 數值影響：只影響顯示。抽籤同 §5.5 的理由與作法（穩定雜湊，不是真隨機）。
+        static SCP_BriefSection BookshelfSection(string iLettersRoot, string iPersona, int iWakeCount)
+        {
+            string aDir = SCP_LettersPaths.PersonaDir(new SCP_LettersRoot(iLettersRoot), iPersona)
+                          + "/" + BookshelfDirName;
+            var aEmpty = new SCP_BriefSection { Title = "", Lines = new List<string>() };
+            if (!Directory.Exists(aDir)) return aEmpty;
+
+            List<string> aCards;
+            try { aCards = new List<string>(Directory.GetFiles(aDir, "*.md")); }
+            catch (Exception) { return aEmpty; }
+            if (aCards.Count == 0) return aEmpty;
+            aCards.Sort(StringComparer.Ordinal);
+
+            int aPick = (int)(StableHash(iPersona + ":bookshelf:" + iWakeCount) % (uint)aCards.Count);
+            string aCard = aCards[aPick];
+
+            var aLines = new List<string>
+            {
+                "**📖 穩定端上一張閱讀卡（共 " + aCards.Count + " 張・全文）**",
+                "",
+            };
+            aLines.AddRange(SCP_LetterText.DemoteHeadings(BodyLines(aCard)));
+            aLines.Add("");
+            aLines.Add("> 來源：`" + BookshelfDirName + "/" + Path.GetFileName(aCard)
+                       + "`（機械投影，改內容請改 reader.json 後重新 Sync）");
+            return new SCP_BriefSection { Title = "📖 §6.6 見書 — 我在讀什麼", Lines = aLines, Essential = false };
+        }
+
+        /// <summary>閱讀卡目錄名（跨端契約：python `wake_brief.BOOKSHELF_DIR_NAME` 同名）。</summary>
+        public const string BookshelfDirName = "bookshelf";
 
         // ── 讀檔小工具 ────────────────────────────────────────────
 

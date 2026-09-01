@@ -69,8 +69,29 @@ namespace SCP.Core.Letters
         public List<string> Problems = new List<string>();
     }
 
+    /// <summary>見人 (c) 段的一筆：某個對象「最新一幅畫像」＋（若有）最新一版濃縮的指標。</summary>
+    public sealed class SCP_PortraitItem
+    {
+        public string About = "";
+        public string At = "";
+        public string Headline = "";
+
+        /// <summary>那幅未歸檔畫像的路徑。空字串 ＝ 這人近 N 天沒被畫（但可能有濃縮）。</summary>
+        public string Path = "";
+
+        public List<string> Body = new List<string>();
+
+        /// <summary>私層（只存在自己的 sketchbook，投遞件沒有這段）。</summary>
+        public List<string> Private = new List<string>();
+
+        public SCP_ConsolidatedRef? Consolidated;
+    }
+
     public static class SCP_PortraitView
     {
+        /// <summary>私層分隔標記（跨端契約：python `portraits.PRIVATE_MARKER` 逐字相同）。</summary>
+        public const string PrivateMarker = "<!-- private:below-this-line-stays-in-sketchbook -->";
+
         /// <summary>
         /// 找某個對象的濃縮目錄實際名字（處理大小寫變體）。
         /// <para>回傳 (實際目錄路徑, 實際目錄名)。目錄不存在時回傳 canonical 路徑與 null 名字。</para>
@@ -240,6 +261,104 @@ namespace SCP.Core.Letters
             foreach (string aProblem in iView.Problems)
                 aOut.Add("> ⚠ " + aProblem);
             return aOut;
+        }
+
+        /// <summary>
+        /// 見人 (c) 段的素材 —— **每人只取最新一幅**，最多 iCount 人、只看近 iDays 天。
+        /// <para>⚠ 一個對象只要**有濃縮檔**就進得來，即使近 N 天一幅未歸檔畫像都沒有 ——
+        /// 這一格就是「搬 raw 之後 §6.5 不會空」的實作點（TASK-0097 施工順序那條）。</para>
+        /// <para>排序鍵：未歸檔那幅的時間；沒有未歸檔的人用濃縮檔的 `consolidated_at`
+        /// （再沒有就墊空字串排到最後 —— 排最後不是排除）。</para>
+        /// </summary>
+        public static List<SCP_PortraitItem> LatestPerPerson(string iLettersRoot, string iPersona,
+                                                             int iCount, int iDays)
+        {
+            var aItems = new List<SCP_PortraitItem>();
+            DateTime aCutoff = DateTime.UtcNow.AddDays(-iDays);
+
+            foreach (string aTarget in Targets(iLettersRoot, iPersona))
+            {
+                SCP_PortraitTargetView aView = Build(iLettersRoot, iPersona, aTarget);
+                var aItem = new SCP_PortraitItem { About = aTarget, Consolidated = aView.Latest };
+
+                foreach (string aPath in aView.UnarchivedPaths)      // 已是新 → 舊
+                {
+                    string aAt = SCP_LetterText.ReadFrontmatterField(aPath, "at");
+                    if (aAt.Length == 0) aAt = TimestampOfFileName(Path.GetFileName(aPath));
+                    // ⚠ 解析不出來就**保留**（同 python：寧可多列，不吞內容）——
+                    //   時間讀不到不是「這幅太舊」的證據。
+                    if (TryParseUtc(aAt, out DateTime aWhen) && aWhen < aCutoff) continue;
+                    aItem.At = aAt;
+                    aItem.Headline = SCP_LetterText.ReadFrontmatterField(aPath, "headline");
+                    aItem.Path = aPath;
+                    (aItem.Body, aItem.Private) = SplitPrivate(BodyLines(aPath));
+                    break;                                            // 每人只要最新那幅
+                }
+
+                if (aItem.Path.Length == 0 && aItem.Consolidated == null) continue;   // 這人近期沒畫、也沒濃縮
+                if (aItem.At.Length == 0 && aItem.Consolidated != null)
+                    aItem.At = aItem.Consolidated.ConsolidatedAt;
+                aItems.Add(aItem);
+            }
+
+            aItems.Sort((a, b) => string.CompareOrdinal(b.At, a.At));   // 新 → 舊
+            if (aItems.Count > iCount) aItems.RemoveRange(iCount, aItems.Count - iCount);
+            return aItems;
+        }
+
+        /// <summary>
+        /// 剝掉畫像檔開頭連續的門面行（`# 🖼 &lt;about&gt; — by &lt;誰&gt;` 與重複的 `**headline**`）。
+        /// <para>⚠ 只剝**開頭**，不掃全文 —— 內文中間同樣的字是作者寫的，那是內容不是雜訊。
+        /// 剝太多比留一行重複更糟（會吞掉別人寫的東西）。</para>
+        /// </summary>
+        public static List<string> StripChrome(List<string> iLines, string iAbout, string iHeadline)
+        {
+            int aIndex = 0;
+            while (aIndex < iLines.Count)
+            {
+                string aLine = iLines[aIndex].Trim();
+                if (aLine.Length == 0) { aIndex++; continue; }
+                if (aLine.StartsWith("# ", StringComparison.Ordinal)
+                    && iAbout.Length > 0 && aLine.Contains(iAbout)) { aIndex++; continue; }
+                if (iHeadline.Length > 0
+                    && (aLine == "**" + iHeadline + "**" || aLine == iHeadline)) { aIndex++; continue; }
+                break;
+            }
+            return iLines.GetRange(aIndex, iLines.Count - aIndex);
+        }
+
+        /// <summary>把畫像內文切成 (公開層, 私層)。沒有標記就是全公開。</summary>
+        static (List<string> Public, List<string> Private) SplitPrivate(List<string> iLines)
+        {
+            for (int i = 0; i < iLines.Count; i++)
+            {
+                if (iLines[i].Trim() != PrivateMarker) continue;
+                return (iLines.GetRange(0, i),
+                        iLines.GetRange(i + 1, iLines.Count - i - 1));
+            }
+            return (iLines, new List<string>());
+        }
+
+        /// <summary>`<ts>__about_<target>.md` 的時戳部分（檔名前綴）。取不到回空字串。</summary>
+        static string TimestampOfFileName(string iFileName)
+        {
+            int aMark = iFileName.IndexOf(SCP_LettersPaths.PortraitAboutInfix, StringComparison.Ordinal);
+            return aMark <= 0 ? "" : iFileName.Substring(0, aMark);
+        }
+
+        /// <summary>吃兩種形狀：`2026-09-01T09:10:43.229815Z` 與緊湊的 `20260901T091043Z`。</summary>
+        static bool TryParseUtc(string iValue, out DateTime oWhen)
+        {
+            oWhen = default;
+            if (iValue.Length == 0) return false;
+            if (DateTime.TryParse(iValue, CultureInfo.InvariantCulture,
+                                  DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out oWhen))
+                return true;
+            // 🩸 緊湊 ISO 是活的（我自己的信件庫兩種格式並存）——
+            //   只吃帶連字號那種的話，這一格會安靜地把所有緊湊格式當成「解析不出來」。
+            return DateTime.TryParseExact(iValue, "yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture,
+                                          DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal,
+                                          out oWhen);
         }
 
         // ── 解析小工具 ────────────────────────────────────────────
