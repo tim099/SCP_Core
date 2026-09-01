@@ -303,8 +303,18 @@ namespace SCP.Core.Letters
                 }
 
                 if (aItem.Path.Length == 0 && aItem.Consolidated == null) continue;   // 這人近期沒畫、也沒濃縮
-                if (aItem.At.Length == 0 && aItem.Consolidated != null)
-                    aItem.At = aItem.Consolidated.ConsolidatedAt;
+                if (aItem.At.Length == 0)
+                {
+                    // 🩸 排序鍵不可以用 `consolidated_at`（折檔的時刻）——
+                    //   折人那天我一位一位折，於是 At 差在**秒**上 ⇒ 排序變成「我最後折的人排最前」，
+                    //   而那個順序毫無意義（實測：top-5 全是只畫過一幅的人，而畫過 16 幅的 summit 落榜，
+                    //   每一格讀數都正常）。
+                    //   ⇒ 這一段問的是「**我最近一次看這個人是什麼時候**」，
+                    //     所以要用**最新那幅畫像的時戳**（已歸檔的也算）。折檔時刻只當最後退路。
+                    aItem.At = NewestRawStamp(aView);
+                    if (aItem.At.Length == 0 && aItem.Consolidated != null)
+                        aItem.At = aItem.Consolidated.ConsolidatedAt;
+                }
                 aItem.Weight = aView.UnarchivedPaths.Count + aView.ArchivedRawCount;
                 aItems.Add(aItem);
             }
@@ -355,6 +365,29 @@ namespace SCP.Core.Letters
                         iLines.GetRange(i + 1, iLines.Count - i - 1));
             }
             return (iLines, new List<string>());
+        }
+
+        /// <summary>
+        /// 該對象**已歸檔**畫像裡最新的那個時戳（檔名前綴）。沒有就回空字串。
+        /// <para>用途只有一個：折完人之後，「我最近一次看這個人是什麼時候」的排序鍵。</para>
+        /// </summary>
+        static string NewestRawStamp(SCP_PortraitTargetView iView)
+        {
+            (string aDir, string? _) = (Path.GetDirectoryName(iView.Latest?.Path ?? "") ?? "", null);
+            if (aDir.Length == 0) return "";
+            string aRawDir = Path.Combine(aDir, SCP_LettersPaths.SketchbookRawDirName);
+            if (!Directory.Exists(aRawDir)) return "";
+            string aBest = "";
+            foreach (string aFile in SafeFiles(aRawDir, "*.md"))
+            {
+                string aStamp = TimestampOfFileName(Path.GetFileName(aFile));
+                if (aStamp.Length > 0 && string.CompareOrdinal(aStamp, aBest) > 0) aBest = aStamp;
+            }
+            // 緊湊 ISO（`20260827T162420Z`）⇒ 轉成帶連字號的日期，跟未歸檔那半的 `at` 同形才比得動。
+            return aBest.Length >= 8
+                   ? aBest.Substring(0, 4) + "-" + aBest.Substring(4, 2) + "-" + aBest.Substring(6, 2)
+                     + aBest.Substring(8)
+                   : "";
         }
 
         /// <summary>`<ts>__about_<target>.md` 的時戳部分（檔名前綴）。取不到回空字串。</summary>
