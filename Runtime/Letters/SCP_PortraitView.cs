@@ -271,17 +271,17 @@ namespace SCP.Core.Letters
         }
 
         /// <summary>
-        /// 見人 (c) 段的素材 —— **每人只取最新一幅**，最多 iCount 人、只看近 iDays 天。
+        /// 見人 (c) 段的素材 —— **每人只取最新一幅**，最多 iCount 人。**沒有日期閘**（Tim 2026-09-01）：
+        /// 取的是「未歸檔 ＋ 濃縮」，因為舊畫像的正確處置是被折進濃縮，不是被日期擋掉。
         /// <para>⚠ 一個對象只要**有濃縮檔**就進得來，即使近 N 天一幅未歸檔畫像都沒有 ——
         /// 這一格就是「搬 raw 之後 §6.5 不會空」的實作點（TASK-0097 施工順序那條）。</para>
         /// <para>排序鍵：未歸檔那幅的時間；沒有未歸檔的人用濃縮檔的 `consolidated_at`
         /// （再沒有就墊空字串排到最後 —— 排最後不是排除）。</para>
         /// </summary>
         public static List<SCP_PortraitItem> LatestPerPerson(string iLettersRoot, string iPersona,
-                                                             int iCount, int iDays)
+                                                             int iCount)
         {
             var aItems = new List<SCP_PortraitItem>();
-            DateTime aCutoff = DateTime.UtcNow.AddDays(-iDays);
 
             foreach (string aTarget in Targets(iLettersRoot, iPersona))
             {
@@ -292,9 +292,11 @@ namespace SCP.Core.Letters
                 {
                     string aAt = SCP_LetterText.ReadFrontmatterField(aPath, "at");
                     if (aAt.Length == 0) aAt = TimestampOfFileName(Path.GetFileName(aPath));
-                    // ⚠ 解析不出來就**保留**（同 python：寧可多列，不吞內容）——
-                    //   時間讀不到不是「這幅太舊」的證據。
-                    if (TryParseUtc(aAt, out DateTime aWhen) && aWhen < aCutoff) continue;
+                    // ⛔ 這裡曾經有一道「只看近 N 天」的閘，**已於 2026-09-01 移除**（Tim 拍板）。
+                    //   🩸 理由：折人上線之後「舊」已經有正確的處置 —— 舊的畫像被折進濃縮，
+                    //     而濃縮就是目前的看法。再加一道日期閘等於把**已經濃縮過的看法**也擋掉，
+                    //     於是這一段會隨時間自己變空，而空的樣子跟「我沒在看人」一樣。
+                    //   ⇒ 現在的規則只有兩項：**未歸檔 ＋ 濃縮**。
                     aItem.At = aAt;
                     aItem.Headline = SCP_LetterText.ReadFrontmatterField(aPath, "headline");
                     aItem.Path = aPath;
@@ -395,21 +397,6 @@ namespace SCP.Core.Letters
         {
             int aMark = iFileName.IndexOf(SCP_LettersPaths.PortraitAboutInfix, StringComparison.Ordinal);
             return aMark <= 0 ? "" : iFileName.Substring(0, aMark);
-        }
-
-        /// <summary>吃兩種形狀：`2026-09-01T09:10:43.229815Z` 與緊湊的 `20260901T091043Z`。</summary>
-        static bool TryParseUtc(string iValue, out DateTime oWhen)
-        {
-            oWhen = default;
-            if (iValue.Length == 0) return false;
-            if (DateTime.TryParse(iValue, CultureInfo.InvariantCulture,
-                                  DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out oWhen))
-                return true;
-            // 🩸 緊湊 ISO 是活的（我自己的信件庫兩種格式並存）——
-            //   只吃帶連字號那種的話，這一格會安靜地把所有緊湊格式當成「解析不出來」。
-            return DateTime.TryParseExact(iValue, "yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture,
-                                          DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal,
-                                          out oWhen);
         }
 
         // ── 解析小工具 ────────────────────────────────────────────

@@ -475,11 +475,11 @@ namespace SCP.Core.Letters
             }
 
             List<SCP_PortraitItem> aItems = SCP_PortraitView.LatestPerPerson(
-                iLettersRoot, iPersona, PeoplePortraitCount, PeoplePortraitDays);
+                iLettersRoot, iPersona, PeoplePortraitCount);
             if (aItems.Count > 0)
             {
-                aLines.Add("**🖼 最近印象最深的 " + aItems.Count + " 位（我的 sketchbook，近 "
-                           + PeoplePortraitDays + " 天・全文）**");
+                aLines.Add("**🖼 最近印象最深的 " + aItems.Count
+                           + " 位（我的 sketchbook：未歸檔 ＋ 濃縮・全文）**");
                 aLines.Add("");
                 foreach (SCP_PortraitItem aItem in aItems)
                 {
@@ -502,7 +502,7 @@ namespace SCP.Core.Letters
                         // 🩸 而「不會空」不等於「有內容」：第一版只印了指標，於是折完人的隔天
                         //   §6.5 變成十行檔名 —— 空的反面不是有用，是**看起來有東西但讀不到看法**。
                         //   ⇒ 沒有近期畫像時，**濃縮本文就是目前的看法**，照印。
-                        aLines.Add("_(近 " + PeoplePortraitDays + " 天沒有未歸檔畫像 —— 下面是濃縮本文)_");
+                        aLines.Add("_(沒有未歸檔畫像 —— 下面是濃縮本文，那就是目前的看法)_");
                         aLines.Add("");
                         if (aItem.Consolidated != null)
                             aLines.AddRange(SCP_LetterText.DemoteHeadings(BodyLines(aItem.Consolidated.Path)));
@@ -524,7 +524,7 @@ namespace SCP.Core.Letters
             }
             else
             {
-                aLines.Add("**🖼 印象**：近 " + PeoplePortraitDays + " 天還沒畫過任何人 ——"
+                aLines.Add("**🖼 印象**：還沒畫過任何人 ——"
                            + "晚安時挑 1~3 位今天印象最深的同事寫下。");
                 aLines.Add("");
             }
@@ -547,8 +547,8 @@ namespace SCP.Core.Letters
         /// <summary>(c) 段印幾位。</summary>
         public const int PeoplePortraitCount = 5;
 
-        /// <summary>(c) 段只看近 N 天 —— 時效讓舊印象自然退場，不變成常駐標籤。</summary>
-        public const int PeoplePortraitDays = 14;
+        // ⛔ `PeoplePortraitDays`（(c) 段的 14 天閘）已於 2026-09-01 移除（Tim 拍板）——
+        //   折人上線之後「舊」的正確處置是被折進濃縮，不是被日期擋掉。免 stub 直刪，不留常數。
 
         static int ScoreOf(SCP_RelationshipSet iRel, string iName)
         {
