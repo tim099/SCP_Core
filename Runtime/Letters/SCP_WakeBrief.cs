@@ -600,6 +600,21 @@ namespace SCP.Core.Letters
             else
                 aLines.Add("- 記憶維護無待辦（見 §6）。");
 
+            // 折人待辦 —— 見林前該先折人，所以這一行要在 §9 每天看得到（讀數不是形容詞）
+            int aFoldTargets = 0;
+            int aFoldPortraits = 0;
+            foreach (string aOne in SCP_PortraitView.Targets(iLettersRoot, iPersona))
+            {
+                SCP_PortraitTargetView aView = SCP_PortraitView.Build(iLettersRoot, iPersona, aOne);
+                if (aView.UnarchivedPaths.Count == 0) continue;
+                aFoldTargets++;
+                aFoldPortraits += aView.UnarchivedPaths.Count;
+            }
+            aLines.Add(aFoldTargets > 0
+                       ? "- 🪵 **折人待辦：" + aFoldTargets + " 位 / " + aFoldPortraits + " 幅未歸檔**"
+                         + "（見林前先折人）⇒ `cmd portrait-next --arg letters_root=<root> --arg persona="
+                         + iPersona + " --arg wake_range=<折的時點區間>`"
+                       : "- 🪵 折人：無待辦（根層零幅未歸檔）");
             aLines.Add("- 隨時可丟未解線（不限儀式）：`cmd keys --arg letters_root=<root> --arg persona="
                        + iPersona + " --arg add=<一句話>`");
             aLines.Add("- 對同事的看法（濃縮＋未歸檔，**與本檔 §6.5 同一支邏輯**）：`cmd people --arg letters_root=<root>"

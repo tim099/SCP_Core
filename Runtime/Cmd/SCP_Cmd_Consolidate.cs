@@ -7,6 +7,8 @@
 //           **不碰 registry／profile 的任何欄位**（理由見 SCP_Consolidate 檔頭的血證）。
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
+using System;
 using SCP.Core.Letters;
 using SCP.Core.Paths;
 
@@ -90,7 +92,9 @@ namespace SCP.Core.Cmd
                 aResult.Lines.Add("- 本段待濃縮 episodic letters (" + aStatus.PendingLetters.Count + " 封):");
                 foreach (string aLetter in aStatus.PendingLetters) aResult.Lines.Add("  - " + aLetter);
                 aResult.Lines.Add("");
-                aResult.Lines.Add("→ 讀完上列信件後，反思濃縮成 digest body 寫回（長內文走檔案）：");
+                AppendFoldPeopleHint(iLettersRoot, iPersona, aResult);
+            aResult.Lines.Add("");
+            aResult.Lines.Add("→ 讀完上列信件後，反思濃縮成 digest body 寫回（長內文走檔案）：");
                 aResult.Lines.Add("  " + SCP_CmdRegistry.Invoke(
                     "consolidate --arg letters_root=" + iLettersRoot + " --arg persona=" + iPersona
                     + " --arg-file digest_body=<檔> --arg span_start=" + aStatus.SpanStart
@@ -207,5 +211,48 @@ namespace SCP.Core.Cmd
 
         static int ParseInt(string iRaw, int iFallback)
             => int.TryParse(iRaw, out int aValue) ? aValue : iFallback;
-    }
+            // ── 折人提示（Tim 2026-09-01：印提示，**不擋**）────────────
+        // 區塊職責：見林前提醒「折人還沒做完」，並附讀數。
+        // 物理意義：折人要排在見林之前 —— 這一輪對同事的看法才趕得上這一片林；
+        //           見林先跑的話那些看法只能等下一片，**差一整個見林單位（≈10 個 wake）**。
+        // ⚠ 為什麼是提示不是守衛（Tim 拍板）：補跑舊區間的見林是合法場景，
+        //   擋下來只會逼人繞路，而繞路的人下次連提示都不看。
+        // 🩸 而它必須**附讀數**：2026-09-01 gura 少折 17 幅、basecamp 39 幅一幅未折，
+        //   兩個人都以為自己做完了 —— 一句沒有數字的「記得先折人」擋不住那件事。
+        static void AppendFoldPeopleHint(string iLettersRoot, string iPersona, SCP_CmdResult iResult)
+        {
+            int aTargets = 0;
+            int aPortraits = 0;
+            try
+            {
+                foreach (string aOne in SCP_PortraitView.Targets(iLettersRoot, iPersona))
+                {
+                    SCP_PortraitTargetView aView = SCP_PortraitView.Build(iLettersRoot, iPersona, aOne);
+                    if (aView.UnarchivedPaths.Count == 0) continue;
+                    aTargets++;
+                    aPortraits += aView.UnarchivedPaths.Count;
+                }
+            }
+            catch (Exception e)
+            {
+                // 量不到要說出來 —— 靜默跳過會讓「沒有待折」與「沒去數」同形。
+                iResult.Lines.Add("");
+                iResult.Lines.Add("⚠ 折人待辦**量不到**（" + e.GetType().Name + ": " + e.Message
+                                  + "）—— 量不到 ≠ 沒有待折。");
+                return;
+            }
+
+            iResult.AddValue("pending_fold_targets", aTargets.ToString(CultureInfo.InvariantCulture));
+            iResult.AddValue("pending_fold_portraits", aPortraits.ToString(CultureInfo.InvariantCulture));
+            if (aTargets == 0) return;      // 沒待辦就不佔版面
+
+            iResult.Lines.Add("");
+            iResult.Lines.Add("🪵 **折人還沒做完：" + aTargets + " 位 / " + aPortraits + " 幅未歸檔**"
+                              + "（見林前該先折人 —— 這一輪的看法才趕得上這一片林）");
+            iResult.Lines.Add("   ⇒ `cmd portrait-next --arg letters_root=<root> --arg persona="
+                              + iPersona + " --arg wake_range=<折的時點區間>`");
+            iResult.Lines.Add("   ⚠ 這是**提示不是守衛** —— 補跑舊區間的見林照跑，"
+                              + "但別把「我覺得重要的都折了」當成折完（清單清空才算）。");
+        }
+}
 }
