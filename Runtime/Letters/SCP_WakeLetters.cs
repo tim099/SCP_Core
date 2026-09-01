@@ -37,6 +37,17 @@ namespace SCP.Core.Letters
         public string Day = "";
     }
 
+    /// <summary>別條世界線的一封收尾信。⚠ <see cref="WakeNo"/> 走**那條線自己的**編號空間。</summary>
+    public sealed class SCP_WorldlineLetter
+    {
+        public string WorldlineId = "";
+        public string Title = "";
+        public string Path = "";
+        public string FileName = "";
+        public int WakeNo;
+        public string Day = "";
+    }
+
     public static class SCP_WakeLetters
     {
         /// <summary>自寫信的 frontmatter type 值 —— 這是跨端契約，不是本檔的私事。</summary>
@@ -85,6 +96,133 @@ namespace SCP.Core.Letters
         /// <summary>見森清單，檔名排序。</summary>
         public static List<string> ListForests(string iLettersRoot, string iPersona)
             => SortedFiles(ForestDir(iLettersRoot, iPersona), "gen_*.md");
+
+        // ── 平行世界線 ────────────────────────────────────────────
+        // 區塊職責：列出該 persona 的**其他世界線**的收尾信，併成同一個池。
+        // 物理意義：世界線清單**從磁碟列舉**（有 `_manifest.md` 的目錄才算）——
+        //           不維護索引檔，因為索引是第二份事實源，而第二份事實源就是漂移的定義。
+        // 數值影響：純讀。併池是規格（Tim 2026-08-06）：跨線的 20% 是「跨線」這件事的機率，
+        //           不是「每條線各自」的機率 —— 分開算會讓世界線一多就把主線稀釋掉。
+        // ⚠ 不套 wake 年齡閘：別線用自己的編號空間，拿本體 wake_count 去減它的編號
+        //   是跨座標系相減（2026-08-04「兩條時空共用一組計數器」那隻 bug 的形狀）。
+        // ⚠ 同時吃 `wakes/`（已整理）與目錄外層的 `*.md`（還沒整理的線）——
+        //   「還沒整理」不該等於「這條線的記憶消失」，靜默少掉一整條線是最難發現的那種漏。
+
+        public const string WorldlinesDirName = "worldlines";
+        public const string WorldlineManifestName = "_manifest.md";
+
+        public static List<string> WorldlineDirs(string iLettersRoot, string iPersona)
+        {
+            var aOut = new List<string>();
+            string aRoot = SCP_LettersPaths.PersonaDir(R(iLettersRoot), iPersona) + "/" + WorldlinesDirName;
+            if (!Directory.Exists(aRoot)) return aOut;
+            string[] aDirs;
+            try { aDirs = Directory.GetDirectories(aRoot); }
+            catch (Exception) { return aOut; }
+            Array.Sort(aDirs, StringComparer.Ordinal);
+            foreach (string aDir in aDirs)
+                if (File.Exists(Path.Combine(aDir, WorldlineManifestName))) aOut.Add(aDir);
+            return aOut;
+        }
+
+        public static List<SCP_WorldlineLetter> WorldlineLetters(string iLettersRoot, string iPersona)
+        {
+            var aOut = new List<SCP_WorldlineLetter>();
+            foreach (string aDir in WorldlineDirs(iLettersRoot, iPersona))
+            {
+                string aId = Path.GetFileName(aDir);
+                string aTitle = SCP_LetterText.ReadFrontmatterField(
+                    Path.Combine(aDir, WorldlineManifestName), "title").Trim();
+
+                var aCandidates = new List<string>();
+                string aWakes = Path.Combine(aDir, SCP_LettersPaths.WakesDirName);
+                if (Directory.Exists(aWakes)) aCandidates.AddRange(SafeGetFiles(aWakes, "*.md"));
+                aCandidates.AddRange(SafeGetFiles(aDir, "*.md"));
+
+                var aSeen = new List<string>();
+                foreach (string aPath in aCandidates)
+                {
+                    string aName = Path.GetFileName(aPath);
+                    if (aName.StartsWith("_", StringComparison.Ordinal)) continue;   // 機械產物不是信
+                    if (SCP_LetterText.ReadFrontmatterField(aPath, "type") != SelfLetterType) continue;
+
+                    // 同一封的兩份實體（外層原檔／wakes 副本）算一次 —— 鍵取檔名去掉 `NNNNNN_` 前綴。
+                    int aUnderscore = aName.IndexOf('_');
+                    string aKey = aUnderscore >= 0 ? aName.Substring(aUnderscore + 1) : aName;
+                    if (aSeen.Contains(aKey)) continue;
+                    aSeen.Add(aKey);
+
+                    string aWrittenAt = SCP_LetterText.ReadFrontmatterField(aPath, "written_at");
+                    aOut.Add(new SCP_WorldlineLetter
+                    {
+                        WorldlineId = aId,
+                        Title = aTitle,
+                        Path = aPath,
+                        FileName = aName,
+                        WakeNo = WakeNoOfFileName(aName),
+                        Day = DayOf(aWrittenAt),
+                    });
+                }
+            }
+            aOut.Sort((a, b) =>
+            {
+                int aCmp = string.CompareOrdinal(a.WorldlineId, b.WorldlineId);
+                if (aCmp != 0) return aCmp;
+                if (a.WakeNo != b.WakeNo) return a.WakeNo.CompareTo(b.WakeNo);
+                return string.CompareOrdinal(a.FileName, b.FileName);
+            });
+            return aOut;
+        }
+
+        /// <summary>
+        /// 時戳正規化 —— 只留數字（`2026-09-01T09:12:59.123Z` → `20260901091259123`）。
+        /// <para>⚠ 給**排序**用，不是給顯示用。兩種格式混在同一個目錄裡是活的現況，
+        /// 而字串排序對混格式給的是錯的順序、沿途零紅燈。</para>
+        /// </summary>
+        public static string NormalizeStamp(string iValue)
+        {
+            var aSb = new System.Text.StringBuilder(iValue.Length);
+            foreach (char aChar in iValue)
+                if (aChar >= '0' && aChar <= '9') aSb.Append(aChar);
+            return aSb.ToString();
+        }
+
+        /// <summary>從 `000045_<ts>.md` 取 wake 編號。解不出來回 0。</summary>
+        public static int WakeNoOfFileName(string iFileName)
+        {
+            int aUnderscore = iFileName.IndexOf('_');
+            if (aUnderscore <= 0) return 0;
+            return int.TryParse(iFileName.Substring(0, aUnderscore),
+                                System.Globalization.NumberStyles.None,
+                                System.Globalization.CultureInfo.InvariantCulture, out int aValue)
+                   ? aValue : 0;
+        }
+
+        /// <summary>
+        /// `written_at` → `YYYY-MM-DD`。⚠ 兩種格式並存（`2026-09-01T…` 與緊湊的 `20260831T…`），
+        /// 只切前 10 字會把緊湊那種切成 `20260831T1`（2026-09-01 實測到的活體）。
+        /// </summary>
+        public static string DayOf(string iWrittenAt)
+        {
+            string aValue = (iWrittenAt ?? "").Trim();
+            if (aValue.Length >= 10 && aValue[4] == '-' && aValue[7] == '-') return aValue.Substring(0, 10);
+            if (aValue.Length >= 8 && IsAllDigits(aValue, 8))
+                return aValue.Substring(0, 4) + "-" + aValue.Substring(4, 2) + "-" + aValue.Substring(6, 2);
+            return "";
+        }
+
+        static bool IsAllDigits(string iValue, int iCount)
+        {
+            for (int i = 0; i < iCount; i++)
+                if (iValue[i] < '0' || iValue[i] > '9') return false;
+            return true;
+        }
+
+        static List<string> SafeGetFiles(string iDir, string iPattern)
+        {
+            try { return new List<string>(Directory.GetFiles(iDir, iPattern)); }
+            catch (Exception) { return new List<string>(); }
+        }
 
         static List<string> SortedFiles(string iDir, string iPattern)
         {
@@ -162,8 +300,13 @@ namespace SCP.Core.Letters
                 {
                     Path = aPath,
                     FileName = aName,
-                    SortKey = aWrittenAt.Length > 0 ? aWrittenAt : aName,
-                    Day = aWrittenAt.Length >= 10 ? aWrittenAt.Substring(0, 10) : "",
+                    // 🩸 排序鍵要**正規化**：這批信兩種 `written_at` 格式並存
+                    //   （`2026-09-01T…` 與緊湊的 `20260831T…`）。拿原字串做 ordinal 比較時
+                    //   `-`(0x2D) < `0`(0x30) ⇒ 帶連字號那種一律排在前面 ⇒ **新舊會靜默翻掉**，
+                    //   而每一格讀數看起來都正常（2026-09-01 實測：basecamp 的「最新一封」指到 08-31，
+                    //   而 09-01 那封被排成「往前補」）。⇒ 只留數字再比。
+                    SortKey = aWrittenAt.Length > 0 ? NormalizeStamp(aWrittenAt) : aName,
+                    Day = DayOf(aWrittenAt),
                 });
             }
 

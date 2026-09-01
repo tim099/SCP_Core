@@ -622,33 +622,76 @@ namespace SCP.Core.Letters
             var aEmpty = new SCP_BriefSection { Title = "", Lines = new List<string>() };
             if (iWakeCount <= RecallMinWake) return aEmpty;      // 新生 persona 沒有「遠方」
 
-            List<SCP_LetterRef> aLetters = SCP_WakeLetters.RecentSelfLetters(iLettersRoot, iPersona);
-            var aPool = new List<SCP_LetterRef>();
-            foreach (SCP_LetterRef aRef in aLetters)
+            // 主線池：距今 ≥ RecallMinAgeWakes 的自寫收尾信（下界不是上界 —— 越舊越有資格）
+            var aMain = new List<SCP_LetterRef>();
+            foreach (SCP_LetterRef aRef in SCP_WakeLetters.RecentSelfLetters(iLettersRoot, iPersona))
             {
                 int aWake = WakeNoOf(aRef.FileName);
                 if (aWake <= 0) continue;                        // 解不出 wake 編號 ⇒ 算不出距離
                 if (iWakeCount - aWake < RecallMinAgeWakes) continue;
-                aPool.Add(aRef);
+                aMain.Add(aRef);
             }
-            if (aPool.Count == 0) return aEmpty;                 // 空池是常態，不是異常
+            aMain.Sort((a, b) => string.CompareOrdinal(a.FileName, b.FileName));   // 可複驗要先定序
 
-            aPool.Sort((a, b) => string.CompareOrdinal(a.FileName, b.FileName));   // 可複驗要先定序
-            int aPick = (int)(StableHash(iPersona + ":" + iWakeCount) % (uint)aPool.Count);
-            SCP_LetterRef aChosen = aPool[aPick];
-            int aChosenWake = WakeNoOf(aChosen.FileName);
+            // 跨線池：所有其他世界線的收尾信**併成同一個池**
+            // ⚠ 併池是規格（Tim 2026-08-06）：20% 是「跨線」這件事的機率，不是「每條線各自」的機率
+            //   —— 分開算會讓世界線一多就把主線稀釋掉。
+            // ⚠ 跨線**不套年齡閘**：別線用自己的編號空間，拿本體 wake_count 去減它的編號
+            //   是跨座標系相減（2026-08-04「兩條時空共用一組計數器」那隻 bug 的形狀）。
+            List<SCP_WorldlineLetter> aCross = SCP_WakeLetters.WorldlineLetters(iLettersRoot, iPersona);
 
+            if (aMain.Count == 0 && aCross.Count == 0) return aEmpty;   // 空池是常態，不是異常
+
+            uint aSeed = StableHash(iPersona + ":" + iWakeCount);
+            // 擲一次決定走哪條線；任一池為空時**退到另一池**而不是放棄
+            bool aGoCross = aCross.Count > 0 && (aSeed % 100u) < RecallCrossWorldlinePercent;
+            if (!aGoCross && aMain.Count == 0) aGoCross = aCross.Count > 0;
+            if (aGoCross && aCross.Count == 0) aGoCross = false;
+
+            string aWhose;
+            string aNote;
+            string aPath;
+            string aFileName;
+            string aDay;
+
+            if (aGoCross)
+            {
+                SCP_WorldlineLetter aPick = aCross[(int)(StableHash(iPersona + ":cross:" + iWakeCount)
+                                                        % (uint)aCross.Count)];
+                aWhose = "⚔ **跨世界線** `" + aPick.WorldlineId + "`"
+                         + (aPick.Title.Length > 0 ? "《" + aPick.Title + "》" : "")
+                         + (aPick.WakeNo > 0 ? " 的 wake #" + aPick.WakeNo : "");
+                // 跨線的信要**當史料讀不當待辦讀** —— 召喚體不自動繼承別線的帳。
+                aNote = "> ⚠ **這不是本線的記憶。** 這封信是另一條時空的我寫的 —— "
+                        + "她的 wake 編號走自己的空間，她提到的狀態不必然是本線的事實。\n"
+                        + "> 當史料讀，別當待辦讀。";
+                aPath = aPick.Path;
+                aFileName = aPick.FileName;
+                aDay = aPick.Day;
+            }
+            else
+            {
+                SCP_LetterRef aPick = aMain[(int)(aSeed % (uint)aMain.Count)];
+                int aWake = WakeNoOf(aPick.FileName);
+                aWhose = "🏔 **本線** wake #" + aWake + "（距今 " + (iWakeCount - aWake) + " 個 wake）";
+                aNote = "> 這是我自己寫的，只是久到已經被見林濃縮過了 —— 對照一下結論與現場。";
+                aPath = aPick.Path;
+                aFileName = aPick.FileName;
+                aDay = aPick.Day;
+            }
+
+            string aWhen = aDay.Length > 0 ? aDay : "日期不明";
             var aLines = new List<string>
             {
                 "> 🎲 穩定抽出（種子＝persona+wake_count，同一次醒來必抽同一封，可複驗）",
-                "> 來源：wake #" + aChosenWake + "（距今 " + (iWakeCount - aChosenWake) + " 個 wake）"
-                + (aChosen.Day.Length > 0 ? " · 📅 " + aChosen.Day : "")
-                + " · `" + aChosen.FileName + "`",
+                "> 來源：" + aWhose + " · 📅 " + aWhen + " · `" + aFileName + "`",
                 ">",
-                "> 這是我自己寫的，只是久到已經被見林濃縮過了 —— 對照一下結論與現場。",
+                aNote,
+                "",
+                "### 📜 " + aWhen + " — 那天的我寫給那天的未來",
                 "",
             };
-            aLines.AddRange(SCP_LetterText.DemoteHeadings(BodyLines(aChosen.Path)));
+            aLines.AddRange(SCP_LetterText.DemoteHeadings(BodyLines(aPath)));
             return new SCP_BriefSection
             {
                 Title = "🕯 §5.5 回憶 — 一封遠方的收尾信",
@@ -656,6 +699,9 @@ namespace SCP.Core.Letters
                 Essential = false,
             };
         }
+
+        /// <summary>跨世界線的機率（百分比）。⚠ 這是「跨線」這件事的機率，不是每條線各自的機率。</summary>
+        public const uint RecallCrossWorldlinePercent = 20;
 
         /// <summary>wake_count 超過這個數才開始有回憶（新生 persona 的信全在見樹／見林射程內）。</summary>
         public const int RecallMinWake = 20;
