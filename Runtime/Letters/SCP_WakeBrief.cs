@@ -6,11 +6,14 @@
 // 數值影響：主檔行數上限 <see cref="BriefLineCap"/>；超出的**非必讀**區塊整段移進續讀檔
 //           （不砍內容 —— 砍掉的那段沒有人會知道它存在過）。
 //
-// ⚠ **射程：本檔只做「信件讀取」那幾層**（2026-08-29 首版）。python `wake_brief.py` 還有
-//   §1 見根（要 fragment 索引渲染器）、§5.5 回憶、§6 記憶維護狀態（要 registry 的 wake_count
-//   對帳）、§6.5 見人（relationship ＋ 畫像）、§6.6 見書、§9 動作清單（Task/Bug 讀數）。
-//   那些**沒有移植**，不是漏了 —— 它們各自依賴信件庫以外的子系統。
-//   ⇒ 這份 C# brief 與 python brief **不是同一份輸出**，不要拿其中一份當另一份的驗收。
+// ⚠ **射程（2026-09-01 起是全量）**：§1 見根／§2 見叢／§3 見森／§4 見林／§5 見樹／§5.5 回憶／
+//   §6 記憶維護／§6.5 見人／§6.6 見書／§9 動作清單都在這裡，而 `Cmd_GoodMorning` step=brief
+//   已改成就地呼叫本檔（不再 spawn python）。
+//   刻意保留的兩處差異，**都不是漏了**：
+//   ① §5.5／§6.6 的抽籤用穩定雜湊（FNV-1a），python 用 `random.Random(字串種子)`
+//      ⇒ 兩邊抽到的不會是同一封。抽到哪一封不是規格的一部分。
+//   ② 缺陷單張數要 `iDataRoot`；沒給就印「未量」——**不印 0**（未量 ≠ 零張）。
+//   ⇒ 所以 `awakening.py brief`（Editor 未開時的備援）產出的仍是**另一份**，不要互相當驗收。
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -99,7 +102,7 @@ namespace SCP.Core.Letters
                 "wake_count: " + iWakeCount.ToString(),
                 "generated_at: " + UtcNowIso(),
                 "generated: mechanical   # morning 每次重生成 — 手改會被覆寫；事實來源見各層原檔",
-                "source: SCP_WakeBrief (C#)   # ⚠ 只含信件讀取層，與 python wake_brief.py 不是同一份輸出",
+                "source: SCP_WakeBrief (C#)   # 生產端；python awakening.py brief 只是 Editor 未開時的備援",
                 "---",
                 "",
                 "# 🌅 Wake Brief — " + iPersona + " wake #" + iWakeCount.ToString(),

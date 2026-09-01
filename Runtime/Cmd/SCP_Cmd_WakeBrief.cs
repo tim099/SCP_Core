@@ -16,7 +16,7 @@ namespace SCP.Core.Cmd
     {
         public override string Name => "wake-brief";
 
-        public override string Summary => "讀 persona 信件庫組一份 wake brief（憲法／見叢／見森／見林／見樹）";
+        public override string Summary => "讀 persona 信件庫組一份 wake brief（全量：憲法→見樹→回憶→見人→見書→動作清單）";
 
         public override string Details =>
             "⚠ 射程：只含**信件讀取層**。python `wake_brief.py` 還有見根／回憶／記憶維護狀態／\n"
