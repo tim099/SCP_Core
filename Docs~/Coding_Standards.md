@@ -1,7 +1,7 @@
 ---
 title: SCP 專案撰寫規範
 description: SCP_Core 與其消費端（Senate / Unity）共用的 C# 撰寫規則 —— 方言限制、JSON 一律走 SCP_Json、設定一律走專案層 prefs、純函式邊界、路徑單一落點。
-last_updated: 2026-09-01
+last_updated: 2026-09-02
 target_audience: [AI_Agent, Tools_Maintainer, Backend_Programmer]
 related:
   - ../README.md | SCP_Core README | 兩條規矩的來源（方言 / 邊界）
@@ -341,3 +341,31 @@ README 原本的判準是「只放純函式 ＋ 零依賴；檔案 IO、跑 git�
 
 寫法三條：**寫判準不要寫願望**（要寫成「符合什麼形狀就停下來」）、**附血證**（日期 ＋ 當時的讀數）、
 **修法優先序**：讓那格失敗不可能發生 ＞ 讓它當場喊 ＞ 才輪到「記得注意」。
+
+---
+
+## §8 ⛔ 行尾：repo 存 LF、量行尾用 `git ls-files --eol`、改既有檔不整檔重寫（2026-09-02）
+
+**三層各管各的，不要混**：
+
+| 層 | 誰管 | 規則 |
+|---|---|---|
+| repo（index／blob） | `.gitattributes`（`* -text` ＋ 逐類 `text=auto`） | **一律 LF**。這是唯一真正「統一」的那一層 |
+| 工作區 | `.editorconfig`（編輯器讀）＋ autocrlf（checkout） | Windows 上 .cs CRLF、sh／py／.meta LF。**混著沒關係**，commit 時 git 會正規化 |
+| 工具寫檔 | agent 的 Write／python | 寫 LF 也沒事 —— 但**改既有檔要用位元組層插入或 Edit，不整檔重寫**（見下） |
+
+> 🩸 **2026-09-02 實撞**：`Senate/src/Senate.Cli/Pages/SenatePages.cs` 第 36 行結尾是 `;
+`，
+> 那個**孤立 CR** 讓 `text=auto` 把整檔判成 binary（`git ls-files --eol` 印 `i/-text`）⇒ git 不做任何
+> 行尾轉換、原樣存了 CRLF。python 用 LF 重寫一行，diff 變成整檔 98 行。
+> 而我一開始用 `grep -c $''` 量行尾，三次全回 0 —— **那把尺在 git bash 上量不到 CR**，
+> 判錯方向的成因是儀器不是檔案。
+
+**判準**：
+1. **量行尾只用 `git ls-files --eol`**（i/ 是 index、w/ 是工作區、`-text` 是被判成 binary）。不用 grep 數 ``。
+2. 看到 `i/-text` 出現在文字檔上 ⇒ 停下來：檔裡有孤立 CR 或 NUL，先修掉再 `git add --renormalize`。
+3. `w/mixed` 是**下一隻**：同一檔內兩種行尾，誰整檔重寫就會炸。乾淨的檔直接 `git checkout -- <檔>` 重取。
+4. 改既有檔：用 Edit 或位元組層 replace（讀 `rb`、偵測 `
+`、寫 `wb`），**不用文字模式讀進來再整檔寫回**
+   —— python `io.open(...,'w')` 會把行尾換成 `
+`，跟工作區的 CRLF 對不上。
