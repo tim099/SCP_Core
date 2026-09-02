@@ -158,8 +158,10 @@ namespace SCP.Core.Cmd
             catch (Exception e)
             {
                 // Cmd 爆掉不是「用法錯」—— exit code 要分得出來，否則腳本會把程式 bug 當成自己打錯。
-                return SCP_CmdResult.Fail(70,
+                var aResult = SCP_CmdResult.Fail(70,
                     "✗ " + aCmd.Name + " 執行時丟出例外：" + e.GetType().Name + ": " + e.Message);
+                aResult.Exception = e;   // 原始現場留給錯誤報告；這一行訊息留給使用者
+                return aResult;
             }
         }
 

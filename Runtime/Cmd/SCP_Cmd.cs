@@ -63,6 +63,14 @@ namespace SCP.Core.Cmd
         /// </summary>
         public List<KeyValuePair<string, string>> Values = new List<KeyValuePair<string, string>>();
 
+        /// <summary>
+        /// Cmd 執行時丟出的原始例外（<see cref="SCP_CmdRegistry.Dispatch"/> 接住時放進來；Cmd 自己回 Fail 的沒有）。
+        /// <para>⚠ 存在的理由：Dispatch 把例外壓成一行 exit 70 的訊息 —— 那一行是給使用者的，
+        /// 而 stack 是給修的人的。沒有這一格，錯誤報告（Senate TASK-0104）只能寫「例外：訊息」而沒有現場。
+        /// 宿主印給使用者時**不要**印它，報告檔才印。</para>
+        /// </summary>
+        public Exception? Exception;
+
         public bool Ok => ExitCode == 0;
 
         public static SCP_CmdResult Success(params string[] iLines)
