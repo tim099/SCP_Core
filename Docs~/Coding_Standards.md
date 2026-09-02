@@ -321,6 +321,19 @@ README 原本的判準是「只放純函式 ＋ 零依賴；檔案 IO、跑 git�
 
 ⛔ 反例：只有一個消費端在用、又碰 IO 的東西 —— 那是宿主的東西，放進來只是把它變成兩邊的負債。
 
+### 5.1 ⚠ 共用層的 static 狀態，在 Senate Server 裡是**多執行緒**在碰（2026-09-02）
+
+Unity Editor 是單執行緒宿主，SCP_Core 裡「掃一次快取起來」的 static（`SCP_CmdRegistry`、`SCP_Reflect`）
+在那側永遠不會被同時初始化。Senate Server 每條 lane 一條 thread ⇒ **第一次同時進來的那幾個 thread 會一起做初始化**。
+
+> 🩸 2026-09-02 第一輪驗收：三條 lane 同時第一次 `SCP_CmdRegistry.Find` ⇒ 三個 thread 同時 `Discover()`
+> 清空再填同一個 `Dictionary` ⇒ `InvalidOperationException: Operations that change non-concurrent collections
+> must have exclusive access`，兩條 lane 整批失敗。修法是 Discover／Register 加鎖（雙重檢查），不是「Server 先 warm up」——
+> warm up 只是配套，讓第一筆不付反射的錢；沒有鎖的話任何一個新的多執行緒消費者都會再撞一次。
+
+**判準**：共用層任何「lazy init 一個 static 集合」的地方，寫的時候就當作會被兩個 thread 同時進；
+`SCP_Reflect` 已經有鎖，是正面樣本。讀在 init 完成後是純讀，不必鎖。
+
 ---
 
 ## §6 註解規範

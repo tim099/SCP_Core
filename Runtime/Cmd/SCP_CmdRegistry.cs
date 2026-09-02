@@ -24,6 +24,16 @@ namespace SCP.Core.Cmd
         /// </summary>
         public static string InvocationHint = "cmd";
 
+        /// <summary>
+        /// Discover／Register 的鎖。
+        /// <para>🩸 2026-09-02：Senate Server 三條 lane 同時第一次 <see cref="Find"/> ⇒ 三個 thread 同時進
+        /// <see cref="Discover"/> 清空再填同一個字典 ⇒ <c>InvalidOperationException: Operations that change
+        /// non-concurrent collections must have exclusive access</c>，兩條 lane 整批失敗。
+        /// Editor 端單執行緒從沒撞過 —— **Server 是這套 registry 第一個多執行緒的消費者**，
+        /// 所以這格在 Editor 那側永遠不會現形。讀（Find／All）在 Discover 完成後是純讀，不鎖。</para>
+        /// </summary>
+        static readonly object s_Lock = new object();
+
         /// <summary>組一句「照著打就會動」的指令（自動帶上宿主動詞）。</summary>
         public static string Invoke(string iTail)
             => (string.IsNullOrWhiteSpace(InvocationHint) ? "" : InvocationHint + " ") + iTail;
@@ -43,6 +53,15 @@ namespace SCP.Core.Cmd
         public static void Discover(bool iForce = false)
         {
             if (s_Discovered && !iForce) return;
+            lock (s_Lock)
+            {
+                if (s_Discovered && !iForce) return;   // 等鎖的那幾個 thread 進來時多半已經有人做完了
+                DiscoverUnlocked();
+            }
+        }
+
+        static void DiscoverUnlocked()
+        {
             s_Commands.Clear();
             DiscoveryWarnings.Clear();
 
@@ -100,9 +119,12 @@ namespace SCP.Core.Cmd
         {
             Discover();
             if (iCmd == null || string.IsNullOrWhiteSpace(iCmd.Name)) return false;
-            if (s_Commands.ContainsKey(iCmd.Name)) return false;
-            s_Commands[iCmd.Name] = iCmd;
-            return true;
+            lock (s_Lock)
+            {
+                if (s_Commands.ContainsKey(iCmd.Name)) return false;
+                s_Commands[iCmd.Name] = iCmd;
+                return true;
+            }
         }
 
         /// <summary>

@@ -82,17 +82,19 @@ namespace SCP.Core.Cmd
 
             // 統計要印，而且**非 Native 是零的時候也印**——「沒有待移植」與「這欄還沒接上」
             // 在輸出上必須分得出來（讀取失敗與真的 0 不可同形）。
-            int aDelegated = 0, aNotPorted = 0;
+            int aDelegated = 0, aNotPorted = 0, aServer = 0;
             foreach (SCP_Cmd aCmd in aAll)
             {
                 if (aCmd.PortStatus == SCP_CmdPortStatus.DelegatedToUnity) aDelegated++;
                 else if (aCmd.PortStatus == SCP_CmdPortStatus.NotPorted) aNotPorted++;
+                else if (aCmd.PortStatus == SCP_CmdPortStatus.DelegatedToServer) aServer++;
             }
             oResult.Lines.Add("");
-            oResult.Lines.Add("執行位置：本地 " + (aAll.Count - aDelegated - aNotPorted)
-                              + " ／ ⤷Unity " + aDelegated + " ／ ⛔未實作 " + aNotPorted
-                              + "　（⤷Unity ＝ **Editor 沒開就跑不完**；待移植的缺口見 help <name>）");
+            oResult.Lines.Add("執行位置：本地 " + (aAll.Count - aDelegated - aNotPorted - aServer)
+                              + " ／ ⤷Unity " + aDelegated + " ／ ⤷Server " + aServer + " ／ ⛔未實作 " + aNotPorted
+                              + "　（⤷Unity ＝ **Editor 沒開就跑不完**；⤷Server ＝ **`senate server start` 沒跑就跑不完**；待移植的缺口見 help <name>）");
             oResult.AddValue("delegated_count", aDelegated.ToString());
+            oResult.AddValue("server_count", aServer.ToString());
             oResult.AddValue("not_ported_count", aNotPorted.ToString());
 
             oResult.Lines.Add("單支詳細：" + SCP_CmdRegistry.Invoke("help <name>"));
@@ -102,6 +104,7 @@ namespace SCP.Core.Cmd
         static string PortTag(SCP_CmdPortStatus iStatus)
         {
             if (iStatus == SCP_CmdPortStatus.DelegatedToUnity) return "⤷Unity";
+            if (iStatus == SCP_CmdPortStatus.DelegatedToServer) return "⤷Server";
             if (iStatus == SCP_CmdPortStatus.NotPorted) return "⛔未實作";
             return "";
         }
@@ -116,6 +119,9 @@ namespace SCP.Core.Cmd
             if (iCmd.PortStatus == SCP_CmdPortStatus.DelegatedToUnity)
                 oResult.Lines.Add("執行位置：⤷ Unity Editor（走 AgentCommand 檔案協議）"
                                   + "　⚠ **Editor 沒開就跑不完**");
+            else if (iCmd.PortStatus == SCP_CmdPortStatus.DelegatedToServer)
+                oResult.Lines.Add("執行位置：⤷ Senate Server（走 AgentCommand 檔案協議，根是 Senate 自己的）"
+                                  + "　⚠ **`senate server start` 沒跑就跑不完，且不降級成本地跑**");
             else if (iCmd.PortStatus == SCP_CmdPortStatus.NotPorted)
                 oResult.Lines.Add("執行位置：⛔ 還沒有實作 —— 這是登記在案的缺口，不是打錯名字");
             if (iCmd.PortNote.Length > 0)
