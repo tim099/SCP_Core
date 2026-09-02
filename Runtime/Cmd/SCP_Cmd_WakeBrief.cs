@@ -34,6 +34,9 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("wake", "這次是第幾次醒來（印在標題上）。不給＝0，本 Cmd 不替你推導"),
             new SCP_CmdArgSpec("data_root", "資料根（給了才數缺陷單）。不給＝§6 那行寫「未量」，不印 0"),
             new SCP_CmdArgSpec("out_dir", "落檔目錄（wake_brief.md / wake_brief_part2.md）。不給＝只回摘要不寫檔"),
+            // 現地定語。⚠ 本 Cmd **不替人推導** —— 央行設定是宿主端的東西，
+            //   而不給時 brief 會印 `unstated` 並明說沒人給（印一個預設會讓兩個專案看起來同區）。
+            new SCP_CmdArgSpec("region", "現地的區域（貨幣）ID，印在 brief 的現地那行。不給＝unstated，本 Cmd 不推導"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -42,6 +45,7 @@ namespace SCP.Core.Cmd
             string aPersona = iArgs.Get("persona");
             string aOutDir = iArgs.Get("out_dir");
             string aDataRoot = iArgs.Get("data_root");
+            string aRegion = iArgs.Get("region");
             int aWake = iArgs.GetInt("wake", 0, out string aWakeWhy);
 
             string aPersonaDir = SCP_WakeLetters.PersonaDir(aLettersRoot, aPersona);
@@ -59,14 +63,16 @@ namespace SCP.Core.Cmd
             {
                 (string aPath, SCP_WakeBriefResult aRes) =
                     SCP_WakeBrief.Write(aLettersRoot, aPersona, aWake, aOutDir,
-                                        aDataRoot.Length > 0 ? aDataRoot : null);
+                                        aDataRoot.Length > 0 ? aDataRoot : null,
+                                        aRegion.Length > 0 ? aRegion : null);
                 aBrief = aRes;
                 aWrittenTo = aPath;
             }
             else
             {
                 aBrief = SCP_WakeBrief.Build(aLettersRoot, aPersona, aWake,
-                                             aDataRoot.Length > 0 ? aDataRoot : null);
+                                             aDataRoot.Length > 0 ? aDataRoot : null,
+                                             aRegion.Length > 0 ? aRegion : null);
             }
 
             var aResult = new SCP_CmdResult();

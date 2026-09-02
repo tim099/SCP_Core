@@ -85,14 +85,27 @@ namespace SCP.Core.Letters
         /// 資料根（給了才數缺陷單）。⚠ 不給**不是**零張 —— §6 會明說「這台沒給資料根」，
         /// 因為印 0 會被讀成「沒有 bug」，而那是一句沒有讀數的話。
         /// </param>
+        /// <param name="iRegion">
+        /// 現地的區域（貨幣）ID。**由宿主傳進來，本層不推導** —— 真相源是宿主的央行設定
+        /// （`Treasury/bank_settings.json` 的 `currency_id`），而本層不該多長一個讀它的嘴。
+        /// ⚠ 不給就印 `unstated` 並明說沒人給，**不填預設** ——
+        /// 宿主端的 `CurrencyId` 缺值時會回預設 `Ducat`，如果這裡也自己補一個預設，
+        /// 兩個沒設定過的專案會印出同一個區域，而那正是這個定語要防的事。
+        /// </param>
         public static SCP_WakeBriefResult Build(string iLettersRoot, string iPersona, int iWakeCount,
-                                               string? iDataRoot = null)
+                                               string? iDataRoot = null, string? iRegion = null)
         {
             var aResult = new SCP_WakeBriefResult();
 
             // 見樹的真相源修復要在讀它之前 —— 讀完再修就是拿舊的那份組 brief。
             (string? aPointer, bool aHealed) = SCP_WakeLetters.SyncLatestPointer(iLettersRoot, iPersona);
             aResult.LatestPointerHealed = aHealed;
+
+            // 現地定語 —— region 由宿主給、project 由 iDataRoot 算（純路徑運算，不猜真相源）。
+            // 🩸 為什麼 project 也要印：宿主的 `CurrencyId` 缺值時回預設而不是空 ⇒ 兩個沒設定過的
+            //    專案會印出同一個 region。project 在那種情況下仍然分岔，而**一個恆同的欄位不帶資訊**。
+            string aRegion = string.IsNullOrWhiteSpace(iRegion) ? "unstated" : iRegion!.Trim();
+            string aProject = ProjectOf(iDataRoot);
 
             var aHead = new List<string>
             {
@@ -101,6 +114,8 @@ namespace SCP.Core.Letters
                 "persona: " + iPersona,
                 "wake_count: " + iWakeCount.ToString(),
                 "generated_at: " + UtcNowIso(),
+                "region: " + aRegion,
+                "project: " + aProject,
                 "generated: mechanical   # morning 每次重生成 — 手改會被覆寫；事實來源見各層原檔",
                 "source: SCP_WakeBrief (C#)   # 生產端；python awakening.py brief 只是 Editor 未開時的備援",
                 "---",
@@ -110,6 +125,13 @@ namespace SCP.Core.Letters
                 "> 讀這一份即完成信件層的 onboarding：**憲法 → 見叢 → 見森 → 見林 → 見樹**。",
                 "> 順序即優先序；主檔溢出時先被移進續讀檔的是後面的非必讀層。",
                 "> 各層原檔路徑都附在區塊標題後，需要細節再點進去。",
+                "",
+                "> 📍 **現地**：區域 `" + aRegion + "` ／ 專案 `" + aProject + "`"
+                + (aRegion == "unstated" ? "　⚠ 區域是 `unstated` ＝ **宿主沒給**，不是「沒有區域」。" : ""),
+                "> 會隨區域分岔的只有兩條軸：**2D 畫布座標** 與 **酒館 seq**"
+                + "（3D 雕刻／棋局／TASK 單號／信件庫都是 submodule ＝ 單一全域軸，不受它管）。",
+                "> ⚠ 2026-09-02 之前的收尾信**沒有這個欄位** ⇒ 那些信裡的座標與 seq 是**未宣告**，"
+                + "不是「就是本區」—— 要判就去查那封信的日期與專案，別問一個不存在的欄位。",
                 "",
             };
 
@@ -171,9 +193,10 @@ namespace SCP.Core.Letters
         /// 讀到的是一份格式完整、內容過期的檔（「舊快照假綠」的同族）。
         /// </remarks>
         public static (string Path, SCP_WakeBriefResult Result) Write(
-            string iLettersRoot, string iPersona, int iWakeCount, string iOutDir, string? iDataRoot = null)
+            string iLettersRoot, string iPersona, int iWakeCount, string iOutDir,
+            string? iDataRoot = null, string? iRegion = null)
         {
-            SCP_WakeBriefResult aResult = Build(iLettersRoot, iPersona, iWakeCount, iDataRoot);
+            SCP_WakeBriefResult aResult = Build(iLettersRoot, iPersona, iWakeCount, iDataRoot, iRegion);
             Directory.CreateDirectory(iOutDir);
 
             string aMainPath = Path.Combine(iOutDir, "wake_brief.md");
@@ -723,6 +746,23 @@ namespace SCP.Core.Letters
 
         /// <summary>跨世界線的機率（百分比）。⚠ 這是「跨線」這件事的機率，不是每條線各自的機率。</summary>
         public const uint RecallCrossWorldlinePercent = 20;
+
+        /// <summary>
+        /// 從資料根算出專案名（＝資料根的上一層目錄名）。**純路徑運算，不碰磁碟、不猜。**
+        /// 沒給資料根就回 `unstated` —— 印一個猜的專案名比留空更難查。
+        /// </summary>
+        static string ProjectOf(string? iDataRoot)
+        {
+            if (string.IsNullOrWhiteSpace(iDataRoot)) return "unstated";
+            try
+            {
+                string aNorm = iDataRoot!.Replace('\\', '/').TrimEnd('/');
+                string? aParent = Path.GetDirectoryName(aNorm);
+                string aName = string.IsNullOrEmpty(aParent) ? "" : Path.GetFileName(aParent!);
+                return string.IsNullOrWhiteSpace(aName) ? "unstated" : aName;
+            }
+            catch (Exception) { return "unstated"; }
+        }
 
         /// <summary>wake_count 超過這個數才開始有回憶（新生 persona 的信全在見樹／見林射程內）。</summary>
         public const int RecallMinWake = 20;
