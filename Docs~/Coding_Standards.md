@@ -354,18 +354,22 @@ README 原本的判準是「只放純函式 ＋ 零依賴；檔案 IO、跑 git�
 | 工作區 | `.editorconfig`（編輯器讀）＋ autocrlf（checkout） | Windows 上 .cs CRLF、sh／py／.meta LF。**混著沒關係**，commit 時 git 會正規化 |
 | 工具寫檔 | agent 的 Write／python | 寫 LF 也沒事 —— 但**改既有檔要用位元組層插入或 Edit，不整檔重寫**（見下） |
 
-> 🩸 **2026-09-02 實撞**：`Senate/src/Senate.Cli/Pages/SenatePages.cs` 第 36 行結尾是 `;
-`，
+> 🩸 **2026-09-02 實撞兩次，同一天**：
+> ① `Senate/src/Senate.Cli/Pages/SenatePages.cs` 第 36 行結尾是「分號、CR、CR、LF」——
 > 那個**孤立 CR** 讓 `text=auto` 把整檔判成 binary（`git ls-files --eol` 印 `i/-text`）⇒ git 不做任何
 > 行尾轉換、原樣存了 CRLF。python 用 LF 重寫一行，diff 變成整檔 98 行。
-> 而我一開始用 `grep -c $''` 量行尾，三次全回 0 —— **那把尺在 git bash 上量不到 CR**，
+> ② 寫本節第一版時，例句裡的逃逸序列被寫成**真的 CR 字元**，這份文件自己也變成 `i/-text` 進了 commit。
+> 修法是把整節切掉、用引號 heredoc 落檔重寫 —— 而不是「下次小心」。
+> 而我一開始用 grep 數 CR 量行尾，三次全回 0 —— **那把尺在 git bash 上量不到 CR**，
 > 判錯方向的成因是儀器不是檔案。
 
 **判準**：
-1. **量行尾只用 `git ls-files --eol`**（i/ 是 index、w/ 是工作區、`-text` 是被判成 binary）。不用 grep 數 ``。
+1. **量行尾只用 `git ls-files --eol`**（i/ 是 index、w/ 是工作區、`-text` 是被判成 binary）。不用 grep 數 CR。
 2. 看到 `i/-text` 出現在文字檔上 ⇒ 停下來：檔裡有孤立 CR 或 NUL，先修掉再 `git add --renormalize`。
-3. `w/mixed` 是**下一隻**：同一檔內兩種行尾，誰整檔重寫就會炸。乾淨的檔直接 `git checkout -- <檔>` 重取。
-4. 改既有檔：用 Edit 或位元組層 replace（讀 `rb`、偵測 `
-`、寫 `wb`），**不用文字模式讀進來再整檔寫回**
-   —— python `io.open(...,'w')` 會把行尾換成 `
-`，跟工作區的 CRLF 對不上。
+   commit 前**再量一次** `ls-files --eol`，因為剛寫的檔也可能是 -text（血證②）。
+3. `w/mixed` 是**下一隻**：同一檔內兩種行尾，誰整檔重寫就會炸。乾淨的檔 `rm` 後 `git checkout -- <檔>` 重取
+   （⚠ 不 `rm` 直接 checkout 是 no-op —— 正規化後跟 index 一樣，git 不重寫）。
+4. 改既有檔：用 Edit 或位元組層 replace（讀 `rb`、偵測 CRLF、寫 `wb`），**不用文字模式讀進來再整檔寫回**
+   —— python 文字模式寫檔會把行尾換成 LF，跟工作區的 CRLF 對不上。
+5. 文件裡要寫「CR／LF」這些控制字元，**用字講**（「分號、CR、CR、LF」），不寫逃逸序列 —— 逃逸序列經過幾層
+   shell／python 之後，哪一層會把它變成真字元沒有人算得準（血證②）。
