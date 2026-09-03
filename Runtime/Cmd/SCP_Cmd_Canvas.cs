@@ -42,7 +42,7 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("op", "要做什麼", iRequired: true,
-                iChoices: new[] { "view", "pixel", "stats", "cache", "snapshot", "note", "claim", "gateway" }),
+                iChoices: new[] { "view", "pixel", "stats", "cache", "snapshot", "note", "claim", "gateway", "place" }),
             new SCP_CmdArgSpec("region", "x,y,w,h（view/note/claim 用）"),
             new SCP_CmdArgSpec("scale", "view 放大倍率（整數，預設 1；一律最近鄰）", iDefault: "1"),
             new SCP_CmdArgSpec("x", "pixel 的 x"),
@@ -54,7 +54,14 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("plan", "note 的計畫內文"),
             new SCP_CmdArgSpec("size", "note 的預估尺寸 WxH（est_cost = W*H）"),
             new SCP_CmdArgSpec("id", "note/claim 的 id（done 用）"),
-            new SCP_CmdArgSpec("account", "gateway 查 token 餘額用的帳號 id"),
+            new SCP_CmdArgSpec("account", "帳號 id（gateway 查餘額／place 付 token 用；⛔ 不由 persona 猜）"),
+            new SCP_CmdArgSpec("color", "place 單點的顏色（0-255 或 #RRGGBB）"),
+            new SCP_CmdArgSpec("pixels", "place 批量：JSON 陣列 [{\"x\":1,\"y\":2,\"color\":5},…]"),
+            new SCP_CmdArgSpec("pay", "付款方式", iDefault: "auto",
+                iChoices: new[] { "auto", "freetime", "voucher", "token" }),
+            new SCP_CmdArgSpec("allow_white", "1 ＝ 允許畫 index 255（＝與「沒人畫過」同色，預設擋）"),
+            new SCP_CmdArgSpec("no_share", "1 ＝ 放完不發酒館"),
+            new SCP_CmdArgSpec("agent", "記在事件檔的 agent 欄（預設沿用 persona）"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -76,6 +83,7 @@ namespace SCP.Core.Cmd
                 case "note": return OpNote(iArgs, aPaths);
                 case "claim": return OpClaim(iArgs, aPaths);
                 case "gateway": return OpGateway(iArgs, aDataRoot);
+                case "place": return OpPlace(iArgs, aPaths, aDataRoot);
                 default: return SCP_CmdResult.Fail(2, "✗ 不認得的 op：" + aOp);
             }
         }
@@ -463,6 +471,158 @@ namespace SCP.Core.Cmd
             }
 
             return SCP_CmdResult.Fail(2, "✗ claim 的 sub 只有 add｜list｜done：" + aSub);
+        }
+
+        // ───────────────────────────── place（③：唯一會動錢的 op）─────────────────────────────
+        // 區塊職責：放點 —— 驗證 → 鎖 → 付款 → 寫事件 → 重渲 → **回讀** → 分享。
+        // 物理意義：順序不可換，**先收錢再畫**：畫了卻沒扣到錢等於免費像素，比拒絕嚴重得多。
+        //           付款任一步失敗 ⇒ 整批放棄，**不寫任何事件**（沿途已扣的那幾筆會留在帳上，
+        //           那是真實付款的痕跡，不是我可以偷偷抹掉的東西 —— 抹掉才是造假）。
+        // 數值影響：pay=auto 優先序 限時券 → 永久券 → token；合計不足整批拒絕（exit 3）。
+        // 🩸 回讀那一步不是禮貌，是憲法：wake#86 我放了十顆、工具印 placed 10、回讀十顆顏色全對、
+        //    ledger 真扣 10 token —— 而真畫布上那十顆不存在（cwd 停在別的目錄，長出第二棵樹）。
+        //    ⇒ 這裡的回讀刻意**從事件檔重放**，而事件檔路徑印在輸出裡：
+        //      讀的人可以自己去看那個檔在哪一棵樹上。
+        static SCP_CmdResult OpPlace(SCP_CmdArgs iArgs, SCP_CanvasPaths iPaths, string iDataRoot)
+        {
+            string aPersona = iArgs.Get("persona");
+            if (aPersona.Length == 0)
+                return SCP_CmdResult.Fail(2, "✗ place 需要 --arg persona=<誰>（錢要記在人頭上）");
+
+            if (!SCP_CanvasPlace.TryParsePixels(iArgs.Get("pixels"), iArgs.Get("x"), iArgs.Get("y"),
+                                                iArgs.Get("color"), out List<SCP_CanvasPixel> aPixels,
+                                                out string aParseWhy))
+                return SCP_CmdResult.Fail(2, "✗ place 拒絕：" + aParseWhy);
+
+            // 白色陷阱守衛（python 那側沒有這道）
+            if (SCP_CanvasPlace.HasBlankWhite(aPixels, out int aWhiteCount) && !Truthy(iArgs.Get("allow_white")))
+                return SCP_CmdResult.Fail(2,
+                    "✗ place 拒絕：有 " + aWhiteCount + " 顆的顏色量化到 index 255，"
+                    + "而 255 同時是「純白」與「沒有人畫過」",
+                    "  ⇒ 畫上去的後果是：扣了款、事件落盤、回讀卻是空白，三邊都不出聲",
+                    "  （這不是假想風險 —— 本畫布現有 66 格就是這樣來的）",
+                    "  · 想要亮色：用暖色高明度（#FFDA00 → index 248 活得下來），別用接近白的灰",
+                    "  · 真的要「擦掉」：顯式帶 --arg allow_white=1，那時它是刻意行為不是意外");
+
+            SCP_ICanvasGateway? aGate = SCP_CanvasGatewayHost.For(iDataRoot);
+            if (aGate == null)
+                return SCP_CmdResult.Fail(1, "✗ 這個宿主沒有裝上畫布閘 ⇒ 付不了錢，所以不放點",
+                                          "  ⛔ 不會「先畫再說」——那等於免費像素。");
+
+            string aAccount = iArgs.Get("account");
+            string aPay = iArgs.Get("pay");
+            if (aPay.Length == 0) aPay = "auto";
+            int aN = aPixels.Count;
+            var aResult = new SCP_CmdResult();
+            aResult.Lines.Add("  " + aGate.HostQualifier);
+
+            // ── 臨界區：讀餘額 → 扣款 必須序列化（與 python 同一把鎖檔）──
+            string aLockBank = aAccount.Length > 0 ? aAccount : "noaccount";
+            IDisposable? aLock = SCP_CanvasPlace.TryAcquireLock(iPaths, aLockBank, aPersona, out string aLockWhy);
+            if (aLock == null)
+                return SCP_CmdResult.Fail(4, "✗ place 拒絕（拿不到付款鎖）：" + aLockWhy,
+                                          "  ⛔ 不強奪：對方可能還在扣款中，強奪就是 double-spend。");
+
+            var aLedgerRefs = new List<string>();
+            string aUuid = SCP_CanvasPlace.NewUuid();
+            SCP_CanvasPayPlan aPlan;
+            try
+            {
+                if (!SCP_CanvasPlace.TryPlan(aGate, aPersona, aAccount, aN, aPay, out aPlan, out string aPlanWhy))
+                    return SCP_CmdResult.Fail(3, "✗ place 拒絕（付款）：" + aPlanWhy);
+
+                if (aPlan.Token > 0)
+                {
+                    SCP_CanvasGateResult aR = aGate.DebitTokens(aAccount, aPlan.Token, "canvas_pixel",
+                        aUuid, "canvas " + aPlan.Token + " px by " + aPersona + " (event " + aUuid + ")");
+                    if (!aR.Ok)
+                        return SCP_CmdResult.Fail(3, "✗ place 拒絕（扣 token 失敗，未畫任何像素）：" + aR.Detail);
+                    aLedgerRefs.Add("treasury:" + aUuid);
+                }
+                // ⚠ 限時券與永久券走**同一支 consume**（ledger 內部先花快過期的）——
+                //   分兩筆呼叫只為了讓帳面分得出「這幾張是限時券」與「這幾張是存量」。
+                if (aPlan.Expiring > 0)
+                {
+                    SCP_CanvasGateResult aR = aGate.ConsumeVouchers(aPersona, aPlan.Expiring, aUuid,
+                        "canvas " + aPlan.Expiring + " px (限時券) by " + aPersona);
+                    if (!aR.Ok)
+                        return SCP_CmdResult.Fail(3, "✗ place 拒絕（扣限時券失敗，未畫任何像素）：" + aR.Detail);
+                    aLedgerRefs.Add("voucher-expiring:" + aUuid);
+                }
+                if (aPlan.Permanent > 0)
+                {
+                    SCP_CanvasGateResult aR = aGate.ConsumeVouchers(aPersona, aPlan.Permanent, aUuid,
+                        "canvas " + aPlan.Permanent + " px by " + aPersona);
+                    if (!aR.Ok)
+                        return SCP_CmdResult.Fail(3, "✗ place 拒絕（扣永久券失敗，未畫任何像素）：" + aR.Detail);
+                    aLedgerRefs.Add("voucher:" + aUuid);
+                }
+            }
+            finally { aLock.Dispose(); }
+
+            // ── 錢收完了才寫事件 ──
+            DateTime aNow = DateTime.UtcNow;
+            string aAgent = iArgs.Get("agent");
+            if (aAgent.Length == 0) aAgent = aPersona;
+            string aEventPath = SCP_CanvasPlace.WriteEvent(iPaths, aNow, aUuid, aPersona, aAgent,
+                aAccount, aPixels, aPlan, aLedgerRefs);
+
+            // 重渲兩軌（增量快取會把剛落的這筆當「最新 ts 的新檔」走路②）
+            SCP_CanvasSnapshot aSnap = SCP_CanvasBuffer.Build(iPaths);
+            File.WriteAllBytes(iPaths.LatestPng, SCP_CanvasPng.EncodeRgb(aSnap.Buffer, 0, 0,
+                SCP_CanvasSpec.Width, SCP_CanvasSpec.Height, SCP_CanvasSpec.Width));
+            File.WriteAllBytes(iPaths.LatestTransparentPng, SCP_CanvasPng.EncodeRgba(aSnap.Buffer,
+                aSnap.Mask, 0, 0, SCP_CanvasSpec.Width, SCP_CanvasSpec.Height,
+                SCP_CanvasSpec.Width, 1, out int aOpaque));
+
+            // ── 回讀：逐顆比對 buffer 與 mask（憲法⑥ 結果那本帳的憑據）──
+            int aVerified = 0;
+            var aMismatch = new List<string>();
+            foreach (SCP_CanvasPixel aP in aPixels)
+            {
+                int aPos = aP.Y * SCP_CanvasSpec.Width + aP.X;
+                if (aSnap.Buffer[aPos] == aP.ColorIndex && aSnap.Mask[aPos] != 0) aVerified++;
+                else aMismatch.Add("(" + aP.X + "," + aP.Y + ") 要 " + aP.ColorIndex
+                                   + " 實得 " + aSnap.Buffer[aPos] + " mask=" + aSnap.Mask[aPos]);
+            }
+
+            aResult.Lines.Add("# 🎨 placed " + aN + " pixel(s)");
+            aResult.Lines.Add("  event        : " + aEventPath);
+            aResult.Lines.Add("  persona      : " + aPersona + "（agent=" + aAgent
+                              + (aAccount.Length > 0 ? ", account=" + aAccount : ", 未用 token") + "）");
+            aResult.Lines.Add("  pay_breakdown: freetime(限時券)=" + aPlan.Expiring
+                              + " voucher(永久券)=" + aPlan.Permanent + " token=" + aPlan.Token);
+            aResult.Lines.Add("  ledger_refs  : " + (aLedgerRefs.Count > 0 ? string.Join(", ", aLedgerRefs) : "（無 —— 沒有任何一筆錢動過？那是 bug，去看 pay_breakdown）"));
+            aResult.Lines.Add("  回讀         : " + aVerified + "/" + aN + " 顆與事件一致（從事件檔重放出來的 buffer 逐顆比）");
+            foreach (string aM in aMismatch) aResult.Lines.Add("    ✗ " + aM);
+            aResult.Lines.Add("  畫布 painted : " + aOpaque + " 格");
+            aResult.Lines.Add("  canvas_latest: " + iPaths.LatestPng);
+            aResult.AddOutput(aEventPath);
+            aResult.AddValue("placed", aN.ToString(CultureInfo.InvariantCulture));
+            aResult.AddValue("verified", aVerified.ToString(CultureInfo.InvariantCulture));
+            aResult.AddValue("event_uuid", aUuid);
+            aResult.AddValue("pay_freetime", aPlan.Expiring.ToString(CultureInfo.InvariantCulture));
+            aResult.AddValue("pay_voucher", aPlan.Permanent.ToString(CultureInfo.InvariantCulture));
+            aResult.AddValue("pay_token", aPlan.Token.ToString(CultureInfo.InvariantCulture));
+            aResult.AddValue("painted_pixels", aOpaque.ToString(CultureInfo.InvariantCulture));
+            if (aVerified != aN)
+            {
+                // 錢已經扣了而畫布不對 ⇒ 大聲失敗，但**不假裝沒扣**
+                aResult.Lines.Add("✗ 回讀不一致 —— 錢已經扣了（見 ledger_refs），畫布卻不是我以為的樣子");
+                aResult.ExitCode = 1;
+                return aResult;
+            }
+
+            // ── 分享：best-effort，發不出去不讓放點失敗 ──
+            if (!Truthy(iArgs.Get("no_share")))
+            {
+                string aBody = "🎨 " + aPersona + " 在畫布放了 " + aN + " 顆像素"
+                    + "（限時券 " + aPlan.Expiring + " ／永久券 " + aPlan.Permanent + " ／token " + aPlan.Token + "）"
+                    + "\n· 事件：`" + aUuid + "`　落點回讀 " + aVerified + "/" + aN + " 一致";
+                SCP_CanvasGateResult aShare = aGate.Share(aPersona, "tavern", aBody);
+                aResult.Lines.Add("  分享         : " + (aShare.Ok ? aShare.Detail : "⚠ " + aShare.Detail));
+            }
+            return aResult;
         }
 
         // ───────────────────────────── gateway（②的讀數出口）─────────────────────────────
