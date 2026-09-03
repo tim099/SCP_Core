@@ -42,7 +42,7 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("op", "要做什麼", iRequired: true,
-                iChoices: new[] { "view", "pixel", "stats", "cache", "snapshot", "note", "claim" }),
+                iChoices: new[] { "view", "pixel", "stats", "cache", "snapshot", "note", "claim", "gateway" }),
             new SCP_CmdArgSpec("region", "x,y,w,h（view/note/claim 用）"),
             new SCP_CmdArgSpec("scale", "view 放大倍率（整數，預設 1；一律最近鄰）", iDefault: "1"),
             new SCP_CmdArgSpec("x", "pixel 的 x"),
@@ -54,6 +54,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("plan", "note 的計畫內文"),
             new SCP_CmdArgSpec("size", "note 的預估尺寸 WxH（est_cost = W*H）"),
             new SCP_CmdArgSpec("id", "note/claim 的 id（done 用）"),
+            new SCP_CmdArgSpec("account", "gateway 查 token 餘額用的帳號 id"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -74,6 +75,7 @@ namespace SCP.Core.Cmd
                 case "snapshot": return OpSnapshot(aPaths);
                 case "note": return OpNote(iArgs, aPaths);
                 case "claim": return OpClaim(iArgs, aPaths);
+                case "gateway": return OpGateway(iArgs, aDataRoot);
                 default: return SCP_CmdResult.Fail(2, "✗ 不認得的 op：" + aOp);
             }
         }
@@ -461,6 +463,72 @@ namespace SCP.Core.Cmd
             }
 
             return SCP_CmdResult.Fail(2, "✗ claim 的 sub 只有 add｜list｜done：" + aSub);
+        }
+
+        // ───────────────────────────── gateway（②的讀數出口）─────────────────────────────
+        // 區塊職責：唯讀探針 —— 問宿主閘三件事（自由時間資格／券／token 餘額），**不動錢**。
+        // 物理意義：它存在的理由是「②要怎麼被驗」：閘接對了沒有，不能靠讀 code 回答。
+        //           每一行都印出**這個值是怎麼拿到的**（沒有出處的值救不了人）。
+        // 數值影響：查詢類問不到一律印「不知道」而不是「沒有」——
+        //           🩸 三態塌成兩態是本階段最貴的那種退化：使用者會照著「不在自由時間」
+        //           去開一場他其實已經在的場，而沒有任何一層會喊。
+        static SCP_CmdResult OpGateway(SCP_CmdArgs iArgs, string iDataRoot)
+        {
+            // 閘吃的是**本 Cmd 自己的資料根** —— 不讓它去解析第二個根（見 SCP_CanvasGatewayHost 註解）
+            SCP_ICanvasGateway? aGate = SCP_CanvasGatewayHost.For(iDataRoot);
+            if (aGate == null)
+                // fail loud：沒有閘就是沒有閘，⛔ 不假裝查到了（假成功會讓像素落盤而錢沒扣）
+                return SCP_CmdResult.Fail(1,
+                    "✗ 這個宿主沒有裝上畫布閘（SCP_CanvasGatewayHost.Factory 是 null）",
+                    "  ⇒ 付款／自由時間資格／分享都問不到。裝上它是宿主啟動時的事，本層不推導。");
+
+            string aPersona = iArgs.Get("persona");
+            string aAccount = iArgs.Get("account");
+            var aResult = new SCP_CmdResult();
+            aResult.Lines.Add("# 🚪 canvas gateway 探針（唯讀，不動錢）");
+            aResult.Lines.Add("  " + aGate.HostQualifier);
+
+            if (aPersona.Length > 0)
+            {
+                SCP_CanvasTriState aFree = aGate.QueryInFreeTime(aPersona, out string aFreeWhy);
+                aResult.Lines.Add("  自由時間: " + TriText(aFree));
+                aResult.Lines.Add("      ↳ " + aFreeWhy);
+                aResult.AddValue("in_free_time", aFree == SCP_CanvasTriState.Yes ? "1"
+                                                : aFree == SCP_CanvasTriState.No ? "0" : "unknown");
+
+                int aExp = aGate.QueryExpiringVouchers(aPersona, out string aExpWhy);
+                aResult.Lines.Add("  限時券  : " + (aExp < 0 ? "不知道" : aExp.ToString(CultureInfo.InvariantCulture) + " 張"));
+                aResult.Lines.Add("      ↳ " + aExpWhy);
+                aResult.AddValue("expiring_vouchers", aExp.ToString(CultureInfo.InvariantCulture));
+
+                int aPerm = aGate.QueryPermanentVouchers(aPersona, out string aPermWhy);
+                aResult.Lines.Add("  永久券  : " + (aPerm < 0 ? "不知道" : aPerm.ToString(CultureInfo.InvariantCulture) + " 張"));
+                aResult.Lines.Add("      ↳ " + aPermWhy);
+                aResult.AddValue("permanent_vouchers", aPerm.ToString(CultureInfo.InvariantCulture));
+            }
+            else aResult.Lines.Add("  （沒給 persona ⇒ 跳過資格與券；那是「沒問」不是「沒有」）");
+
+            if (aAccount.Length > 0)
+            {
+                long aBalance = aGate.QueryTokenBalance(aAccount, out string aBalWhy);
+                aResult.Lines.Add("  token   : " + (aBalance < 0 ? "不知道（**不是 0**）"
+                                                  : aBalance.ToString(CultureInfo.InvariantCulture)));
+                aResult.Lines.Add("      ↳ " + aBalWhy);
+                aResult.AddValue("token_balance", aBalance.ToString(CultureInfo.InvariantCulture));
+            }
+            else aResult.Lines.Add("  （沒給 account ⇒ 跳過 token 餘額）");
+
+            return aResult;
+        }
+
+        static string TriText(SCP_CanvasTriState iState)
+        {
+            switch (iState)
+            {
+                case SCP_CanvasTriState.Yes: return "✅ 在自由時間";
+                case SCP_CanvasTriState.No: return "❌ 不在自由時間";
+                default: return "⚠ 不知道（問不到）—— 這不是「不在」";
+            }
         }
 
         // ───────────────────────────── 小工具 ─────────────────────────────
