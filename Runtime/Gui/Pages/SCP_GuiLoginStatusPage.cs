@@ -9,9 +9,11 @@
 // 數值影響：畫面純讀（走 SCP_PersonaLetters.Scan）。唯一的寫入是「儲存路徑」那顆鈕，
 //           走 ISCP_Prefs.Write —— 值落在哪個檔由宿主決定，本頁不知道也不該知道。
 //
-// ⚠ 這一頁最容易騙人的一格是「離線」：`_session` 找不到時，把所有人畫成離線的畫面
-//   跟「真的全體離線」一模一樣。⇒ 狀態是三態，未知就印「未知」，並把原因印在上面。
+// ⚠ 這一頁最容易騙人的一格是「離線」：lock 檔在但讀不了時，把那個人畫成離線的畫面
+//   跟「真的離線」一模一樣。⇒ 狀態是三態，未知就印「未知」，並把原因印在上面。
 //   （SCP_PersonaLetters 那邊有同一條註解 —— 兩邊都要守，因為顯示端也可以自己把三態壓成兩態。）
+// ⚠ lock 住 `letters/<p>/profile/_session.json`（TASK-0105）—— 本頁**沒有** sessionDir 設定，
+//   lock 的位置由 persona 目錄唯一決定，沒有第二個可以填錯的地方。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -26,9 +28,6 @@ namespace SCP.Core.Gui
 
         /// <summary>信件夾根的 key —— 宿主決定它落在哪個檔（見 ISCP_Prefs）。</summary>
         static readonly SCP_PrefKey<string> KeyLettersRoot = SCP_PrefKey.String("awakening", "lettersRoot", "");
-
-        /// <summary>session 目錄；auto ＝ 從信件夾往上推導。</summary>
-        static readonly SCP_PrefKey<string> KeySessionDir = SCP_PrefKey.String("awakening", "sessionDir", SCP_PersonaLetters.AutoSessionDir);
 
         /// <summary>編輯中的路徑（按「儲存」才寫回檔案）。</summary>
         string m_RootDraft = "";
@@ -76,11 +75,7 @@ namespace SCP.Core.Gui
 
         void Rescan()
         {
-            SCP_PrefRead<string> aDir = m_Ctx.Prefs.Read(KeySessionDir);
-            // 讀不到 sessionDir 不是錯誤（多數人不填）⇒ 走 auto 推導；讀壞了也一樣，
-            // 因為上面 Load 已經對整份設定喊過一次，這裡不重複喊。
-            string? aConfigured = aDir.IsPresent ? aDir.Value : null;
-            m_Scan = SCP_PersonaLetters.Scan(m_RootSaved, aConfigured);
+            m_Scan = SCP_PersonaLetters.Scan(m_RootSaved);
         }
 
         protected override void DrawContent(SCP_Ui g)
@@ -152,11 +147,11 @@ namespace SCP.Core.Gui
             foreach (string aProblem in aScan.Problems) g.Note($"⚠ {aProblem}");
 
             // ⚠ 掃描沒走完就**什麼讀數都不要畫**：那些欄位這時是預設值不是量到的值，
-            //   而預設值畫出來會變成一句斬釘截鐵的假話（「來源：設定裡指名」——那一輪根本沒解析過）。
+            //   而預設值畫出來會變成一句斬釘截鐵的假話（人數 0 —— 那一輪根本沒列過目錄）。
             if (!aScan.Enumerated) return;
 
-            g.Note($"`_session`：{(aScan.SessionDir.Length > 0 ? aScan.SessionDir : "（找不到）")}"
-                   + $"　來源：{(aScan.SessionDirDerived ? "從信件夾往上推導" : "設定裡指名")}");
+            g.Note($"lock：`<persona>/{SCP.Core.Paths.SCP_LettersPaths.ProfileDirName}/"
+                   + $"{SCP.Core.Paths.SCP_LettersPaths.SessionLockFileName}`（檔在＝在線；位置由 persona 目錄唯一決定）");
 
             // 未知那一格單獨列出來 —— 它跟離線不同類，混在一句「N 人離線」裡就看不見了。
             g.Label($"persona {aScan.Personas.Count} 人　"

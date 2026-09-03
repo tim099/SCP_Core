@@ -349,6 +349,8 @@ namespace SCP.Core.Letters
             }
 
             List<string> aBody = ReadLetterBody(iPointer);
+            aBody.Insert(0, "");
+            aBody.Insert(0, LocaleLine(iPointer));
             string aTitle = "🍃 §5 見樹 — 最新 letter（`_latest.md`）";
 
             List<SCP_LetterRef> aLetters = SCP_WakeLetters.RecentSelfLetters(iLettersRoot, iPersona);
@@ -378,6 +380,7 @@ namespace SCP.Core.Letters
                     string aWhen = aRef.Day.Length > 0 ? aRef.Day : "日期不明";
                     if (aMerged.Count > 0) { aMerged.Add(""); aMerged.Add("---"); aMerged.Add(""); }
                     aMerged.Add("### 📅 " + aWhen + "（" + (aIsNewest ? "最新一封" : "往前補") + "）");
+                    aMerged.Add(LocaleLine(aRef.Path));
                     aMerged.Add("");
                     aMerged.AddRange(ReadLetterBody(aRef.Path));
                 }
@@ -453,7 +456,7 @@ namespace SCP.Core.Letters
         {
             var aLines = new List<string>();
             SCP_RelationshipSet aRel = SCP_Relationship.Load(iLettersRoot, iPersona);
-            SCP_PersonaScan aScan = SCP_PersonaLetters.Scan(iLettersRoot, null);
+            SCP_PersonaScan aScan = SCP_PersonaLetters.Scan(iLettersRoot);
 
             var aOnline = new List<string>();
             foreach (SCP_PersonaStatus aStatus in aScan.Personas)
@@ -729,6 +732,7 @@ namespace SCP.Core.Letters
             {
                 "> 🎲 穩定抽出（種子＝persona+wake_count，同一次醒來必抽同一封，可複驗）",
                 "> 來源：" + aWhose + " · 📅 " + aWhen + " · `" + aFileName + "`",
+                "> " + LocaleLine(aPath),
                 ">",
                 aNote,
                 "",
@@ -859,6 +863,25 @@ namespace SCP.Core.Letters
         }
 
         // ── 讀檔小工具 ────────────────────────────────────────────
+
+        // ===========================================================
+        // 區塊職責：一封信的**現地定語**那一行（📍 region ／ project）—— 見樹與回憶每封信各印一次。
+        // 物理意義：收尾信的 frontmatter 自 2026-09-02 起帶 region（貨幣 id）與 project（資料根上一層目錄名），
+        //          而 brief 剝 frontmatter 之後那兩格就消失了 —— 讀信的人看到的座標與 seq 就沒有命名空間
+        //          （Tim 2026-09-03 從 brief 上抓到的）。這一行把它們端回內文前面。
+        // ⚠ 舊信沒有這欄 ＝ **未宣告**，印「未宣告」；⛔ 不准用本次 brief 的現地補上 —— 那封信可能寫在別的專案。
+        // 數值影響：純讀 frontmatter 前 1200 字元（SCP_LetterText.ReadFrontmatterField），讀不到回空字串 ⇒ 未宣告。
+        // ===========================================================
+        static string LocaleLine(string iPath)
+        {
+            string aRegion = SCP_LetterText.ReadFrontmatterField(iPath, "region");
+            string aProject = SCP_LetterText.ReadFrontmatterField(iPath, "project");
+            if (aRegion.Length == 0 && aProject.Length == 0)
+                return "📍 現地：**未宣告**（這封信的 frontmatter 沒有 region／project 欄 —— 2026-09-02 之前的信都沒有；"
+                       + "信裡的畫布座標與酒館 seq 不能當成本區的）";
+            return "📍 現地：區域 `" + (aRegion.Length > 0 ? aRegion : "未宣告") + "` ／ 專案 `"
+                   + (aProject.Length > 0 ? aProject : "未宣告") + "`";
+        }
 
         /// <summary>剝一層 frontmatter 的內文行（見森／見林用）。讀不到就把原因寫成內容，不留空白。</summary>
         static List<string> BodyLines(string iPath)

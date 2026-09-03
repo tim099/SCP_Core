@@ -46,7 +46,6 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("all", "1 ＝ 列出所有畫過的對象（不管在不在線）"),
             new SCP_CmdArgSpec("pending", "1 ＝ 只列**還有未歸檔畫像**的對象（見林折人前的清單）"),
             new SCP_CmdArgSpec("bodies", "1 ＝ 連內文一起印（預設只印指標與讀數）"),
-            new SCP_CmdArgSpec("session_dir", "_session 目錄（不給＝從信件夾往上找）"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -58,7 +57,6 @@ namespace SCP.Core.Cmd
             bool aAll = iArgs.Get("all") == "1";
             bool aPending = iArgs.Get("pending") == "1";
             bool aBodies = iArgs.Get("bodies") == "1";
-            string aSessionDir = iArgs.Get("session_dir");
 
             var aRoot = new SCP_LettersRoot(aLettersRoot);
             string aPersonaDir = SCP_LettersPaths.PersonaDir(aRoot, aPersona);
@@ -126,8 +124,7 @@ namespace SCP.Core.Cmd
             }
             else if (aOnline)
             {
-                SCP_PersonaScan aScan = SCP_PersonaLetters.Scan(aLettersRoot,
-                                                               aSessionDir.Length > 0 ? aSessionDir : null);
+                SCP_PersonaScan aScan = SCP_PersonaLetters.Scan(aLettersRoot);
                 aTargets = new List<string>();
                 foreach (SCP_PersonaStatus aStatus in aScan.Personas)
                 {

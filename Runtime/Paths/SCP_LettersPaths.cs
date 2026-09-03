@@ -18,8 +18,19 @@ namespace SCP.Core.Paths
         /// <summary>persona 的**判準**：信件夾底下有這個子目錄的才算一個人。</summary>
         public const string ProfileDirName = "profile";
 
-        /// <summary>lock 檔名前綴（awakening 端 <c>write_lock()</c> 的格式，跨端契約）。</summary>
-        public const string LockPrefix = "_persona_";
+        // ===========================================================
+        // 區塊職責：persona 的 **session lock** 檔名（`profile/_session.json`）。
+        // 物理意義：「這個人現在在線」的真相源。登入寫、登出刪 —— 檔在＝在線。
+        //          它住在 persona 自己的 profile/ 底下而不是資料根的 `_session/`（TASK-0105，2026-09-03）：
+        //          🩸 舊位置的代價是**找 lock 的算法有五種**（Editor 兩支、SCP 兩支、Editor 頁一支），
+        //            其中 SCP 那支是「從信件夾往上找第一個 `_session`」—— 信件夾根一漂，
+        //            lock 就跟著指到另一棵樹，而每一頁都印得出一份合理的在線名單。
+        //          搬進 profile/ 之後，lock 的位置由 persona 目錄**唯一決定**，沒有第二個輸入。
+        // ⚠ runtime 狀態不入版控：各 letters repo 的 `.gitignore` 基線（`letters/Template/.gitignore`）
+        //   擋 `/profile/_session.json`。lock 含 session_token，而 letters remote 可能是公開的。
+        // ⚠ 對側契約：python `awakening.lock_path()` 同一個檔名；Editor 端 `UCL_LettersPath.SessionLock()`。
+        // ===========================================================
+        public const string SessionLockFileName = "_session.json";
 
         public const string ConstitutionFileName = "_constitution.md";
         public const string KeysOpenFileName = "_keys_open.md";
@@ -129,8 +140,8 @@ namespace SCP.Core.Paths
             => SketchbookTargetDir(iRoot, iPersona, iTarget) + "/" + iTarget + "_v"
                + iVersion.ToString("D3") + ".md";
 
-        /// <summary>某個 persona 的 lock 檔（在 <c>_session</c> 目錄底下，**不在信件夾裡**）。</summary>
-        public static string LockFileName(string iPersona)
-            => LockPrefix + iPersona + ".json";
+        /// <summary>某個 persona 的 session lock（<c>&lt;persona&gt;/profile/_session.json</c>）—— 檔在＝在線。</summary>
+        public static string SessionLockPath(SCP_LettersRoot iRoot, string iPersona)
+            => ProfileDir(iRoot, iPersona) + "/" + SessionLockFileName;
     }
 }

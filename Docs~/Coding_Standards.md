@@ -228,8 +228,8 @@ prefs 只動自己那格  根層註解保留=True／別的 section 保留=True�
 | class | 根 | 管什麼 |
 |---|---|---|
 | `SCP_ProjectPaths` | `SCP_ProjectRoot` | `.agentcommands_root.local`（**跨語言契約**）、資料根解析 |
-| `SCP_DataPaths` | `SCP_DataRoot` | `queues/<persona>/` `queue.json` `pending.trigger` `_session/` `ChatTavern/` |
-| `SCP_LettersPaths` | `SCP_LettersRoot` | persona 版面（`profile/` `wakes/` `cmd/` `_constitution.md` …）、`_persona_` lock 前綴 |
+| `SCP_DataPaths` | `SCP_DataRoot` | `queues/<persona>/` `queue.json` `pending.trigger` `_session/`（token 表）`ChatTavern/` |
+| `SCP_LettersPaths` | `SCP_LettersRoot` | persona 版面（`profile/` `wakes/` `cmd/` `_constitution.md` …）、session lock `profile/_session.json` |
 
 ### ⭐ 根是 **typed struct**，不是裸 string
 

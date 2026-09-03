@@ -29,19 +29,18 @@ namespace SCP.Core.Tasks
 {
     public static class SCP_TaskReconcile
     {
-        /// <summary>lock 檔名前綴 —— 與 UCL 端 `_persona_<name>.json` 同形（跨端契約）。</summary>
-        public const string LockFilePrefix = "_persona_";
-
         // ===========================================================
         // 區塊職責：本次 session 的起點（UTC）。
         // 物理意義：`locked_at` 是早安登入寫的，**它就是這段工作的起點**。
+        //          lock 的位置走 SCP_LettersPaths.SessionLockPath（唯一決定點）—— 本檔原本自己拼
+        //          `_session/_persona_<p>.json`，那是同一顆檔的第三種算法（TASK-0105 收掉）。
         // ⚠ 讀不到就退回「UTC 今天 00:00」—— 那是拍板的預設曆，**不是本地日**。
         //   讀不到的情境：沒登入就跑閘、lock 被清掉。此時退回日曆是**刻意的降級不是 fail-open**：
         //   它仍然會擋 UTC 今天動過的單，只是拿不到跨夜那一段。
         // ===========================================================
         public static DateTime SessionStartUtc(SCP_DataRoot iRoot, string iPersona, out string oOrigin)
         {
-            string aPath = SCP_DataPaths.SessionDir(iRoot) + "/" + LockFilePrefix + iPersona + ".json";
+            string aPath = SCP_LettersPaths.SessionLockPath(SCP_DataPaths.Letters(iRoot), iPersona);
             try
             {
                 if (File.Exists(aPath))

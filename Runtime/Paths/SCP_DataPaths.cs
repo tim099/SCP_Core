@@ -1,4 +1,4 @@
-// 區塊職責：AgentCommands **資料根**底下的版面 —— queue 分道、酒館、信件夾、session lock。
+// 區塊職責：AgentCommands **資料根**底下的版面 —— queue 分道、酒館、信件夾、session token 表。
 // 物理意義：這些目錄名是**跨端契約**（C# Editor / python run_cmd.py / Senate 三邊都走），
 //           所以它們只能有一個拼字的地方。2026-08-30 掃到的現況：`"queues"` 在
 //           `AgentCmdClient.QueueFolder` 與 `Program.cs` 的 status 分支**各拼一次** ——
@@ -51,7 +51,12 @@ namespace SCP.Core.Paths
         public static string TriggerFile(SCP_DataRoot iRoot, string? iPersona)
             => QueueFolder(iRoot, iPersona) + "/" + TriggerFileName;
 
-        /// <summary>persona lock 住的地方（上線判定的真相源）。</summary>
+        /// <summary>
+        /// session token 表（<c>_tokens.json</c> / <c>_token_enforce.json</c>）住的地方。
+        /// <para>⚠ persona lock **不在這裡**（TASK-0105，2026-09-03 起住 <c>letters/&lt;p&gt;/profile/_session.json</c>，
+        /// 見 <see cref="SCP_LettersPaths.SessionLockPath"/>）。在這個目錄底下找 <c>_persona_*.json</c>
+        /// 只會找到搬遷時因衝突留下的殘檔，不是在線名單。</para>
+        /// </summary>
         public static string SessionDir(SCP_DataRoot iRoot)
             => iRoot.Value + "/" + SessionDirName;
 
