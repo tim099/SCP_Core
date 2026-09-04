@@ -35,20 +35,20 @@ namespace SCP.Core.Gui
         /// <summary>待確認補收工的那一個（session 欄位；值是 persona，空 ＝ 沒有待確認）。</summary>
         public const string PendingCloseId = "sessions/pending-close";
 
-        /// <summary>
-        /// 資料根**顯式設定**，不從信件夾根推導。
-        /// <para>⚠ 那個推導寫得出來（信件夾是 `&lt;dataRoot&gt;/ChatTavern/baton/letters`），而它正是本專案
-        /// 禁止的那一種：路徑不該被推導、該被傳遞。推導錯的症狀是**讀到另一棵樹的 session，然後全部顯示正常**。</para>
-        /// </summary>
-        static readonly SCP_PrefKey<string> KeyDataRoot = SCP_PrefKey.String("sessions", "dataRoot", "");
+        // ⚠ 這裡曾經有一格 `SCP_PrefKey.String("sessions", "dataRoot")` —— **本頁自己存一份手填的資料根**。
+        //   拿掉的理由不是重複而已：那是同一個值的第二份，而第二份可以跟 `senate.local.json` 那格說不一樣的話，
+        //   而症狀是**本頁讀到另一棵樹的 session，然後每一列都顯示正常**。
+        //   🩸 2026-09-04 的現場更難看：整個 CLI 早就解得出那個根（每支 cmd 都印 `data_root=…`），
+        //   而本頁印著「還沒設定資料根」⇒ 我把自己的 bug 讀成了設定的缺口，還去寫了使用者的 prefs。
+        //   ⇒ 資料根一律問宿主（`m_Ctx.AgentCommandsRoot`，＝「路徑管理」頁那一格），**本頁不存路徑**。
 
         /// <summary>視窗模式下兩次掃描之間至少隔多久（同 Process 頁：每幀掃目錄是穩定的效能坑，而它不會叫）。</summary>
         public const double RefreshIntervalSeconds = 2.0;
 
         readonly ISCP_GuiAppContext m_Ctx;
 
-        string m_RootDraft = "";
-        string m_RootSaved = "";
+        /// <summary>宿主解出來的資料根（值／來源／取不到的原因）—— 每次 OnPush 重讀，本頁不快取成字串。</summary>
+        SCP_PathResolution m_Root = new SCP_PathResolution("", "?", "還沒讀");
         List<SCP_ActivitySession> m_Rows = new List<SCP_ActivitySession>();
         List<string> m_Problems = new List<string>();
         DateTime m_LastRefreshUtc = DateTime.MinValue;
@@ -67,9 +67,7 @@ namespace SCP.Core.Gui
         public override void OnPush()
         {
             base.OnPush();
-            SCP_PrefRead<string> aRead = m_Ctx.Prefs.Read(KeyDataRoot);
-            m_RootSaved = (aRead.IsPresent ? aRead.Value : "").Trim();
-            m_RootDraft = m_RootSaved;
+            m_Root = m_Ctx.AgentCommandsRoot;
             Refresh();
         }
 
@@ -78,9 +76,9 @@ namespace SCP.Core.Gui
         void Refresh()
         {
             m_Problems = new List<string>();
-            m_Rows = m_RootSaved.Length == 0
+            m_Rows = !HasRoot
                 ? new List<SCP_ActivitySession>()
-                : SCP_ActivitySessionStore.LoadAll(new SCP_DataRoot(m_RootSaved), m_Problems);
+                : SCP_ActivitySessionStore.LoadAll(new SCP_DataRoot(m_Root.Value), m_Problems);
             m_LastRefreshUtc = DateTime.UtcNow;
         }
 
@@ -98,10 +96,13 @@ namespace SCP.Core.Gui
                    + "kind 是檔案裡的欄位，不是路徑段。");
 
             DrawRootRow(g);
-            if (m_RootSaved.Length == 0)
+            if (!HasRoot)
             {
-                // 三態不同形：「沒設定根」不是「沒有 session」。
-                g.Note("⚠ 還沒設定資料根 ⇒ 本頁**沒有資料來源**。這不是「沒有人在 session」，是「量不到」。");
+                // 三態不同形：「沒設定根」與「取不到」都不是「沒有 session」，而它們彼此也不同形。
+                g.Note("⚠ 本頁**沒有資料來源** ⇒ 這不是「沒有人在 session」，是「量不到」。原因："
+                       + (string.IsNullOrEmpty(m_Root.Error) ? "資料根是空的" : m_Root.Error));
+                g.Note("· 要設它請去「路徑管理」頁（`senate ui --page paths`）的 **AgentCommands 資料根** 那一格"
+                       + " —— **本頁不存路徑**，它讀的就是那一格。");
                 return;
             }
 
@@ -119,26 +120,21 @@ namespace SCP.Core.Gui
             if (m_Message != null) g.Note(m_Message);
         }
 
+        /// <summary>資料根解出來了沒有（`Error` 有值或值是空的 ⇒ 沒有資料來源）。</summary>
+        bool HasRoot { get { return m_Root.Error == null && m_Root.Value.Length > 0; } }
+
+        // ⚠ **唯讀一行，沒有輸入框也沒有儲存鈕**（2026-09-04 改）：資料根的設定只有一處。
+        //   印出 `Origin`（手填／auto ⇒ 由 ProjectRoot 推導）是刻意的 ——
+        //   「這個值是誰給的」比「這個值是什麼」更常是問題的答案。
         void DrawRootRow(SCP_Ui g)
         {
-            bool aSave = false;
-            using (g.Row())
-            {
-                m_RootDraft = g.TextField("AgentCommands 資料根", m_RootDraft, "sessions/root");
-                if (g.Button("儲存", "sessions/save-root")) aSave = true;
-            }
-            if (!aSave) return;
-            string aNext = m_RootDraft.Trim();
-            (bool aOk, string aMsg) = m_Ctx.Prefs.Write(KeyDataRoot, aNext);
-            if (!aOk) { m_Message = "⚠ 設定寫不進去：" + aMsg; return; }
-            m_RootSaved = aNext;
-            Refresh();
-            m_Message = "✓ 資料根已存（" + (aNext.Length == 0 ? "（清空）" : aNext) + "）；本頁讀的就是它";
+            g.Note("· AgentCommands 資料根：`" + (m_Root.Value.Length > 0 ? m_Root.Value : "（解不出來）")
+                   + "`　來源：" + m_Root.Origin + "　—— 設定在「路徑管理」頁，本頁只讀");
         }
 
         void DrawToolRow(SCP_Ui g)
         {
-            string aDir = SCP_ActivitySessionStore.Dir(new SCP_DataRoot(m_RootSaved));
+            string aDir = SCP_ActivitySessionStore.Dir(new SCP_DataRoot(m_Root.Value));
             int aAction = 0;   // 0 none / 1 refresh / 2 open dir
             using (g.Row())
             {
@@ -251,7 +247,7 @@ namespace SCP.Core.Gui
         /// </remarks>
         void StartClose(string iPersona)
         {
-            string aRoot = m_RootSaved;
+            string aRoot = m_Root.Value;   // ⚠ 抓成區域變數：委派跑在背景 thread 上，不從那邊碰頁面狀態
             if (SCP_GuiHost.RedrawsContinuously)
             {
                 m_CloseJobTarget = iPersona;

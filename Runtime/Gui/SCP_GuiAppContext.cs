@@ -45,6 +45,24 @@ namespace SCP.Core.Gui
         ISCP_Prefs Prefs { get; }
 
         /// <summary>
+        /// AgentCommands 資料根 —— **由宿主解析同一格設定**（<see cref="Paths.SCP_PathId.AgentCommandsRoot"/>）。
+        /// <para>⚠ 回的是 <see cref="Paths.SCP_PathResolution"/> 而不是 <c>string</c>：
+        /// 「解出來了」「沒有人填過」「取不到（例：兩個啟用專案 ⇒ 資料根不唯一）」**三態不可同形**，
+        /// 而頁面必須說得出它是哪一態 —— 空字串會讓「量不到」長得像「沒有人在 session」。</para>
+        /// </summary>
+        /// <remarks>
+        /// 🩸 為什麼這一格要進本介面（判準是檔頭那句「沒有它這一頁畫不出來嗎」）：
+        /// 2026-09-04 我第一版讓 Session 管理頁**自己存一格手填的資料根**（`sessions/dataRoot` pref）。
+        /// 那是同一個值的第二份，而且是手填的 ⇒ 它可以跟 `senate.local.json` 那格說不一樣的話，
+        /// 而症狀是**頁面讀到另一棵樹的 session，然後每一列都顯示正常**。
+        /// 同一天的現場更難看：**整個 CLI 早就解得出那個根**（每支 cmd 都印 `data_root=…`），
+        /// 而那一頁印著「還沒設定資料根」—— 我把自己的 bug 讀成了設定的缺口。
+        /// ⇒ 判準（與「路徑管理」頁檔頭同一條）：**能被推導或已經被存過的路徑，不准再存第二份。**
+        /// 要改值一律去「路徑管理」頁（`senate ui --page paths`），本介面只讀。
+        /// </remarks>
+        Paths.SCP_PathResolution AgentCommandsRoot { get; }
+
+        /// <summary>
         /// 宿主想補在尺寸頁底下的說明（例：CLI 的一次性覆寫旗標、Unity 的 Editor 行為）。
         /// <para>⚠ 為什麼要這一格：尺寸頁的**功能**是共用的，但它底下那幾句註腳
         /// （「`--scale` 不寫回檔案」）**只在某一個宿主為真**。

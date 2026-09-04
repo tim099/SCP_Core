@@ -30,11 +30,15 @@ namespace SCP.Core.Cmd
             + "⚠ 「沒查到」不等於「他不在任何 session」：未登記的 kind 本層看不到，回報一律附掃描範圍。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("sessions --arg data_root=D:/Unity/LY/AgentCommands");
+            SCP_CmdRegistry.Invoke("sessions");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
-            new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
+            // ⚠ 仍是 iRequired：**本層真的需要它**（它不會自己去讀任何設定檔）。
+            //   而呼叫端不必每次手打 —— senate CLI 沒給時會用唯一那格設定（`SCP_PathId.AgentCommandsRoot`）
+            //   補上並**印出來**。⇒ 「必填」講的是這一層的需求，「可以不打」講的是宿主的便利，兩件事。
+            new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）"
+                + "—— senate CLI 沒給時用「路徑管理」頁那一格補上並印出來", iRequired: true),
             new SCP_CmdArgSpec("op", "list（預設）| show | close"),
             new SCP_CmdArgSpec("target_persona", "show／close 要看／要關誰的場（⚠ 不猜身分）"),
             new SCP_CmdArgSpec("reason", "close 寫進 end_reason 的一句話（預設 closed-by-senate）"),
