@@ -24,8 +24,15 @@ namespace SCP.Core.Session
     /// <remarks>
     /// ⚠ 欄位名**就是 JSON 的鍵名**，改名＝舊檔讀回預設值，而預設值長得跟「沒這場」一樣。
     /// 要動 schema 走單子，不要順手改。
+    ///
+    /// ⚠ **可被繼承**（TASK-0127 ⑦）：各 kind 的宿主用子類別補自己的欄位
+    /// （自由時間的 `rounds`、觀影的 `paid_minutes`…），走 <c>SCP_ActivitySessionStore.Load&lt;T&gt;</c>。
+    /// 序列化吃的是**執行期型別**的成員清單（<c>SCP_Reflect.SchemaOf</c>）⇒ 子類別欄位自動進出。
+    /// 📌 那為什麼 <see cref="Raw"/> 還留著：**讀成子類別 ≠ 認識全部的鍵** ——
+    /// 管理頁與關場路徑讀的是本基底類別，此時 kind 專屬欄位一個都不認識，
+    /// 而它們必須原封不動寫回去（🩸 2026-09-04 的活體就是那條路吃掉了 `rounds`／`activity`）。
     /// </remarks>
-    public sealed class SCP_ActivitySession
+    public class SCP_ActivitySession
     {
         /// <summary>這場屬於誰（＝檔名，冗餘存一份供人直讀 json 時對帳）。</summary>
         public string persona = "";

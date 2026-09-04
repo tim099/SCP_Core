@@ -57,13 +57,27 @@ namespace SCP.Core.Session
         /// 而它回答的是「有沒有**我這種** session」。⇒ 要問「這個人現在忙不忙」一律用 <see cref="FindRunning"/>。
         /// </remarks>
         public static SCP_ActivitySession? Load(SCP_DataRoot iRoot, string? iPersona, string? iKind = null)
+            => Load<SCP_ActivitySession>(iRoot, iPersona, iKind);
+
+        // ===========================================================
+        // 區塊職責：讀成**指定型別** —— 各 kind 的宿主用自己的子類別把專屬欄位讀成 typed 欄位。
+        // 物理意義：TASK-0127 ⑦ 之前，各 kind 的 typed model 掛在 UCL 那側的 `UCL_SessionBase`，
+        //          於是同一份檔有兩套讀寫實作（兩個 JSON 函式庫各一份）。搬成子類別之後
+        //          **磁碟上那份檔只有這一個 IO 入口**，而 typed 欄位一格都不用重寫。
+        // 數值影響：與非泛型版逐字相同的路徑／解析／過濾，只差 `new T()`。
+        // ⚠ `Raw` 仍然要填：子類別認識的鍵比基底多，但**仍然不是全部**
+        //   （舊檔的退場欄位、別的宿主後來加的欄位）⇒ 寫回時仍以 Raw 為底。
+        // ===========================================================
+        /// <summary>讀某人的 session 並填進 <typeparamref name="T"/>（各 kind 的子類別）。過濾語意同非泛型版。</summary>
+        public static T? Load<T>(SCP_DataRoot iRoot, string? iPersona, string? iKind = null)
+            where T : SCP_ActivitySession, new()
         {
             string? aPath = PathOf(iRoot, iPersona);
             if (aPath == null || !File.Exists(aPath)) return null;
             try
             {
                 SCP_JsonData aData = SCP_JsonParser.Parse(File.ReadAllText(aPath, Encoding.UTF8));
-                var aSession = new SCP_ActivitySession();
+                var aSession = new T();
                 SCP_JsonMapper.Populate(aSession, aData);
                 aSession.Raw = aData;   // 各 kind 的專屬欄位住在這 —— 寫回時以它為底（見 SCP_ActivitySession.Raw）
                 if (!string.IsNullOrEmpty(iKind)
@@ -108,6 +122,29 @@ namespace SCP.Core.Session
                 if (string.IsNullOrEmpty(aSession.persona)) aSession.persona = aPersona;
                 aList.Add(aSession);
             }
+            return aList;
+        }
+
+        // ===========================================================
+        // 區塊職責：列出**某一種** kind 現有的 persona（含已收工的 —— 那是歷史，不是雜訊）。
+        // 物理意義：扁平化之後檔名不帶 kind ⇒ 必須開檔讀 `kind` 欄位才知道那是不是這一種。
+        //          不付這個代價的話，管理頁的 FreeTime 列表會列出正在觀影的人 —— 而那看起來完全正常。
+        // 數值影響：走 <see cref="LoadAll"/>（同一次目錄掃描），不另寫第二份走訪實作。
+        // ⚠ 空清單的語意是「這個 kind 沒有檔」，不是「沒有人在 session」——
+        //   要問後者請看別的 kind 或用 <see cref="FindRunning"/>。
+        // ===========================================================
+        /// <summary>某 kind 現有的 persona 名（排序後；<paramref name="iKind"/> 空＝全部）。</summary>
+        public static List<string> ListPersonas(SCP_DataRoot iRoot, string? iKind, List<string>? oProblems = null)
+        {
+            var aList = new List<string>();
+            List<SCP_ActivitySession> aAll = LoadAll(iRoot, oProblems);
+            for (int i = 0; i < aAll.Count; ++i)
+            {
+                if (!string.IsNullOrEmpty(iKind)
+                    && !string.Equals(aAll[i].kind, iKind, StringComparison.Ordinal)) continue;
+                aList.Add(aAll[i].persona);
+            }
+            aList.Sort(StringComparer.Ordinal);
             return aList;
         }
 
