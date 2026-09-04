@@ -28,7 +28,8 @@ namespace SCP.Core.Cmd
             + "rolling fold 只讀上代森 ＋ 最新見林）。\n"
             + "⚠ 長內文一律走 --arg-file digest_body=<檔>：見林 body 動輒上萬字，不該經過 shell。\n"
             + "⛔ 本 Cmd **不寫任何 registry／profile 欄位** —— 書籤是掃磁碟算出來的（最大 span_end）。\n"
-            + "   python 那支會順手存 registry，而那正是它會「檔寫成功卻 exit=1」的原因。";
+            + "   python 那支（awakening.py consolidate）2026-09-02 起也不再寫 registry，\n"
+            + "   原本「檔寫成功卻 exit=1」那條死路已拆掉；本 Cmd 仍是主入口（且不需要 Editor）。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("consolidate --arg letters_root=D:/Unity/LY/AgentCommands/ChatTavern/baton/letters"
