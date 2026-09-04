@@ -210,28 +210,34 @@ namespace SCP.Core.Session
             var aResult = new SCP_ActivitySessionCloseResult();
             if (ioSession == null) return aResult;
 
-            // ① 權威狀態
-            aResult.Closed = Close(iRoot, iPersona, ioSession, iReason);
-            if (!aResult.Closed)
+            // ── 有 gateway ⇒ **整步交給它**（它那一端連結算一起做，權威狀態也由它寫）──
+            // ⚠ 這裡刻意**不先自己關場**：先關再委派的話，對面會判「已經收過工」而跳過結算
+            //   ⇒ 結算永遠不發生，而兩邊都不報錯（2026-09-04 同日量到的形狀，見介面的 remarks）。
+            //   ⇒ 而且不先寫檔還有第二個好處：**寫入端只有一個**（TASK-0100 的主題）。
+            SCP_IActivitySessionCloseGateway? aGate = SCP_ActivitySessionGatewayHost.For(iRoot.Value, ioSession.kind);
+            aResult.HasHandler = aGate != null;
+            if (aGate != null)
             {
-                aResult.SettleError = "session 檔寫不進去 ⇒ 不跑結算（避免結算完狀態沒落地、下次再結一次）";
+                try
+                {
+                    bool aOk = aGate.TryClose(ioSession, iReason ?? "", aResult.SettleLines, out string aErr);
+                    aResult.ClosedByGateway = aOk;
+                    aResult.Settled = aOk;
+                    if (!aOk) aResult.SettleError = string.IsNullOrEmpty(aErr) ? "（gateway 沒說原因）" : aErr;
+                }
+                catch (Exception e)
+                {
+                    aResult.SettleError = e.GetType().Name + ": " + e.Message;
+                }
+                // ⚠ 回讀確認 —— gateway 說成功不算數，磁碟說了才算（它在另一個 process 裡）。
+                SCP_ActivitySession? aBack = Load(iRoot, iPersona);
+                aResult.Closed = aBack != null && !aBack.active;
                 return aResult;
             }
 
-            // ② 結算（best-effort，且「沒有 handler」與「結算失敗」是兩件事）
-            SCP_IActivitySessionSettleGateway? aGate = SCP_ActivitySessionGatewayHost.For(ioSession.kind);
-            aResult.HasHandler = aGate != null;
-            if (aGate == null) return aResult;
-            try
-            {
-                aResult.Settled = aGate.TrySettle(ioSession, iReason ?? "", aResult.SettleLines, out string aErr);
-                if (!aResult.Settled) aResult.SettleError = string.IsNullOrEmpty(aErr) ? "（gateway 沒說原因）" : aErr;
-            }
-            catch (Exception e)
-            {
-                aResult.Settled = false;
-                aResult.SettleError = e.GetType().Name + ": " + e.Message;
-            }
+            // ── 沒有 gateway ⇒ base close（明確降級，不靜默）──
+            aResult.Closed = Close(iRoot, iPersona, ioSession, iReason);
+            if (!aResult.Closed) aResult.SettleError = "session 檔寫不進去";
             return aResult;
         }
     }
