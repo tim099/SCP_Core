@@ -306,6 +306,40 @@ SCP_DataPaths.QueueFolder(new SCP_DataRoot(aDataRoot), aPersona);
 
 ---
 
+## §4.6 ⛔ 動 Senate 的碼：**停 Server → build → 自己起回來**（Tim 2026-09-04 提問後補）
+
+§4.5 講的是「驗在哪顆二進位檔上」，這一節講**那顆二進位檔正在被誰鎖著、build 完誰會消失**。
+
+| 步 | 做什麼 | 為什麼不能省 |
+|---|---|---|
+| ① 停 | `senate server stop`（`build.sh` / `build.ps1` 開頭已無條件呼叫，冪等） | Server 是**前景永駐**且執行的就是 `publish/senate.exe` ⇒ 不停它，publish 會撞 `GenerateBundle … Access to the path 'publish\senate.exe' is denied`（D10 血證，2026-09-03／09-04 各再撞一次） |
+| ② build | `./build.sh`（或 `.\build.ps1`） | 出廠驗收④ 會**自己起一顆臨時 Server** 做 round-trip，然後**在同一段裡收掉** |
+| ③ 起 | `senate server start`（前景，開一個終端機掛著） | ⚠ **沒有人會幫你做這一步** —— ① 收掉的是你的、② 收掉的是它自己的，⇒ **build 結束時一定沒有 Server 在跑** |
+
+🩸 而漏掉 ③ 的症狀**不長得像「忘了起」**：下一個 `⤷Server` 的 Cmd 會 exit 3
+（`delegate_failure = not_running`，⛔ 刻意不降級成本地跑 —— 本地跑就是第二個寫入者）。
+那個 exit 3 讀起來像「這功能壞了」。
+
+📌 修法不是只寫這條規則（第三階）：**兩支 build 腳本都在收尾印一行**（第二階，長在必經路上）——
+build 前有一顆在跑就印「已被停掉，build 不會幫你起回來」，本來沒有就印「本來就沒有」。
+**規則只負責解釋為什麼，不負責被記得。**
+
+### 4.6.1 現在有誰依賴 Senate Server？——**還沒有**（讀數，2026-09-04）
+
+```
+senate cmd            → 執行位置：本地 11 ／ ⤷Unity 10 ／ ⤷Server 1 ／ ⛔未實作 0
+                        🔢 server_count = 1
+```
+唯一那支 `⤷Server` 是 **`server-ping`**（驗執行器通不通的**探針本身**）。
+⇒ **目前沒有任何實際服務依賴它**；忘了起 Server 今天只會讓探針與出廠驗收④ 失敗，不會讓任何人的工作停擺。
+⛔ 而這一格是**讀數不是保證**：第一個真的依賴它的會是 **TASK-0106**（seq／ledger 搬進 Server 當單一寫入端），
+Tim 拍 B（記單不動，動工那天由他宣布「先開 Server」）。**那天起這條規則的代價就從「探針紅一格」變成「所有人的錢與序號都停」。**
+
+📌 判準：**一支 Cmd 標成 `⤷Server` 的那一刻，它就進了「build 完必須有人手動起回來」的名單。**
+所以移植進 Server 之前先問一句：**這件事停十分鐘，會不會有人在那十分鐘裡靜默地拿到錯的數字？**
+
+---
+
 ## §5 邊界：純函式優先，服務要有理由
 
 README 原本的判準是「只放純函式 ＋ 零依賴；檔案 IO、跑 git、log、UI 留在各自那邊」，
