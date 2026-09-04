@@ -1,7 +1,7 @@
 ---
 title: SCP 專案撰寫規範
-description: SCP_Core 與其消費端（Senate / Unity）共用的 C# 撰寫規則 —— 方言限制、JSON 一律走 SCP_Json、設定一律走專案層 prefs、純函式邊界、路徑單一落點。
-last_updated: 2026-09-02
+description: SCP_Core 與其消費端（Senate / Unity）共用的 C# 撰寫規則 —— 方言限制、JSON 一律走 SCP_Json、設定一律走專案層 prefs、純函式邊界、路徑單一落點（含「決定點包含值存在哪」）。
+last_updated: 2026-09-04
 target_audience: [AI_Agent, Tools_Maintainer, Backend_Programmer]
 related:
   - ../README.md | SCP_Core README | 兩條規矩的來源（方言 / 邊界）
@@ -256,6 +256,37 @@ SCP_DataPaths.QueueFolder(new SCP_DataRoot(aDataRoot), aPersona);
 > 而 2026-08-30 我自己也撞了同族的一次：SCP_Core 有**兩個工作樹**（Bar／Senate 各一份），
 > 我把新檔寫進其中一個、`dotnet build` 讀另一個。
 
+### ⛔ 「決定點」包含**值存在哪**，不只是誰拼路徑（2026-09-04 補）
+
+上面幾格講的都是「誰把路徑拼出來」。而同一條規則有第二半，**它長得不像違規**：
+
+> **一個路徑的值也只能有一個存放處。** 你沒有拼任何路徑、「只是存了一個同樣的值」，
+> 那仍然是第二個決定點。
+
+🩸 現場（TASK-0127 ⑥，我自己）：`SCP_GuiSessionAdminPage` 開了一格
+`SCP_PrefKey.String("sessions", "dataRoot")` 讓使用者手填資料根，
+而 `SCP_PathId.AgentCommandsRoot` **早就是**那個統一設定（Global、只有一組、「路徑管理」頁在編輯它）。
+代價跟拼錯路徑完全一樣：**第二份可以跟第一份說不一樣的話**，
+而那時頁面讀到另一棵樹的資料，**每一列都顯示正常**。
+
+而當天最貴的一格不是重複本身：那一頁印著「還沒設定資料根」的時候，
+**整個 CLI 早就解得出那個根**（每支 cmd 都印 `data_root=…`）
+⇒ 我把自己造的洞讀成了設定的缺口，然後**去寫使用者的 prefs** 才把那一頁「驗完」。
+
+照做的形狀：
+
+1. 加任何一格路徑設定之前，**先看 `SCP_PathId` 的成員清單**（那是唯一那份描述表）。
+2. 頁面要動態路徑 ⇒ 問宿主介面（`ISCP_GuiAppContext.AgentCommandsRoot`，回 `SCP_PathResolution`
+   ⇒ 三態不同形）。⛔ **頁面不存路徑。**
+3. 真的需要新的一格 ⇒ 往 `SCP_PathId` **加一個成員**（頁面與 `cmd paths` 自動長出來）。
+4. **反向對照（怎麼證明它是純重複）：把你新加的那格設定刪掉，功能有沒有變差？**
+   沒變差就是重複 —— 2026-09-04 我刪掉 `sessions.dataRoot` 之後那一頁照樣印
+   `來源：auto ⇒ 由 ProjectRoot 推導` ＋ 8 列 session。
+
+📌 一般形：**「我證明了 A 不對」不蘊含「所以要自己造一個」** —— 中間漏掉的是「既有的是什麼」。
+我在那格 pref 的註解裡寫著「不從信件夾根推導」，那句話**是對的**；
+錯的是排除了**錯的推導**之後，沒去問**對的那一格是不是已經存著了**。
+
 ### 例外要有 Origin，不要只回一個字串
 
 `SCP_ProjectPaths.ResolveDataRoot` 回 `(Root, Origin)`，Origin 是
@@ -369,6 +400,29 @@ git -C <另一份> pull --ff-only origin master
 
 📌 而 2026-09-04 之前這一步是**等人做**的（我在收尾清單裡寫「同步是 Tim 的例行」）。
 Tim 當天拍板：**agent 自己 push & pull**。⇒ 那條「等人」的路徑退場，這一節就是它的替代品。
+
+### ⛔ 掛在 `Assets/` 底下的那一份**不要 `dotnet build`**（2026-09-04）
+
+`SCP_Core.csproj` 在每一份工作副本裡都在（同一個 repo）⇒ 在 Unity 專案那一份跑 `dotnet build`
+**編得過、0 warning 0 error**，而它把 `bin/` `obj/` 生在**Unity 會 import 的位置**
+⇒ Unity 同時吃到原始碼與那顆 DLL：
+
+```
+error CS1704: An assembly with the same simple name 'SCP_Core' has already been imported.
+  Try removing one of the references (e.g. '…/Assets/Plugins/SCP_Core/obj/Debug/netstandard2.1/refint…')
+```
+
+⚠ 兩個地方會讓人查錯方向：
+
+1. **它報在 `UCL_Core`**（引用 SCP_Core 的那一邊），不是報在 SCP_Core ——
+   症狀出現的層跟成因的層不同，而我當時正在大改 UCL_Core 的 22 個檔，
+   **差一步就會去那 22 個檔裡找一個不存在的錯**。
+2. **`bin/` `obj/` 在 `.gitignore` 裡** ⇒ `git status` 不會提醒你它們躺在那裡。
+
+⇒ 規則：**要編 SCP_Core 就編 Senate 那一份**（`D:/Unity/Senate/SCP_Core`）。
+Unity 那一份的語法驗收走該側的重編（`check_compile.py`，它本來就會等一次真的編譯）。
+📌 一般形：**同一個 repo 掛兩份工作副本，而只有一份會被宿主 import** ——
+在被 import 的那一份上產生建置產物，等於自己塞一顆重複的 assembly 進去。
 
 ---
 
