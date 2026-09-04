@@ -340,6 +340,38 @@ Tim 拍 B（記單不動，動工那天由他宣布「先開 Server」）。**�
 
 ---
 
+## §4.7 ⛔ SCP_Core 有多份工作副本：同步走 **push & pull**，**agent 自己來**（Tim 2026-09-04 拍板）
+
+SCP_Core 同時掛在好幾個消費端底下（`Senate/SCP_Core`、`LY/Assets/Plugins/SCP_Core`、`Bar/...`）——
+那**不是複本，是同一個 repo 的多份工作副本**。在其中一份改完，其他份**不會自己知道**。
+
+```bash
+# ① 在改動的那一份：commit（走 git_commit.py）
+# ② 推上去 —— git_commit.py 只提交，**不 push**（它自己的區塊註解寫著）
+git -C <改動那份> push origin master
+# ③ 在其他每一份：拉下來
+git -C <另一份> pull --ff-only origin master
+```
+
+- ⚠ **`--ff-only` 不是潔癖**：兩份工作副本各自 commit 過就會分叉，而 `pull` 預設會**幫你 merge** ——
+  那會在一個「只是要同步」的動作裡長出一顆合併 commit，且不會有人發現。⇒ 分叉時要**當場喊**。
+- ⚠ **父層的 submodule pointer bump 不在這一步**：pull 完，消費端 repo 會顯示 `m <mount path>`。
+  那是**各消費端自己的 commit**（本專案由 Tim 收尾），不要順手一起提。
+- ⚠ **Unity 那側的 `.meta` 是 pull 之後才長出來的** —— Editor 第一次 import 才生成。
+  ⇒ pull 完要開一次 Editor，metas 出現後由那一側入版控。**在 Senate 這側手工造 `.meta` 是偽造**。
+- ⚠ 有本地未提交改動的那一份不要 pull（先 commit 或 stash）。
+
+🩸 **為什麼這一節值得存在**（2026-09-03／09-04 各一次）：Editor 那側的 SCP_Core 停在舊 commit，
+於是從 Unity 看 canvas 會看到「**沒有 place 的版本**」—— 而那個「找不到」長得像**功能沒做**，
+不像「你的工作副本落後兩筆」。同一天我在交棒清單裡把它寫成「明天第一件（有時效）」，
+隔天量才發現早就被同步掉了。
+⇒ **落後的工作副本不會報錯，它會給你一個看起來完整的舊世界。**
+
+📌 而 2026-09-04 之前這一步是**等人做**的（我在收尾清單裡寫「同步是 Tim 的例行」）。
+Tim 當天拍板：**agent 自己 push & pull**。⇒ 那條「等人」的路徑退場，這一節就是它的替代品。
+
+---
+
 ## §5 邊界：純函式優先，服務要有理由
 
 README 原本的判準是「只放純函式 ＋ 零依賴；檔案 IO、跑 git、log、UI 留在各自那邊」，
