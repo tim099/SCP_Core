@@ -46,6 +46,9 @@ public static readonly string[] Kinds = { FreeTime, StreamWatch, Coding };
   📌 `Raw` 一定要留：**讀成子類別 ≠ 認識全部的鍵** —— 管理頁與關場路徑讀的是基底，
   此時 kind 專屬欄位一個都不認識，而它們必須原樣寫回去
   （🩸 2026-09-04 就是那條路吃掉了 `rounds` / `activity`）。
+- ⛔ **不要為子類別寫 `SerializeToJson` 之類的 override** —— `SCP_JsonMapper` 寫原生 bool、
+  用 `[SCP_Ignore]` 排除欄位。⚠ 別套別的框架的直覺：UCL 那套只看 `[UCL_HideInJson]`，
+  **`[NonSerialized]` 它不看** —— 🩸 2026-09-04 實測真的把整包 `RawJson` 寫進了檔。
 
 ---
 
@@ -154,5 +157,17 @@ static void RegisterSessionKind()
 4. **補收工認得你**：造一份你這個 kind 的殘留 ⇒ `Cmd_SessionClose` 印的是
    「登記為不需要結算」或真的跑了結算，**不是**「沒有人登記過」。
 
+5. **selftest 要有反向對照**：不只驗「子類別寫得出、讀得回」，
+   要驗「**讀成基底寫回去之後，kind 專屬欄位還在**」。
+   ⚠ 只驗前者的話，**一個基底寫回就吃鍵的實作也會全綠**。
+
 ⚠ 第 4 格是唯一能證明第 3 步真的生效的讀數 —— 而它跟前三格**不同源**：
 前三格量的是開場，第 4 格量的是關場。
+
+---
+
+## 7. 這份文件之前住在哪（給查歷史的人）
+
+2026-09-05 之前，這套 SOP **只活在工作記憶** `session-architecture/pointer_port-0127-after-onecut`。
+⇒ 而**記憶會歸檔**：主 Task 收尾那天它會被封存，於是「怎麼用」會跟著鷹架一起消失。
+📌 判準：**記憶回答「為什麼／怎麼踩過」，文件回答「怎麼用」** —— 這份就是那次搬家的結果。
