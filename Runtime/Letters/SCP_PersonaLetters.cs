@@ -57,6 +57,13 @@ namespace SCP.Core.Letters
         public string BankAccount { get; set; } = "";
         public string LockedAt { get; set; } = "";
         public string SessionKey { get; set; } = "";
+
+        /// <summary>
+        /// lock 上那顆 session token（酒館 enforce 開著時發文要附）。
+        /// <para>⚠ 跟 <see cref="SessionKey"/> **不是同一格** —— key 是這場 session 的識別，
+        /// token 是發文的憑證。名字像，用途不同，混用不會報錯只會被 reject。</para>
+        /// </summary>
+        public string SessionToken { get; set; } = "";
         public int Pid { get; set; }
         public int WakeExpected { get; set; }
         public string LockPath { get; set; } = "";
@@ -192,6 +199,7 @@ namespace SCP.Core.Letters
                 oStatus.BankAccount = aRoot.GetString("bank_account", "");
                 oStatus.LockedAt = aRoot.GetString("locked_at", "");
                 oStatus.SessionKey = aRoot.GetString("session_key", "");
+                oStatus.SessionToken = aRoot.GetString("session_token", "");
                 oStatus.Pid = aRoot.GetInt("pid", 0);
                 oStatus.WakeExpected = aRoot.GetInt("wake_expected", 0);
             }
