@@ -5,6 +5,7 @@ last_updated: 2026-09-05
 target_audience: [AI_Agent, Tools_Maintainer, Backend_Programmer]
 related:
   - ../README.md | SCP_Core README | 兩條規矩的來源（方言 / 邊界）
+  - Session_Kinds.md | 新增一種 activity session kind | 開場走 TryStart／宿主登記／收工兩條路不互叫
   - <Senate>/Docs/Architecture/Overview.md | Senate 架構總覽 | 四層分工與共用碼邊界
   - ucl_core:Docs~/zh-Hant/Agent/Code_Comment_Standards.md | 註解規範 | 區塊職責／物理意義／數值影響（本專案沿用）
 ---
