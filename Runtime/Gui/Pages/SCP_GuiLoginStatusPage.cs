@@ -6,8 +6,12 @@
 //           ⭐ 2026-08-30 從 Senate.Cli/Pages/LoginStatusPage.cs 搬進 SCP_Core（六步的第 4 步）。
 //           搬得動的前提是前三步：掃描層進了 SCP_Core（SCP_PersonaLetters）、
 //           設定改走 prefs 介面（本頁**不知道** senate.local.json 這個檔名的存在）。
-// 數值影響：畫面純讀（走 SCP_PersonaLetters.Scan）。唯一的寫入是「儲存路徑」那顆鈕，
-//           走 ISCP_Prefs.Write —— 值落在哪個檔由宿主決定，本頁不知道也不該知道。
+// 數值影響：**畫面純讀，本頁零寫入**（走 SCP_PersonaLetters.Scan）。
+//           🩸 2026-09-05 拿掉了「信件夾根」的輸入框與儲存鈕：本頁曾自己走
+//           `Prefs.Read(awakening.lettersRoot)` 讀**存起來的原始值**，而那一格是 `[SCP_PathAuto]` 的 ——
+//           有人填 `auto` 時本頁會拿字面 `"auto"` 去掃目錄，掃不到 ⇒ 畫面說「這裡真的還沒有人」，
+//           **而同一台的 CLI 解得出真正的路徑**。兩邊都不報錯，差別只在誰走了解析器。
+//           ⇒ 路徑一律問宿主（`m_Ctx.LettersRoot`，＝「路徑管理」頁那一格），要改值去那一頁。
 //
 // ⚠ 這一頁最容易騙人的一格是「離線」：lock 檔在但讀不了時，把那個人畫成離線的畫面
 //   跟「真的離線」一模一樣。⇒ 狀態是三態，未知就印「未知」，並把原因印在上面。
@@ -18,7 +22,7 @@
 #nullable enable
 using System;
 using SCP.Core.Letters;
-using SCP.Core.Prefs;
+using SCP.Core.Paths;
 
 namespace SCP.Core.Gui
 {
@@ -26,17 +30,8 @@ namespace SCP.Core.Gui
     {
         readonly ISCP_GuiAppContext m_Ctx;
 
-        /// <summary>信件夾根的 key —— 宿主決定它落在哪個檔（見 ISCP_Prefs）。</summary>
-        static readonly SCP_PrefKey<string> KeyLettersRoot = SCP_PrefKey.String("awakening", "lettersRoot", "");
-
-        /// <summary>編輯中的路徑（按「儲存」才寫回檔案）。</summary>
-        string m_RootDraft = "";
-
-        /// <summary>檔案裡目前的值 —— 用來判斷「改了還沒存」。</summary>
-        string m_RootSaved = "";
-
-        /// <summary>設定檔讀不到／壞掉的原因（null ＝ 沒問題）。</summary>
-        string? m_ConfigError;
+        /// <summary>宿主解出來的信件庫根（值／來源／取不到的原因）—— 每次 OnPush 重讀，本頁不快取成字串。</summary>
+        SCP_PathResolution m_Root = new SCP_PathResolution("", "?", "還沒讀");
 
         /// <summary>上一次掃描結果。null ＝ 這一輪還沒掃過。</summary>
         SCP_PersonaScan? m_Scan;
@@ -56,38 +51,36 @@ namespace SCP.Core.Gui
 
         void Load()
         {
-            m_ConfigError = null;
-
-            // 三態逐格處理 —— 這正是 prefs 這一層存在的理由：
-            //   ReadError（檔壞了）與 Missing（還沒設定）**不同形**，
-            //   混起來的話「壞檔」會長得像「還沒設定」，而那時按下儲存就是不可逆的覆寫。
-            SCP_PrefRead<string> aRead = m_Ctx.Prefs.Read(KeyLettersRoot);
-            if (aRead.State == SCP_PrefState.ReadError)
-            {
-                m_ConfigError = $"設定讀不了，本頁不提供編輯（沒有被動過）：{aRead.Error}";
-                m_Scan = null;
-                return;
-            }
-            m_RootSaved = SCP_PersonaLetters.CleanPath(aRead.IsPresent ? aRead.Value : "");
-            m_RootDraft = m_RootSaved;
+            // 三態逐格處理（解出來／沒有人填過／取不到）—— 這正是宿主回 SCP_PathResolution 的理由。
+            // ⚠ 拿的是**解析後**的值：`auto` 這種原始值到不了這裡，也就不會被當成目錄去掃。
+            m_Root = m_Ctx.LettersRoot;
+            if (!HasRoot) { m_Scan = null; return; }
             Rescan();
         }
 
         void Rescan()
         {
-            m_Scan = SCP_PersonaLetters.Scan(m_RootSaved);
+            m_Scan = SCP_PersonaLetters.Scan(SCP_PersonaLetters.CleanPath(m_Root.Value));
         }
+
+        /// <summary>信件庫根解出來了沒有（<c>Error</c> 有值或值是空的 ⇒ 沒有資料來源）。</summary>
+        bool HasRoot { get { return m_Root.Error == null && m_Root.Value.Length > 0; } }
 
         protected override void DrawContent(SCP_Ui g)
         {
-            if (m_ConfigError != null)
+            DrawRootRow(g);
+            if (!HasRoot)
             {
-                g.Note($"⚠ {m_ConfigError}");
+                // 三態不同形：「沒設定根」與「取不到」都不是「這裡沒有人」，而它們彼此也不同形。
+                g.Note("⚠ 本頁**沒有資料來源** ⇒ 這不是「還沒有人登入」，是「量不到」。原因："
+                       + (string.IsNullOrEmpty(m_Root.Error) ? "信件庫根是空的（沒有人填過）" : m_Root.Error));
+                g.Note("· 要設它請去「路徑管理」頁（`senate ui --page paths`）的 **persona 信件庫根** 那一格"
+                       + " —— **本頁不存路徑**，它讀的就是那一格。");
                 if (g.Button("重新讀取", "login/reload")) Load();
+                if (m_Message != null) g.Note(m_Message);
                 return;
             }
 
-            DrawSetting(g);
             g.Separator();
             DrawStatus(g);
 
@@ -96,44 +89,30 @@ namespace SCP.Core.Gui
 
         // ── 設定 ──────────────────────────────────────────────────────
 
-        void DrawSetting(SCP_Ui g)
+        // ⚠ **唯讀一行，沒有輸入框也沒有儲存鈕**（2026-09-05 改）：信件庫根的設定只有一處。
+        //   印出 `Origin`（手填／`auto` ⇒ 由 AgentCommandsRoot 推導）是刻意的 ——
+        //   「這個值是誰給的」比「這個值是什麼」更常是問題的答案，而這一格正好是
+        //   **本頁上一版讀錯的那個東西**（讀了原始值，於是 `auto` 會變成一個掃不到的目錄名）。
+        // ⚠ 鈕面不放 emoji：視窗那側的字型是 msjh＋seguisym，🔄 這類字彙不在裡面 ⇒ 畫成 `?`
+        //   （2026-09-05 截圖實測）。純文字那側看起來正常 —— 兩側不同形，而只有截圖看得到。
+        void DrawRootRow(SCP_Ui g)
         {
-            using (g.Box("信件夾設定"))
+            g.Note("· persona 信件庫根：`" + (m_Root.Value.Length > 0 ? m_Root.Value : "（解不出來）")
+                   + "`　來源：" + m_Root.Origin + "　—— 設定在「路徑管理」頁，本頁只讀");
+
+            using (g.Row())
             {
-                g.Note("persona 信件庫的根目錄，例如 `D:/Unity/Bar/AgentCommands/ChatTavern/baton/letters`。"
-                       + "存進宿主的設定（awakening.lettersRoot）—— 之後的登入／早安流程從那裡拿路徑。");
-
-                m_RootDraft = g.TextField("信件夾根目錄", m_RootDraft, "login/root");
-
-                bool aDirty = !string.Equals(
-                    SCP_PersonaLetters.CleanPath(m_RootDraft), m_RootSaved, StringComparison.Ordinal);
-
-                using (g.Row())
+                if (g.Button("重新讀取", "login/reload"))
                 {
-                    if (g.Button("💾 儲存", "login/save")) Save();
-                    if (aDirty && g.Button("放棄改動", "login/revert"))
-                    {
-                        m_RootDraft = m_RootSaved;
-                        m_Message = "・已還原成檔案裡的值（檔案沒有被動過）";
-                    }
-                    if (g.Button("🔄 重新掃描", "login/rescan"))
-                    {
-                        Rescan();
-                        m_Message = "・已重新掃描（讀的是磁碟現況，不是上一次的快取）";
-                    }
+                    Load();
+                    m_Message = "・已重讀路徑並重新掃描（讀的是磁碟現況，不是上一次的快取）";
                 }
-
-                if (aDirty) g.Note("⚠ 有改動還沒儲存 —— 下面那張表用的仍是**已儲存**的路徑（本頁刻意不自動存）");
+                if (HasRoot && g.Button("重新掃描", "login/rescan"))
+                {
+                    Rescan();
+                    m_Message = "・已重新掃描（路徑沒有重讀 —— 要連路徑一起重讀請按「重新讀取」）";
+                }
             }
-        }
-
-        void Save()
-        {
-            (bool aOk, string aMsg) = m_Ctx.Prefs.Write(KeyLettersRoot, m_RootDraft);
-            m_Message = (aOk ? "✓ " : "⚠ ") + aMsg;
-            if (!aOk) return;
-            m_RootSaved = SCP_PersonaLetters.CleanPath(m_RootDraft);
-            Rescan();
         }
 
         // ── 狀態 ──────────────────────────────────────────────────────

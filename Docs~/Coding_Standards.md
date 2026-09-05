@@ -1,7 +1,7 @@
 ---
 title: SCP 專案撰寫規範
-description: SCP_Core 與其消費端（Senate / Unity）共用的 C# 撰寫規則 —— 方言限制、JSON 一律走 SCP_Json、設定一律走專案層 prefs、純函式邊界、路徑單一落點（含「決定點包含值存在哪」）。
-last_updated: 2026-09-04
+description: SCP_Core 與其消費端（Senate / Unity）共用的 C# 撰寫規則 —— 方言限制、JSON 一律走 SCP_Json、設定一律走專案層 prefs、純函式邊界、路徑單一落點（含「決定點包含值存在哪」與「讀取端不准讀原始值」）。
+last_updated: 2026-09-05
 target_audience: [AI_Agent, Tools_Maintainer, Backend_Programmer]
 related:
   - ../README.md | SCP_Core README | 兩條規矩的來源（方言 / 邊界）
@@ -286,6 +286,35 @@ SCP_DataPaths.QueueFolder(new SCP_DataRoot(aDataRoot), aPersona);
 📌 一般形：**「我證明了 A 不對」不蘊含「所以要自己造一個」** —— 中間漏掉的是「既有的是什麼」。
 我在那格 pref 的註解裡寫著「不從信件夾根推導」，那句話**是對的**；
 錯的是排除了**錯的推導**之後，沒去問**對的那一格是不是已經存著了**。
+
+### ⛔ 讀取端也只有一個入口：**支援 `auto` 的路徑，不准讀原始值**（2026-09-05 補）
+
+上一節治的是「值存了兩份」。這一節治的是**只存一份、卻有兩種讀法**：
+
+> 一格 `[SCP_PathAuto]` 的設定，**存起來的值**（可能是字面 `auto`）與
+> **解析後的值**是兩個東西。讀原始值的那一端會拿 `auto` 當成一個目錄名。
+
+🩸 現場（`SCP_GuiLoginStatusPage`，我自己）：那一頁走 `Prefs.Read(awakening.lettersRoot)`
+拿原始值去 `Scan()`。`lettersRoot` 是 `[SCP_PathAuto]` 的 ⇒ 有人把它填成 `auto` 時，
+那一頁會掃一個叫 `auto` 的目錄、掃不到、然後印
+**「這個資料夾底下沒有任何 persona —— 要嘛路徑指錯了，要嘛這裡真的還沒有人」**，
+而同一台的 `senate cmd paths` 解得出真正的路徑。⇒ **兩邊都沒報錯，差別只在誰走了解析器。**
+
+📌 它跟上一節同族但**不同形**：上一節的病是「有第二個存放處」，這一節的病是
+「只有一個存放處，而其中一端把 wire 值當成了 final 值」。
+⇒ 上一節的反向對照（刪掉那格設定）在這裡**驗不出東西來** —— 這裡沒有多餘的設定可刪。
+
+照做的形狀：
+
+1. 頁面／CLI 要用一格動態路徑 ⇒ 一律拿**解析後**的 `SCP_PathResolution`
+   （`ISCP_GuiAppContext.AgentCommandsRoot` / `.LettersRoot`）。
+2. `Prefs.Read(<那格的 json key>)` 只屬於**編輯它的那一頁**（「路徑管理」）——
+   那裡要的正是原始值（使用者填的 `auto` 要能被看見、被改回去）。
+3. 值旁邊一律印 `Origin`（`手填` / `auto ⇒ 由 <上游> 推導`）——
+   **「這個值是誰給的」比「這個值是什麼」更常是問題的答案**，而它也正是這隻蟲的照妖鏡。
+4. 驗收要用**最壞但合法**的輸入：把那格設成 `auto` 再跑。
+   `senate selftest` 的「登入頁信件庫根」就是這一格（它在暫存目錄自己造設定，
+   ⛔ **不去寫使用者的 prefs** —— 去寫使用者的設定來「驗完」一頁，正是上一節那筆血證的錯法）。
 
 ### 例外要有 Origin，不要只回一個字串
 

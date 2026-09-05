@@ -63,6 +63,22 @@ namespace SCP.Core.Gui
         Paths.SCP_PathResolution AgentCommandsRoot { get; }
 
         /// <summary>
+        /// persona 信件庫根 —— **由宿主解析同一格設定**（<see cref="Paths.SCP_PathId.LettersRoot"/>）。
+        /// <para>⚠ 同 <see cref="AgentCommandsRoot"/> 回 <see cref="Paths.SCP_PathResolution"/>：
+        /// 三態不可同形，而且**它支援 `auto`** ⇒ 頁面拿到的必須是**解析後**的值。</para>
+        /// </summary>
+        /// <remarks>
+        /// 🩸 為什麼補這一格（2026-09-05，basecamp）：「登入狀態」頁原本自己走
+        /// <c>Prefs.Read(awakening.lettersRoot)</c> 拿**存起來的原始值**，
+        /// 而這一格是 <c>[SCP_PathAuto]</c> 的 ⇒ 有人把它填成 <c>auto</c> 時，
+        /// 那一頁會拿字面 <c>"auto"</c> 去掃目錄，掃不到 ⇒ 畫面說「這裡真的還沒有人」。
+        /// **而 CLI 同時解得出真正的路徑** —— 跟 <see cref="AgentCommandsRoot"/> 那一筆同族：
+        /// 頁面讀的是原始值，別人讀的是解析值，兩邊都沒報錯。
+        /// ⇒ 判準：**支援 `auto` 的路徑，讀取端一律走解析器；原始值只屬於「路徑管理」頁的編輯框。**
+        /// </remarks>
+        Paths.SCP_PathResolution LettersRoot { get; }
+
+        /// <summary>
         /// 宿主想補在尺寸頁底下的說明（例：CLI 的一次性覆寫旗標、Unity 的 Editor 行為）。
         /// <para>⚠ 為什麼要這一格：尺寸頁的**功能**是共用的，但它底下那幾句註腳
         /// （「`--scale` 不寫回檔案」）**只在某一個宿主為真**。
