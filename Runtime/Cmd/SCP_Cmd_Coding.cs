@@ -121,6 +121,51 @@ namespace SCP.Core.Cmd
             if (iHours < 0) return SCP_CmdResult.Fail(2, "✗ --arg hours 要是正整數（小時）");
 
             DateTime aNow = DateTime.Now;
+
+            // ===========================================================
+            // 同 kind 守衛 —— ⚠ 這一格**不在** `TryStart` 裡，而那是刻意的：
+            //   共用層明寫「同 kind 疊開由各 kind 自己的守衛管」⇒ **每個入口少寫這一段就等於沒有守衛**，
+            //   而它不會報錯。@summit 2026-09-05 在 Unity 那個入口補了同樣一段（`0d9eae1c`）。
+            // 🩸 而本入口的活體（basecamp QA 自己量的，2026-09-05 23:15）：
+            //   Template 已持有一場 Coding（`…151531Z`，租期至 01:15）⇒ 從本入口再 `op=start`
+            //   ⇒ **exit 0、輸出寫「✓ 進場」**，回讀那個檔：session_id 換掉、status 換掉、租期重設，
+            //   md5 `3f67bd61` → `b1cb5bfe`。**同一份輸出還印著「兩邊互相擋得到」** ——
+            //   那句話對**跨人**成立，對**同一個人**不成立。
+            // 📌 教訓寫在這裡而不是單子上：**補一個入口不等於補好那個洞**。
+            //   ⇒ 之後每新增一個 Coding 進場入口，這一段就要再寫一次（或改走共用判定）。
+            // ===========================================================
+            var aMine = SCP_ActivitySessionStore.Load<SCP_CodingSession>(iRoot, iPersona,
+                                                                        SCP_ActivitySessionKind.Coding);
+            if (aMine != null && aMine.active)
+            {
+                bool aRunning = aMine.IsRunningAt(aNow, out _);
+                var aBlockedMine = SCP_CmdResult.Fail(2,
+                    "⛔ 進場被擋 —— **沒有開場**（你已經有一場 Coding）",
+                    "  · 你的場：`" + aMine.session_id + "`　在改：**"
+                        + (aMine.status.Length > 0 ? aMine.status : "（沒寫 status）") + "**",
+                    "  · 租期至：" + (aMine.until_local.Length > 0 ? aMine.until_local : "（沒寫截止時刻）")
+                        + "　⇒ " + (aRunning ? "**未到期**" : "**已到期**（落回殘留）"));
+                // ⚠ 兩態的處置**相反**：未到期 ⇒ 改狀態就好；已到期 ⇒ 要人決定續期還是收掉。
+                if (aRunning)
+                {
+                    aBlockedMine.Lines.Add("  改狀態就好，不必重開（順手續期）："
+                        + SCP_CmdRegistry.Invoke("coding --arg op=status --arg persona=" + iPersona
+                                                 + " --arg status=<一句話>"));
+                    aBlockedMine.Lines.Add("  ⛔ 重開一場**不是**改狀態 —— 它會換掉 session_id 並重設租期。");
+                }
+                else
+                {
+                    aBlockedMine.Lines.Add("  那一場**已經到期**（落回殘留）。二選一，都要顯式：");
+                    aBlockedMine.Lines.Add("  · 還在改 ⇒ 續期："
+                        + SCP_CmdRegistry.Invoke("coding --arg op=status --arg persona=" + iPersona
+                                                 + " --arg status=<一句話>"));
+                    aBlockedMine.Lines.Add("  · 不改了 ⇒ 先收掉再開新的："
+                        + SCP_CmdRegistry.Invoke("coding --arg op=end --arg persona=" + iPersona));
+                    aBlockedMine.Lines.Add("  ⛔ 本 Cmd **不替你自動續期也不自動收** —— 那兩件事的差別只有你知道。");
+                }
+                return aBlockedMine.AddValue("started", "0");
+            }
+
             DateTime aUntil = aNow.AddHours(iHours);
             var aSession = new SCP_CodingSession
             {
