@@ -186,6 +186,8 @@ namespace SCP.Core.Session
             string iKind, DateTime iNowLocal, out SCP_ActivitySession? oBlockedBy)
         {
             oBlockedBy = null;
+
+            // 軸1：這個**人**在不在別的場（per-persona，跨 kind 擋）。
             SCP_ActivitySession? aRunning = FindRunning(iRoot, iPersona, iNowLocal);
             if (aRunning != null)
             {
@@ -196,7 +198,50 @@ namespace SCP.Core.Session
                     return false;
                 }
             }
+
+            // 軸2：這**件事**現在有沒有**別人**在做（全域互斥，TASK-0058）。
+            // ⚠ 與軸1 正交：軸1 全過的情況下軸2 仍可能擋（我沒場、但別人正在 Coding）。
+            //   ⛔ 順序不可對調也不可合併：合併之後「我自己在別的場」與「別人在同一個場」
+            //      會共用一個回傳，而那兩件事的**處理方式相反**（前者關自己的場，後者要等別人）。
+            if (SCP_ActivitySessionKind.IsGlobalExclusive(iKind))
+            {
+                SCP_ActivitySession? aHolder = FindRunningGlobal(iRoot, iKind, iNowLocal, iPersona);
+                if (aHolder != null)
+                {
+                    oBlockedBy = aHolder;
+                    return false;
+                }
+            }
+
             return Save(iRoot, iPersona, iSession, iKind);
+        }
+
+        // ===========================================================
+        // 區塊職責：全域互斥那條軸的判存在 —— 掃**所有** persona，找某 kind 現正進行中的那一場。
+        // 物理意義：軸1（FindRunning）只讀 `sessions/<persona>.json` 一個檔位，所以它結構上
+        //          看不見別人。⇒ 「同時至多一人」不可能由軸1 附帶完成，必須付一次目錄掃描。
+        // 數值影響：走 LoadAll（與管理頁同一條走訪），O(檔數)；本層零快取 —— 快取會讓
+        //          「剛剛有人開場」與「我讀到的是舊的」同形，而那正是這條軸要防的事。
+        // ⚠ 回傳 null 的語意是「**在走 TryStart 的那些場裡**沒人持有」，不是「沒有人在做這件事」：
+        //   直接 Save 開的場不經過本函式的保護（2026-09-05 量：FreeTime／StreamWatch 都是直接 Save）。
+        //   ⇒ 回報時要帶這個定語，否則「沒查到」會被讀成「沒有人」。
+        // ===========================================================
+        /// <summary>某 kind 現正進行中的那一場（掃全體）；<paramref name="iExceptPersona"/> 排除自己。沒有回 null。</summary>
+        public static SCP_ActivitySession? FindRunningGlobal(SCP_DataRoot iRoot, string? iKind,
+            DateTime iNowLocal, string? iExceptPersona = null)
+        {
+            if (string.IsNullOrEmpty(iKind)) return null;
+            List<SCP_ActivitySession> aAll = LoadAll(iRoot);
+            for (int i = 0; i < aAll.Count; ++i)
+            {
+                SCP_ActivitySession aS = aAll[i];
+                if (!string.Equals(aS.kind, iKind, StringComparison.Ordinal)) continue;
+                if (!string.IsNullOrEmpty(iExceptPersona)
+                    && string.Equals(aS.persona, iExceptPersona, StringComparison.Ordinal)) continue;
+                if (!SCP_ActivitySessionKind.IsRegistered(aS.kind)) continue;
+                if (aS.IsRunningAt(iNowLocal, out _)) return aS;
+            }
+            return null;
         }
 
         /// <summary>
