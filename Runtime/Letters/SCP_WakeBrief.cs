@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text.RegularExpressions;
 using SCP.Core.Paths;
 using SCP.Core.Tasks;
 
@@ -426,11 +427,87 @@ namespace SCP.Core.Letters
                        ? "見森已折到第 " + aForests.Count + " 份（gen" + aForests.Count + "）"
                        : "見森：尚未折過（見林 " + aDigests.Count + " 份）"));
             aLines.Add(BugCountLine(iDataRoot));
+            aLines.AddRange(UnreferencedTaskLines(iLettersRoot, iPersona, iDataRoot));
             return new SCP_BriefSection { Title = "📋 §6 記憶維護狀態", Lines = aLines, Essential = true };
         }
 
         /// <summary>見林一單位幾個 wake（gap 到這個數就算 OVERDUE）。對齊 python BRIEF 那側的 10。</summary>
         public const int DigestGapOverdue = 10;
+
+        /// <summary>§6「見叢沒引用的單」最多列幾張（其餘只報張數，不砍掉不提）。</summary>
+        public const int UnreferencedTaskListCap = 10;
+
+        /// <summary>
+        /// §6 的「我涉及、但見叢完全沒引用」那幾行。
+        /// <para>區塊職責：把一整類**結構性看不見**的單子撈到台面上。</para>
+        /// <para>物理意義：brief 的 §2 見叢是「當期交棒清單」，而它是**手寫**的 ——
+        /// 一張單只要沒有人把它抄進見叢，早安 brief 就永遠不會提它。
+        /// 於是「這張單不存在」與「這張單沒被抄進見叢」在醒來的人眼裡**同形**，
+        /// 而後者的數量只會單向長大（2026-09-06 summit 手動量到 22 張）。</para>
+        /// <para>🩸 為什麼不是把那 22 張手抄進見叢（那是當時的第一直覺）：手抄是**一次性快照**，
+        /// 明天新開的單又看不見，而抄進去的那些會在單子關掉之後繼續躺在見叢裡變成假帳 ——
+        /// 那正是「我欠 X 一份檔案」掛七天的同一族。⇒ 讓它每天自己算。</para>
+        /// <para>⚠ 不給 <paramref name="iDataRoot"/> ⇒ 說「未量」，**不印 0**（同 BugCountLine 的理由）。</para>
+        /// </summary>
+        static List<string> UnreferencedTaskLines(string iLettersRoot, string iPersona, string? iDataRoot)
+        {
+            var aOut = new List<string>();
+            if (string.IsNullOrEmpty(iDataRoot))
+            {
+                aOut.Add("- 📋 我涉及的未結單：**未量**（本次沒給資料根 —— 未量 ≠ 零張）");
+                return aOut;
+            }
+            try
+            {
+                // 見叢引用到的單號 —— 真相源是 `_keys_open.md` 本文，不另存索引（索引會漂）。
+                var aReferenced = new HashSet<int>();
+                string aKeysPath = SCP_LettersPaths.KeysOpenPath(new SCP_LettersRoot(iLettersRoot), iPersona);
+                if (File.Exists(aKeysPath))
+                    foreach (Match aMatch in Regex.Matches(File.ReadAllText(aKeysPath), @"TASK-0*(\d+)"))
+                        if (int.TryParse(aMatch.Groups[1].Value, out int aIdx)) aReferenced.Add(aIdx);
+
+                // 我涉及 ＝ 我開的 或 我是參與者。⚠ 走 HasParticipant 不自己解字串 ——
+                //   participants 是結構化清單，用 substring 找名字會把 `summit` 命中 `summit-2`。
+                var aMine = new List<SCP_TaskEntry>();
+                foreach (SCP_TaskEntry aEntry in SCP_TaskIO.LoadAll(new SCP_DataRoot(iDataRoot!)))
+                {
+                    if (aEntry.IsClosed()) continue;
+                    if (string.Equals(aEntry.reporter, iPersona, StringComparison.Ordinal)
+                        || aEntry.HasParticipant(iPersona)) aMine.Add(aEntry);
+                }
+
+                var aHidden = new List<SCP_TaskEntry>();
+                foreach (SCP_TaskEntry aEntry in aMine)
+                    if (!aReferenced.Contains(aEntry.index)) aHidden.Add(aEntry);
+
+                aOut.Add("- 📋 我涉及的未結單：**" + aMine.Count.ToString(CultureInfo.InvariantCulture)
+                         + "** 張（我開的 ＋ 我是參與者）"
+                         + "（清單 → `cmd tasks --arg data_root=<root> --arg persona=" + iPersona + "`）");
+                if (aHidden.Count == 0)
+                {
+                    aOut.Add("  - ✓ 其中見叢沒引用的：**0 張** —— 沒有結構性看不見的單");
+                    return aOut;
+                }
+                aOut.Add("  - ⚠ 其中 **" + aHidden.Count.ToString(CultureInfo.InvariantCulture)
+                         + " 張見叢完全沒引用** ⇒ 只有這一行會提到它們（見叢是手寫的，不會自己長出來）");
+                int aShown = Math.Min(aHidden.Count, UnreferencedTaskListCap);
+                for (int i = 0; i < aShown; i++)
+                {
+                    SCP_TaskEntry aEntry = aHidden[i];
+                    aOut.Add("    - " + aEntry.Id + " `" + aEntry.status + "` " + aEntry.title);
+                }
+                if (aHidden.Count > aShown)
+                    aOut.Add("    - …另有 " + (aHidden.Count - aShown).ToString(CultureInfo.InvariantCulture)
+                             + " 張未列（顯示上限 " + UnreferencedTaskListCap + "）—— **未列不是不存在**");
+                return aOut;
+            }
+            catch (Exception e)
+            {
+                // 讀失敗要出聲：靜默回空會把「量不到」講成「沒有隱形單」。
+                aOut.Add("- 📋 我涉及的未結單：**量不到**（" + e.GetType().Name + ": " + e.Message + "）");
+                return aOut;
+            }
+        }
 
         /// <summary>從見林檔名（`wake_072-081.md`）取涵蓋到的最後一個 wake。解不出來回 0。</summary>
         static int LastCoveredWake(string iPath)
