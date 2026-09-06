@@ -183,7 +183,15 @@ namespace SCP.Core.Watch
             if (aCh.Error.Length > 0) { aOut.Error = aCh.Error; return aOut; }
 
             Directory.CreateDirectory(aBdir);
-            File.WriteAllText(aOutPath, aCh.Text, new UTF8Encoding(false));
+            // ⚠ 行尾：python 那支用**文字模式**寫（`write_text` 的 newline=None
+            //   ⇒ Windows 上 `\n` 被翻成 `\r\n`）⇒ 磁碟上既有的章**全部是 CRLF**。
+            //   這裡跟著平台走，否則同一個資料夾裡兩種行尾，內容全對而 git diff 整段翻動
+            //   （`SCP_LetterWriter` 檔頭同一課；`SCP_Cmd_Keys` 也踩過）。
+            // 🩸 而這一格是**實跑抓到的，不是我看 code 看出來的**：selftest 兩邊都先
+            //   `Replace("\r\n","\n")` 才比 —— **我把唯一的差異正規化掉了**，於是它綠著。
+            //   ⇒ 「一樣／不一樣」的問題只能用**位元組**回答。
+            File.WriteAllText(aOutPath, aCh.Text.Replace("\n", Environment.NewLine),
+                              new UTF8Encoding(false));
 
             // 印 ✓ 不算數 —— **回讀落地的檔案**再報數字。
             string aBack = File.ReadAllText(aOutPath, Encoding.UTF8);
