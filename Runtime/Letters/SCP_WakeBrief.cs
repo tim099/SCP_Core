@@ -626,21 +626,29 @@ namespace SCP.Core.Letters
             else
                 aLines.Add("- 記憶維護無待辦（見 §6）。");
 
-            // 折人待辦 —— 見林前該先折人，所以這一行要在 §9 每天看得到（讀數不是形容詞）
-            int aFoldTargets = 0;
-            int aFoldPortraits = 0;
-            foreach (string aOne in SCP_PortraitView.Targets(iLettersRoot, iPersona))
+            // 折人待辦 —— **只在見林到期時才列**（Tim 2026-09-06 拍板）
+            // 物理意義：折人綁在見林流程裡（見林前先折人），不是每天的例行動作。
+            //   每天印它 ⇒ 它變成一個永遠躺著、永遠沒有觸發時機的待辦，
+            //   正是本區塊開頭那句「不成立的動作寫上去會被當成待辦而永遠躺著」在防的形狀。
+            // ⚠ 不是把提示拿掉：見林那條必經路上（`SCP_Cmd_Consolidate`）本來就印同一份讀數，
+            //   所以折人的提醒在**該做它的那一刻**仍然會出現 —— 這裡刪的是射程外的那一份。
+            if (aGap >= DigestGapOverdue)
             {
-                SCP_PortraitTargetView aView = SCP_PortraitView.Build(iLettersRoot, iPersona, aOne);
-                if (aView.UnarchivedPaths.Count == 0) continue;
-                aFoldTargets++;
-                aFoldPortraits += aView.UnarchivedPaths.Count;
+                int aFoldTargets = 0;
+                int aFoldPortraits = 0;
+                foreach (string aOne in SCP_PortraitView.Targets(iLettersRoot, iPersona))
+                {
+                    SCP_PortraitTargetView aView = SCP_PortraitView.Build(iLettersRoot, iPersona, aOne);
+                    if (aView.UnarchivedPaths.Count == 0) continue;
+                    aFoldTargets++;
+                    aFoldPortraits += aView.UnarchivedPaths.Count;
+                }
+                aLines.Add(aFoldTargets > 0
+                           ? "- 🪵 **折人待辦：" + aFoldTargets + " 位 / " + aFoldPortraits + " 幅未歸檔**"
+                             + "（見林前先折人）⇒ `cmd portrait-next --arg letters_root=<root> --arg persona="
+                             + iPersona + " --arg wake_range=<折的時點區間>`"
+                           : "- 🪵 折人：無待辦（根層零幅未歸檔）—— 見林可以直接開始");
             }
-            aLines.Add(aFoldTargets > 0
-                       ? "- 🪵 **折人待辦：" + aFoldTargets + " 位 / " + aFoldPortraits + " 幅未歸檔**"
-                         + "（見林前先折人）⇒ `cmd portrait-next --arg letters_root=<root> --arg persona="
-                         + iPersona + " --arg wake_range=<折的時點區間>`"
-                       : "- 🪵 折人：無待辦（根層零幅未歸檔）");
             aLines.Add("- 隨時可丟未解線（不限儀式）：`cmd keys --arg letters_root=<root> --arg persona="
                        + iPersona + " --arg add=<一句話>`");
             aLines.Add("- 對同事的看法（濃縮＋未歸檔，**與本檔 §6.5 同一支邏輯**）：`cmd people --arg letters_root=<root>"
