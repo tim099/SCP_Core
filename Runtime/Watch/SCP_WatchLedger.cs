@@ -46,6 +46,16 @@ namespace SCP.Core.Watch
         /// <summary>這一章上次匯出時叫什麼（TASK-0142 延伸）。⚠ 舊事件沒有這個鍵 ⇒ 讀回 ""。</summary>
         public string ExportedTitle = "";
         public string ExportedWorkTitle = "";
+
+        /// <summary>
+        /// 這一場**第一次出現在台帳的第幾筆**（0 起）。
+        /// <para>🩸 為什麼要這一欄：python 的 `dict` **保證插入序**，而 .NET `Dictionary` 的列舉序
+        /// **不是契約**（實作上常常是插入序，但那是巧合不是保證）。
+        /// 而 `sessions` 清單的順序會進章的表頭 ⇒ 順序漂掉時產物會逐位元組不同，
+        /// 而**沒有任何一層會喊**（它仍然是一份合法的章）。
+        /// ⇒ 列舉台帳時一律照這一欄排，⛔ 不要直接 foreach 字典。</para>
+        /// </summary>
+        public int Order;
     }
 
     public static class SCP_WatchLedger
@@ -111,7 +121,13 @@ namespace SCP.Core.Watch
                     aRow.ExportedTitle = aRec.GetString("chapter_title", "");
                     aRow.ExportedWorkTitle = aRec.GetString("work_title", "");
                 }
-                else aState[aSid] = new SCP_WatchSessionRow(aRec);
+                else
+                {
+                    // ⚠ 覆寫既有場次列時**保留原本的 Order** —— 同一個 sid 出現第二筆非 export 列時，
+                    //   它仍然是「第一次出現在那個位置」的那一場（python 的 dict 也是這個語意）。
+                    int aOrder = aState.TryGetValue(aSid, out SCP_WatchSessionRow? aPrev) ? aPrev.Order : aState.Count;
+                    aState[aSid] = new SCP_WatchSessionRow(aRec) { Order = aOrder };
+                }
             }
             return aState;
         }
