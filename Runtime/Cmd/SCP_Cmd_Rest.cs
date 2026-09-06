@@ -46,7 +46,11 @@ namespace SCP.Core.Cmd
             + "    它可能已經發出去了，補發會在全域遞增的 seq 上多出第二則。指令印在輸出裡。\n"
             + "  🩸 6 與 7 分家是 QA 量出來的（TASK-0134，summit 2026-09-05）：她拿到「沒發」而\n"
             + "  Editor 開著、廣播其實成功了（post_seq 19082）——**兩者處置相反，卻曾經同一個號**。\n"
-            + "📌 醒來接回要讀兩份：`_latest.md`（睡前的信）＋ `cmd/wake_brief.md`（早安的機械讀數）。";
+            + "📌 醒來接回**只讀兩份**：`_latest.md`（睡前的信）＋ `cmd/wake_brief.md`（早安的機械讀數）。\n"
+            + "  ⛔ 不必再跑 `awakening.py whoami` —— 信的 frontmatter 自己帶身分七欄（lock_status／\n"
+            + "  agent／model／wake_expected／session_key／pid／locked_at）。🩸 而拿掉它是有理由的：\n"
+            + "  本 environment 的 env_hash 與 lock 的 claim_origin 不同時，whoami 印「沒持有任何 active lock」\n"
+            + "  ——「掉線」與「lock 掛在別的 origin」在那個讀數上**同形**（summit 2026-09-06 實測）。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("rest --arg persona=<你> --arg letters_root=<letters>"
@@ -130,7 +134,9 @@ namespace SCP.Core.Cmd
                 aWrite = SCP_LetterWriter.WriteSelfLetter(aLettersRoot, aPersona, aActor, aBody,
                                                           SCP_LetterWriter.TriggerRest, iNowUtc: null,
                                                           iRegion: iArgs.Get("region").Trim(),
-                                                          iDataRoot: aDataRoot);
+                                                          iDataRoot: aDataRoot,
+                                                          // 身分欄 ⇒ 醒來接回不必再跑一次 whoami（見下方 Details 與寫信器的 iLock 註解）
+                                                          iLock: aLock);
             }
             catch (Exception e)
             {
@@ -140,6 +146,13 @@ namespace SCP.Core.Cmd
             aResult.Lines.Add("🫖 小歇片刻 —— **不下線**（未 perturb／未 offline／未 unlock／wake_count 未動）");
             aResult.Lines.Add("💌 記憶信：**已落磁碟** → " + aWrite.Path + "（" + aWrite.Bytes + " bytes）");
             aResult.Lines.Add("🌳 見樹指標同步 → " + aWrite.LatestPath);
+            // ⚠ 這一行印的是**寫進信裡的那一份**，不是另外量一次 —— 兩者若分家，就是印給人看的與存下來的不同。
+            aResult.Lines.Add("🪪 身分（已寫進信的 frontmatter）："
+                              + aPersona + "／" + aActor
+                              + (aLock == null
+                                 ? "　⚠ 讀不到 lock ⇒ 身分七欄全是 unstated"
+                                 : "　agent=" + aLock.Agent + "　wake_expected=" + aLock.WakeExpected
+                                   + "　session_key=" + aLock.SessionKey + "　pid=" + aLock.Pid));
             if (aWrite.NormalizedEscapedNewlines)
                 aResult.Lines.Add("  ⚠ body 的換行是字面 `\\n` ⇒ 已轉成真換行（下次用 --arg-file 可免這層）");
             if (aWrite.AuthorFrontmatterFields > 0)

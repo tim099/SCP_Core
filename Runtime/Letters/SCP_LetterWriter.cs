@@ -8,10 +8,15 @@
 //          ⚠ `_latest.md` 是**內容副本不是連結**（見 `SCP_WakeLetters` 開頭）——
 //          少寫它的症狀是「見樹指到上一封」，而那封信本身完全正常。
 //
-// ⚠ **與 python `awakening.py write_letter` 逐字同形**（同 `SCP_Cmd_Keys` 那條並存規矩）：
-//   檔名 `yyyyMMddTHHmmssZ.md`、機器欄五個（type/actor/written_at/written_by_persona/trigger）、
-//   作者自寫的 frontmatter 併進來、同名欄留 `<key>_as_written`、結尾補一個換行。
-//   兩個寫入端要並存一段時間 ⇒ **形狀一旦分岔，是讀信那天才會發現**。
+// ⚠ **與 python `awakening.py write_letter` 的同形只剩骨架，機器欄已經分岔**（2026-09-06 量過）：
+//   同形的是 —— 檔名 `yyyyMMddTHHmmssZ.md`、作者自寫的 frontmatter 併進來、
+//   同名欄留 `<key>_as_written`、結尾補一個換行。
+//   ⛔ 不同形的是機器欄：python 五欄（type/actor/written_at/written_by_persona/trigger），
+//   本檔在那五欄之後**多寫九欄** —— region/project（2026-09-06 補，TASK-0134）
+//   ＋ lock 身分七欄（見 `AppendLockIdentity`）。
+//   📌 而這個分岔是**單向且刻意的**：本檔是 `cmd_rest` 的寫入端、python 那支只剩收尾信，
+//   兩邊寫的是不同 trigger 的信 ⇒ 讀信的人不會拿同一把尺量它們。
+//   ⚠ 但把「逐字同形」這句話留在這裡會變成憲法⑤的高報 —— **所以它現在寫的是分岔在哪。**
 //
 // ⛔ 本檔**不碰** wake_count／perturbation／offline／unlock —— 那是晚安的事。
 //   小歇與晚安的唯一差別就在那幾格，而「共用寫信器」最容易順手把它們帶進來。
@@ -65,12 +70,27 @@ namespace SCP.Core.Letters
         /// 兩個沒設定過的專案就會印出同一個區域，而那正是這個定語要防的事）。
         /// </param>
         /// <param name="iDataRoot">資料根 —— 只拿來算 <c>project</c>（純路徑運算，不碰磁碟）。</param>
+        /// <param name="iLock">
+        /// 寫信這一刻的 session lock —— 寫成 frontmatter 的**身分欄**（agent／model／wake／session_key…）。
+        /// <para>🩸 為什麼信要自己帶身分（Tim 2026-09-06 拍板）：醒來接回原本要先跑一次
+        /// <c>awakening.py whoami</c>，而它在**本 environment 的 env_hash 與 lock 的 claim_origin 不同**時
+        /// 印的是「沒持有任何 active lock」——「我掉線了」與「我的 lock 掛在別的 origin 下」
+        /// 在那個讀數上**同形**（summit 2026-09-06 午安接回實測：whoami 說沒有 lock，
+        /// 而 <c>status</c> 說 summit online、wake#80、lock 好好的在）。
+        /// ⇒ 與其讓醒來的第一格是一份會誤導的讀數，不如讓信**在寫的當下**把身分記進去：
+        /// 睡前那一刻是誰、掛在哪顆 lock，是**寫信時就知道的事實**，不需要醒來再推導一次。</para>
+        /// <para>⚠ 這是**快照不是現況** —— 欄名一律沿用 lock 自己的欄名（<c>wake_expected</c> 不叫
+        /// <c>wake_count</c>：後者是 <see cref="SCP_PersonaProfile"/> 用 max(期望, 信數) 推導的，
+        /// 在這裡叫那個名字就是憲法⑤的高報）。null ⇒ 每一欄都寫
+        /// <see cref="SCP_DataPaths.UnstatedQualifier"/>，⛔ 不省略：少一欄不會有任何一層報錯。</para>
+        /// </param>
         public static SCP_LetterWriteResult WriteSelfLetter(string iLettersRoot, string iPersona,
                                                             string iActor, string iBody,
                                                             string iTrigger = TriggerRest,
                                                             DateTime? iNowUtc = null,
                                                             string? iRegion = null,
-                                                            string? iDataRoot = null)
+                                                            string? iDataRoot = null,
+                                                            SCP_PersonaStatus? iLock = null)
         {
             if (string.IsNullOrWhiteSpace(iPersona)) throw new ArgumentException("persona 是空的", nameof(iPersona));
             if (string.IsNullOrWhiteSpace(iBody)) throw new ArgumentException("信的內文是空的", nameof(iBody));
@@ -102,6 +122,7 @@ namespace SCP.Core.Letters
                     ? SCP_DataPaths.UnstatedQualifier : iRegion!.Trim()),
                 new KeyValuePair<string, string>("project", SCP_DataPaths.ProjectNameOf(iDataRoot)),
             };
+            AppendLockIdentity(aMachine, iLock);
             aBody = SplitAuthorFrontmatter(aBody, aMachine, out List<string> aExtra);
             aResult.AuthorFrontmatterFields = aExtra.Count;
 
@@ -125,6 +146,44 @@ namespace SCP.Core.Letters
             // 回讀量位元組 —— 「我寫了」不是「它在裡面」。
             aResult.Bytes = File.Exists(aPath) ? (int)new FileInfo(aPath).Length : 0;
             return aResult;
+        }
+
+        /// <summary>
+        /// 把寫信這一刻的 lock 攤成 frontmatter 身分欄（<c>lock_status</c> / <c>agent</c> / <c>model</c> /
+        /// <c>wake_expected</c> / <c>session_key</c> / <c>pid</c> / <c>locked_at</c>）。
+        /// <para>📌 這七欄合起來就是 <c>awakening.py whoami</c> 那張卡片要回答的問題
+        /// （我是誰、掛在哪顆 lock）—— 差別是**它在睡前就已經知道**，不必醒來再問一次。
+        /// ⭐ 而多的那一格是 whoami 給不了的：<c>locked_at</c> 讓醒來的人分得出
+        /// 「還在同一場 session」與「中間重登過」——⚠ 前提是拿它跟**現在**那顆 lock 比，
+        /// 光讀這封信讀不出來（信只記得睡前）。</para>
+        /// <para>⛔ 不從別處補值：lock 讀不到就整組寫 <c>unstated</c>。
+        /// 「沒有 lock」與「lock 上那格是空的」在這裡刻意同形 —— 兩者都是「這封信說不出身分」，
+        /// 而**要分辨就去看那顆 lock**，不是看這封信裡一個猜出來的值。</para>
+        /// </summary>
+        static void AppendLockIdentity(List<KeyValuePair<string, string>> ioMachine, SCP_PersonaStatus? iLock)
+        {
+            string U = SCP_DataPaths.UnstatedQualifier;
+            string aStatus = iLock == null ? U : iLock.Online switch
+            {
+                SCP_PersonaOnline.Online => "online",
+                SCP_PersonaOnline.Offline => "offline",
+                _ => "unknown",     // ⚠ lock 在但讀不了 ⇒ 不可以退化成 offline
+            };
+            ioMachine.Add(new KeyValuePair<string, string>("lock_status", aStatus));
+            ioMachine.Add(new KeyValuePair<string, string>("agent", Stated(iLock?.Agent, U)));
+            ioMachine.Add(new KeyValuePair<string, string>("model", Stated(iLock?.Model, U)));
+            ioMachine.Add(new KeyValuePair<string, string>("wake_expected",
+                iLock == null || iLock.WakeExpected <= 0 ? U : iLock.WakeExpected.ToString(CultureInfo.InvariantCulture)));
+            ioMachine.Add(new KeyValuePair<string, string>("session_key", Stated(iLock?.SessionKey, U)));
+            ioMachine.Add(new KeyValuePair<string, string>("pid",
+                iLock == null || iLock.Pid <= 0 ? U : iLock.Pid.ToString(CultureInfo.InvariantCulture)));
+            ioMachine.Add(new KeyValuePair<string, string>("locked_at", Stated(iLock?.LockedAt, U)));
+        }
+
+        /// <summary>空白 ⇒ 回定語（⛔ 不回空字串：空欄讀起來像「這一格不重要」，而它其實是「量不到」）。</summary>
+        static string Stated(string? iValue, string iUnstated)
+        {
+            return string.IsNullOrWhiteSpace(iValue) ? iUnstated : iValue!.Trim();
         }
 
         /// <summary>
