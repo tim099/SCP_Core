@@ -47,7 +47,8 @@ namespace SCP.Core.Cmd
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
-            new SCP_CmdArgSpec("op", "export｜untitled（預設 untitled —— **純讀的那個當預設**）"),
+            new SCP_CmdArgSpec("op", "export｜untitled｜audit（預設 untitled —— **純讀的那個當預設**）"
+                               + "；audit＝把每一章重出一次逐位元組比並**替差異分類**（純讀）"),
             new SCP_CmdArgSpec("from_session", "由台帳反查 media／seq 區間／同場清單／章號章名"
                                + "（收工自動匯出走這條）"),
             new SCP_CmdArgSpec("media", "媒材 id；用 from_session 時可省略"),
@@ -81,9 +82,190 @@ namespace SCP.Core.Cmd
             return aOp switch
             {
                 "untitled" => OpUntitled(aDataRoot),
+                "audit" => OpAudit(aDataRoot),
                 "export" => OpExport(aDataRoot, iArgs),
-                _ => SCP_CmdResult.Fail(2, $"✗ 不認得的 op：`{aOp}`（吃的是 export｜untitled）"),
+                _ => SCP_CmdResult.Fail(2, $"✗ 不認得的 op：`{aOp}`（吃的是 export｜untitled｜audit）"),
             };
+        }
+
+        // ===========================================================
+        // 區塊職責：`op=audit` —— 把**每一章**拿現行實作重出一次，逐位元組比，**並且替每一格分類**。
+        // 物理意義：`selftest` 的重出對拍只判定「最新那章」，其餘只給 `符合 N／不符 M` 兩個數字。
+        //          而那兩個數字回答不了唯一重要的問題：**不符是「移植壞了」還是「舊章是更早版本排的」。**
+        //          🩸 那兩件事在「不符 25」這個讀數上**完全同形**，而我今天連續講了五次
+        //            「未量 ≠ 通過」卻沒有把它變成讀數 —— 這一支就是把它變成讀數。
+        // 數值影響：**純唯讀**。不寫章、不碰台帳、不建目錄。
+        // ⛔ 分類是**描述**不是判決：它說「差在哪裡」，不說「誰對」。
+        //    舊章可能是更早版本的 python 排的 ⇒ 不同**不代表現在的實作壞了**，
+        //    也**不代表它沒壞** —— 那要看差異落在哪一類。
+        // ===========================================================
+        static SCP_CmdResult OpAudit(string iDataRoot)
+        {
+            var aResult = SCP_CmdResult.Success();
+            string aBooks = Path.Combine(iDataRoot, "Books");
+            if (!Directory.Exists(aBooks))
+                return SCP_CmdResult.Fail(2, "✗ 找不到 Books/：" + aBooks,
+                                          "　 ⛔ 這是「讀不到」不是「沒有章」。");
+
+            var aFiles = new List<string>();
+            foreach (string aDir in Directory.GetDirectories(aBooks, "watch-*"))
+                foreach (string aF in Directory.GetFiles(aDir, "???.txt"))
+                {
+                    string aStem = Path.GetFileNameWithoutExtension(aF);
+                    if (aStem.Length == 3 && int.TryParse(aStem, out _)) aFiles.Add(aF);
+                }
+            aFiles.Sort(StringComparer.Ordinal);
+            if (aFiles.Count == 0)
+                return SCP_CmdResult.Fail(2, "✗ `Books/watch-*/NNN.txt` 一章都沒有 —— 這是空目錄，不是通過。");
+
+            int aSame = 0, aSkip = 0;
+            var aBuckets = new Dictionary<string, int>(StringComparer.Ordinal);
+            var aRows = new List<string>();
+
+            foreach (string aF in aFiles)
+            {
+                string aRel = Path.GetFileName(Path.GetDirectoryName(aF)) + "/" + Path.GetFileName(aF);
+                string aMtime = File.GetLastWriteTime(aF).ToString("MM-dd HH:mm", CultureInfo.InvariantCulture);
+                string aWantRaw = File.ReadAllText(aF, Encoding.UTF8);
+                string aWant = aWantRaw.Replace("\r\n", "\n");
+
+                if (!SCP_WatchExport.TryParseChapterHeader(aWant, out string aMedia,
+                        out List<SCP_SeqRange> aRanges, out string aTitle, out string aSub,
+                        out string aWork, out string aSessions, out string aNote))
+                {
+                    ++aSkip;
+                    aRows.Add($"  ⊘ {aRel,-44} {aMtime}  **表頭解不出來 ⇒ 未量**（不是通過）");
+                    continue;
+                }
+
+                var aWarn = new List<string>();
+                SCP_WatchChapter aCh = SCP_WatchExport.BuildChapter(
+                    iDataRoot, "tavern", aRanges, Path.GetFileNameWithoutExtension(aF), aMedia,
+                    aTitle, aSub, aWork, aSessions, aNote, null, null,
+                    iAllowZeroStripped: true, aWarn);
+
+                if (aCh.Error.Length > 0)
+                {
+                    Bump(aBuckets, "重建失敗");
+                    aRows.Add($"  ✗ {aRel,-44} {aMtime}  重建失敗：{aCh.Error}");
+                    continue;
+                }
+                if (string.Equals(aCh.Text, aWant, StringComparison.Ordinal))
+                {
+                    ++aSame;
+                    aRows.Add($"  ✅ {aRel,-44} {aMtime}  逐位元組相同");
+                    continue;
+                }
+
+                string aWhy = Classify(aWant, aCh.Text, out string aOldLine, out string aNewLine);
+                Bump(aBuckets, aWhy);
+                aRows.Add($"  ⚠ {aRel,-44} {aMtime}  {aWhy}");
+                // ⭐ 把**兩行原文並排印出來** —— 只說「第 N 行不同」的話，
+                //   「差什麼」永遠是讀的人自己推的，而推出來的跟量出來的長得一樣。
+                if (aOldLine.Length > 0 || aNewLine.Length > 0)
+                {
+                    aRows.Add($"        舊 │ {Clip(aOldLine)}");
+                    aRows.Add($"        新 │ {Clip(aNewLine)}");
+                }
+            }
+
+            int aDiff = aFiles.Count - aSame - aSkip;
+            aResult.Lines.Add($"📚 章重出稽核 —— 共 **{aFiles.Count}** 章"
+                              + $"｜逐位元組相同 **{aSame}**｜不同 **{aDiff}**｜未量（表頭解不出）**{aSkip}**");
+            aResult.Lines.Add("");
+            aResult.Lines.Add("⛔ **「不同」不等於「移植壞了」** —— 舊章可能是更早版本的實作排的。");
+            aResult.Lines.Add("　 分得開它們的是**差在哪一類**，不是那個數字。下面每一列都帶分類。");
+            if (aBuckets.Count > 0)
+            {
+                aResult.Lines.Add("");
+                aResult.Lines.Add("## 差異分類（這才是讀數）");
+                var aKeys = new List<string>(aBuckets.Keys);
+                aKeys.Sort(StringComparer.Ordinal);
+                foreach (string k in aKeys) aResult.Lines.Add($"- **{k}** ×{aBuckets[k]}");
+            }
+            aResult.Lines.Add("");
+            aResult.Lines.Add("## 逐章");
+            aResult.Lines.AddRange(aRows);
+            aResult.AddValue("chapters", aFiles.Count.ToString(CultureInfo.InvariantCulture));
+            aResult.AddValue("identical", aSame.ToString(CultureInfo.InvariantCulture));
+            aResult.AddValue("different", aDiff.ToString(CultureInfo.InvariantCulture));
+            aResult.AddValue("unmeasured", aSkip.ToString(CultureInfo.InvariantCulture));
+            return aResult;
+        }
+
+        static void Bump(Dictionary<string, int> oMap, string iKey)
+        {
+            oMap.TryGetValue(iKey, out int n);
+            oMap[iKey] = n + 1;
+        }
+
+        /// <summary>
+        /// 替一組「內容不同」分類。⭐ 順序是刻意的：**先排除最無害的**，
+        /// 讓真正需要人看的那一類不會被前面的雜訊蓋掉。
+        /// </summary>
+        static string Classify(string iOld, string iNew, out string oOldLine, out string oNewLine)
+        {
+            oOldLine = ""; oNewLine = "";
+            if (string.Equals(iOld.TrimEnd('\n'), iNew.TrimEnd('\n'), StringComparison.Ordinal))
+                return "只差結尾換行";
+
+            string[] aA = iOld.Split('\n');
+            string[] aB = iNew.Split('\n');
+
+            int aFirst = -1;
+            int aMin = Math.Min(aA.Length, aB.Length);
+            for (int i = 0; i < aMin; ++i)
+                if (!string.Equals(aA[i], aB[i], StringComparison.Ordinal)) { aFirst = i; break; }
+            if (aFirst < 0) aFirst = aMin;
+            if (aFirst < aA.Length) oOldLine = aA[aFirst];
+            if (aFirst < aB.Length) oNewLine = aB[aFirst];
+
+            int aOldSec = CountPrefix(aA, "### [seq ");
+            int aNewSec = CountPrefix(aB, "### [seq ");
+            if (aOldSec != aNewSec)
+                return $"**收錄則數不同**（舊 {aOldSec} 則／重出 {aNewSec} 則）⇒ 素材本身變了，要人看";
+
+            // 🩸 這裡原本只判「第一個差異落在 `## 實錄` 之前」就回「**只有**表頭不同」——
+            //   而那句話比證據大：後面還有沒有差異我根本沒看。
+            //   ⇒ 要說「只有」，就必須真的把**實錄本體整段**比一次。
+            //   （這是我今天抓了一整天的形狀：射程比句子小。差點自己又寫一個。）
+            int aBodyA = IndexOf(aA, "## 實錄");
+            int aBodyB = IndexOf(aB, "## 實錄");
+            if (aBodyA >= 0 && aBodyB >= 0 && aFirst < aBodyA)
+            {
+                bool aBodySame = string.Equals(
+                    string.Join("\n", aA, aBodyA, aA.Length - aBodyA),
+                    string.Join("\n", aB, aBodyB, aB.Length - aBodyB),
+                    StringComparison.Ordinal);
+                return aBodySame
+                    ? $"只有表頭不同（第 {aFirst + 1} 行）—— **實錄本體逐位元組相同（已整段比對）**"
+                    : $"表頭與實錄本體**都有差異**（表頭第 {aFirst + 1} 行起）⇒ 要人看";
+            }
+            if (aOldSec == aNewSec && aOldSec > 0)
+                return $"實錄則數相同而內容有差（第 {aFirst + 1} 行起；行數 {aA.Length} vs {aB.Length}）";
+            return $"其他（第 {aFirst + 1} 行起；行數 {aA.Length} vs {aB.Length}）";
+        }
+
+        /// <summary>截斷長行 —— ⚠ 截斷處要**看得見**，否則「這行就這麼短」與「被我切掉了」同形。</summary>
+        static string Clip(string iLine)
+        {
+            const int aMax = 100;
+            if (iLine.Length <= aMax) return iLine;
+            return iLine.Substring(0, aMax) + " …（截斷，原長 " + iLine.Length + "）";
+        }
+
+        static int CountPrefix(string[] iLines, string iPrefix)
+        {
+            int n = 0;
+            foreach (string s in iLines) if (s.StartsWith(iPrefix, StringComparison.Ordinal)) ++n;
+            return n;
+        }
+
+        static int IndexOf(string[] iLines, string iExact)
+        {
+            for (int i = 0; i < iLines.Length; ++i)
+                if (string.Equals(iLines[i], iExact, StringComparison.Ordinal)) return i;
+            return -1;
         }
 
         /// <summary>哨兵值 —— 由**設定檔**供給（TASK-0064：改設定即改字串，兩端同源）。</summary>

@@ -291,5 +291,55 @@ namespace SCP.Core.Watch
             aOut.Text = string.Join("\n", aLines).Replace("\r\n", "\n");
             return aOut;
         }
+
+        // ===========================================================
+        // 區塊職責：把**已經落檔的章**的表頭讀回成重建所需的參數（媒材／seq 區間／章名／…）。
+        // 物理意義：這是「拿現有產物重跑一次現行實作，看還原不還原得出來」那條路的入口 ——
+        //          `selftest` 的重出對拍與 `cmd watch --arg op=audit` **都吃這一支**。
+        // 🩸 為什麼搬進 SCP_Core：它原本只住在 `Senate.Cli/SelfTest.cs`，而 audit 也要用。
+        //   兩份各自維護的解析器＝兩個會各自漂的真相源，而漂掉的症狀是
+        //   「selftest 說 5 章符合、audit 說 7 章符合」，**兩邊都不報錯**。
+        // 數值影響：純唯讀、不碰檔案。解析不出來回 false ——
+        //   ⛔ 呼叫端不准把它讀成「這章沒問題」，那是**沒讀到**不是通過。
+        // ===========================================================
+        public static bool TryParseChapterHeader(string iText, out string oMedia,
+                                                 out List<SCP_SeqRange> oRanges, out string oTitle,
+                                                 out string oSubtitle, out string oWork,
+                                                 out string oSessions, out string oNote)
+        {
+            oMedia = ""; oRanges = new List<SCP_SeqRange>(); oTitle = ""; oSubtitle = "";
+            oWork = ""; oSessions = ""; oNote = "";
+
+            Match aTitle = Regex.Match(iText, @"^# 第 \d+ 章(?: · (.*))?$", RegexOptions.Multiline);
+            if (!aTitle.Success) return false;
+            oTitle = aTitle.Groups[1].Success ? aTitle.Groups[1].Value : "";
+
+            Match aSub = Regex.Match(iText, @"^### —— (.*)$", RegexOptions.Multiline);
+            if (aSub.Success) oSubtitle = aSub.Groups[1].Value;
+
+            Match aMedia = Regex.Match(iText, @"^\| 媒材 \| `([^`]+)` \|$", RegexOptions.Multiline);
+            if (!aMedia.Success) return false;
+            oMedia = aMedia.Groups[1].Value;
+
+            Match aWork = Regex.Match(iText, @"^\| 作品 \| (.*) \|$", RegexOptions.Multiline);
+            if (aWork.Success) oWork = aWork.Groups[1].Value;
+
+            Match aSess = Regex.Match(iText, @"^\| 場次 \| (.*) \|$", RegexOptions.Multiline);
+            if (aSess.Success) oSessions = aSess.Groups[1].Value.Replace(" ／ ", ",");
+
+            Match aNote = Regex.Match(iText, @"^\| 備註 \| (.*) \|$", RegexOptions.Multiline);
+            if (aNote.Success) oNote = aNote.Groups[1].Value;
+
+            Match aRng = Regex.Match(iText, @"^\| seq 區間 \| (.*) \|$", RegexOptions.Multiline);
+            if (!aRng.Success) return false;
+            foreach (string aPart in aRng.Groups[1].Value.Split(new[] { " ／ " }, StringSplitOptions.None))
+            {
+                Match m = Regex.Match(aPart.Trim(), @"^(\d+)[–\-](\d+)$");
+                if (!m.Success) return false;
+                oRanges.Add(new SCP_SeqRange(long.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture),
+                                             long.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture)));
+            }
+            return oRanges.Count > 0;
+        }
     }
 }
