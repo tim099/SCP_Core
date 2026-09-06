@@ -26,6 +26,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
+using SCP.Core.Books;
 using SCP.Core.Json;
 
 namespace SCP.Core.Cmd
@@ -55,7 +56,9 @@ namespace SCP.Core.Cmd
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
-            new SCP_CmdArgSpec("op", "add（預設 add —— 目前只有這一支）"),
+            new SCP_CmdArgSpec("op", "add（建一本新書）｜writing（列出寫到一半的書，**純讀**）"
+                               + " —— 預設 writing，⭐ 純讀的那個當預設"),
+            new SCP_CmdArgSpec("persona", "op=writing 用：只看這位作者的書（省略＝全部作者）"),
             new SCP_CmdArgSpec("title", "書名（必填）"),
             new SCP_CmdArgSpec("aliases", "別名，用 `;` `|` 或換行分隔；"
                                + "**使用者提供的書名必須含在裡面**（必填）"),
@@ -71,13 +74,61 @@ namespace SCP.Core.Cmd
         {
             string aDataRoot = iArgs.Get("data_root").Trim();
             string aOp = iArgs.Get("op").Trim();
-            if (aOp.Length == 0) aOp = "add";
+            // ⭐ 預設是**純讀**那一支 —— 打錯 op 的代價要是「什麼都沒發生」，不是「建了一本書」。
+            if (aOp.Length == 0) aOp = "writing";
             if (!Directory.Exists(aDataRoot))
                 return SCP_CmdResult.Fail(2, "✗ 資料根不存在：" + aDataRoot);
-            if (aOp != "add")
-                return SCP_CmdResult.Fail(2, $"✗ 不認得的 op：`{aOp}`（目前只吃 add）");
+            return aOp switch
+            {
+                "add" => OpAdd(aDataRoot, iArgs),
+                "writing" => OpWriting(aDataRoot, iArgs),
+                _ => SCP_CmdResult.Fail(2, $"✗ 不認得的 op：`{aOp}`（吃的是 add｜writing）"),
+            };
+        }
 
-            return OpAdd(aDataRoot, iArgs);
+        // ── op=writing ────────────────────────────────────────────────────────
+        // 區塊職責：列出「寫到一半」的書（`origin=authored` 且尚未發布）。
+        // 🩸 讀不到的時候**不准印「0 本」** —— 「沒有人在寫書」與「我沒去看」在畫面上同形，
+        //    而人往那個空格裡填的一定是「沒事」。
+        static SCP_CmdResult OpWriting(string iDataRoot, SCP_CmdArgs iArgs)
+        {
+            string aPersona = iArgs.Get("persona").Trim();
+
+            if (!SCP_BookStore.TryListWriting(iDataRoot, aPersona.Length > 0 ? aPersona : null,
+                                              out List<SCP_AuthoredBook> aBooks, out string aWhy))
+            {
+                return SCP_CmdResult.Fail(2,
+                    "⚠ **未量** —— 書庫讀不到（" + aWhy + "）。",
+                    "　 ⛔ 這不是「沒有人在寫書」：那兩件事在畫面上同形，而這一行是它們唯一分得開的地方。");
+            }
+
+            if (aBooks.Count == 0)
+            {
+                var aNone = SCP_CmdResult.Success(
+                    aPersona.Length > 0
+                        ? $"✅ @{aPersona} 目前沒有寫到一半的書（authored 且未發布：0 本）"
+                        : "✅ 目前沒有任何寫到一半的書（authored 且未發布：0 本）",
+                    "　 讀自：" + SCP_BookStore.BookNotesRoot(iDataRoot));
+                aNone.AddValue("writing", "0");
+                return aNone;
+            }
+
+            var aResult = SCP_CmdResult.Success(
+                $"✍ 寫到一半的書 **{aBooks.Count}** 本"
+                + (aPersona.Length > 0 ? $"（只看 @{aPersona}）" : "（全部作者）"));
+            foreach (SCP_AuthoredBook aBook in aBooks)
+            {
+                aResult.Lines.Add(
+                    $"  《{aBook.Title}》  作者 @{aBook.AuthorPersona}"
+                    + $"  {aBook.ChapterCount} 章  status={aBook.Status}"
+                    + $"  publish={aBook.PublishStatus}");
+                // ⭐ 每一列說得出它是從哪個檔讀來的 —— 沒有出處的值救不了人。
+                aResult.Lines.Add(
+                    $"      最後更動 {aBook.LastWriteUtc.ToLocalTime():yyyy-MM-dd HH:mm}"
+                    + $"　讀自 `{aBook.SourcePath}`");
+            }
+            aResult.AddValue("writing", aBooks.Count.ToString(CultureInfo.InvariantCulture));
+            return aResult;
         }
 
         // ── op=add ────────────────────────────────────────────────────────────
@@ -107,8 +158,8 @@ namespace SCP.Core.Cmd
             string aSlug = iArgs.Get("id").Trim();
             if (aSlug.Length == 0) aSlug = Slugify(aTitle);
 
-            string aLibRoot = Path.Combine(iDataRoot, "BookNotes");
-            string aBookDir = Path.Combine(aLibRoot, aSlug);
+            // ⛔ 不在這裡再寫一次 "BookNotes" 字面 —— 根的解析只留 SCP_BookStore 一處。
+            string aBookDir = Path.Combine(SCP_BookStore.BookNotesRoot(iDataRoot), aSlug);
             string aBookJson = Path.Combine(aBookDir, "book.json");
 
             // ⛔ 已存在就停 —— 與 python 同行為（exit 1、不覆寫）。

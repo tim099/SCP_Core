@@ -19,6 +19,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
+using SCP.Core.Books;
 using SCP.Core.Paths;
 using SCP.Core.Tasks;
 
@@ -151,6 +152,7 @@ namespace SCP.Core.Letters
                 MaintenanceSection(iLettersRoot, iPersona, iWakeCount, iDataRoot),
                 PeopleSection(iLettersRoot, iPersona),
                 BookshelfSection(iLettersRoot, iPersona, iWakeCount),
+                WritingSection(iDataRoot, iPersona),
                 NextActionsSection(iLettersRoot, iPersona, iWakeCount),
             };
 
@@ -912,6 +914,82 @@ namespace SCP.Core.Letters
 
         /// <summary>閱讀卡目錄名（跨端契約：python `wake_brief.BOOKSHELF_DIR_NAME` 同名）。</summary>
         public const string BookshelfDirName = "bookshelf";
+
+        // ── §6.7 見筆 ─────────────────────────────────────────────
+        // 區塊職責：回答「我寫到哪」—— §6.6 見書答『我在讀什麼』，本段答『我在寫什麼』（Tim 2026-09-06）。
+        // 物理意義：唯讀消費端，與 `cmd book op=writing` **共用 SCP_BookStore**
+        //           ⛔ 不在這裡再 glob 一次 BookNotes —— 兩份實作＝兩個會各自漂的真相源。
+        // 數值影響：只影響顯示。⚠ 別人的書**只給張數不給內容** ——
+        //           未發布草稿的 `publish_status: draft` 語意就是「只有作者看得見」，
+        //           brief 不是繞過那個欄位的地方。
+        //
+        // 🩸 讀不到資料根時印「未量」而不是「0 本」：
+        //    「沒有人在寫書」與「我沒去看」在畫面上同形，而人往那個空格裡填的一定是「沒事」。
+        //    （同 §6 缺陷單那行的紀律，不是新規矩。）
+        static SCP_BriefSection WritingSection(string? iDataRoot, string iPersona)
+        {
+            const string aTitle = "✍ §6.7 見筆 — 我在寫什麼";
+
+            if (!SCP_BookStore.TryListAuthored(iDataRoot, out List<SCP_AuthoredBook> aAll, out string aWhy))
+            {
+                return new SCP_BriefSection
+                {
+                    Title = aTitle,
+                    Lines = new List<string>
+                    {
+                        "- ⚠ **未量** —— 書庫讀不到（" + aWhy + "）。",
+                        "  ⛔ 這不是「沒有在寫書」：那兩件事在畫面上同形，這一行是唯一分得開的地方。",
+                    },
+                    Essential = false,
+                };
+            }
+
+            var aMine = new List<SCP_AuthoredBook>();
+            int aOthers = 0;
+            foreach (SCP_AuthoredBook aBook in aAll)
+            {
+                if (!aBook.IsUnpublished) continue;
+                if (string.Equals(aBook.AuthorPersona, iPersona, StringComparison.Ordinal)) aMine.Add(aBook);
+                else aOthers++;
+            }
+
+            var aLines = new List<string>();
+            if (aMine.Count == 0)
+            {
+                aLines.Add("- 目前**沒有**寫到一半的書（`origin: authored` 且未發布：0 本）。");
+                aLines.Add("  開一本：`senate cmd book --arg op=add --arg origin=authored"
+                           + " --arg title=<書名> --arg aliases=<書名>`");
+            }
+            else
+            {
+                aLines.Add("**✍ 寫到一半的書 " + aMine.Count + " 本**（`origin: authored`、未發布）");
+                aLines.Add("");
+                foreach (SCP_AuthoredBook aBook in aMine)
+                {
+                    aLines.Add("- **《" + aBook.Title + "》**　" + aBook.ChapterCount + " 章"
+                               + "　`status: " + aBook.Status + "`"
+                               + "　`publish_status: " + aBook.PublishStatus + "`");
+                    // ⭐ 讀數要一起說出「我是怎麼拿到這個值的」。
+                    aLines.Add("    最後更動 " + aBook.LastWriteUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                               + "　讀自 `" + aBook.SourcePath + "`");
+                }
+                aLines.Add("");
+                aLines.Add("> ⚠ 章數是 `chapters/` 底下的檔數 —— **0 章不代表沒開始**，"
+                           + "代表正文還沒落到那個目錄。");
+            }
+
+            if (aOthers > 0)
+            {
+                aLines.Add("");
+                aLines.Add("- 🔒 其他人未發布的書：**" + aOthers + " 本**（只給張數 —— "
+                           + "`publish_status: draft` 的語意是只有作者看得見）。");
+            }
+
+            aLines.Add("");
+            aLines.Add("> 查全部：`senate cmd book --arg data_root=<AgentCommands> --arg op=writing`"
+                       + "（與本節**同一支讀取器**：`SCP_BookStore.TryListAuthored`）");
+            return new SCP_BriefSection { Title = aTitle, Lines = aLines, Essential = false };
+        }
 
         /// <summary>
         /// §6 的缺陷單那一行。<paramref name="iDataRoot"/> 為空 ⇒ **說出「沒給資料根」而不是印 0**。
