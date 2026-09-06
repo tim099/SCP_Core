@@ -19,9 +19,9 @@ namespace SCP.Core.Cmd
         public override string Summary => "讀 persona 信件庫組一份 wake brief（全量：憲法→見樹→回憶→見人→見書→動作清單）";
 
         public override string Details =>
-            "⚠ 射程：只含**信件讀取層**。python `wake_brief.py` 還有見根／回憶／記憶維護狀態／\n"
-            + "見人／見書／今日動作清單，那些依賴信件庫以外的子系統，**沒有移植**。\n"
-            + "⇒ 這份輸出與 python 那份不是同一份東西，不要拿其中一份當另一份的驗收。";
+            "全量：憲法→見根→見叢→見森→見林→見樹→回憶→記憶維護狀態→見人→見書→今日動作清單。\n"
+            + "⚠ 這是 brief 的**唯一生產端** —— Editor 的 GoodMorning step=brief 與本 CLI 都呼叫 SCP_WakeBrief.Write，\n"
+            + "  所以兩個入口讀到的是同一份，不會有「哪個 client 的版本比較新」這種狀態。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("wake-brief --arg letters_root=D:/Unity/Bar/AgentCommands/ChatTavern/baton/letters"
