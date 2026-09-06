@@ -120,7 +120,8 @@ namespace SCP.Core.Cmd
             {
                 aResult.Lines.Add(
                     $"  《{aBook.Title}》  作者 @{aBook.AuthorPersona}"
-                    + $"  {aBook.ChapterCount} 章  status={aBook.Status}"
+                    // ⭐ 兩層分開印 —— 只印一個數的話，「正文 1 章而草稿 0 篇」會被寫成「0 章」。
+                    + $"  正文 {aBook.ProseCount} 章／草稿筆記 {aBook.NoteCount} 篇  status={aBook.Status}"
                     + $"  publish={aBook.PublishStatus}");
                 // ⭐ 每一列說得出它是從哪個檔讀來的 —— 沒有出處的值救不了人。
                 aResult.Lines.Add(

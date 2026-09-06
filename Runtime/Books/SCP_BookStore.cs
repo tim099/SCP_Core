@@ -26,7 +26,19 @@ namespace SCP.Core.Books
         public string AuthorPersona = "";
         public string Status = "";
         public string PublishStatus = "";
-        public int ChapterCount;
+
+        /// <summary>草稿層章節筆記數（`BookNotes/&lt;slug&gt;/chapters/`）。</summary>
+        public int NoteCount;
+
+        /// <summary>
+        /// **入庫正文**章數（`Books/&lt;slug&gt;/*.txt`）。
+        /// 🩸 這一格與 <see cref="NoteCount"/> 分開存，是 2026-09-06 的血證（TASK-0148）：
+        /// 我原本只數草稿層，於是剛發表、正文 1 章的書印成「0 章」——
+        /// 而**兩層都可能是 0**，所以那個 0 看起來完全合理。
+        /// ⇒ 兩個數都要，而且印的時候要說出它是哪一層。
+        /// </summary>
+        public int ProseCount;
+
         public DateTime LastWriteUtc;
 
         /// <summary>這一列是從哪個檔讀來的 —— ⭐ 讀數要一起說出「我是怎麼拿到這個值的」。</summary>
@@ -108,7 +120,8 @@ namespace SCP.Core.Books
                     AuthorPersona = aData.GetString("author_persona", ""),
                     Status = aData.GetString("status", ""),
                     PublishStatus = aData.GetString("publish_status", ""),
-                    ChapterCount = CountChapters(aDir),
+                    NoteCount = CountFiles(Path.Combine(aDir, "chapters")),
+                    ProseCount = CountProse(iDataRoot!, aData.GetString("id", Path.GetFileName(aDir))),
                     LastWriteUtc = SafeWriteTime(aJson),
                     SourcePath = aJson,
                 });
@@ -137,12 +150,24 @@ namespace SCP.Core.Books
             return true;
         }
 
-        /// <summary>章數 —— 目錄不在就是 0（那是真的 0 章，不是讀不到）。</summary>
-        static int CountChapters(string iBookDir)
+        /// <summary>目錄裡的檔數 —— 目錄不在就是 0（那是真的 0，不是讀不到）。</summary>
+        static int CountFiles(string iDir)
         {
-            string aDir = Path.Combine(iBookDir, "chapters");
+            if (!Directory.Exists(iDir)) return 0;
+            try { return Directory.GetFiles(iDir).Length; }
+            catch (Exception) { return 0; }
+        }
+
+        /// <summary>
+        /// 入庫正文章數 —— `&lt;dataRoot&gt;/Books/&lt;slug&gt;/*.txt`。
+        /// ⚠ 這是**另一個 store**（`Books/`，扁平 prose），不是 `BookNotes/`（草稿與筆記）。
+        /// 「兩個落點是兩件事」是 `Book_Writing_Workflow` 反覆講的那一條。
+        /// </summary>
+        static int CountProse(string iDataRoot, string iSlug)
+        {
+            string aDir = Path.Combine(iDataRoot, "Books", iSlug);
             if (!Directory.Exists(aDir)) return 0;
-            try { return Directory.GetFiles(aDir).Length; }
+            try { return Directory.GetFiles(aDir, "*.txt").Length; }
             catch (Exception) { return 0; }
         }
 

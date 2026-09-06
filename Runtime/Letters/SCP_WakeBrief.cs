@@ -966,7 +966,8 @@ namespace SCP.Core.Letters
                 aLines.Add("");
                 foreach (SCP_AuthoredBook aBook in aMine)
                 {
-                    aLines.Add("- **《" + aBook.Title + "》**　" + aBook.ChapterCount + " 章"
+                    aLines.Add("- **《" + aBook.Title + "》**　正文 " + aBook.ProseCount + " 章"
+                               + "／草稿筆記 " + aBook.NoteCount + " 篇"
                                + "　`status: " + aBook.Status + "`"
                                + "　`publish_status: " + aBook.PublishStatus + "`");
                     // ⭐ 讀數要一起說出「我是怎麼拿到這個值的」。
@@ -974,8 +975,10 @@ namespace SCP.Core.Letters
                                + "　讀自 `" + aBook.SourcePath + "`");
                 }
                 aLines.Add("");
-                aLines.Add("> ⚠ 章數是 `chapters/` 底下的檔數 —— **0 章不代表沒開始**，"
-                           + "代表正文還沒落到那個目錄。");
+                aLines.Add("> ⚠ **兩個數是兩個 store**：正文＝`Books/<slug>/*.txt`（入庫的）、"
+                           + "草稿筆記＝`BookNotes/<slug>/chapters/`。");
+                aLines.Add("> 🩸 只印一個數會出事：剛發表、正文 1 章而草稿 0 篇的書會被印成「0 章」，"
+                           + "而**兩層都可能是 0**，所以那個 0 看起來完全合理（TASK-0148）。");
             }
 
             if (aOthers > 0)
