@@ -760,21 +760,12 @@ namespace SCP.Core.Letters
         public const uint RecallCrossWorldlinePercent = 20;
 
         /// <summary>
-        /// 從資料根算出專案名（＝資料根的上一層目錄名）。**純路徑運算，不碰磁碟、不猜。**
-        /// 沒給資料根就回 `unstated` —— 印一個猜的專案名比留空更難查。
+        /// 從資料根算出專案名 —— **本體已搬到 <see cref="SCP_DataPaths.ProjectNameOf"/>**（唯一一份）。
+        /// <para>📌 搬家的理由是 TASK-0134 QA 抓到的那格：這個算法本來 brief 一份、寫信器沒有，
+        /// 於是同一台機器寫出來的兩種信**欄位數不同**，而少欄的那種讀起來完全正常。
+        /// ⇒ 留這個轉呼叫只是為了本檔既有呼叫端的可讀性，⛔ 不要在這裡長出第二套邏輯。</para>
         /// </summary>
-        static string ProjectOf(string? iDataRoot)
-        {
-            if (string.IsNullOrWhiteSpace(iDataRoot)) return "unstated";
-            try
-            {
-                string aNorm = iDataRoot!.Replace('\\', '/').TrimEnd('/');
-                string? aParent = Path.GetDirectoryName(aNorm);
-                string aName = string.IsNullOrEmpty(aParent) ? "" : Path.GetFileName(aParent!);
-                return string.IsNullOrWhiteSpace(aName) ? "unstated" : aName;
-            }
-            catch (Exception) { return "unstated"; }
-        }
+        static string ProjectOf(string? iDataRoot) => SCP_DataPaths.ProjectNameOf(iDataRoot);
 
         /// <summary>wake_count 超過這個數才開始有回憶（新生 persona 的信全在見樹／見林射程內）。</summary>
         public const int RecallMinWake = 20;

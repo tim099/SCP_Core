@@ -74,6 +74,39 @@ namespace SCP.Core.Paths
         public static SCP_LettersRoot Letters(SCP_DataRoot iRoot)
             => new SCP_LettersRoot(Baton(iRoot) + "/" + LettersDirName);
 
+        // ── 現地定語 ──────────────────────────────────────────────
+
+        /// <summary>
+        /// 定語欄位「沒有人給我這個值」時填的字面。
+        /// <para>⛔ 它**不是**「沒有區域／沒有專案」，是**未宣告** —— 讀取端不准腦補成本區。
+        /// （2026-09-02 之前的信整段沒有這兩欄，那也是未宣告；⚠ 兩者要能分辨：
+        /// 少欄＝那個寫入端不知道有這回事，寫 <c>unstated</c>＝它知道而沒人給值。）</para>
+        /// </summary>
+        public const string UnstatedQualifier = "unstated";
+
+        /// <summary>
+        /// 從資料根算出**專案名**（＝資料根的上一層目錄名）。**純路徑運算，不碰磁碟、不猜。**
+        /// <para>沒給資料根就回 <see cref="UnstatedQualifier"/> —— 印一個猜的專案名比留空更難查。</para>
+        /// <para>⚠ 它是「現地定語」的一半：另一半 <c>region</c>（貨幣 ID）的真相源是宿主的央行設定，
+        /// **本層不長讀它的嘴**，由宿主傳進來。兩欄都要的理由：宿主的 <c>CurrencyId</c> 缺值時
+        /// 回預設而不是空 ⇒ 兩個沒設定過的專案會印出同一個 region，而 project 在那種情況下
+        /// 仍然分岔 —— **一個恆同的欄位不帶資訊**。</para>
+        /// <para>📌 放在這裡而不是各寫一份：磁碟上本來就有兩份（brief 一份、Editor 收尾信一份），
+        /// 而分岔的症狀是**信少一欄、沒有任何一層會喊**（TASK-0134 QA 2026-09-05 抓到的那格）。</para>
+        /// </summary>
+        public static string ProjectNameOf(string? iDataRoot)
+        {
+            if (string.IsNullOrWhiteSpace(iDataRoot)) return UnstatedQualifier;
+            try
+            {
+                string aNorm = iDataRoot!.Replace('\\', '/').TrimEnd('/');
+                string? aParent = System.IO.Path.GetDirectoryName(aNorm);
+                string aName = string.IsNullOrEmpty(aParent) ? "" : System.IO.Path.GetFileName(aParent!);
+                return string.IsNullOrWhiteSpace(aName) ? UnstatedQualifier : aName;
+            }
+            catch { return UnstatedQualifier; }
+        }
+
         // ── 判準 ──────────────────────────────────────────────────
 
         /// <summary>

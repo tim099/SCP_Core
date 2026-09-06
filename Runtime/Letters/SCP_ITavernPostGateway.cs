@@ -18,18 +18,48 @@ using System.Collections.Generic;
 
 namespace SCP.Core.Letters
 {
+    /// <summary>
+    /// 一次發文的三種結局。
+    /// <para>🩸 <see cref="Unresolved"/> 是 TASK-0134 QA（summit 2026-09-05）用一次真的小歇量出來的：
+    /// 她拿到「沒發」的回報，而 <b>Editor 是開著的、廣播其實成功了</b>（<c>post_seq 19082</c>）——
+    /// 那一格的真實語意是「<b>等待端沒拿到回執</b>」，不是「沒發」。</para>
+    /// <para>⛔ 為什麼非拆不可：兩者的**處置相反** ——
+    /// 真沒發要補發；沒等到卻去補發，就是在全域遞增的 seq 上多出**第二則**。
+    /// 一個 bool 表達不了「不知道」，而讀的人往那個空格裡填的一定是其中一邊。</para>
+    /// </summary>
+    public enum SCP_TavernPostOutcome
+    {
+        /// <summary>發出去了，而且**拿得到 seq**（配過號＝寫入真的發生過的直接證據）。</summary>
+        Posted = 0,
+
+        /// <summary>確定沒發（沒有閘／提交前就炸／宿主回報失敗）⇒ **補發是安全的**。</summary>
+        NotPosted = 1,
+
+        /// <summary>不知道（等回執逾時）⇒ ⛔ **先回讀再決定**，補發可能發出第二則。</summary>
+        Unresolved = 2,
+    }
+
     /// <summary>一次發文的判定：成不成、**為什麼**、以及發出去的那則是誰（seq）。</summary>
     public readonly struct SCP_TavernPostVerdict
     {
-        public SCP_TavernPostVerdict(bool iPosted, string iDetail, string iSeq)
+        public SCP_TavernPostVerdict(SCP_TavernPostOutcome iOutcome, string iDetail, string iSeq,
+                                     string iRecheckHint = "")
         {
-            Posted = iPosted;
+            Outcome = iOutcome;
             Detail = iDetail ?? "";
             Seq = iSeq ?? "";
+            RecheckHint = iRecheckHint ?? "";
         }
 
-        /// <summary>真的發出去了嗎。</summary>
-        public bool Posted { get; }
+        /// <summary>三態結局。⛔ 判斷「要不要補發」一律看這個，不要看 <see cref="Posted"/>。</summary>
+        public SCP_TavernPostOutcome Outcome { get; }
+
+        /// <summary>
+        /// 真的發出去了嗎。
+        /// <para>⚠ <c>false</c> **不等於**「沒發」—— <see cref="SCP_TavernPostOutcome.Unresolved"/>
+        /// 在這裡也是 <c>false</c>。這個屬性只回答「有沒有拿到成功回執」。</para>
+        /// </summary>
+        public bool Posted => Outcome == SCP_TavernPostOutcome.Posted;
 
         /// <summary>人讀的理由／讀數（要能直接貼進回報）。⛔ 不要只回 true/false。</summary>
         public string Detail { get; }
@@ -37,8 +67,23 @@ namespace SCP.Core.Letters
         /// <summary>發出去那則的 seq；**空字串＝沒有這個讀數**（跟 seq=0 不同形）。</summary>
         public string Seq { get; }
 
-        public static SCP_TavernPostVerdict Good(string iDetail, string iSeq) => new SCP_TavernPostVerdict(true, iDetail, iSeq);
-        public static SCP_TavernPostVerdict Bad(string iDetail) => new SCP_TavernPostVerdict(false, iDetail, "");
+        /// <summary>
+        /// 未定時要人去跑的**可複製指令**（回讀 result／酒館）。空＝這一態不需要。
+        /// <para>📌 summit 那次靠的是輸出裡半句括號「那不代表它沒發」——
+        /// 而她還得自己知道怎麼查。⇒ 這一欄是把那半句括號變成**一行可以貼的指令**。</para>
+        /// </summary>
+        public string RecheckHint { get; }
+
+        public static SCP_TavernPostVerdict Good(string iDetail, string iSeq)
+            => new SCP_TavernPostVerdict(SCP_TavernPostOutcome.Posted, iDetail, iSeq);
+
+        /// <summary>**確定沒發**（補發安全）。⛔ 逾時不要用這個 —— 那是 <see cref="Unknown"/>。</summary>
+        public static SCP_TavernPostVerdict Bad(string iDetail)
+            => new SCP_TavernPostVerdict(SCP_TavernPostOutcome.NotPosted, iDetail, "");
+
+        /// <summary>**不知道有沒有發**（等回執逾時）—— 呼叫端要印 <paramref name="iRecheckHint"/> 而不是補發指令。</summary>
+        public static SCP_TavernPostVerdict Unknown(string iDetail, string iRecheckHint)
+            => new SCP_TavernPostVerdict(SCP_TavernPostOutcome.Unresolved, iDetail, "", iRecheckHint);
     }
 
     public interface SCP_ITavernPostGateway

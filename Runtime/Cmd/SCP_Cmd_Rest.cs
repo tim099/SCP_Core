@@ -10,7 +10,8 @@
 // 數值影響：寫兩個檔（信本體＋見樹指標）。廣播那步做一次 Cmd round-trip（1〜3 秒）或直接略過。
 //
 // ⚠ **PortStatus 是 `Native` 而且那是誠實的**：本 Cmd **跑得完** —— Editor 沒開時信照樣落磁碟，
-//   只是 exit 6 並明說廣播沒發。⛔ 標成 `DelegatedToUnity` 會讓「Editor 沒開就跑不完」變成謊
+//   只是 exit 非 0（6＝確定沒發／7＝沒等到回執）並明說廣播那半怎麼了。
+//   ⛔ 標成 `DelegatedToUnity` 會讓「Editor 沒開就跑不完」變成謊
 //   （而那一欄正是人判斷「現在能不能跑」的唯一依據）。定語寫在 Summary／輸出裡，不靠讀者猜。
 //
 // ⛔ **小歇不是晚安**：不 perturb、不 offline、不 unlock、不 `wake_count++`。
@@ -28,14 +29,23 @@ namespace SCP.Core.Cmd
     {
         public override string Name => "rest";
 
+        // ⚠ 這一行是 `senate cmd` 清單上印的那句 —— 它必須自己帶定語（TASK-0134 ③）。
+        //   QA 2026-09-05 判它「半格」：有「本地跑／廣播委派」，沒有「沒開會怎樣」。
+        //   ⇒ 補上，而且補的是**修正後**的語意（6／7 兩態），不是當時那句已知不準的話。
         public override string Summary =>
-            "小歇片刻：記憶信落磁碟（本地跑，**Editor 沒開也成**）＋ 可選酒館廣播（那一步委派 Editor）";
+            "小歇片刻：記憶信落磁碟（本地跑，**Editor 沒開也成**）＋ 可選酒館廣播（那一步委派 Editor；"
+            + "Editor 沒開＝exit 6 確定沒發／等回執逾時＝**exit 7 不知道，先回讀別補發**）";
 
         public override string Details =>
             "compact 只抹 in-memory 對話史，**磁碟檔完整存活** ⇒ 想留的記憶必須落檔。\n"
             + "⚠ 這支**不是晚安**：不擾動 identity、不下線、不解鎖、不推 wake_count。\n"
-            + "⚠ 兩本帳分開結算：`exit 0` ＝信＋廣播都成；**`exit 6` ＝信寫了、廣播沒發**\n"
-            + "  （Editor 沒開／沒給 data_root／Editor 回報失敗都算）—— 這時去酒館補發，記憶那半不受影響。\n"
+            + "⚠ 三本帳分開結算（廣播那半有**三種**結局，⛔ 不是兩種）：\n"
+            + "  · `exit 0` ＝信＋廣播都成（或 `no_notify=1` 顯式不廣播）\n"
+            + "  · **`exit 6` ＝信寫了、廣播「確定沒發」** ⇒ 直接補發是安全的\n"
+            + "  · **`exit 7` ＝信寫了、廣播「不知道」**（沒等到回執）⇒ ⛔ **先回讀再決定**：\n"
+            + "    它可能已經發出去了，補發會在全域遞增的 seq 上多出第二則。指令印在輸出裡。\n"
+            + "  🩸 6 與 7 分家是 QA 量出來的（TASK-0134，summit 2026-09-05）：她拿到「沒發」而\n"
+            + "  Editor 開著、廣播其實成功了（post_seq 19082）——**兩者處置相反，卻曾經同一個號**。\n"
             + "📌 醒來接回要讀兩份：`_latest.md`（睡前的信）＋ `cmd/wake_brief.md`（早安的機械讀數）。";
 
         public override string Example =>
@@ -60,10 +70,24 @@ namespace SCP.Core.Cmd
                                + "（⚠ senate cmd 會自動從設定檔補；要不廣播請用 no_notify=1）"),
             new SCP_CmdArgSpec("no_notify", "=1 ⇒ 只寫信不廣播（**這才是關廣播的開關**；跟「發失敗」不同形）"),
             new SCP_CmdArgSpec("actor", "覆寫署名帳號（預設從 lock 的 bank_account 讀）"),
+            // ⚠ 字面與 `cmd wake-brief` 的同名參數逐字一致（同一個定語、同一個真相源）——
+            //   ⛔ 別在這裡改叫 currency／locale，兩個名字的第一個症狀是有人只填其中一支。
+            new SCP_CmdArgSpec("region", "現地的區域（貨幣）ID，寫進信的 frontmatter。"
+                               + "不給＝unstated，**本 Cmd 不推導**（真相源是宿主的央行設定）"),
         };
 
-        /// <summary>信寫了但廣播沒發 —— 與 `git_commit.py` 同號同義（commit 成功／公告失敗）。</summary>
+        /// <summary>信寫了但廣播**確定沒發** —— 與 `git_commit.py` 同號同義（commit 成功／公告失敗）。</summary>
+        /// <remarks>⛔ 只給「確定沒發」用。沒等到回執是 <see cref="ExitBroadcastUnresolved"/>。</remarks>
         public const int ExitLetterOnly = 6;
+
+        /// <summary>
+        /// 信寫了，而廣播那半**不知道成沒成**（沒等到回執）。
+        /// <para>🩸 為什麼要一個新號碼而不是沿用 6：兩態的處置**相反**
+        /// （確定沒發 ⇒ 補發；不知道 ⇒ 先回讀，補發可能多出第二則）。
+        /// 同一個 exit code 的意思是「腳本分不出它們」，而分不出的時候人會選其中一邊 ——
+        /// summit 2026-09-05 就是在那個岔口上，靠輸出裡半句括號才沒去補發。</para>
+        /// </summary>
+        public const int ExitBroadcastUnresolved = 7;
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
         {
@@ -104,7 +128,9 @@ namespace SCP.Core.Cmd
             try
             {
                 aWrite = SCP_LetterWriter.WriteSelfLetter(aLettersRoot, aPersona, aActor, aBody,
-                                                          SCP_LetterWriter.TriggerRest);
+                                                          SCP_LetterWriter.TriggerRest, iNowUtc: null,
+                                                          iRegion: iArgs.Get("region").Trim(),
+                                                          iDataRoot: aDataRoot);
             }
             catch (Exception e)
             {
@@ -123,12 +149,29 @@ namespace SCP.Core.Cmd
             aResult.AddValue("letter_bytes", aWrite.Bytes.ToString());
 
             // ── 附帶：廣播（獨立結算）──────────────────────────────────────
-            string aNotify = Broadcast(aPersona, aSummary, aNote, aDataRoot, aNoNotify, aWrite, aLock, aResult);
+            string aNotify = Broadcast(aPersona, aSummary, aNote, aDataRoot, aNoNotify, aWrite, aLock, aResult,
+                                       out string aRecheckHint);
             aResult.AddValue("notify", aNotify);
             aResult.Lines.Add("");
+            if (aNotify == "unknown")
+            {
+                // ⛔ 這一段**不准印補發指令** —— 印了就等於替讀者做了那個他還沒有讀數可以做的決定。
+                //   先給回讀的路，補發指令等他確認「真的沒發」之後才需要（那時 exit 6 那段會給）。
+                aResult.Lines.Add("⚠ **信寫了；廣播「不知道」** —— 沒等到回執，⛔ 這**不代表沒發**。");
+                aResult.Lines.Add("   → 先回讀（判準：`result=Success` ＋ 有 `post_seq` ⇒ 發了）：");
+                aResult.Lines.Add("     " + (aRecheckHint.Length > 0
+                    ? aRecheckHint
+                    : "（閘沒有給回讀指令 —— 去看 " + aDataRoot + "/_cmd_results/ 最新那筆與酒館）"));
+                aResult.Lines.Add("   → 確認**真的沒發**才補：senate ucmd run Tavern --persona "
+                                  + aPersona + " --arg op=post --arg-file body=<檔> --arg category=meta");
+                aResult.Lines.Add("   → 記憶那半不受影響（信已經在磁碟上）——⚠ 但**別在沒讀之前就補**：");
+                aResult.Lines.Add("     酒館 seq 是全域遞增的，補錯就是同一件事發兩則。");
+                aResult.ExitCode = ExitBroadcastUnresolved;
+                return aResult;
+            }
             if (aNotify == "fail")
             {
-                aResult.Lines.Add("⚠ **信寫了、廣播沒發** —— 同事與 Tim 不知道你小歇了。");
+                aResult.Lines.Add("⚠ **信寫了、廣播確定沒發** —— 同事與 Tim 不知道你小歇了。");
                 // ⚠ 這行刻意不走 `SCP_CmdRegistry.Invoke`：補發是 **ucmd**（Editor 那條路），
                 //   不是 `senate cmd` —— 用 Invoke 會印出一個不存在的 cmd 名字。
                 aResult.Lines.Add("   → 補發（酒館發文只有 Editor 那條路）：senate ucmd run Tavern --persona "
@@ -143,11 +186,18 @@ namespace SCP.Core.Cmd
             return aResult;
         }
 
-        /// <summary>回 `ok` / `fail` / `skipped`。⚠ 三種狀態刻意不同形 —— 處置完全不同。</summary>
+        /// <summary>
+        /// 回 `ok` / `fail` / `unknown` / `skipped`。⚠ 四種狀態刻意不同形 —— **處置完全不同**。
+        /// <para>`fail`（確定沒發）⇒ 補發；`unknown`（沒等到回執）⇒ ⛔ 先回讀，補發可能多出第二則；
+        /// `skipped`（我沒要求它發）⇒ 什麼都不用做。把 `unknown` 併進 `fail` 就是 TASK-0134 的那隻。</para>
+        /// </summary>
+        /// <param name="oRecheckHint">`unknown` 時要給人的**可複製回讀指令**；其餘狀態是空字串。</param>
         static string Broadcast(string iPersona, string iSummary, string iNote, string iDataRoot,
                                 bool iNoNotify, SCP_LetterWriteResult iWrite,
-                                SCP_PersonaStatus? iLock, SCP_CmdResult ioResult)
+                                SCP_PersonaStatus? iLock, SCP_CmdResult ioResult,
+                                out string oRecheckHint)
         {
+            oRecheckHint = "";
             if (iNoNotify)
             {
                 ioResult.Lines.Add("📢 廣播：**顯式關掉**（--arg no_notify=1）");
@@ -190,8 +240,21 @@ namespace SCP.Core.Cmd
                 ioResult.Lines.Add("📢 廣播丟出例外：" + e.GetType().Name + ": " + e.Message);
                 return "fail";
             }
-            ioResult.Lines.Add("📢 廣播：" + (aVerdict.Posted ? "OK" : "fail") + "　" + aVerdict.Detail);
+            // ⛔ 標籤照閘給的三態逐一對應，**不准由 `Posted` 這個 bool 推**：
+            //   `Posted == false` 在 Unresolved 上也成立，而那正是「沒發」與「不知道」被壓成同一格的那一步。
+            string aLabel = aVerdict.Outcome switch
+            {
+                SCP_TavernPostOutcome.Posted => "OK",
+                SCP_TavernPostOutcome.Unresolved => "**未定**（沒等到回執）",
+                _ => "fail（確定沒發）",
+            };
+            ioResult.Lines.Add("📢 廣播：" + aLabel + "　" + aVerdict.Detail);
             if (aVerdict.Seq.Length > 0) ioResult.AddValue("post_seq", aVerdict.Seq);
+            if (aVerdict.Outcome == SCP_TavernPostOutcome.Unresolved)
+            {
+                oRecheckHint = aVerdict.RecheckHint;
+                return "unknown";
+            }
             return aVerdict.Posted ? "ok" : "fail";
         }
     }

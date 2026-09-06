@@ -57,10 +57,20 @@ namespace SCP.Core.Letters
         /// <para>⛔ body 空白時**丟例外而不是寫一個空檔** —— 空的信比沒有信更糟：
         /// 它會讓 `_latest.md` 指到一封什麼都沒說的信，而醒來的人讀不出「這裡出過錯」。</para>
         /// </summary>
+        /// <param name="iRegion">
+        /// 現地的區域（貨幣）ID。**由宿主傳進來，本層不推導** —— 真相源是宿主的央行設定
+        /// （<c>Treasury/bank_settings.json</c> 的 <c>currency_id</c>），與
+        /// <see cref="SCP_WakeBrief.Build"/> 同一個契約。不給＝寫 <c>unstated</c>，⛔ 不填預設
+        /// （宿主的 <c>CurrencyId</c> 缺值時回預設 <c>Ducat</c>；這裡再補一個預設，
+        /// 兩個沒設定過的專案就會印出同一個區域，而那正是這個定語要防的事）。
+        /// </param>
+        /// <param name="iDataRoot">資料根 —— 只拿來算 <c>project</c>（純路徑運算，不碰磁碟）。</param>
         public static SCP_LetterWriteResult WriteSelfLetter(string iLettersRoot, string iPersona,
                                                             string iActor, string iBody,
                                                             string iTrigger = TriggerRest,
-                                                            DateTime? iNowUtc = null)
+                                                            DateTime? iNowUtc = null,
+                                                            string? iRegion = null,
+                                                            string? iDataRoot = null)
         {
             if (string.IsNullOrWhiteSpace(iPersona)) throw new ArgumentException("persona 是空的", nameof(iPersona));
             if (string.IsNullOrWhiteSpace(iBody)) throw new ArgumentException("信的內文是空的", nameof(iBody));
@@ -75,7 +85,12 @@ namespace SCP.Core.Letters
             string aBody = NormalizeEscapedNewlines(iBody, out bool aFixed);
             aResult.NormalizedEscapedNewlines = aFixed;
 
-            // 機器欄位（provenance）—— 這五個以本函式為準，作者寫的同名欄留 `_as_written`。
+            // 機器欄位（provenance）—— 這七個以本函式為準，作者寫的同名欄留 `_as_written`。
+            // 🩸 後兩欄（region／project）是 2026-09-06 補的，而它們缺席的樣子正是本檔開頭那句話：
+            //   「frontmatter 少一欄不會有任何一層報錯」。TASK-0134 QA（summit 09-05）並排兩封信量到
+            //   cmd_rest 寫 5 欄、Editor 的 cmd_goodnight 寫 7 欄 ⇒ 這支寫出來的信會被讀成
+            //   「2026-09-02 之前的舊信」形狀（那批**真的**沒有這兩欄），**而它是今天寫的**。
+            //   ⚠ 而那封信裡正好引用了酒館 seq —— region 管的就是那條軸。
             var aMachine = new List<KeyValuePair<string, string>>
             {
                 new KeyValuePair<string, string>("type", "letter_to_future_self"),
@@ -83,6 +98,9 @@ namespace SCP.Core.Letters
                 new KeyValuePair<string, string>("written_at", IsoMillis(aNow)),
                 new KeyValuePair<string, string>("written_by_persona", iPersona),
                 new KeyValuePair<string, string>("trigger", string.IsNullOrWhiteSpace(iTrigger) ? TriggerRest : iTrigger),
+                new KeyValuePair<string, string>("region", string.IsNullOrWhiteSpace(iRegion)
+                    ? SCP_DataPaths.UnstatedQualifier : iRegion!.Trim()),
+                new KeyValuePair<string, string>("project", SCP_DataPaths.ProjectNameOf(iDataRoot)),
             };
             aBody = SplitAuthorFrontmatter(aBody, aMachine, out List<string> aExtra);
             aResult.AuthorFrontmatterFields = aExtra.Count;
