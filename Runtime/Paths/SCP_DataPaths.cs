@@ -42,14 +42,26 @@ namespace SCP.Core.Paths
         /// 不擋的話 <c>..</c> 是一條寫出 <c>queues/</c> 之外的路。
         /// 擋下時退回 <see cref="AnonymousQueueId"/> —— 那一道本來就代表「這筆身分不明」。</para>
         /// </summary>
+        /// <summary>
+        /// 某個 persona 的 queue **資料夾**。⚠ 帶子分道時（<c>&lt;persona&gt;/&lt;lane&gt;</c>）
+        /// 回的仍是那個人的資料夾 —— 子分道住在檔名裡，不是另一個資料夾（見 <see cref="SplitQueueId"/>）。
+        /// </summary>
         public static string QueueFolder(SCP_DataRoot iRoot, string? iPersona)
-            => Queues(iRoot) + "/" + SafeQueueId(iPersona);
+            => Queues(iRoot) + "/" + SplitQueueId(iPersona).Folder;
 
         public static string QueueFile(SCP_DataRoot iRoot, string? iPersona)
-            => QueueFolder(iRoot, iPersona) + "/" + QueueFileName;
+        {
+            (string aFolder, string aLane) = SplitQueueId(iPersona);
+            return Queues(iRoot) + "/" + aFolder + "/"
+                   + (aLane.Length == 0 ? QueueFileName : "queue-" + aLane + ".json");
+        }
 
         public static string TriggerFile(SCP_DataRoot iRoot, string? iPersona)
-            => QueueFolder(iRoot, iPersona) + "/" + TriggerFileName;
+        {
+            (string aFolder, string aLane) = SplitQueueId(iPersona);
+            return Queues(iRoot) + "/" + aFolder + "/"
+                   + (aLane.Length == 0 ? TriggerFileName : "pending-" + aLane + ".trigger");
+        }
 
         /// <summary>
         /// session token 表（<c>_tokens.json</c> / <c>_token_enforce.json</c>）住的地方。
@@ -119,6 +131,35 @@ namespace SCP.Core.Paths
             if (a.Length == 0) return AnonymousQueueId;
             if (a.Contains("..") || a.IndexOf('/') >= 0 || a.IndexOf('\\') >= 0) return AnonymousQueueId;
             return a;
+        }
+
+        /// <summary>
+        /// 拆 queue id：<c>&lt;persona&gt;</c> 或 <c>&lt;persona&gt;/&lt;lane&gt;</c>
+        /// → (資料夾, 子分道)。沒有子分道時 <c>Lane</c> 是空字串。
+        /// <para>物理意義：**身分是資料夾、子分道是檔名後綴** ——
+        /// <c>queues/&lt;persona&gt;/queue-&lt;lane&gt;.json</c> ＋ <c>pending-&lt;lane&gt;.trigger</c>。
+        /// 與 python <c>run_cmd.py</c> 的 <c>queue_path()</c> / <c>trigger_path()</c> **逐字同形**
+        /// —— Editor 端的 watcher 掃的是 <c>queue*.json</c>，形狀差一個字就等於那筆永遠不被取走。</para>
+        /// <para>🩸 為什麼子分道不做成資料夾（2026-08-01 chess 的血證，寫在 <c>chess.py</c> 的註解裡）：
+        /// 舊寫法 <c>--agent-id chess-&lt;局號&gt;</c> 長出 <c>queues/chess-1/</c> <c>queues/chess-2/</c>
+        /// —— **棋局不是人**，那是身分層污染。身分要回到真正下棋的那個人身上。</para>
+        /// <para>⚠ 兩段各自過 <see cref="SafeQueueId"/> 的同一道防護；任一段不合法就**整筆**退回
+        /// anonymous —— 只退一半會寫出一個看起來合理、而沒有人打算指向的位置。</para>
+        /// </summary>
+        public static (string Folder, string Lane) SplitQueueId(string? iQueueId)
+        {
+            string a = (iQueueId ?? "").Trim();
+            if (a.Length == 0) return (AnonymousQueueId, "");
+            int aSlash = a.IndexOf('/');
+            if (aSlash < 0) return (SafeQueueId(a), "");
+
+            string aLane = a.Substring(aSlash + 1);
+            // 多一個斜線 ＝ 呼叫端在講一個本層不認得的形狀 ⇒ 不猜，整筆退回 anonymous。
+            if (aLane.IndexOf('/') >= 0) return (AnonymousQueueId, "");
+            string aSafeFolder = SafeQueueId(a.Substring(0, aSlash));
+            string aSafeLane = SafeQueueId(aLane);
+            if (aSafeFolder == AnonymousQueueId || aSafeLane == AnonymousQueueId) return (AnonymousQueueId, "");
+            return (aSafeFolder, aSafeLane);
         }
     }
 }
