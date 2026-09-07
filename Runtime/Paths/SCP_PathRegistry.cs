@@ -99,7 +99,12 @@ namespace SCP.Core.Paths
 
         [SCP_PathInfo("Cmd 判定檔",
             "`<cmd_id>.json` ——「這一筆是哪個 client 送的」現在記在這裡（`client` 欄）。")]
-        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, "_cmd_results", SCP_PathScope.Global)]
+        // ⚠ 目錄名走 SCP_DataPaths.CmdResultsDirName，⛔ 不在這裡再拼一次字面：
+        //   TASK-0103 ① 修的正是「同一個名字兩處各拼一次」，而我加完那個常數之後，
+        //   這一行就成了它的第二份 —— 由我造出來的那一份。
+        // 🩸 而本 registry 的條目是從 AgentCommandsRoot 衍生的，Server 執行器那端掛的是
+        //   **Server 根** ⇒ 兩者解析出來的完整路徑本來就不同，共用的只到名字這一層。
+        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, SCP_DataPaths.CmdResultsDirName, SCP_PathScope.Global)]
         CmdResults,
     }
 

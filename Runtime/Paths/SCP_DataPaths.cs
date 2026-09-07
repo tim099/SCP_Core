@@ -24,6 +24,20 @@ namespace SCP.Core.Paths
         public const string LettersDirName = "letters";
 
         /// <summary>
+        /// Cmd 回傳判定檔的目錄名（<c>&lt;某個根&gt;/_cmd_results/&lt;cmd_id&gt;.json</c>）。
+        /// <para>⚠ **它掛在兩個不同的根底下，而那是刻意的**：派遣端寫在**資料根**
+        /// （<c>AgentCmdClient</c>，Editor Runner 讀它）、Server 執行器寫在**Server 根**
+        /// （<c>ServerExecutor</c>）。⇒ 共用的是**目錄名**，不是完整路徑
+        /// —— 所以這裡是一個 <c>const</c>，⛔ 不是 <c>SCP_PathRegistry</c> 的衍生條目
+        /// （那條從 <c>AgentCommandsRoot</c> 長出來，拿它去接 Server 根會**靜默換掉**解析結果）。</para>
+        /// <para>🩸 TASK-0103 ①（@summit 2026-09-05 指認、09-07 複驗仍 fail）：這個字面
+        /// 原本在條文點名的那兩端**各自拼一次**。而它的失效樣子跟本檔開頭記的 <c>"queues"</c>
+        /// 那次同族 —— 改一個漏一個 ⇒ 一端寫進 A、另一端去 B 撈，撈不到就變成
+        /// 「**沒有回傳檔**」，而那跟「**Cmd 還沒跑完**」在畫面上一模一樣。</para>
+        /// </summary>
+        public const string CmdResultsDirName = "_cmd_results";
+
+        /// <summary>
         /// 沒有 persona 時的 queue 分道名。
         /// <para>🩸 它不是「預設值」是**症狀**：全員掉進這一道會互相阻塞
         /// （summit 2026-08-16 兩次 ensure_idle 逾時、kiara 2026-08-17 卡 120s）。
