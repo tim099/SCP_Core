@@ -40,6 +40,9 @@ namespace SCP.Core.Cmd
             + "· 單一 persona：`--arg persona=<p>`；整個 pool：`--arg all=1`（兩者擇一）\n"
             + "· `--arg field=<欄名>` 只印那一欄的值（給腳本取用；查無該欄＝exit 4，**不印空字串**）\n"
             + "· `--arg json=1` 印完整 JSON；配 `all=1` 時的形狀是 `{personas, pool, generated_at}`\n"
+            + "  ⚠ `json=1` 與 `field` 的 stdout **只有那個值**（警語不印，但 `warning_count` 照落）——\n"
+            + "    消費端是程式，多一行中文就得多一條切它的規則，而那條規則會安靜地過期。\n"
+            + "  📌 python 接縫（`_lib/persona_profile.py` 第一段）吃的就是 `all=1 json=1` 的 stdout。\n"
             + "⚠ 本 Cmd **純唯讀**：不動 lock、不動帳、不寫快照。\n"
             + "⚠ `region` 不給時 `agent`（帳號 id）欄會缺席 —— 那是**沒人告訴我區域**，不是「這人沒帳號」。";
 
@@ -87,9 +90,13 @@ namespace SCP.Core.Cmd
             // ⇒ 判準：**只講跟被問的那一欄有關的事**。region 只影響 `agent`，
             //   所以問 email 的人不該收到 region 的警語；問 agent 的人一定要收到。
             //   兩種情況 `warning_count` 都照落，⇒ 「被抑制」仍然數得出來。
+            // ⚠ `json=1` 與 `field` 同一類：消費端是程式，stdout 必須只有它要的東西。
+            //   python 接縫（`_lib/persona_profile.py` 第一段）就是拿 `json=1` 的 stdout
+            //   去 `json.loads` —— 多一行中文警語，那邊就得多一條「怎麼把它切掉」的規則，
+            //   而那條規則會在下一次有人加一行輸出時安靜地失效。
             bool aFieldMode = aField.Length > 0;
             bool aFieldNeedsRegion = string.Equals(aField, "agent", StringComparison.Ordinal);
-            bool aTellRegion = !aFieldMode || aFieldNeedsRegion;
+            bool aTellRegion = (!aFieldMode && !aJson) || aFieldNeedsRegion;
             if (aRegion.Length == 0 && aTellRegion)
                 aResult.Lines.Add("⚠ 沒給 region ⇒ `agent`（帳號 id）欄會缺席。"
                                   + "那是**沒人告訴我區域**，不是這個人沒有帳號。");
@@ -148,7 +155,7 @@ namespace SCP.Core.Cmd
             ioResult.AddValue("persona", iPersona);
             ioResult.AddValue("email", aRaw.GetString("email", ""));
             ioResult.AddValue("actual_agent", aRaw.GetString("actual_agent", ""));
-            AppendWarnings(ioResult, iWarnings);
+            AppendWarnings(ioResult, iWarnings, iPrint: !iJson);
             return ioResult;
         }
 
@@ -199,7 +206,7 @@ namespace SCP.Core.Cmd
             ioResult.AddValue("resolved_count", (aPool.Count - aMissed).ToString());
             // 0 也照印 —— 「沒有漏」與「我沒在數」在輸出上不可同形。
             ioResult.AddValue("missed_count", aMissed.ToString());
-            AppendWarnings(ioResult, iWarnings);
+            AppendWarnings(ioResult, iWarnings, iPrint: !iJson);
             return ioResult;
         }
 
