@@ -618,13 +618,82 @@ namespace SCP.Core.Cmd
             // ── 分享：best-effort，發不出去不讓放點失敗 ──
             if (!Truthy(iArgs.Get("no_share")))
             {
-                string aBody = "🎨 " + aPersona + " 在畫布放了 " + aN + " 顆像素"
-                    + "（限時券 " + aPlan.Expiring + " ／永久券 " + aPlan.Permanent + " ／token " + aPlan.Token + "）"
-                    + "\n· 事件：`" + aUuid + "`　落點回讀 " + aVerified + "/" + aN + " 一致";
-                SCP_CanvasGateResult aShare = aGate.Share(aPersona, "tavern", aBody);
+                // ⏱ 預覽圖（TASK-0165 回歸修復）—— 幾顆像素在 Discord 上是一粒沙，所以要裁切＋放大。
+                //   ⚠ 產不出來就是 null，body 也不會宣告「預覽」⇒
+                //   **「沒有預覽」與「有預覽但沒送到」不同形**（前者 body 沒有那句話，後者有）。
+                string? aPreviewPath = TryWritePlacePreview(iPaths, aSnap, aPixels, aUuid,
+                                                            out int aScale, out int aMinX, out int aMinY,
+                                                            out int aMaxX, out int aMaxY);
+                string aBody = "🎨 " + aPersona + " 在畫布 ("
+                    + aMinX + "," + aMinY + ")–(" + aMaxX + "," + aMaxY + ") 放了 " + aN + " 顆像素"
+                    + (aPreviewPath != null ? "（預覽 ×" + aScale + "）" : "")
+                    + "\n· 付款：限時券 " + aPlan.Expiring + " ／永久券 " + aPlan.Permanent + " ／token " + aPlan.Token
+                    + "\n· 事件：`" + aUuid + "` 落點回讀 " + aVerified + "/" + aN + " 一致";
+                SCP_CanvasGateResult aShare = aGate.Share(aPersona, "tavern", aBody,
+                                                          aPreviewPath, "canvas-share");
                 aResult.Lines.Add("  分享         : " + (aShare.Ok ? aShare.Detail : "⚠ " + aShare.Detail));
+                aResult.Lines.Add("  預覽         : " + (aPreviewPath ?? "（渲不出來 —— 放點與帳不受影響）"));
+                if (aPreviewPath != null) aResult.AddOutput(aPreviewPath);
             }
             return aResult;
+        }
+
+        // ───────────────────────────── 預覽（分享用）─────────────────────────────
+        // 區塊職責：把「這次落的那幾顆」渲成一張可以當附件的 png，回它的絕對路徑
+        // 物理意義／取捨（每一條都抄自已驗過的 python 版 `_share_place_preview`，不是重新發明）：
+        //   · **bbox ＋ margin 8**：只有落點那幾格的話看不出畫在誰旁邊 —— 上下文是這張圖的用途。
+        //   · **放大到最長邊 ~512、最近鄰**：不放大的話 10 顆像素在 Discord 上是一粒沙；
+        //     最近鄰是因為這是像素畫，插值會把硬邊糊掉。上限 ×16（跟舊版同數字，讀數才可比）。
+        //   · **存 previews/ 獨立檔名**：`canvas_latest` / `_last_view` 是共用畫布檔，下一次操作
+        //     就被蓋掉 —— refs 指共用檔等於指一張**會變的圖**。
+        //   · **任何失敗回 null 不拋**：錢已扣、像素已落，預覽渲不出來不可以讓 place 看起來失敗。
+        // 數值影響：多一張 ≤512px 的 png（previews/ 不入版控）；不動畫布資料與帳。
+        //   bbox 由 out 參數回給呼叫端組 body —— 那幾個數字是**同一次計算**，不算第二遍
+        //   （算兩遍＝兩份字面，兩邊會漂）。
+        static string? TryWritePlacePreview(SCP_CanvasPaths iPaths, SCP_CanvasSnapshot iSnap,
+                                            List<SCP_CanvasPixel> iPixels, string iUuid,
+                                            out int oScale, out int oMinX, out int oMinY,
+                                            out int oMaxX, out int oMaxY)
+        {
+            oScale = 1; oMinX = 0; oMinY = 0; oMaxX = 0; oMaxY = 0;
+            if (iPixels == null || iPixels.Count == 0) return null;
+
+            oMinX = int.MaxValue; oMinY = int.MaxValue; oMaxX = int.MinValue; oMaxY = int.MinValue;
+            foreach (SCP_CanvasPixel aP in iPixels)
+            {
+                if (aP.X < oMinX) oMinX = aP.X;
+                if (aP.Y < oMinY) oMinY = aP.Y;
+                if (aP.X > oMaxX) oMaxX = aP.X;
+                if (aP.Y > oMaxY) oMaxY = aP.Y;
+            }
+
+            try
+            {
+                const int aMargin = 8;
+                int aX1 = Math.Max(0, oMinX - aMargin);
+                int aY1 = Math.Max(0, oMinY - aMargin);
+                int aX2 = Math.Min(SCP_CanvasSpec.Width, oMaxX + aMargin + 1);
+                int aY2 = Math.Min(SCP_CanvasSpec.Height, oMaxY + aMargin + 1);
+                int aW = aX2 - aX1;
+                int aH = aY2 - aY1;
+                if (aW <= 0 || aH <= 0) return null;
+
+                oScale = Math.Max(1, Math.Min(16, 512 / Math.Max(aW, aH)));
+                byte[] aPng = SCP_CanvasPng.EncodeRgb(iSnap.Buffer, aX1, aY1, aW, aH,
+                                                      SCP_CanvasSpec.Width, oScale);
+                Directory.CreateDirectory(iPaths.Previews);
+                string aName = "share_"
+                               + DateTime.UtcNow.ToString("yyyyMMddTHHmmss", CultureInfo.InvariantCulture)
+                               + "_" + iUuid + ".png";
+                string aPath = Path.Combine(iPaths.Previews, aName).Replace('\\', '/');
+                File.WriteAllBytes(aPath, aPng);
+                return aPath;
+            }
+            catch (Exception)
+            {
+                // best-effort：回 null ⇒ body 不宣告預覽、refs 不掛。⛔ 不拋、不改 exit code。
+                return null;
+            }
         }
 
         // ───────────────────────────── gateway（②的讀數出口）─────────────────────────────

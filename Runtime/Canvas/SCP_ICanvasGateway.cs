@@ -65,8 +65,21 @@ namespace SCP.Core.Canvas
         SCP_CanvasGateResult DebitTokens(string iAccountId, int iAmount, string iSourceKind,
                                          string iSourceRef, string iDescription);
 
-        /// <summary>放點後的分享（發不出去**不該讓放點失敗** —— 廣播是 best-effort）。</summary>
-        SCP_CanvasGateResult Share(string iPersona, string iRoom, string iBody);
+        // ===========================================================
+        // 區塊職責：放點後的分享（發不出去**不該讓放點失敗** —— 廣播是 best-effort）
+        // 物理意義：`iAttachAbsolutePath` 是**本機絕對路徑**，由本體算（它才知道預覽渲在哪）；
+        //          **轉成收件端要的形式是宿主的事** —— 酒館的 `refs` 慣例是 **repo 相對路徑**
+        //          （`UCL_DiscordMirrorDaemon.CollectImageRefFiles` 用 `Path.Combine(RepoRoot, rel)` 解），
+        //          而本體不知道也不該推導 repo 根（資料根可被 override，推導出來的根會靜默指錯樹）。
+        //   🩸 這兩個參數是回歸修復（TASK-0165）：介面原本只吃 body ⇒ python 端
+        //   `_share_place_preview`（帶 refs → mirror 的附件分支上 Discord，Tim 2026-08-20 拍板）
+        //   在移植時整段沒有對應物，而 python 已於 2026-09-07 刪除 ⇒ **預覽圖從此不見**，
+        //   而放點與公告都照樣成功 —— 沒有任何一層會叫。
+        // 數值影響：兩個參數都可省（省略 ＝ 純文字分享，與加入前逐位元組相同）。
+        //          附件轉不出來時**退回純文字**，不可以讓放點失敗。
+        // ===========================================================
+        SCP_CanvasGateResult Share(string iPersona, string iRoom, string iBody,
+                                   string? iAttachAbsolutePath = null, string? iTag = null);
     }
 
     /// <summary>
