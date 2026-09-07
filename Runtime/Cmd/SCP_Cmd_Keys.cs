@@ -91,7 +91,7 @@ namespace SCP.Core.Cmd
                 // 前值先讀起來 —— 收尾要印的是**前後對照**，而不是「我送出了幾筆」。
                 (List<string> aTodoBefore, List<string> aDoneBefore) =
                     SCP_WakeLetters.KeysEntries(aLettersRoot, aPersona);
-                SCP_CmdResult aFail = CheckOff(aPath, aDoneFrag, aDoneIndex, aResult);
+                SCP_CmdResult? aFail = CheckOff(aPath, aDoneFrag, aDoneIndex, aResult);
                 if (aFail != null) return aFail;
                 aResult.AddValue("todo_count_before", aTodoBefore.Count.ToString());
                 aResult.AddValue("done_count_before", aDoneBefore.Count.ToString());
@@ -129,7 +129,11 @@ namespace SCP.Core.Cmd
         /// <para>⚠ 定位用**檔案行號**不是內容比對：見叢允許兩行內容一模一樣（同一件事撞兩次），
         /// 而用內容找會靜默地勾掉第一條。</para>
         /// </summary>
-        static SCP_CmdResult CheckOff(string iPath, string iFrag, string iIndexList, SCP_CmdResult ioResult)
+        // ⚠ 回傳型別帶 `?`：Senate 那側（`dotnet build`）nullable 是**開的且警告當錯誤**
+        //   ⇒ 不標註就是 CS8603 build 失敗；Unity 那側 nullable 沒開，`?` 只是 CS8632 警告。
+        //   🩸 2026-09-07 我為了讓 Unity 少一個警告把 `?` 拿掉，Unity 綠燈、Senate build 當場紅 ——
+        //   **同一份字面在兩個宿主底下編譯設定不同，Unity 的綠燈不涵蓋 senate.exe。**
+        static SCP_CmdResult? CheckOff(string iPath, string iFrag, string iIndexList, SCP_CmdResult ioResult)
         {
             if (iFrag.Length > 0 && iIndexList.Length > 0)
                 return SCP_CmdResult.Fail(2,
