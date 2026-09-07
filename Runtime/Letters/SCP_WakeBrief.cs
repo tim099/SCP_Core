@@ -1,12 +1,15 @@
 // 區塊職責：**早安信件讀取流程的組裝端** —— 把 persona 信件庫的各記憶層拼成一份 wake brief。
 // 物理意義：醒來的人只 Read 一份檔就完成 onboarding，所以這份檔的順序**即優先序**：
-//           憲法 → 見叢（當期要做的）→ 見森（縱向骨架）→ 見林（10 夜濃縮）→ 見樹（昨夜的信）。
+//           憲法 → 見叢（我的個人代辦）→ 見單（別人在等我的）→ 見森（縱向骨架）→
+//           見林（10 夜濃縮）→ 見樹（昨夜的信）。
+//           ⚠ 見叢與見單刻意分家（Tim 2026-09-07）：見叢**手寫**且只放個人代辦；
+//           跟專案有關的一律開 Task，那一側每天由 §2.5 機械撈取，**不靠人抄單號進見叢**。
 //           每一層的真相源都是 `letters/<persona>/` 底下的原檔，本檔只讀不改（唯一例外是
 //           `_latest.md` 的指標自癒，見 SCP_WakeLetters.SyncLatestPointer）。
 // 數值影響：主檔行數上限 <see cref="BriefLineCap"/>；超出的**非必讀**區塊整段移進續讀檔
 //           （不砍內容 —— 砍掉的那段沒有人會知道它存在過）。
 //
-// ⚠ **射程（2026-09-01 起是全量）**：§1 見根／§2 見叢／§3 見森／§4 見林／§5 見樹／§5.5 回憶／
+// ⚠ **射程（2026-09-01 起是全量）**：§1 見根／§2 見叢／§2.5 見單／§3 見森／§4 見林／§5 見樹／§5.5 回憶／
 //   §6 記憶維護／§6.5 見人／§6.6 見書／§9 動作清單都在這裡，而 `Cmd_GoodMorning` step=brief
 //   已改成就地呼叫本檔（不再 spawn python）。
 //   刻意保留的兩處差異，**都不是漏了**：
@@ -18,7 +21,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Text.RegularExpressions;
 using SCP.Core.Books;
 using SCP.Core.Paths;
 using SCP.Core.Tasks;
@@ -124,7 +126,7 @@ namespace SCP.Core.Letters
                 "",
                 "# 🌅 Wake Brief — " + iPersona + " wake #" + iWakeCount.ToString(),
                 "",
-                "> 讀這一份即完成信件層的 onboarding：**憲法 → 見叢 → 見森 → 見林 → 見樹**。",
+                "> 讀這一份即完成信件層的 onboarding：**憲法 → 見叢 → 見單 → 見森 → 見林 → 見樹**。",
                 "> 順序即優先序；主檔溢出時先被移進續讀檔的是後面的非必讀層。",
                 "> 各層原檔路徑都附在區塊標題後，需要細節再點進去。",
                 "",
@@ -145,6 +147,7 @@ namespace SCP.Core.Letters
             {
                 RootSection(iLettersRoot, iPersona),
                 KeysSection(iLettersRoot, iPersona),
+                ActiveTasksSection(iPersona, iDataRoot),
                 ForestSection(iLettersRoot, iPersona),
                 DigestSection(iLettersRoot, iPersona),
                 TreeSection(iLettersRoot, iPersona, aPointer),
@@ -285,6 +288,87 @@ namespace SCP.Core.Letters
                 Lines = aLines,
                 Essential = true,
             };
+        }
+
+        /// <summary>
+        /// §2.5 見單 —— 「我涉及且**還在動**」的單，每天機械撈。
+        /// <para>區塊職責：見叢答「我今天要做什麼（個人）」，本節答「**別人在等我什麼**」。
+        /// 兩者刻意分家（Tim 2026-09-07 拍板）：跟專案有關的一律開 Task，見叢只放個人代辦。</para>
+        /// <para>🩸 為什麼不是讓人把單號抄進見叢（那是 2026-09-06 以前的規則）：
+        /// 手抄是**一次性快照** —— 明天新開的單看不見，而抄進去的那些會在單子關掉之後
+        /// 繼續躺在見叢裡變成假帳。那正是「我欠 X 一份檔案」掛七天的同一族（見森 gen6 §八）。
+        /// ⇒ 讓它每天自己算，而算的來源是單子本身，不是我對單子的記憶。</para>
+        /// <para>⚠ 只逐張列 <c>in_progress</c> / <c>in_review</c>（Tim 拍板：只列在動的）；
+        /// <c>todo</c> / <c>backlog</c> 只報張數與查法 —— 但**必須報**，
+        /// 否則「沒有待辦」與「待辦沒被列出來」又同形。</para>
+        /// </summary>
+        static SCP_BriefSection ActiveTasksSection(string iPersona, string? iDataRoot)
+        {
+            var aLines = new List<string>();
+            var aSection = new SCP_BriefSection
+            {
+                Title = "📌 §2.5 見單 — 別人在等我的（機械撈取，不是手抄）",
+                Lines = aLines,
+                Essential = true,
+            };
+
+            if (string.IsNullOrEmpty(iDataRoot))
+            {
+                // 同 BugCountLine 的紀律：沒給資料根就說沒量，**不印 0** —— 0 會被讀成「沒有單」。
+                aLines.Add("- **未量**（本次沒給資料根 —— 未量 ≠ 零張）");
+                return aSection;
+            }
+
+            try
+            {
+                // 我涉及 ＝ 我開的 或 我是參與者。⚠ 走 HasParticipant 不自己解字串 ——
+                //   participants 是結構化清單，用 substring 找名字會把 `summit` 命中 `summit-2`。
+                var aActive = new List<SCP_TaskEntry>();
+                var aWaiting = new List<SCP_TaskEntry>();
+                foreach (SCP_TaskEntry aEntry in SCP_TaskIO.LoadAll(new SCP_DataRoot(iDataRoot!)))
+                {
+                    if (aEntry.IsClosed()) continue;
+                    if (!string.Equals(aEntry.reporter, iPersona, StringComparison.Ordinal)
+                        && !aEntry.HasParticipant(iPersona)) continue;
+                    if (aEntry.status == SCP_TaskStatus.in_progress || aEntry.status == SCP_TaskStatus.in_review)
+                        aActive.Add(aEntry);
+                    else aWaiting.Add(aEntry);
+                }
+
+                if (aActive.Count == 0)
+                    aLines.Add("- ✓ **沒有在動的單**（`in_progress` / `in_review` 各 0 張）—— 這是讀數，不是本節沒生成");
+                else
+                {
+                    aLines.Add("**在動的（" + aActive.Count.ToString(CultureInfo.InvariantCulture) + " 張）**");
+                    foreach (SCP_TaskEntry aEntry in aActive)
+                        aLines.Add("- " + aEntry.Id + " `" + aEntry.status + "` "
+                                   + RoleTag(aEntry, iPersona) + aEntry.title);
+                }
+
+                aLines.Add("");
+                aLines.Add("- 🕘 `todo` / `backlog`：**" + aWaiting.Count.ToString(CultureInfo.InvariantCulture)
+                           + " 張**（刻意不逐張列 —— 在動的才佔版面）"
+                           + "　清單 → `cmd tasks --arg data_root=<root> --arg persona=" + iPersona + "`");
+                aLines.Add("- ⛔ 這些**不要抄進見叢** —— 見叢只放個人代辦，單子這一側每天由本節重算。");
+            }
+            catch (Exception e)
+            {
+                // 讀失敗要出聲：靜默回空會把「量不到」講成「沒有單」。
+                aLines.Add("- **量不到**（" + e.GetType().Name + ": " + e.Message + "）—— 不是零張");
+            }
+            return aSection;
+        }
+
+        /// <summary>我在這張單上是誰 —— 「球在不在我手上」是看一眼就要能判的，不該回去翻單子。</summary>
+        static string RoleTag(SCP_TaskEntry iEntry, string iPersona)
+        {
+            var aRoles = new List<string>();
+            foreach (SCP_TaskParticipant aPart in iEntry.participants)
+                if (string.Equals(aPart.persona, iPersona, StringComparison.Ordinal))
+                    aRoles.Add(aPart.role.ToString());
+            if (aRoles.Count == 0 && string.Equals(iEntry.reporter, iPersona, StringComparison.Ordinal))
+                aRoles.Add("開單");
+            return aRoles.Count == 0 ? "" : "〔" + string.Join("/", aRoles) + "〕";
         }
 
         static SCP_BriefSection ForestSection(string iLettersRoot, string iPersona)
@@ -429,85 +513,41 @@ namespace SCP.Core.Letters
                        ? "見森已折到第 " + aForests.Count + " 份（gen" + aForests.Count + "）"
                        : "見森：尚未折過（見林 " + aDigests.Count + " 份）"));
             aLines.Add(BugCountLine(iDataRoot));
-            aLines.AddRange(UnreferencedTaskLines(iLettersRoot, iPersona, iDataRoot));
+            aLines.Add(OpenTaskCountLine(iPersona, iDataRoot));
             return new SCP_BriefSection { Title = "📋 §6 記憶維護狀態", Lines = aLines, Essential = true };
         }
 
         /// <summary>見林一單位幾個 wake（gap 到這個數就算 OVERDUE）。對齊 python BRIEF 那側的 10。</summary>
         public const int DigestGapOverdue = 10;
 
-        /// <summary>§6「見叢沒引用的單」最多列幾張（其餘只報張數，不砍掉不提）。</summary>
-        public const int UnreferencedTaskListCap = 10;
-
         /// <summary>
-        /// §6 的「我涉及、但見叢完全沒引用」那幾行。
-        /// <para>區塊職責：把一整類**結構性看不見**的單子撈到台面上。</para>
-        /// <para>物理意義：brief 的 §2 見叢是「當期交棒清單」，而它是**手寫**的 ——
-        /// 一張單只要沒有人把它抄進見叢，早安 brief 就永遠不會提它。
-        /// 於是「這張單不存在」與「這張單沒被抄進見叢」在醒來的人眼裡**同形**，
-        /// 而後者的數量只會單向長大（2026-09-06 summit 手動量到 22 張）。</para>
-        /// <para>🩸 為什麼不是把那 22 張手抄進見叢（那是當時的第一直覺）：手抄是**一次性快照**，
-        /// 明天新開的單又看不見，而抄進去的那些會在單子關掉之後繼續躺在見叢裡變成假帳 ——
-        /// 那正是「我欠 X 一份檔案」掛七天的同一族。⇒ 讓它每天自己算。</para>
+        /// §6 的「我涉及的未結單」那一行 —— **只報總量**，逐張列在 §2.5 見單。
+        /// <para>🩸 2026-09-07 之前這裡做的是「見叢有沒有引用這張單」的差集，
+        /// 而規則改成「專案的事一律開 Task、見叢只放個人代辦」之後，
+        /// **見叢永遠不會引用任何單** ⇒ 那個差集恆等於全集，
+        /// 它會每天印出一個看起來很嚴重、其實不帶資訊的數字。⇒ 整段退場，不留相容路。</para>
         /// <para>⚠ 不給 <paramref name="iDataRoot"/> ⇒ 說「未量」，**不印 0**（同 BugCountLine 的理由）。</para>
         /// </summary>
-        static List<string> UnreferencedTaskLines(string iLettersRoot, string iPersona, string? iDataRoot)
+        static string OpenTaskCountLine(string iPersona, string? iDataRoot)
         {
-            var aOut = new List<string>();
             if (string.IsNullOrEmpty(iDataRoot))
-            {
-                aOut.Add("- 📋 我涉及的未結單：**未量**（本次沒給資料根 —— 未量 ≠ 零張）");
-                return aOut;
-            }
+                return "- 📋 我涉及的未結單：**未量**（本次沒給資料根 —— 未量 ≠ 零張）";
             try
             {
-                // 見叢引用到的單號 —— 真相源是 `_keys_open.md` 本文，不另存索引（索引會漂）。
-                var aReferenced = new HashSet<int>();
-                string aKeysPath = SCP_LettersPaths.KeysOpenPath(new SCP_LettersRoot(iLettersRoot), iPersona);
-                if (File.Exists(aKeysPath))
-                    foreach (Match aMatch in Regex.Matches(File.ReadAllText(aKeysPath), @"TASK-0*(\d+)"))
-                        if (int.TryParse(aMatch.Groups[1].Value, out int aIdx)) aReferenced.Add(aIdx);
-
-                // 我涉及 ＝ 我開的 或 我是參與者。⚠ 走 HasParticipant 不自己解字串 ——
-                //   participants 是結構化清單，用 substring 找名字會把 `summit` 命中 `summit-2`。
-                var aMine = new List<SCP_TaskEntry>();
+                int aMine = 0;
                 foreach (SCP_TaskEntry aEntry in SCP_TaskIO.LoadAll(new SCP_DataRoot(iDataRoot!)))
                 {
                     if (aEntry.IsClosed()) continue;
                     if (string.Equals(aEntry.reporter, iPersona, StringComparison.Ordinal)
-                        || aEntry.HasParticipant(iPersona)) aMine.Add(aEntry);
+                        || aEntry.HasParticipant(iPersona)) aMine++;
                 }
-
-                var aHidden = new List<SCP_TaskEntry>();
-                foreach (SCP_TaskEntry aEntry in aMine)
-                    if (!aReferenced.Contains(aEntry.index)) aHidden.Add(aEntry);
-
-                aOut.Add("- 📋 我涉及的未結單：**" + aMine.Count.ToString(CultureInfo.InvariantCulture)
-                         + "** 張（我開的 ＋ 我是參與者）"
-                         + "（清單 → `cmd tasks --arg data_root=<root> --arg persona=" + iPersona + "`）");
-                if (aHidden.Count == 0)
-                {
-                    aOut.Add("  - ✓ 其中見叢沒引用的：**0 張** —— 沒有結構性看不見的單");
-                    return aOut;
-                }
-                aOut.Add("  - ⚠ 其中 **" + aHidden.Count.ToString(CultureInfo.InvariantCulture)
-                         + " 張見叢完全沒引用** ⇒ 只有這一行會提到它們（見叢是手寫的，不會自己長出來）");
-                int aShown = Math.Min(aHidden.Count, UnreferencedTaskListCap);
-                for (int i = 0; i < aShown; i++)
-                {
-                    SCP_TaskEntry aEntry = aHidden[i];
-                    aOut.Add("    - " + aEntry.Id + " `" + aEntry.status + "` " + aEntry.title);
-                }
-                if (aHidden.Count > aShown)
-                    aOut.Add("    - …另有 " + (aHidden.Count - aShown).ToString(CultureInfo.InvariantCulture)
-                             + " 張未列（顯示上限 " + UnreferencedTaskListCap + "）—— **未列不是不存在**");
-                return aOut;
+                return "- 📋 我涉及的未結單：**" + aMine.ToString(CultureInfo.InvariantCulture)
+                       + "** 張（我開的 ＋ 我是參與者）—— 在動的那幾張逐張列在 **§2.5 見單**";
             }
             catch (Exception e)
             {
-                // 讀失敗要出聲：靜默回空會把「量不到」講成「沒有隱形單」。
-                aOut.Add("- 📋 我涉及的未結單：**量不到**（" + e.GetType().Name + ": " + e.Message + "）");
-                return aOut;
+                // 讀失敗要出聲：靜默回 0 會把「量不到」講成「沒有單」。
+                return "- 📋 我涉及的未結單：**量不到**（" + e.GetType().Name + ": " + e.Message + "）";
             }
         }
 
