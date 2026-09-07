@@ -1,27 +1,28 @@
-// 區塊職責：`cmd bank-audit` —— 「錢屬於誰」那張反向表（`bank_personas`）的**唯讀對帳**。
-//           **原生，不需要 Unity Editor。**
+// 區塊職責：`cmd bank-audit` —— 金流綁定的**唯讀健檢**。**原生，不需要 Unity Editor。**
 //
-// 物理意義：§8.1（Tim 2026-08-19 拍板）反向表 `bank_personas[<bank>] = [personas…]` 是權威表，
-//           而它**全樹只有讀取端、零寫入端** —— 現值是 2026-08-19 人工導出手寫的（TASK-0083）。
-//   ⇒ 一張沒有寫入端的權威表，它的失效方式不是「壞掉」，是**安靜地跟現實愈差愈遠**：
-//     每建一個 persona／改一次綁定，覆蓋率就掉一格，而沒有任何一層會出聲。
+// 物理意義：Tim 2026-09-07 拍板：**`letters/<persona>/bank/<region>.md` 才是權威版本**（用哪個帳戶）。
+//           ⇒ 本 Cmd 從「對兩張表」改成「**一張表的健檢**」——
+//             因為第二張表（`_registry_meta.json` 的 `bank_personas`）已經退出解析。
 //
-//   本 Cmd **不補寫入端**（那是政策題：Tim 2026-08-31 拍板「讀綁定不是動錢，**寫綁定是**」
-//   ⇒ 共用層不碰綁定寫入）。它做的是另一件事：**把「有沒有漂」變成一個誰都能在任何一天取得的讀數**。
-//   🩸 判準來自 TASK-0083 現場：這張表**推導得出來**（正向 `bank/<region>.md` 反轉即得）——
-//     而一個推導得出來的索引，需要的是**產生器與對帳**，不是「建人時記得也寫一筆」。
-//     「記得」正是系統不能依賴的東西。
+//   🩸 為什麼反向表退場（讀數，不是偏好）：
+//     · 它**沒有寫入端**，現值是 2026-08-19 人工導出手寫的。
+//     · 2026-08-20 `Sirius` 的帳戶改名 `Federal Reserve System` → `FRS`：綁定檔跟著改了、
+//       反向表沒有 ⇒ **它錯了 18 天而沒有任何一層喊**（ledger：08-20 之後 193 筆全進 `FRS`、
+//       舊帳號零筆）。沒釀成事故只是因為解析在更前面就命中了正向綁定 ——
+//       那是**沒有人踩到**，不是那條路是對的。
+//     · 它也不帶任何獨有資訊：14 家 bank 的鍵**全部**涵蓋在 `system_accounts` 或 `agent_banks` 值裡，
+//       而帳號宇宙（`all_account_ids`）本來就不讀它。
 //
-// 數值影響：**純唯讀**。四種不一致各自分開報（它們的處置不同，混成一個數字等於沒報）：
-//   ① hole    本區有綁定、反向表沒登記   ⇒ 補登記
-//   ② ghost   反向表有、本區沒有綁定     ⇒ 可能是別區的人，也可能是舊資料
-//   ③ dup     同一人被登記到多家 bank    ⇒ 解析會**拒絕**（錢進錯帳戶是最貴的靜默錯）
-//   ④ mismatch 正反都有，但**指到不同的 bank** ⇒ ⛔ 這一格不准自動修，它是錢的歸屬
+// 數值影響：**純唯讀**。五種狀況分開報（處置不同，合成一個數字等於沒報）：
+//   ① no_binding    本區與別區都沒有綁定      ⇒ 這個人的錢無處可去
+//   ② borrowed      只有別區宣告（跨區借用）  ⇒ 標示，**不是錯**
+//   ③ unknown_acct  綁定指向不存在的帳戶      ⇒ 錢會進一個沒有登記的地方
+//   ④ closed_acct   綁定指向已銷戶帳戶        ⇒ 🔴 最貴的一格
+//   ⑤ stale_reverse `bank_personas` 欄位還在  ⇒ 待清理（附它與正向差在哪，好判斷刪了會不會丟資訊）
 //
-// ⚠ **區域定語不可省**：`bank/` 是 per-region 的，而反向表在**本專案的** `_registry_meta.json`。
-//   🩸 2026-09-07 我第一版沒帶定語就得出「覆蓋率 95%、破洞是 kaguya」——
-//   而 kaguya 只有別區（BTC）綁定，她不在本區表裡是**對的**。
-//   那是一個**形狀正確的錯答案**，而它會讓人去「修」一個沒有壞的東西。
+// ⚠ **區域定語不可省**：`bank/` 是 per-region 的。
+//   🩸 2026-09-07 第一版沒帶定語就算出「覆蓋率 95%、破洞是 kaguya」——
+//   而 kaguya 只有別區（BTC）宣告。那是**形狀正確的錯答案**，會讓人去修一個沒壞的東西。
 //
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。JSON 一律走 SCP_Json。
 using System;
@@ -37,14 +38,15 @@ namespace SCP.Core.Cmd
         public override string Name => "bank-audit";
 
         public override string Summary =>
-            "`bank_personas` 反向表對帳：正向綁定 ✕ 反向登記，四種不一致分開報 —— **唯讀，不需要 Editor**";
+            "金流綁定健檢：`bank/<region>.md`（唯一權威）逐位檢查帳戶存不存在／有沒有銷戶 —— **唯讀，不需要 Editor**";
 
         public override string Details =>
-            "正向真相源＝`letters/<persona>/bank/<region>.md`；反向表＝`_registry_meta.json` 的 `bank_personas`。\n"
+            "唯一權威＝`letters/<persona>/bank/<region>.md`（Tim 2026-09-07 拍板）。\n"
             + "⚠ **必須給 region** —— `bank/` 是 per-region 的，沒有區域定語算出來的覆蓋率是形狀正確的錯答案。\n"
-            + "· `--arg emit=1` 額外印出「照正向推導出來的那張表」（JSON），⛔ **本 Cmd 不寫任何檔**。\n"
-            + "· exit 0＝四種不一致都是 0；exit 5＝有不一致（數字在 values 裡，逐項在輸出裡）。\n"
-            + "⛔ `mismatch`（正反指到不同 bank）**不要自動修** —— 那是錢的歸屬，要人拍板。";
+            + "· 五格分開報：`no_binding` / `borrowed` / `unknown_acct` / `closed_acct` / `stale_reverse`。\n"
+            + "· `borrowed`（只有別區宣告）**不算錯**，它只是要看得見。\n"
+            + "· exit 0＝沒有任何一格是問題（`borrowed` 不計）；exit 5＝有。\n"
+            + "⛔ 本 Cmd 不寫任何檔；綁定是錢的歸屬，改它要走有審計的寫入端。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("bank-audit --arg letters_root=<letters> --arg data_root=<AgentCommands>"
@@ -53,10 +55,8 @@ namespace SCP.Core.Cmd
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根目錄（絕對路徑）", iRequired: true),
-            new SCP_CmdArgSpec("region", "本區的區域（貨幣）ID —— 決定讀哪一份 bank 綁定。⛔ 必填，本 Cmd 不推導", iRequired: true),
-            new SCP_CmdArgSpec("data_root", "資料根；`<data_root>/AwakenInit/_registry_meta.json` ＝ 反向表所在（與 registry 二擇一）"),
-            new SCP_CmdArgSpec("registry", "反向表檔案路徑（直接指定；與 data_root 二擇一，兩個都給以本欄為準）"),
-            new SCP_CmdArgSpec("emit", "=1 額外印出照正向推導出來的 `bank_personas`（JSON）。⛔ 只印不寫"),
+            new SCP_CmdArgSpec("region", "本區的區域（貨幣）ID。⛔ 必填，本 Cmd 不推導", iRequired: true),
+            new SCP_CmdArgSpec("data_root", "資料根 —— 帳戶檔（`Treasury/accounts/`）與 registry 都從這裡找", iRequired: true),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -64,164 +64,139 @@ namespace SCP.Core.Cmd
             string aLettersRoot = iArgs.Get("letters_root");
             string aRegion = iArgs.Get("region").Trim();
             string aDataRoot = iArgs.Get("data_root").Trim();
-            string aRegistry = iArgs.Get("registry").Trim();
-            bool aEmit = IsOn(iArgs.Get("emit"));
 
             if (aRegion.Length == 0)
                 return SCP_CmdResult.Fail(2, "✗ region 是必填 —— 沒有區域定語的覆蓋率是**形狀正確的錯答案**");
             if (!Directory.Exists(aLettersRoot))
                 return SCP_CmdResult.Fail(1, "✗ 信件夾根不存在：" + aLettersRoot);
+            if (!Directory.Exists(aDataRoot))
+                return SCP_CmdResult.Fail(1, "✗ 資料根不存在：" + aDataRoot);
 
-            if (aRegistry.Length == 0)
+            // ── 帳號宇宙：帳戶檔 ∪ system_accounts ∪ agent_banks 值 ──────────────
+            //    ⚠ 三者都要 —— 只看帳戶檔的話，還沒被寫過任何一筆的新帳戶會被判成不存在。
+            string aRegistry = Path.Combine(aDataRoot, "AwakenInit", "_registry_meta.json");
+            var aKnown = new HashSet<string>(StringComparer.Ordinal);
+            var aClosed = new Dictionary<string, string>(StringComparer.Ordinal);
+            SCP_JsonData? aMeta = null;
+            if (File.Exists(aRegistry))
             {
-                if (aDataRoot.Length == 0)
-                    return SCP_CmdResult.Fail(2, "✗ 要給 --arg registry=<檔> 或 --arg data_root=<AgentCommands>");
-                aRegistry = Path.Combine(aDataRoot, "AwakenInit", "_registry_meta.json");
+                try { aMeta = SCP_JsonParser.Parse(File.ReadAllText(aRegistry)); }
+                catch (Exception e)
+                { return SCP_CmdResult.Fail(1, "✗ registry 不是合法 JSON：" + e.Message, "  " + aRegistry); }
+                if (aMeta.Contains("system_accounts"))
+                    foreach (string aK in aMeta["system_accounts"].Keys) aKnown.Add(aK);
+                if (aMeta.Contains("agent_banks"))
+                    foreach (string aK in aMeta["agent_banks"].Keys)
+                        aKnown.Add(aMeta["agent_banks"].GetString(aK, ""));
+                if (aMeta.Contains("closed_accounts"))
+                    foreach (string aK in aMeta["closed_accounts"].Keys)
+                        aClosed[aK] = aMeta["closed_accounts"].GetString(aK, "");
             }
-            if (!File.Exists(aRegistry))
-                return SCP_CmdResult.Fail(1, "✗ 找不到反向表：" + aRegistry);
-
-            SCP_JsonData aMeta;
-            try { aMeta = SCP_JsonParser.Parse(File.ReadAllText(aRegistry)); }
-            catch (Exception e)
-            { return SCP_CmdResult.Fail(1, "✗ 反向表不是合法 JSON：" + e.Message, "  " + aRegistry); }
-
-            // ── 反向：bank → personas ─────────────────────────────────────────
-            var aStored = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-            var aBankOf = new Dictionary<string, List<string>>(StringComparer.Ordinal);   // persona → banks
-            if (aMeta.Contains("bank_personas"))
-            {
-                SCP_JsonData aBp = aMeta["bank_personas"];
-                foreach (string aBank in aBp.Keys)
+            string aAccDir = Path.Combine(aDataRoot, "Treasury", "accounts");
+            var aAccountFiles = new HashSet<string>(StringComparer.Ordinal);
+            if (Directory.Exists(aAccDir))
+                foreach (string f in Directory.GetFiles(aAccDir, "*.json"))
                 {
-                    var aNames = new List<string>();
-                    foreach (SCP_JsonData aN in aBp[aBank]) aNames.Add(aN.AsString());
-                    aStored[aBank] = aNames;
-                    foreach (string aN in aNames)
-                    {
-                        if (!aBankOf.TryGetValue(aN, out List<string>? aList))
-                        { aList = new List<string>(); aBankOf[aN] = aList; }
-                        aList.Add(aBank);
-                    }
+                    string aId = Path.GetFileNameWithoutExtension(f);
+                    if (aId.StartsWith("_")) continue;      // `_balances.snapshot` 那類不是帳戶
+                    aAccountFiles.Add(aId); aKnown.Add(aId);
                 }
-            }
 
-            // ── 正向：persona → 本區綁定（含「借用別區」三態）─────────────────
+            // ── 逐位 persona 讀權威綁定 ────────────────────────────────────────
             var aWarn = new List<string>();
             List<string> aPool = SCP_PersonaProfile.PoolNames(aLettersRoot, m => aWarn.Add(m));
-            var aForward = new Dictionary<string, string>(StringComparer.Ordinal);        // persona → bank（本區宣告）
-            var aBorrowed = new List<string>();                                           // 只有別區綁定
-            var aNoBinding = new List<string>();                                          // 一區都沒有
+            var aBinding = new Dictionary<string, string>(StringComparer.Ordinal);
+            var aNoBinding = new List<string>();
+            var aBorrowed = new List<string>();
+            var aBorrowedSet = new HashSet<string>(StringComparer.Ordinal);
             foreach (string aName in aPool)
             {
                 string aAcc = SCP_PersonaProfile.GetBankAccount(aLettersRoot, aName, aRegion,
                                                                 out string aSrc, out string _);
                 if (aAcc.Length == 0) { aNoBinding.Add(aName); continue; }
-                // ⚠ 借用別區 ≠ 本區宣告：把它算進本區覆蓋率，就是把「他是別區的人」讀成「他漏登記」。
                 if (!string.Equals(aSrc, aRegion, StringComparison.Ordinal))
-                { aBorrowed.Add(aName + "（來源 " + aSrc + "＝" + aAcc + "）"); continue; }
-                aForward[aName] = aAcc;
+                { aBorrowed.Add(aName + "（宣告在 " + aSrc + "＝" + aAcc + "）"); aBorrowedSet.Add(aName); }
+                aBinding[aName] = aAcc;
             }
 
-            // ── 四種不一致 ───────────────────────────────────────────────────
-            var aHole = new List<string>();
-            var aMismatch = new List<string>();
-            foreach (KeyValuePair<string, string> aKv in aForward)
+            var aUnknown = new List<string>();
+            var aClosedHit = new List<string>();
+            foreach (KeyValuePair<string, string> aKv in aBinding)
             {
-                if (!aBankOf.TryGetValue(aKv.Key, out List<string>? aBanks))
-                { aHole.Add(aKv.Key + "（本區綁 " + aKv.Value + "）"); continue; }
-                if (aBanks.Count == 1 && !string.Equals(aBanks[0], aKv.Value, StringComparison.Ordinal))
-                    aMismatch.Add(aKv.Key + "：正向 `" + aKv.Value + "` ／ 反向表登記在 `" + aBanks[0] + "`");
+                if (aClosed.ContainsKey(aKv.Value))
+                { aClosedHit.Add(aKv.Key + " → `" + aKv.Value + "`（" + aClosed[aKv.Value] + "）"); continue; }
+                // ⚠ 借用別區的人**不查帳戶存不存在** —— 他的帳戶本來就在別區的帳號宇宙裡，
+                //   在這裡查一定查不到。第一版沒排除它，於是 kaguya 天天被報成
+                //   「指向不存在的帳戶」。⇒ **一個天天紅的格子，等於沒有那個格子**
+                //   （人會學會忽略它，然後真的那一天也一起忽略）。它已經由 ② 說明了。
+                if (aBorrowedSet.Contains(aKv.Key)) continue;
+                if (!aKnown.Contains(aKv.Value))
+                    aUnknown.Add(aKv.Key + " → `" + aKv.Value + "`（帳戶檔、system_accounts、agent_banks 值都沒有）");
             }
-            var aGhost = new List<string>();
-            foreach (KeyValuePair<string, List<string>> aKv in aBankOf)
-                if (!aForward.ContainsKey(aKv.Key))
-                    aGhost.Add(aKv.Key + "（反向表放在 " + string.Join("/", aKv.Value) + "）");
-            var aDup = new List<string>();
-            foreach (KeyValuePair<string, List<string>> aKv in aBankOf)
-                if (aKv.Value.Count > 1) aDup.Add(aKv.Key + " → " + string.Join(" / ", aKv.Value));
 
-            aHole.Sort(); aGhost.Sort(); aDup.Sort(); aMismatch.Sort();
+            // ── ⑤ 反向表還在不在（它已退出解析，留著只是待清理）────────────────
+            var aStale = new List<string>();
+            if (aMeta != null && aMeta.Contains("bank_personas"))
+            {
+                SCP_JsonData aBp = aMeta["bank_personas"];
+                int aEntries = 0;
+                foreach (string aBank in aBp.Keys)
+                {
+                    foreach (SCP_JsonData aN in aBp[aBank])
+                    {
+                        aEntries++;
+                        string aP = aN.AsString();
+                        // 只報**與權威不同**的那幾格 —— 一致的那些刪掉不會丟任何資訊。
+                        if (aBinding.TryGetValue(aP, out string? aAuth)
+                            && !string.Equals(aAuth, aBank, StringComparison.Ordinal))
+                            aStale.Add(aP + "：權威 `" + aAuth + "` ／ 反向表 `" + aBank + "`");
+                    }
+                }
+                aStale.Insert(0, "`bank_personas` 仍在 registry（" + aBp.Keys.Count + " 家／" + aEntries
+                              + " 筆登記）—— **已退出解析**，留著只是待清理");
+            }
 
             var aR = new SCP_CmdResult();
-            aR.Lines.Add("# bank_personas 對帳　region=`" + aRegion + "`");
-            aR.Lines.Add("- 反向表：`" + aRegistry + "`（" + aStored.Count + " 家 bank）");
-            aR.Lines.Add("- 正向真相源：`letters/<persona>/bank/" + aRegion + ".md`");
-            aR.Lines.Add("- pool **" + aPool.Count + "** 位：本區宣告 **" + aForward.Count
-                         + "**／借用別區 " + aBorrowed.Count + "／完全沒綁定 " + aNoBinding.Count);
-            if (aBorrowed.Count > 0)
-                aR.Lines.Add("  · 借用別區（**不算本區破洞**）：" + string.Join("、", aBorrowed));
-            if (aNoBinding.Count > 0)
-                aR.Lines.Add("  · 完全沒有 bank 綁定：" + string.Join("、", aNoBinding));
+            aR.Lines.Add("# 金流綁定健檢　region=`" + aRegion + "`");
+            aR.Lines.Add("- 唯一權威：`letters/<persona>/bank/" + aRegion + ".md`（Tim 2026-09-07 拍板）");
+            aR.Lines.Add("- 帳號宇宙：帳戶檔 " + aAccountFiles.Count + " 份 ∪ registry 宣告 ⇒ 共 " + aKnown.Count + " 個");
+            aR.Lines.Add("- pool **" + aPool.Count + "** 位：有綁定 **" + aBinding.Count
+                         + "**（其中借用別區 " + aBorrowed.Count + "）／沒有綁定 " + aNoBinding.Count);
             aR.Lines.Add("");
-            Section(aR, "① hole　本區有綁定、反向表沒登記　⇒ 補登記", aHole);
-            Section(aR, "② ghost　反向表有、本區沒有綁定　⇒ 可能是別區的人或舊資料", aGhost);
-            Section(aR, "③ dup　同一人被登記到多家 bank　⇒ **解析會拒絕**", aDup);
-            Section(aR, "④ mismatch　正反都有但指到不同 bank　⇒ ⛔ **錢的歸屬，不准自動修**", aMismatch);
-
-            if (aEmit)
-            {
-                // 照正向推導出來的那張表 —— 給人拿去對照／套用。⛔ 本 Cmd 不寫檔。
-                var aDerived = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-                foreach (KeyValuePair<string, string> aKv in aForward)
-                {
-                    if (!aDerived.TryGetValue(aKv.Value, out List<string>? aL))
-                    { aL = new List<string>(); aDerived[aKv.Value] = aL; }
-                    aL.Add(aKv.Key);
-                }
-                var aOut = SCP_JsonData.NewObject();
-                var aKeys = new List<string>(aDerived.Keys); aKeys.Sort(StringComparer.Ordinal);
-                foreach (string aBank in aKeys)
-                {
-                    aDerived[aBank].Sort(StringComparer.Ordinal);
-                    var aArr = SCP_JsonData.NewArray();
-                    foreach (string aN in aDerived[aBank]) aArr.Add(SCP_JsonData.NewString(aN));
-                    aOut.Set(aBank, aArr);
-                }
-                aR.Lines.Add("");
-                aR.Lines.Add("## 照正向推導出來的 bank_personas（本區；⛔ 只印不寫）");
-                aR.Lines.Add(aOut.ToJson(true));
-            }
+            Section(aR, "① no_binding　連別區都沒有宣告　⇒ 這個人的錢無處可去", aNoBinding);
+            Section(aR, "② borrowed　只有別區宣告　⇒ **不是錯**，只是要看得見", aBorrowed);
+            Section(aR, "③ unknown_acct　綁定指向不存在的帳戶", aUnknown);
+            Section(aR, "④ closed_acct　綁定指向**已銷戶**帳戶　⇒ 🔴 最貴的一格", aClosedHit);
+            Section(aR, "⑤ stale_reverse　`bank_personas` 殘留（已不參與解析）", aStale);
 
             foreach (string aW in aWarn) aR.Lines.Add("⚠ " + aW);
 
             aR.AddValue("pool_count", aPool.Count.ToString());
-            aR.AddValue("declared_here", aForward.Count.ToString());
-            aR.AddValue("borrowed", aBorrowed.Count.ToString());
+            aR.AddValue("bound", aBinding.Count.ToString());
             aR.AddValue("no_binding", aNoBinding.Count.ToString());
-            // 四個數字分開落 —— 加總成一個「不一致數」會讓處置相反的東西同形。
-            aR.AddValue("hole", aHole.Count.ToString());
-            aR.AddValue("ghost", aGhost.Count.ToString());
-            aR.AddValue("dup", aDup.Count.ToString());
-            aR.AddValue("mismatch", aMismatch.Count.ToString());
+            aR.AddValue("borrowed", aBorrowed.Count.ToString());
+            aR.AddValue("unknown_acct", aUnknown.Count.ToString());
+            aR.AddValue("closed_acct", aClosedHit.Count.ToString());
+            aR.AddValue("stale_reverse", aStale.Count.ToString());
 
-            int aBad = aHole.Count + aGhost.Count + aDup.Count + aMismatch.Count;
+            // ⚠ `borrowed` **不計入**問題數 —— 它是狀態不是缺陷。
+            //   把它算進去的話，每天都會紅一格，而天天紅的東西沒有人會再看。
+            int aBad = aNoBinding.Count + aUnknown.Count + aClosedHit.Count + aStale.Count;
+            aR.Lines.Add("");
             if (aBad > 0)
             {
                 aR.ExitCode = 5;
-                aR.Lines.Add("");
-                aR.Lines.Add("⇒ 共 **" + aBad + "** 項不一致（exit 5）。⛔ 本 Cmd 只報不改。");
+                aR.Lines.Add("⇒ 共 **" + aBad + "** 項要處理（exit 5；`borrowed` 不計）。⛔ 本 Cmd 只報不改。");
             }
-            else
-            {
-                aR.Lines.Add("");
-                aR.Lines.Add("✅ 四項都是 0 —— 本區的反向表與正向綁定一致。");
-            }
+            else aR.Lines.Add("✅ 四格皆 0 —— 每位的綁定都指向一個存在且未銷戶的帳戶，反向表也清乾淨了。");
             return aR;
         }
 
-        /// <summary>一段一節；**空的時候也印節標題**，因為「這一格是 0」與「我沒有量這一格」不可同形。</summary>
+        /// <summary>一段一節；**空的時候也印節標題** —— 「這一格是 0」與「我沒有量這一格」不可同形。</summary>
         static void Section(SCP_CmdResult ioR, string iTitle, List<string> iItems)
         {
             ioR.Lines.Add("## " + iTitle + "：**" + iItems.Count + "**");
             foreach (string aItem in iItems) ioR.Lines.Add("  - " + aItem);
-        }
-
-        static bool IsOn(string iValue)
-        {
-            string v = (iValue ?? "").Trim();
-            return v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(v, "yes", StringComparison.OrdinalIgnoreCase);
         }
     }
 }
