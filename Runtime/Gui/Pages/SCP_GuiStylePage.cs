@@ -24,8 +24,8 @@ namespace SCP.Core.Gui
 
         public override string Title { get { return "介面尺寸"; } }
 
-        /// <summary>列進入口頁的「設定」組。</summary>
-        public override string? MenuGroup { get { return "設定"; } }
+        /// <summary>隱藏 主頁已經有設定</summary>
+        public override string? MenuGroup { get { return null; } }
 
         protected override void DrawContent(SCP_Ui g)
         {
