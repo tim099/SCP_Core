@@ -27,6 +27,10 @@ namespace SCP.Core.Cmd
             + "level=forest 時折見森（門檻 " + SCP_WakeLetters.ForestDigestThreshold + " 份見林；"
             + "rolling fold 只讀上代森 ＋ 最新見林）。\n"
             + "⚠ 長內文一律走 --arg-file digest_body=<檔>：見林 body 動輒上萬字，不該經過 shell。\n"
+            + "🪵 **寫入前過兩道折人閘**（Tim 2026-09-09 拍板：見林流程需要先跑完折人）——\n"
+            + "   ⓐ 根層還有未歸檔畫像 ⇒ 擋（先跑 `portrait-next` 到它印「折人完成」）；\n"
+            + "   ⓑ 折人跑完但 digest_body 一位同事都沒提 ⇒ 擋 —— 見林＝這段期間的心得 ＋ 對同事的看法，一起寫。\n"
+            + "   ⇒ 出口 `--arg fold_skip_reason=<理由>`：非空即放行，**理由會留名**（回傳檔 ＋ _cmd_results）。\n"
             + "⛔ 本 Cmd **不寫任何 registry／profile 欄位** —— 書籤是掃磁碟算出來的（最大 span_end）。\n"
             + "   python 那支（awakening.py consolidate）2026-09-02 起也不再寫 registry，\n"
             + "   原本「檔寫成功卻 exit=1」那條死路已拆掉；本 Cmd 仍是主入口（且不需要 Editor）。";
@@ -49,6 +53,11 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("span_end", "見林迄 wake#（不給＝現在的 wake）"),
             new SCP_CmdArgSpec("threshold", "overdue 門檻",
                                iDefault: SCP_Consolidate.DefaultGapThreshold.ToString()),
+            // ⚠ 這一格是**兩道折人閘共用的出口**（Tim 2026-09-09 拍板）——
+            //   非空即放行，而理由會被印出來並落進 `_cmd_results/<id>.json`（append-only ⇒ 不被下一次覆寫）。
+            //   ⛔ 刻意不做成 `=1` 的布林旗標：一個不必寫理由的跳過，跟沒有閘一樣。
+            new SCP_CmdArgSpec("fold_skip_reason",
+                               "顯式跳過折人閘的理由（補跑舊區間等）。非空即放行，**理由會留名**"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -104,6 +113,22 @@ namespace SCP.Core.Cmd
                 aResult.AddValue("overdue", aStatus.Overdue ? "1" : "0");
                 aResult.AddValue("pending_letters", aStatus.PendingLetters.Count.ToString());
                 return aResult;
+            }
+
+            // ── 折人閘（Tim 2026-09-09 拍板：見林流程需要先跑完折人）──────
+            // ⚠ 這覆蓋 2026-09-01 那次「印提示，不擋」的拍板 —— 而被推翻的那個理由
+            //   （補跑舊區間是合法場景）仍然為真 ⇒ 所以出口是 `fold_skip_reason`，不是把閘拿掉。
+            SCP_CmdResult? aGate = FoldGate(iLettersRoot, iPersona, iBody,
+                                            iArgs.Get("fold_skip_reason"), aResult);
+            if (aGate != null) return aGate;
+
+            string aSkipReason = iArgs.Get("fold_skip_reason");
+            if (aSkipReason.Length > 0)
+            {
+                // 留名：印在回傳檔**並且**落進 _cmd_results（後者 append-only，不被下一次覆寫）。
+                aResult.Lines.Add("⚠ **折人閘被顯式跳過** —— 理由：" + aSkipReason);
+                aResult.AddValue("fold_gate", "skipped");
+                aResult.AddValue("fold_skip_reason", aSkipReason);
             }
 
             int aSpanStart = ParseInt(iArgs.Get("span_start"), aStatus.SpanStart);
@@ -212,6 +237,88 @@ namespace SCP.Core.Cmd
 
         static int ParseInt(string iRaw, int iFallback)
             => int.TryParse(iRaw, out int aValue) ? aValue : iFallback;
+
+        // ── 折人閘（見林寫入路；Tim 2026-09-09 拍板）─────────────────
+        // 區塊職責：見林**寫入之前**擋兩格 —— ⓐ 折人還沒跑完、ⓑ digest 一位同事都沒提。
+        // 物理意義：見林＝這段期間的心得**與**這段期間對同事的看法，一起寫（Tim 2026-09-09 原話）。
+        //           ⇒ 折人不是可以先做掉的獨立線，也不是做完就算 —— 它的產出要真的進到這一片林裡。
+        // 🩸 為什麼從「提示」升級成「擋」：提示只印在 `iBody.Length == 0` 那條路（本檔唯一呼叫點），
+        //   而帶 body 直接寫入時**一次都不印**。而 `SCP_WakeBrief` 的註解寫著「見林那條必經路上
+        //   本來就印同一份讀數」—— 那句話只在「先跑一次不帶 body」的前提下成立。
+        //   ⇒ 補跑舊區間（gap < 門檻 ⇒ brief 也不印）＋直接帶 body ＝ **零提示**。
+        // ⚠ 而閘一定要有出口：補跑舊區間是合法場景（2026-09-01 拍板的理由，那條沒被推翻）
+        //   ⇒ `fold_skip_reason` 非空即放行，**且理由留名**。擋而無路可走的閘會逼人繞路，
+        //   而繞路的人下次連提示都不看。
+        // ⛔ 警語走 `ioResult`（呼叫端那一份），**不經過任何 static 欄位** ——
+        //   全域可變狀態在併發 lane 間是 last-write-wins，那正是 TASK-0116 修掉的那隻病。
+        /// <returns>擋下時回 Fail；放行回 <c>null</c>（量不到時也放行，但警語已寫進 ioResult）。</returns>
+        static SCP_CmdResult? FoldGate(string iLettersRoot, string iPersona, string iBody,
+                                       string iSkipReason, SCP_CmdResult ioResult)
+        {
+            if (iSkipReason.Length > 0) return null;      // 顯式跳過（留名在呼叫端做）
+
+            // ⓐ 折人跑完了沒 —— 量的是「根層還有幾幅未歸檔」，不是「我覺得重要的折完了沒」。
+            int aTargets = 0;
+            int aPortraits = 0;
+            List<string> aNames;
+            try
+            {
+                aNames = new List<string>(SCP_PortraitView.Targets(iLettersRoot, iPersona));
+                foreach (string aOne in aNames)
+                {
+                    SCP_PortraitTargetView aView = SCP_PortraitView.Build(iLettersRoot, iPersona, aOne);
+                    if (aView.UnarchivedPaths.Count == 0) continue;
+                    aTargets++;
+                    aPortraits += aView.UnarchivedPaths.Count;
+                }
+            }
+            catch (Exception e)
+            {
+                // ⛔ 量不到**不擋** —— 「量不到」與「沒有待折」同形，而拿一個量不到的讀數去擋人
+                //    會把一個工具故障變成別人的儀式卡關。出聲，然後放行。
+                ioResult.Lines.Add("⚠ 折人閘**量不到**（" + e.GetType().Name + ": " + e.Message
+                                   + "）—— 量不到 ≠ 沒有待折，本次不擋。");
+                ioResult.AddValue("fold_gate", "unmeasurable");
+                return null;
+            }
+
+            if (aTargets > 0)
+                return SCP_CmdResult.Fail(2,
+                    "🪵 **折人還沒跑完：" + aTargets + " 位 / " + aPortraits + " 幅未歸檔** ⇒ 見林先擋下",
+                    "   見林＝這段期間的心得 ＋ 這段期間對同事的看法，**一起寫**（Tim 2026-09-09）——",
+                    "   折人排在見林之後，那一輪的看法就只能等下一片，**差一整個見林單位（≈10 個 wake）**。",
+                    "   ⇒ `cmd portrait-next --arg letters_root=" + iLettersRoot
+                        + " --arg persona=" + iPersona + " --arg wake_range=<折的時點區間>`",
+                    "   ⚠ 跑到它印「折人完成」為止 —— **清單清空才算**，"
+                        + "別把「我覺得重要的都折了」當成折完（2026-09-01 血證：gura 少折 17 幅、",
+                    "     basecamp 39 幅一幅未折，兩個人都以為自己做完了）。",
+                    "   ⛔ 補跑舊區間等合法場景走 `--arg fold_skip_reason=<理由>`（理由會留名）。")
+                    .AddValue("fold_gate", "blocked_unfolded")
+                    .AddValue("pending_fold_targets", aTargets.ToString(CultureInfo.InvariantCulture))
+                    .AddValue("pending_fold_portraits", aPortraits.ToString(CultureInfo.InvariantCulture));
+
+            // ⓑ 折人跑完了，但這片林一位同事都沒提 ⇒ 那些看法沒有進到見林裡。
+            // ⚠ 名單空就放行 —— 拿一個空名單去擋人，第一次見林的 persona 永遠過不了。
+            //   （Tim 2026-09-09：「目前不會有沒有同事互動的區間」⇒ 名單非空時擋是安全的。）
+            if (aNames.Count == 0) return null;
+
+            foreach (string aName in aNames)
+                if (aName.Length > 0
+                    && iBody.IndexOf(aName, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return null;                          // 至少提到一位 ⇒ 放行
+
+            return SCP_CmdResult.Fail(2,
+                "🪵 **這片見林一位同事都沒提到** ⇒ 擋下（折人已跑完，但那些看法沒進到 digest 裡）",
+                "   見林＝這段期間的心得 ＋ 這段期間對同事的看法，**一起寫**（Tim 2026-09-09）。",
+                "   有畫像的對象共 " + aNames.Count + " 位：" + string.Join("／", aNames),
+                "   ⇒ 在 digest_body 裡補一節寫這段期間對同事的看法（誰做了什麼、我的定位怎麼變）。",
+                "   ⚠ 本閘量的是**名字有沒有出現**，不是寫得好不好 ——"
+                    + "「有寫」與「該寫」它分不出來，那一格仍然是妳自己的。",
+                "   ⛔ 真的沒有互動就走 `--arg fold_skip_reason=<理由>`（理由會留名）。")
+                .AddValue("fold_gate", "blocked_no_colleague")
+                .AddValue("portrait_targets", aNames.Count.ToString(CultureInfo.InvariantCulture));
+        }
+
             // ── 折人提示（Tim 2026-09-01：印提示，**不擋**）────────────
         // 區塊職責：見林前提醒「折人還沒做完」，並附讀數。
         // 物理意義：折人要排在見林之前 —— 這一輪對同事的看法才趕得上這一片林；
