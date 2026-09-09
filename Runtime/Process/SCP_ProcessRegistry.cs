@@ -461,6 +461,17 @@ namespace SCP.Core.Proc
         /// 否則「不會有屍潮」會被換成「殘檔堆積」，而堆積出來的畫面跟屍潮長得一樣 ——
         /// 一樣會訓練人忽略那張表。</para>
         /// </summary>
+        /// <summary>
+        /// 宿主**顯式宣告**「這一趟啟動我刻意沒跑 <see cref="CleanupStale"/>」（例：<c>senate ui --no-cleanup</c>）。
+        /// <para>物理意義：Dead／PidReused 的記錄檔在渲染前就被清掉了 ⇒ 那兩態**在任何畫面上都到不了**，
+        /// 於是分類邏輯有 selftest、而「畫出來長什麼樣」沒有任何讀數（TASK-0101 QA 2026-09-03 量到的那格）。
+        /// 這個旗標讓那條路存在，而**代價要說出來**：畫面上那張表會含殘留，
+        /// 不說的話下一個人會把它讀成「現在真的有這麼多 process 在跑」。</para>
+        /// ⛔ 這是**宣告不是推導** —— 本層不去猜宿主有沒有跑過清理（猜錯的兩個方向都會給一句有出處的假話）。
+        /// ⛔ 它**不改任何 kill 判準**：Kill 鈕仍然只畫在 Alive 且二段確認的那一列上。
+        /// </summary>
+        public static bool StartupCleanupSkipped { get; set; }
+
         public static int CleanupStale()
         {
             int aRemoved = 0;

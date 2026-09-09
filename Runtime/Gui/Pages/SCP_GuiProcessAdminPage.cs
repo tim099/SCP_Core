@@ -111,6 +111,15 @@ namespace SCP.Core.Gui
             g.Note($"登記目錄：`{aDir}`　共 {m_Rows.Count} 筆記錄"
                    + (m_LastRefreshUtc == DateTime.MinValue ? "" : $"　（讀於 {m_LastRefreshUtc.ToLocalTime():HH:mm:ss}）"));
 
+            // ⚠ 宿主說它這一趟刻意沒清 ⇒ **把代價印在表的上面**：這張表含 Dead／PID 已易主的殘留。
+            //   不說的話下一個人會把殘留讀成「現在真的有這麼多 process 在跑」——
+            //   而那兩件事在一張表上長得一模一樣（TASK-0123）。
+            if (SCP_ProcessRegistry.StartupCleanupSkipped)
+                g.Note("⚠ **本次未清理失效記錄**（宿主帶了 `--no-cleanup`）⇒ 下面這張表**含殘留**："
+                       + "Dead／PID 已易主的記錄檔還在，所以筆數**不是**「現在真的有這麼多 process 在跑」。"
+                       + "　⛔ kill 判準不受影響：Kill 鈕仍然只畫在 Alive 那幾列。");
+
+
             if (aAction == 1)
             {
                 Refresh();
