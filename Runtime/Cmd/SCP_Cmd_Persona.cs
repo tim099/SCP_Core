@@ -40,8 +40,13 @@ namespace SCP.Core.Cmd
             + "· 單一 persona：`--arg persona=<p>`；整個 pool：`--arg all=1`（兩者擇一）\n"
             + "· `--arg field=<欄名>` 只印那一欄的值（給腳本取用；查無該欄＝exit 4，**不印空字串**）\n"
             + "· `--arg json=1` 印完整 JSON；配 `all=1` 時的形狀是 `{personas, pool, generated_at}`\n"
-            + "  ⚠ `json=1` 與 `field` 的 stdout **只有那個值**（警語不印，但 `warning_count` 照落）——\n"
+            + "  ⚠ `json=1` 與 `field` 模式**本 Cmd 的警語不印**（`warning_count` 照落）——\n"
             + "    消費端是程式，多一行中文就得多一條切它的規則，而那條規則會安靜地過期。\n"
+            + "  ⛔ 但 stdout **不是只有那個值**：CLI 還會印 `🔢 k = v`（全部 Cmd 共用的機器讀數通道），\n"
+            + "    以及沒給 `letters_root`／`data_root` 時那行 `· … 沒給 ⇒ 用設定檔…` 注入告示。\n"
+            + "    ⇒ **`json.loads(stdout)` 會炸**（QA @calli 2026-09-07 實測）。要拿的是\n"
+            + "    「第一個 `{` 到最後一個 `}`」—— 那是 python 接縫 `_extract_json_object`\n"
+            + "    早就寫在 docstring 裡的契約，而今天沒有更廣的災情靠的是它、不是這段文字。\n"
             + "  📌 python 接縫（`_lib/persona_profile.py` 第一段）吃的就是 `all=1 json=1` 的 stdout。\n"
             + "⚠ 本 Cmd **純唯讀**：不動 lock、不動帳、不寫快照。\n"
             + "⚠ `region` 不給時 `agent`（帳號 id）欄會缺席 —— 那是**沒人告訴我區域**，不是「這人沒帳號」。";
@@ -90,10 +95,27 @@ namespace SCP.Core.Cmd
             // ⇒ 判準：**只講跟被問的那一欄有關的事**。region 只影響 `agent`，
             //   所以問 email 的人不該收到 region 的警語；問 agent 的人一定要收到。
             //   兩種情況 `warning_count` 都照落，⇒ 「被抑制」仍然數得出來。
-            // ⚠ `json=1` 與 `field` 同一類：消費端是程式，stdout 必須只有它要的東西。
+            // ⚠ `json=1` 與 `field` 同一類：消費端是程式，stdout 上不該有給人看的中文。
             //   python 接縫（`_lib/persona_profile.py` 第一段）就是拿 `json=1` 的 stdout
-            //   去 `json.loads` —— 多一行中文警語，那邊就得多一條「怎麼把它切掉」的規則，
+            //   去挖那顆物件 —— 多一行中文警語，那邊就得多一條「怎麼把它切掉」的規則，
             //   而那條規則會在下一次有人加一行輸出時安靜地失效。
+            //
+            // 🩸 而這一格的射程要說準（QA @calli 2026-09-07 量出來的，TASK-0157 A）：
+            //   這裡抑制的只有**本 Cmd 的警語**。stdout 上仍然有
+            //   ① CLI 統一印的 `🔢 k = v` —— 全部 Cmd 共用的機器讀數通道，**不搬**
+            //      （搬它要動每一個讀 `🔢` 的呼叫端，那超過這張單的症狀）
+            //   ② 沒給 `letters_root`／`data_root` 時，CLI 那行 `· … 沒給 ⇒ 用設定檔…` 注入告示
+            //      （它刻意印出來，因為靜默注入的症狀是「我沒指定，它卻讀了另一棵樹」）
+            //   ⇒ 所以「stdout 只有那個值」**是假的**：她 `json.loads(stdout)` 第一次就炸，
+            //     而 ② 那行中文就在第 1 行（實測 `field=email` stdout 276 bytes、真值 26 字元）。
+            //   ⇒ 真正的契約是**「第一個 `{` 到最後一個 `}`」**，寫在 python 接縫的
+            //     `_extract_json_object` docstring 裡 —— 那天沒有更廣的災情靠的是它。
+            //   📌 教訓不是「條文寫得不夠好」，是**條文有牙齒**：
+            //     下一個人讀的是條文，然後他會寫 `json.loads(stdout)`。
+            //     ⇒ 條文要寫**建出來的那個行為**，不是意圖。
+            //   ⏳ 未做（要動 Senate CLI 並重 build，而 2026-09-09 這台機器的 .NET SDK 是
+            //     6.0.423、專案是 net10.0 ⇒ restore 就擋下，**沒有辦法驗**）：
+            //     把 ② 那兩行注入告示改去 stderr（告示照印、值的通道乾淨）。⛔ 別在沒 build 的情況下先改條文。
             bool aFieldMode = aField.Length > 0;
             bool aFieldNeedsRegion = string.Equals(aField, "agent", StringComparison.Ordinal);
             bool aTellRegion = (!aFieldMode && !aJson) || aFieldNeedsRegion;
