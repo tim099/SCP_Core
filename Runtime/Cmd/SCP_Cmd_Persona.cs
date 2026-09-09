@@ -42,9 +42,9 @@ namespace SCP.Core.Cmd
             + "· `--arg json=1` 印完整 JSON；配 `all=1` 時的形狀是 `{personas, pool, generated_at}`\n"
             + "  ⚠ `json=1` 與 `field` 模式**本 Cmd 的警語不印**（`warning_count` 照落）——\n"
             + "    消費端是程式，多一行中文就得多一條切它的規則，而那條規則會安靜地過期。\n"
-            + "  ⛔ 但 stdout **不是只有那個值**：CLI 還會印 `🔢 k = v`（全部 Cmd 共用的機器讀數通道），\n"
-            + "    以及沒給 `letters_root`／`data_root` 時那行 `· … 沒給 ⇒ 用設定檔…` 注入告示。\n"
-            + "    ⇒ **`json.loads(stdout)` 會炸**（QA @calli 2026-09-07 實測）。要拿的是\n"
+            + "  ⛔ 但 stdout **不是只有那個值**：CLI 還會印 `🔢 k = v`（全部 Cmd 共用的機器讀數通道；\n"
+            + "    而 `· … 沒給 ⇒ 用設定檔…` 那行注入告示 2026-09-09 起走 stderr，不再擋路）。\n"
+            + "    ⇒ **`json.loads(stdout)` 仍然會炸**（QA @calli 2026-09-07 實測）。要拿的是\n"
             + "    「第一個 `{` 到最後一個 `}`」—— 那是 python 接縫 `_extract_json_object`\n"
             + "    早就寫在 docstring 裡的契約，而今天沒有更廣的災情靠的是它、不是這段文字。\n"
             + "  📌 python 接縫（`_lib/persona_profile.py` 第一段）吃的就是 `all=1 json=1` 的 stdout。\n"
@@ -113,9 +113,13 @@ namespace SCP.Core.Cmd
             //   📌 教訓不是「條文寫得不夠好」，是**條文有牙齒**：
             //     下一個人讀的是條文，然後他會寫 `json.loads(stdout)`。
             //     ⇒ 條文要寫**建出來的那個行為**，不是意圖。
-            //   ⏳ 未做（要動 Senate CLI 並重 build，而 2026-09-09 這台機器的 .NET SDK 是
-            //     6.0.423、專案是 net10.0 ⇒ restore 就擋下，**沒有辦法驗**）：
-            //     把 ② 那兩行注入告示改去 stderr（告示照印、值的通道乾淨）。⛔ 別在沒 build 的情況下先改條文。
+            //   ✅ 2026-09-09 ② 已改去 stderr（告示照印、值的通道乾淨）——
+            //     `--arg field=email` 的 stdout 從 276 bytes 降到只剩那個值 ＋ `🔢` 行。
+            //   🩸 而這一格我自己付過一次帳，值得留著：第一次 `./build.sh` 撞 NETSDK1045
+            //     （`dotnet --list-sdks` 只列 6.0.423，而 csproj 是 net10.0），我把它讀成
+            //     「**這台機器**建不出 senate.exe」並公開報了出去 —— 而同一支 `dotnet build`
+            //     在幾分鐘後 exit 0、net10.0 三顆組件全建成，重跑 `build.sh` 也綠。
+            //     ⇒ **我量的是那一次呼叫，講出去的是那台機器。**（觀察的射程 ≤ 我量到的那一格）
             bool aFieldMode = aField.Length > 0;
             bool aFieldNeedsRegion = string.Equals(aField, "agent", StringComparison.Ordinal);
             bool aTellRegion = (!aFieldMode && !aJson) || aFieldNeedsRegion;
