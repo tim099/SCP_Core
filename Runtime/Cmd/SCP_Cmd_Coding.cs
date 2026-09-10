@@ -321,8 +321,41 @@ namespace SCP.Core.Cmd
             // ⛔ 不假設：推導完**驗它真的是 git 工作目錄**，不是就回空（呼叫端會說「沒量到」）。
             string aProj = Path.GetDirectoryName(iRoot.Value.TrimEnd('/', '\\')) ?? "";
             if (aProj.Length == 0 || !SCP_Git.IsRepo(aProj)) return aOut;
-            SCP_GitResult aSt = SCP_Git.Run(aProj, "status", "--porcelain=v1", "--untracked-files=all");
-            if (!aSt.Ok) return aOut;
+            CollectDirtyCs(aProj, "", aOut);
+            // 🩸 **根層的 git status 看不見 submodule 裡的檔** —— 它只報「這個 submodule 變了」。
+            //   而本專案的 Unity C# 幾乎全住在 `Assets/Plugins/SCP_Core` 與 `Assets/Plugins/UCL_Core`
+            //   這兩顆 submodule 裡 ⇒ 只掃根層的話，`left_dirty_cs` 會在**真的有髒檔時回 0**。
+            //   （2026-09-10 探針實測：改髒 `Assets/Plugins/SCP_Core/**/*.cs` ⇒ 讀數 0。
+            //     那不是「範圍小」，那是**錯的讀數** —— 而它看起來跟乾淨一模一樣。）
+            foreach (string aSub in SubmodulesUnderAssets(aProj))
+                CollectDirtyCs(Path.Combine(aProj, aSub), aSub + "/", aOut);
+            return aOut;
+        }
+
+        /// <summary>`.gitmodules` 裡路徑以 `Assets/` 開頭的 submodule —— 射程只到 Unity 那側。</summary>
+        static List<string> SubmodulesUnderAssets(string iProjRoot)
+        {
+            var aOut = new List<string>();
+            SCP_GitResult aR = SCP_Git.Run(iProjRoot, "config", "--file", ".gitmodules",
+                                           "--get-regexp", "path");
+            if (!aR.Ok) return aOut;
+            foreach (string aLine in aR.OutLines())
+            {
+                int aSp = aLine.IndexOf(' ');
+                if (aSp <= 0 || aSp + 1 >= aLine.Length) continue;
+                string aPath = aLine.Substring(aSp + 1).Trim();
+                if (aPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase)) aOut.Add(aPath);
+            }
+            return aOut;
+        }
+
+        /// <summary>單一 repo 的髒 `.cs`；<paramref name="iPrefix"/> 讓 submodule 內的路徑印得出全貌。</summary>
+        static void CollectDirtyCs(string iRepo, string iPrefix, List<string> oOut)
+        {
+            var aOut = oOut;
+            if (!SCP_Git.IsRepo(iRepo)) return;
+            SCP_GitResult aSt = SCP_Git.Run(iRepo, "status", "--porcelain=v1", "--untracked-files=all");
+            if (!aSt.Ok) return;
             foreach (string aLine in aSt.OutLines())
             {
                 string aL = aLine.TrimEnd();
@@ -331,11 +364,12 @@ namespace SCP.Core.Cmd
                 int aArrow = aPath.IndexOf(" -> ", StringComparison.Ordinal);
                 if (aArrow >= 0) aPath = aPath.Substring(aArrow + 4);
                 aPath = aPath.Trim('"');
-                if (aPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
-                    && aPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
-                    aOut.Add(aPath);
+                if (!aPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)) continue;
+                string aFull = iPrefix + aPath;
+                // ⚠ 射程守衛：只收 `Assets/` 底下的 —— submodule 那條已經由 iPrefix 保證，
+                //   根層那條要靠這一行（`Senate/` 不在這棵樹裡，本來就進不來）。
+                if (aFull.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase)) aOut.Add(aFull);
             }
-            return aOut;
         }
 
         // 區塊職責：綁定單全部離開施工狀態 ⇒ 自動收場。
