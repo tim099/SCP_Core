@@ -52,11 +52,20 @@ namespace SCP.Core.Cmd
             string aDataRoot = iArgs.Get("data_root");
             var aRoot = new SCP_DataRoot(aDataRoot);
             string aTasksDir = SCP_TaskIO.TasksDir(aRoot);
+            // 區塊職責：把「呼叫端打的字」換成「實際讀的那個目錄」
+            // 物理意義：`--arg data_root=<相對值>` 是照 **process cwd** 解析的（實測：同一個
+            //          `data_root=AgentCommands` 在 `D:/Unity/Bar` 讀得到 193 張、在 `D:/Unity` 找不到），
+            //          而設定檔那條路走 `SCP_ProjectPaths.ResolveDataRoot`，基準是**專案根** ——
+            //          同一個參數名、兩條路、兩個基準。
+            // 🩸 逐字回音會讓兩棵樹上的成功輸出**一模一樣**：`· 資料源：AgentCommands/Tasks/tasks`
+            //   在 Bar 與 LY 底下同形，而它讀的是不同的單。定語不能靠讀的人自己補。
+            // ⛔ 射程：這裡只改**回音**（顯示層）。統一兩條路的解析基準是契約變更，不在本刀。
+            string aTasksDirAbs = AbsOrRaw(aTasksDir);
             if (!Directory.Exists(aTasksDir))
                 // 「資料根設錯」與「還沒有人開單」是兩件事 —— 印出路徑讓人自己分辨。
                 return SCP_CmdResult.Fail(1,
-                    "✗ 找不到任務單目錄：" + aTasksDir,
-                    "  （資料根：" + aDataRoot + "）");
+                    "✗ 找不到任務單目錄：" + aTasksDirAbs,
+                    "  （資料根：" + aDataRoot + " ⇒ 解析後 " + AbsOrRaw(aDataRoot) + "）");
 
             // 壞欄位的聲音要離開私有欄位 —— 收進輸出，不是丟掉。
             var aWarnings = new List<string>();
@@ -110,7 +119,7 @@ namespace SCP.Core.Cmd
             }
 
             aResult.Lines.Add("# 📋 任務單 —— 共 " + aAll.Count + " 張（開著 " + aOpen + "）");
-            aResult.Lines.Add("· 資料源：" + aTasksDir);
+            aResult.Lines.Add("· 資料源：" + aTasksDirAbs);
             aResult.Lines.Add("· 狀態分布：" + Describe(aByStatus));
             aResult.Lines.Add("· 種類分布：" + Describe(aByType));
             if (aPersona.Length > 0)
@@ -323,6 +332,20 @@ namespace SCP.Core.Cmd
             aKeys.Sort(StringComparer.Ordinal);
             foreach (string k in aKeys) aParts.Add(k + "=" + iMap[k]);
             return string.Join("／", aParts.ToArray());
+        }
+
+        // 區塊職責：把路徑攤成絕對路徑**給人看**，⛔ 攤不動就原樣印
+        // 物理意義：`Path.GetFullPath` 的基準是 process cwd —— 與相對 `data_root` 實際被解析的
+        //          基準同一個（實測：`D:/Unity` 底下同一個相對值就找不到目錄）⇒ 印出來的絕對路徑
+        //          確實是**它剛剛讀的那一個**，不是另一種推導。
+        // 數值影響：純字串，不碰磁碟；回傳值只進輸出，⛔ 不拿去讀寫檔。
+        // ⚠ 非法字元／過長路徑會 throw ——「為了印一行定語把整支唯讀指令炸掉」是更壞的交換，
+        //   所以吞掉例外並退回原字串（那一格會少一個定語，而不是少一份輸出）。
+        static string AbsOrRaw(string iPath)
+        {
+            if (string.IsNullOrEmpty(iPath)) return iPath;
+            try { return Path.GetFullPath(iPath); }
+            catch { return iPath; }
         }
     }
 }
