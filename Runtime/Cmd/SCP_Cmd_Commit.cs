@@ -72,7 +72,12 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根目錄（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根 —— 信箱預設表、公告與推單都要用", iRequired: true),
             new SCP_CmdArgSpec("region", "現地的區域（貨幣）ID —— **不給的話 trailer 的 agent 欄會缺席**"),
-            new SCP_CmdArgSpec("expect_files", "宣告這一筆應該收幾個檔；與實際 staged 數不符就擋下不提交"),
+            // ⚠ **必填**（TASK-0193，2026-09-10）—— 它原本是選填的，而那等於沒有防線。
+            //   顯式放棄要打 `expect_files=any`：那會留下痕跡，而「忘了帶」不會。
+            new SCP_CmdArgSpec("expect_files",
+                               "宣告這一筆應該收幾個檔；與實際 staged 數不符就擋下不提交。"
+                               + "**必填** —— 真的不想數就顯式給 `any`（會大聲印出清單並記在讀數裡）",
+                               iRequired: true),
             new SCP_CmdArgSpec("allow_unset", "=1 ⇒ 信箱未設定仍提交（預設拒絕 —— 假位址進了 history 改不掉）"),
             new SCP_CmdArgSpec("dry_run", "=1 ⇒ 只印組出來的訊息，**不提交、不公告、不推單**"),
             new SCP_CmdArgSpec("announce_body", "公告的開場白（插在標題與 commit 內文之間，寫給現在在酒館的同事）"),
@@ -153,7 +158,7 @@ namespace SCP.Core.Cmd
                 return SCP_CmdResult.Fail(ExitNothingStaged,
                     "⛔ " + aRepo + " **沒有 staged 變更** —— 本 Cmd 只做提交，stage 請自己來。");
 
-            SCP_CmdResult? aExpect = CheckExpectFiles(iArgs.Get("expect_files"), aFiles);
+            SCP_CmdResult? aExpect = CheckExpectFiles(iArgs.Get("expect_files"), aFiles, aResult);
             if (aExpect != null) return aExpect;
 
             // ── ③ git commit（訊息走暫存檔：SCP_Git 沒有 stdin，而長訊息也不該經過 shell）──
@@ -199,6 +204,30 @@ namespace SCP.Core.Cmd
 
             // ── ⑤ 單號推進（委派；失敗只警告 —— commit 與領薪是主線）─────────
             AdvanceTasks(aMessage, aSha, aPrimary, aDataRoot, aResult);
+
+            // ── ⑥ 順手試收 Coding 場（TASK-0193）────────────────────────────
+            // 物理意義：推單之後正是「單子剛離開施工狀態」的那一刻 ——
+            //          把試收掛在**修東西的人一定會走的那條路**上，就不必要求他記得收場。
+            //          而「記得」正是系統不能依賴的東西（同 Fixes 掛在 commit 上的理由）。
+            // 數值影響：條件不成立時它什麼都不做，只印一行；⛔ 失敗**不影響**已落地的 commit 與領薪。
+            // ⚠ 這一步刻意放在最後：commit 與領薪是主線，收場是附帶效果。
+            try
+            {
+                SCP_CmdResult aClose = SCP_CmdRegistry.Dispatch("coding",
+                    new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["op"] = "autoclose",
+                        ["persona"] = aPrimary,
+                        ["data_root"] = aDataRoot,
+                    });
+                foreach (string aLine in aClose.Lines) aResult.Lines.Add(aLine);
+            }
+            catch (Exception e)
+            {
+                // ⛔ 這裡炸掉不可以被讀成「commit 失敗」—— 它已經落地了。
+                aResult.Lines.Add("⚠ 試收 Coding 場時出錯（" + e.GetType().Name + "）—— "
+                                  + "**commit 與領薪不受影響**，場請自己 op=end。");
+            }
             return aResult;
         }
 
@@ -296,12 +325,23 @@ namespace SCP.Core.Cmd
         //   而 `--name-only` 的清單**印出來了、就在下一行**。⇒「下次記得看」是願望；
         //   有效的只有兩種形狀：把清單縮短，或把手勢換掉。本旗標屬後者。
         // 數值影響：不符 ⇒ exit 2 **且在 git commit 之前**返回 ⇒ 沒有東西落地。不帶＝不檢查。
-        static SCP_CmdResult? CheckExpectFiles(string iRaw, List<string> iFiles)
+        static SCP_CmdResult? CheckExpectFiles(string iRaw, List<string> iFiles, SCP_CmdResult ioResult)
         {
             string aRaw = (iRaw ?? "").Trim();
-            if (aRaw.Length == 0) return null;
+            // 區塊職責：`any` ＝ **顯式**放棄這道檢查。
+            // 物理意義：放棄本身沒有錯，錯的是**放棄得沒有痕跡** —— 「忘了帶旗標」與
+            //          「我想過了，這次不數」在舊版是同一個畫面（都是什麼都沒發生）。
+            // 數值影響：不擋，但把清單整份印出來並落一個 `expect_files=any` 的讀數。
+            if (aRaw.Equals("any", StringComparison.OrdinalIgnoreCase))
+            {
+                ioResult.Lines.Add("⚠ `expect_files=any` —— **這道檢查被顯式放棄**。這一筆實際收 "
+                                   + iFiles.Count + " 個檔：");
+                foreach (string aF in iFiles) ioResult.Lines.Add("     - " + aF);
+                ioResult.AddValue("expect_files", "any");
+                return null;
+            }
             if (!int.TryParse(aRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int aWant))
-                return SCP_CmdResult.Fail(2, "⛔ `expect_files` 不是整數：" + aRaw);
+                return SCP_CmdResult.Fail(2, "⛔ `expect_files` 不是整數也不是 `any`：" + aRaw);
             if (aWant == iFiles.Count) return null;
             SCP_CmdResult aFail = SCP_CmdResult.Fail(2,
                 "⛔ `expect_files=" + aWant + "` 但實際 staged **" + iFiles.Count + "** 個檔 ⇒ 擋下，沒有提交。",

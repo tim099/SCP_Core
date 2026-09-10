@@ -16,7 +16,11 @@
 using System;
 using System.Collections.Generic;
 using SCP.Core.Paths;
+using System.Globalization;
+using System.IO;
+using SCP.Core.Git;
 using SCP.Core.Session;
+using SCP.Core.Tasks;
 
 namespace SCP.Core.Cmd
 {
@@ -54,12 +58,16 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）"
                 + "—— senate CLI 沒給時用「路徑管理」頁那一格補上並印出來", iRequired: true),
-            new SCP_CmdArgSpec("op", "show（預設）| start | status | end"),
+            new SCP_CmdArgSpec("op", "show（預設）| start | status | bind | autoclose | end"),
             new SCP_CmdArgSpec("persona", "誰的場（start／status／end 必填 —— ⚠ 不猜身分）"),
             new SCP_CmdArgSpec("status", "正在改哪一部分，一句話（start 必填；status 用它更新）"),
             new SCP_CmdArgSpec("hours", "租期小時數（start 選填，預設 " + DefaultLeaseHours + "；status 會用它續期）"),
             new SCP_CmdArgSpec("force", "end 用：編譯紅燈時顯式硬退（要同時給 force_reason）"),
             new SCP_CmdArgSpec("force_reason", "force 退場的理由 —— 會寫進 session 檔，事後查得到"),
+            // ⚠ 綁定是**多對多**：一場多單、一單多場都成立 ⇒ 這裡收的是清單不是單一值。
+            //   `op=bind` 是**事後補綁**的入口 —— 先進場才認領是常態（實測：gura 2026-09-10 兩次都是）。
+            new SCP_CmdArgSpec("tasks", "這一場綁哪幾張單（逗號分隔，例 `129,193`）。"
+                               + "start 選填／bind 必填。**綁了才會自動收場**"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -72,7 +80,10 @@ namespace SCP.Core.Cmd
             switch (aOp)
             {
                 case "show": return OpShow(aRoot);
-                case "start": return OpStart(aRoot, aPersona, iArgs.Get("status").Trim(), ParseHours(iArgs));
+                case "start": return OpStart(aRoot, aPersona, iArgs.Get("status").Trim(), ParseHours(iArgs),
+                                             iArgs.Get("tasks").Trim());
+                case "bind": return OpBind(aRoot, aPersona, iArgs.Get("tasks").Trim());
+                case "autoclose": return OpAutoClose(aRoot, aPersona);
                 case "status": return OpStatus(aRoot, aPersona, iArgs.Get("status").Trim(), ParseHours(iArgs));
                 case "end": return OpEnd(aRoot, aPersona, iArgs.Get("force") == "1", iArgs.Get("force_reason").Trim());
                 default:
@@ -112,7 +123,8 @@ namespace SCP.Core.Cmd
 
         // ── start ─────────────────────────────────────────────────
 
-        static SCP_CmdResult OpStart(SCP_DataRoot iRoot, string iPersona, string iStatus, int iHours)
+        static SCP_CmdResult OpStart(SCP_DataRoot iRoot, string iPersona, string iStatus, int iHours,
+                                     string iTasks)
         {
             if (iPersona.Length == 0) return SCP_CmdResult.Fail(2, "✗ op=start 需要 --arg persona=<你>（不猜身分）");
             if (iStatus.Length == 0)
@@ -177,6 +189,7 @@ namespace SCP.Core.Cmd
                 active = true,
                 status = iStatus,
                 status_updated = SCP_ActivitySession.NowIso(),
+                tasks = NormalizeTasks(iTasks),
             };
 
             if (!SCP_ActivitySessionStore.TryStart(iRoot, iPersona, aSession, SCP_ActivitySessionKind.Coding,
@@ -195,7 +208,13 @@ namespace SCP.Core.Cmd
                 "⚠ 租期到期**不會自動釋放**，只是落回「殘留」；別人要搶場得顯式 "
                     + SCP_CmdRegistry.Invoke("sessions --arg op=close --arg target_persona=" + iPersona + " --arg confirm=1"),
                 ScopeCaveat);
-            return aOk.AddValue("session_id", aSession.session_id).AddValue("until_local", aSession.until_local);
+            // ⚠ 沒綁單就明說「不會自動收」 —— 這一格如果安靜，人會以為自動收場對所有場都成立。
+            aOk.Lines.Add(aSession.tasks.Length > 0
+                ? "· 綁定單：**" + aSession.tasks + "** ⇒ 它們**全部**離開施工狀態（in_review／done）時本場會自動收"
+                : "· ⚠ **沒有綁單** ⇒ 本場**不會自動收**（只能手動 op=end）。要綁："
+                    + SCP_CmdRegistry.Invoke("coding --arg op=bind --arg persona=" + iPersona + " --arg tasks=<單號>"));
+            return aOk.AddValue("session_id", aSession.session_id).AddValue("until_local", aSession.until_local)
+                      .AddValue("tasks", aSession.tasks);
         }
 
         static SCP_CmdResult Blocked(SCP_DataRoot iRoot, string iPersona, SCP_ActivitySession iBlocker)
@@ -248,6 +267,158 @@ namespace SCP.Core.Cmd
         }
 
         // ── end（過閘才放行）─────────────────────────────────────
+
+        // 區塊職責：單號清單正規化 —— 去空白、去重、去前導零、保序。
+        // 物理意義：`TASK-0129` / `129` / `0129` 是**同一張單**，而它們當字串比不相等。
+        //           不正規化的話「綁的是 0129、推進的是 129」會讓自動收場永遠不成立，
+        //           而那個失效的樣子是「場就是不會自己收」—— 沒有人會知道是比對沒對上。
+        // 數值影響：純字串處理，不碰檔案。
+        static string NormalizeTasks(string iRaw)
+        {
+            var aOut = new List<string>();
+            var aSeen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string aOne in (iRaw ?? "").Split(','))
+            {
+                string aT = aOne.Trim();
+                if (aT.StartsWith("TASK-", StringComparison.OrdinalIgnoreCase)) aT = aT.Substring(5);
+                aT = aT.TrimStart('0');
+                if (aT.Length == 0 || !aSeen.Add(aT)) continue;
+                aOut.Add(aT);
+            }
+            return string.Join(",", aOut.ToArray());
+        }
+
+        // 區塊職責：事後補綁單號（合併，不覆蓋）。
+        // 物理意義：先進場才認領是常態 —— 綁定不會只發生在開場那一刻。
+        // 數值影響：只動 session 檔的 `tasks` 欄；不碰租期、不碰狀態、不觸發收場。
+        static SCP_CmdResult OpBind(SCP_DataRoot iRoot, string iPersona, string iTasks)
+        {
+            if (iPersona.Length == 0) return SCP_CmdResult.Fail(2, "✗ op=bind 需要 --arg persona=<你>");
+            if (iTasks.Length == 0) return SCP_CmdResult.Fail(2, "✗ op=bind 需要 --arg tasks=<單號，逗號分隔>");
+            var aS = Mine(iRoot, iPersona, out SCP_CmdResult? aErr);
+            if (aS == null) return aErr!;
+            aS.tasks = NormalizeTasks(aS.tasks + "," + iTasks);
+            SCP_ActivitySessionStore.Save(iRoot, iPersona, aS);
+            // ⛔ 不信寫入端的回傳 —— 回讀那個欄位。
+            var aBack = SCP_ActivitySessionStore.Load<SCP_CodingSession>(iRoot, iPersona,
+                                                                        SCP_ActivitySessionKind.Coding);
+            string aRead = aBack == null ? "" : aBack.tasks;
+            return SCP_CmdResult.Success(
+                "✓ 綁定更新：**" + iPersona + "** 的 Coding 場 `" + aS.session_id + "`",
+                "· 回讀 tasks = **" + aRead + "**（回讀單檔，不是寫入端的回傳值）",
+                "· 這些單**全部**離開施工狀態（in_review／done）時本場會自動收")
+                .AddValue("tasks", aRead);
+        }
+
+        // 區塊職責：列出工作區還沒提交的 `Assets/**/*.cs`。
+        // 物理意義：射程**只到 Unity 端 C#**（Tim 2026-09-10：Senate 那邊可以同步改）——
+        //           Senate 是獨立 repo、獨立編譯，不共用 Unity 的組件，不該被這道閘排隊。
+        // 數值影響：純唯讀。**這是資訊不是閘** —— 有東西也照收，只記進 session 檔並印出來。
+        static List<string> DirtyUnityCs(SCP_DataRoot iRoot)
+        {
+            var aOut = new List<string>();
+            // data_root 是 `<專案>/AgentCommands` ⇒ 專案根是它的上一層。
+            // ⛔ 不假設：推導完**驗它真的是 git 工作目錄**，不是就回空（呼叫端會說「沒量到」）。
+            string aProj = Path.GetDirectoryName(iRoot.Value.TrimEnd('/', '\\')) ?? "";
+            if (aProj.Length == 0 || !SCP_Git.IsRepo(aProj)) return aOut;
+            SCP_GitResult aSt = SCP_Git.Run(aProj, "status", "--porcelain=v1", "--untracked-files=all");
+            if (!aSt.Ok) return aOut;
+            foreach (string aLine in aSt.OutLines())
+            {
+                string aL = aLine.TrimEnd();
+                if (aL.Length < 4) continue;
+                string aPath = aL.Substring(3).Trim();
+                int aArrow = aPath.IndexOf(" -> ", StringComparison.Ordinal);
+                if (aArrow >= 0) aPath = aPath.Substring(aArrow + 4);
+                aPath = aPath.Trim('"');
+                if (aPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+                    && aPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+                    aOut.Add(aPath);
+            }
+            return aOut;
+        }
+
+        // 區塊職責：綁定單全部離開施工狀態 ⇒ 自動收場。
+        // 物理意義：目的是**縮短持有**（Tim 2026-09-10）—— 判準是 `in_review` **不是** `done`，
+        //           不等全部驗完。`in_review` 被退回就下次動工開新的場，⛔ 不把舊場接回來。
+        // 數值影響：條件不成立時**什麼都不做**（場仍是持有者的），並說得出是哪一格擋的。
+        //          ⚠ 編譯閘紅燈**不收** —— 收場成功若不再代表「這棵樹編得過」，
+        //            它就跟「有人結了單」同形，而同形之後沒有一層會說出差別。
+        static SCP_CmdResult OpAutoClose(SCP_DataRoot iRoot, string iPersona)
+        {
+            if (iPersona.Length == 0) return SCP_CmdResult.Fail(2, "✗ op=autoclose 需要 --arg persona=<你>");
+            var aS = SCP_ActivitySessionStore.Load<SCP_CodingSession>(iRoot, iPersona,
+                                                                      SCP_ActivitySessionKind.Coding);
+            // ⚠ 沒有場**不是失敗** —— 這一支會被掛在 commit 的必經路上，那裡多數時候本來就沒有場。
+            if (aS == null || !aS.active)
+                return SCP_CmdResult.Success("· 沒有進行中的 Coding 場 ⇒ 不必收")
+                    .AddValue("autoclose", "no-session");
+            if (aS.tasks.Length == 0)
+                return SCP_CmdResult.Success("· 本場**沒有綁單** ⇒ 不自動收（綁定是自動收場唯一的判準）")
+                    .AddValue("autoclose", "unbound");
+
+            var aWarn = new List<string>();
+            List<SCP_TaskEntry> aAll = SCP_TaskIO.LoadAll(iRoot, aWarn.Add);
+            var aStillWorking = new List<string>();
+            var aMissing = new List<string>();
+            foreach (string aIdx in aS.tasks.Split(','))
+            {
+                string aWant = aIdx.Trim();
+                if (aWant.Length == 0) continue;
+                SCP_TaskEntry aHit = null;
+                foreach (var aT in aAll)
+                    if (aT.index.ToString(CultureInfo.InvariantCulture) == aWant) { aHit = aT; break; }
+                if (aHit == null) { aMissing.Add(aWant); continue; }
+                // ⚠ 判準是 **離開施工狀態**，不是「做完」——`in_review` 就算（Tim 2026-09-10：縮短持有）。
+                //   `cancelled` 也算：它不會再有人動，繼續佔著場沒有意義。
+                SCP_TaskStatus aSt = aHit.status;
+                if (aSt != SCP_TaskStatus.in_review && aSt != SCP_TaskStatus.done
+                    && aSt != SCP_TaskStatus.cancelled)
+                    aStillWorking.Add(aWant + "(" + aSt + ")");
+            }
+            // ⛔ 查無此單**不當成「做完了」** —— 那會讓打錯的單號變成一張自動放行的通行證。
+            if (aMissing.Count > 0)
+                return SCP_CmdResult.Success("· 不自動收：綁定單裡有**查無此單**的號 —— "
+                        + string.Join("／", aMissing.ToArray()) + "（查無 ≠ 做完）")
+                    .AddValue("autoclose", "task-missing");
+            if (aStillWorking.Count > 0)
+                return SCP_CmdResult.Success("· 不自動收：還有單在施工狀態 —— "
+                        + string.Join("／", aStillWorking.ToArray()))
+                    .AddValue("autoclose", "still-working");
+
+            SCP_CodingExitVerdict? aVerdict = SCP_CodingExitGateHost.Run();
+            if (aVerdict != null && !aVerdict.Value.Green)
+                return SCP_CmdResult.Success(
+                        "· ⛔ **不自動收：編譯閘紅燈** —— " + aVerdict.Value.Summary,
+                        "  場**還是你的**。修完再收，或顯式硬退："
+                            + SCP_CmdRegistry.Invoke("coding --arg op=end --arg persona=" + iPersona
+                                                     + " --arg force=1 --arg force_reason=<為什麼帶著紅燈退場>"))
+                    .AddValue("autoclose", "compile-red");
+
+            List<string> aDirty = DirtyUnityCs(iRoot);
+            aS.left_dirty_cs = string.Join(",", aDirty.ToArray());
+            SCP_ActivitySessionStore.Close(iRoot, iPersona, aS, "coding-autoclose");
+            var aBack = SCP_ActivitySessionStore.Load(iRoot, iPersona);
+            bool aClosed = aBack != null && !aBack.active;
+
+            var aOk = SCP_CmdResult.Success(
+                "✓ **自動收場**：`" + aS.session_id + "`　**回讀確認=" + aClosed + "**",
+                "· 綁定單 **" + aS.tasks + "** 全部離開施工狀態（判準是 `in_review`，⛔ 不等 `done`）",
+                "- 🔒 編譯閘：" + (aVerdict == null
+                    ? "**本宿主沒有登記退出閘 ⇒ 未驗編譯**（這不是綠燈，是沒有量）"
+                    : "**綠燈** —— " + aVerdict.Value.Summary));
+            if (aDirty.Count > 0)
+            {
+                // ⚠ 這一段是**資訊不是閘**：擋下會讓場握得更久，而縮短持有正是它存在的理由。
+                aOk.Lines.Add("⚠ 收場時工作區還有 **" + aDirty.Count + " 個未提交的 Unity C#**"
+                              + "（已記進 session 檔，下一個進場的人看得到）：");
+                foreach (string aF in aDirty) aOk.Lines.Add("     - " + aF);
+                aOk.Lines.Add("  ⛔ 這**不擋收場** —— 但它們還沒進版控，別忘了。");
+            }
+            aOk.Lines.Add("· `in_review` 被退回時 ⇒ **下次動工開新的場**（⛔ 不把這一場接回來）。");
+            return aOk.AddValue("autoclose", "closed")
+                      .AddValue("left_dirty_cs", aDirty.Count.ToString(CultureInfo.InvariantCulture));
+        }
 
         static SCP_CmdResult OpEnd(SCP_DataRoot iRoot, string iPersona, bool iForce, string iForceReason)
         {
