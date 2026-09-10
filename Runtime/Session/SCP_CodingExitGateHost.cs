@@ -1,6 +1,7 @@
 // 區塊職責：`Coding` 退場時那道**編譯閘**由宿主提供 —— 本層只知道「去問那一端」。
 // 物理意義：⭐ **兩個宿主的尺不同形，而且不可以合成一把**：
-//          Unity 側＝`check_compile`（tracker ＋ ErrorLog 對帳）；
+//          Unity 側＝`senate cmd unity-compile-status`（tracker ＋ ErrorLog 對帳）；
+//          （2026-09-10 更名：舊名 `check_compile` 那支 python 已整支刪除）
 //          Senate 側＝`dotnet build`／`build.sh` 出廠驗收。
 //          硬湊一把兩邊共用的尺，會讓其中一邊量的**不是它自己的編譯**（TASK-0058 A/B/C 拍板附註）。
 //          ⇒ 同 `SCP_ActivitySessionGatewayHost` 的形狀：介面在共用層，實作在宿主。
