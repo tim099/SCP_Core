@@ -29,6 +29,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using SCP.Core.Git;
+using SCP.Core.Json;
 using SCP.Core.Letters;
 using SCP.Core.Tasks;
 
@@ -226,6 +227,32 @@ namespace SCP.Core.Cmd
         {
             foreach (string aPersona in iPersonas)
             {
+                // 🩸 這兩道守衛是 2026-09-10 實測補的，而它們原本就在 python 那支裡（我漏搬）：
+                //   打錯 persona 名時信箱會一路掉到**全域 fallback**（一個形狀完全合法的位址）
+                //   ⇒ 組出 `?@<打錯的名字>(?) <fallback@…>` 然後**若無其事地提交**。
+                //   ⚠ 那比失敗難查得多：trailer 看起來正常，只是掛在一個不存在的人身上，
+                //   而它進了 git history 就改不掉。⇒ 兩格都**擋下**，不是警告。
+                SCP_JsonData? aProfile = null;
+                try
+                {
+                    aProfile = SCP_PersonaProfile.GetRaw(iLettersRoot, aPersona, iRegion,
+                                                         w => ioResult.Lines.Add("⚠ " + w));
+                }
+                catch (Exception e) { ioResult.Lines.Add("⚠ 讀 " + aPersona + " 失敗：" + e.Message); }
+                if (aProfile == null)
+                {
+                    oProblems.Add("persona 檔不存在或讀不到：" + aPersona + "（打錯名字會靜默生出一行掛在"
+                                  + "不存在的人身上的 trailer）");
+                    continue;
+                }
+                if ((aProfile.GetString("agent", "") ?? "").Trim().Length == 0)
+                {
+                    // ⚠ 最常見的成因**不是那個人沒有帳號，是沒給 `region`** —— agent 欄要它才解析得出來。
+                    oProblems.Add(aPersona + " 的 agent 欄是空的 ⇒ trailer 的身分會變成 `?`"
+                                  + (iRegion.Length == 0 ? "　⇒ 多半是**沒給 `region`**（agent 欄要它）"
+                                                         : "　（region=" + iRegion + " 之下仍查無帳號綁定）"));
+                    continue;
+                }
                 SCP_AgentEmailInfo aInfo = SCP_AgentEmail.Resolve(iLettersRoot, aPersona, iRegion,
                                                                   iDataRoot, w => ioResult.Lines.Add("⚠ " + w));
                 if (aInfo.Source == "fallback")
