@@ -62,6 +62,18 @@ namespace SCP.Core.Json
         public bool IsNull { get { return m_Type == SCP_JsonType.Null; } }
         public bool Exists { get { return m_Type != SCP_JsonType.Missing; } }
 
+        // 區塊職責：型別判定的便利屬性 —— 與 IsMissing／IsNull 同位階，只是問的是另外三種型別。
+        // 物理意義：呼叫端問的是「這個節點能不能當陣列／物件／字串用」，而那個問題本來要寫成
+        //          `Type == SCP_JsonType.Array`。⚠ 差別不在字數：`Missing` 與 `Null` 也都不是 Array，
+        //          而**它們三個在 `!IsArray` 底下長得一模一樣** ⇒ 呼叫端寫 `!x.IsArray` 時心裡想的
+        //          「這欄壞了」其實含著「這欄不存在」與「這欄是 null」兩種完全正常的狀態。
+        //          ⇒ 要分辨那三者仍然只能問 `Type` / `IsMissing` / `IsNull`，本組屬性**不取代**它們。
+        // 數值影響：純讀，不改任何狀態；Missing／Null 一律回 false（⛔ 不拋例外 —— 型別判定本身
+        //          不該是會炸的操作，那會讓「先問再取」變得比「直接取」還危險）。
+        public bool IsArray { get { return m_Type == SCP_JsonType.Array; } }
+        public bool IsObject { get { return m_Type == SCP_JsonType.Object; } }
+        public bool IsString { get { return m_Type == SCP_JsonType.String; } }
+
         // ── 建構 ──────────────────────────────────────────────
         SCP_JsonData(SCP_JsonType iType) { m_Type = iType; }
 
