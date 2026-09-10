@@ -39,7 +39,8 @@ namespace SCP.Core.Cmd
 
         public override string Name => "coding";
 
-        public override string Summary => "Coding 施工場（改 C# 前進場／場中更新 status 兼續期／退場過編譯閘）—— **不需要 Editor**";
+        public override string Summary => "Coding 施工場（改 C# 前進場／場中更新 status 兼續期／"
+            + "**綁單後單子進 in_review 就自動收場**／退場過編譯閘）—— **不需要 Editor**";
 
         public override string Details =>
             "⛔ **射程**：本 Cmd 是 **Senate 側**的入口（TASK-0058 A2）。Unity 那側走 `ucmd run Coding`。\n"
@@ -49,6 +50,20 @@ namespace SCP.Core.Cmd
             + "⚠ `op=start` 一律帶租期（預設 " + DefaultLeaseHours + " 小時）：沒有 `end_ts` 的場永遠不會變成殘留，\n"
             + "   而那代表**持有者掉線之後沒有人能回收它**。續期走 `op=status`（那一步本來就要跑）。\n"
             + "⚠ `op=end` 的編譯閘**由宿主注入**：沒登記時明說「未驗編譯」——「沒有量」不是「綠燈」。\n"
+            + "🔗 **綁單與自動收場**（TASK-0193，Tim 2026-09-10：目的是**縮短持有**）：\n"
+            + "   · `op=start --arg tasks=129,193` 開場即綁；**`op=bind`** 事後補綁（先進場才認領是常態）\n"
+            + "   · **`op=autoclose`**：綁定單**全部**離開施工狀態就收場。\n"
+            + "     判準是 **`in_review` 不是 `done`** —— 不等全部驗完；\n"
+            + "     `in_review` 被退回就**下次動工開新的場**，⛔ 不把舊場接回來。\n"
+            + "   · 它掛在 `senate cmd commit` 推單之後 ⇒ **不必記得收場**\n"
+            + "     （同 `Fixes` 掛在 commit 上的理由：掛在他一定會走的那條路上）。\n"
+            + "   · 五種「不收」各自說得出理由：`no-session`／`unbound`／\n"
+            + "     `task-missing`（**查無 ≠ 做完**）／`still-working`／\n"
+            + "     **`compile-red`（⛔ 紅燈不收，場還是你的）**。\n"
+            + "   · ⚠ 收場時工作區還有未提交的 Unity C# ⇒ **照收**，只把清單記進 session 檔並印出來\n"
+            + "     —— **那是資訊不是閘**：擋下會讓場握得更久，而縮短持有正是它存在的理由。\n"
+            + "   · ⛔ 射程只到 **Unity 端 C#**（含 `Assets/` 底下的 submodule）：\n"
+            + "     Senate 是獨立 repo、獨立編譯，可以同步改，不被這道閘排隊。\n"
             + "⛔ Senate 這一側的閘量的是**編譯**（`dotnet build`）；`build.sh` 出廠驗收**不在射程內**\n"
             + "   （它會覆寫正在執行的 `senate.exe`，從 CLI 裡面跑不了）—— 那一格是人要另外跑的。";
 
