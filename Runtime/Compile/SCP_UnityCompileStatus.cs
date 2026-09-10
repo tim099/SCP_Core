@@ -249,6 +249,148 @@ namespace SCP.Core.Compile
 
         static bool IsDigit(char iChar) => iChar >= '0' && iChar <= '9';
 
+        // ── 組件新鮮度（TASK-0159）────────────────────────────────
+
+        // ===========================================================
+        // 區塊職責：回答「**這一趟編到我改的檔了嗎**」—— 而那跟「編譯有沒有錯」是兩題。
+        // 物理意義：`.compile_status.json` 只證明「tracker 又寫了一份」。而 Unity 在
+        //   **沒有東西要編**的時候（視窗失焦沒 refresh／剛剛已經編過）照樣會寫一份新的
+        //   ⇒ 時間戳晚於基準、`in_progress=false`、`errors=0` —— 那份讀數與「真的編過我的改動」
+        //   **在回傳值上完全同形**。
+        //   🩸 2026-09-10 實測：改完 5 個 .cs 送 recompile，收到 `clean / 0.25s / warnings 0`
+        //     （前一趟同樣的改動是 5.94s / 21 warnings）。分辨它們的不是那份 JSON，
+        //     是 `.cs` 與 `.dll` 的 mtime 先後 —— 而那個比對當時是**人手動做的**。
+        // ⇒ 本函式把那一步變成讀數：**比最新組件還新的 .cs**，一個都不該有。
+        // 數值影響：純檔案系統 stat，不解析內容、不碰 Unity API。
+        // 邊界（⚠ 全部寫出來，因為它們的失效樣子都是安靜的）：
+        //   · **全域近似**：比的是「所有 .cs 的 mtime」對「**最新那顆** dll 的 mtime」，
+        //     ⛔ 不做 per-asmdef 對照（那要解析每個 asmdef 的射程，成本遠大於本症狀）。
+        //     ⇒ 已知假陰性：Unity 只重編了 B assembly，而我改的檔在**沒被重編的** A ——
+        //     最新 dll 很新，於是 A 那個檔被判成 fresh。⛔ 這一格本版**量不到**。
+        //   · 跳過路徑中含 `~` 的目錄（Unity 慣例：那種資料夾不進編譯），否則 `Tools~` 底下
+        //     的東西會製造永遠不會消失的假陽性。
+        //   · 找不到 `Library/ScriptAssemblies` ⇒ `Measured=false`，**⛔ 不是 0**。
+        //     那兩件事的處置相反（一個是「還沒編過」，一個是「已經同步」）。
+        // ===========================================================
+        public sealed class SCP_UnityStaleResult
+        {
+            /// <summary>有沒有量到。⛔ `false` 不等於 `StaleCount==0`。</summary>
+            public bool Measured;
+
+            /// <summary>沒量到的原因（`Measured=false` 時必有值）。</summary>
+            public string Error = "";
+
+            /// <summary>比最新組件還新的 .cs 數。</summary>
+            public int StaleCount;
+
+            /// <summary>其中幾個的相對路徑（有上限 —— 全列會把結論淹掉）。</summary>
+            public List<string> StaleFiles = new List<string>();
+
+            public DateTime NewestSourceUtc;
+            public DateTime NewestAssemblyUtc;
+            public string NewestSourcePath = "";
+        }
+
+        /// <summary>組件目錄（相對 Unity 專案根）。</summary>
+        public const string ScriptAssembliesRelPath = "Library/ScriptAssemblies";
+
+        /// <summary>比對 `Assets/` 下的 .cs 與 `Library/ScriptAssemblies/*.dll` 的 mtime。</summary>
+        public static SCP_UnityStaleResult StaleSources(string iProjectRoot, int iMaxList = 5)
+        {
+            var aOut = new SCP_UnityStaleResult();
+            string aRoot = iProjectRoot ?? "";
+            string aAsmDir = System.IO.Path.Combine(aRoot, "Library", "ScriptAssemblies");
+            if (!Directory.Exists(aAsmDir))
+            {
+                aOut.Error = "找不到 " + ScriptAssembliesRelPath + " —— **沒有量到**（不是「已經同步」）";
+                return aOut;
+            }
+
+            DateTime aNewestAsm = DateTime.MinValue;
+            foreach (string aDll in Directory.EnumerateFiles(aAsmDir, "*.dll", SearchOption.TopDirectoryOnly))
+            {
+                DateTime t = File.GetLastWriteTimeUtc(aDll);
+                if (t > aNewestAsm) aNewestAsm = t;
+            }
+            if (aNewestAsm == DateTime.MinValue)
+            {
+                aOut.Error = ScriptAssembliesRelPath + " 底下一個 .dll 都沒有 —— **沒有量到**";
+                return aOut;
+            }
+
+            string aAssets = System.IO.Path.Combine(aRoot, "Assets");
+            if (!Directory.Exists(aAssets))
+            {
+                aOut.Error = "找不到 " + aAssets + " —— **沒有量到**";
+                return aOut;
+            }
+
+            aOut.Measured = true;
+            aOut.NewestAssemblyUtc = aNewestAsm;
+            foreach (string aCs in Directory.EnumerateFiles(aAssets, "*.cs", SearchOption.AllDirectories))
+            {
+                if (IsInsideTildeFolder(aCs, aAssets)) continue;
+                DateTime t = File.GetLastWriteTimeUtc(aCs);
+                if (t > aOut.NewestSourceUtc)
+                {
+                    aOut.NewestSourceUtc = t;
+                    aOut.NewestSourcePath = Relative(aCs, aRoot);
+                }
+                if (t <= aNewestAsm) continue;
+                aOut.StaleCount++;
+                if (aOut.StaleFiles.Count < iMaxList) aOut.StaleFiles.Add(Relative(aCs, aRoot));
+            }
+            return aOut;
+        }
+
+        /// <summary>路徑中有沒有以 `~` 結尾的資料夾（Unity 不收那種目錄底下的腳本）。</summary>
+        static bool IsInsideTildeFolder(string iFullPath, string iStopAt)
+        {
+            string? aDir = System.IO.Path.GetDirectoryName(iFullPath);
+            while (!string.IsNullOrEmpty(aDir) && aDir.Length >= iStopAt.Length)
+            {
+                string aName = System.IO.Path.GetFileName(aDir);
+                if (aName.EndsWith("~", StringComparison.Ordinal)) return true;
+                aDir = System.IO.Path.GetDirectoryName(aDir);
+            }
+            return false;
+        }
+
+        static string Relative(string iFullPath, string iRoot)
+        {
+            string aFull = iFullPath.Replace(System.IO.Path.DirectorySeparatorChar, '/');
+            string aBase = (iRoot ?? "").Replace(System.IO.Path.DirectorySeparatorChar, '/').TrimEnd('/') + "/";
+            return aFull.StartsWith(aBase, StringComparison.OrdinalIgnoreCase) ? aFull.Substring(aBase.Length) : aFull;
+        }
+
+        /// <summary>把新鮮度結果組成可印的行（⚠ 沒量到、0、&gt;0 三種說法必須不同形）。</summary>
+        public static List<string> RenderStale(SCP_UnityStaleResult iStale)
+        {
+            var aLines = new List<string>();
+            if (!iStale.Measured)
+            {
+                aLines.Add("- 🧭 組件新鮮度：⚪ **沒有量到** —— " + iStale.Error);
+                return aLines;
+            }
+            string aAsm = iStale.NewestAssemblyUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+            if (iStale.StaleCount == 0)
+            {
+                aLines.Add("- 🧭 組件新鮮度：✅ **0 個 .cs 比組件新**（最新組件 " + aAsm
+                           + "；最新原始碼 " + iStale.NewestSourceUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)
+                           + "　`" + iStale.NewestSourcePath + "`）");
+                return aLines;
+            }
+            aLines.Add("- 🧭 組件新鮮度：🚨 **" + iStale.StaleCount + " 個 .cs 比最新組件（" + aAsm
+                       + "）還新 ⇒ 本讀數不涵蓋它們**");
+            foreach (string f in iStale.StaleFiles)
+                aLines.Add("    · " + f);
+            if (iStale.StaleCount > iStale.StaleFiles.Count)
+                aLines.Add("    · …另有 " + (iStale.StaleCount - iStale.StaleFiles.Count) + " 個未列");
+            aLines.Add("  ⇒ Unity 可能還沒 import 那些改動（視窗失焦時不會自動重編）。"
+                       + "⛔ 這一格為真時，上面的 errors 數字**不是**針對你這次的改動。");
+            return aLines;
+        }
+
         // ── 組輸出 ────────────────────────────────────────────────
 
         /// <summary>本層讀數的射程 —— **每一次印結論都要帶著它**。</summary>
