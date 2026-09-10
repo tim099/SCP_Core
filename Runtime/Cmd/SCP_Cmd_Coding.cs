@@ -365,7 +365,9 @@ namespace SCP.Core.Cmd
             {
                 string aWant = aIdx.Trim();
                 if (aWant.Length == 0) continue;
-                SCP_TaskEntry aHit = null;
+                // ⚠ 這裡要寫 `SCP_TaskEntry?`：Unity 那側 nullable 沒開，漏了它照樣綠燈；
+                //   而 senate 側 `dotnet build` 會 CS8600 紅燈。**兩側各自量才看得見**（TASK-0193 現場）。
+                SCP_TaskEntry? aHit = null;
                 foreach (var aT in aAll)
                     if (aT.index.ToString(CultureInfo.InvariantCulture) == aWant) { aHit = aT; break; }
                 if (aHit == null) { aMissing.Add(aWant); continue; }
