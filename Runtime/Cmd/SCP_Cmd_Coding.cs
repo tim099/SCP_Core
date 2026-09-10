@@ -18,6 +18,7 @@ using System.Collections.Generic;
 using SCP.Core.Paths;
 using System.Globalization;
 using System.IO;
+using System.Text.RegularExpressions;
 using SCP.Core.Git;
 using SCP.Core.Session;
 using SCP.Core.Tasks;
@@ -349,6 +350,9 @@ namespace SCP.Core.Cmd
             return aOut;
         }
 
+        /// <summary>porcelain 行首的狀態欄（1~2 個狀態字元 ＋ 空白）—— 見 CollectDirtyCs 的血證。</summary>
+        static readonly Regex s_PorcelainHead = new Regex(@"^[ MADRCU?!]{1,2}\s+");
+
         /// <summary>單一 repo 的髒 `.cs`；<paramref name="iPrefix"/> 讓 submodule 內的路徑印得出全貌。</summary>
         static void CollectDirtyCs(string iRepo, string iPrefix, List<string> oOut)
         {
@@ -360,7 +364,15 @@ namespace SCP.Core.Cmd
             {
                 string aL = aLine.TrimEnd();
                 if (aL.Length < 4) continue;
-                string aPath = aL.Substring(3).Trim();
+                // 🩸 ⛔ 不要用 `Substring(3)` —— porcelain 原始行是 `XY path`（前 3 格固定），
+                //   但 `SCP_Git.OutLines()` **會把左邊的空白去掉** ⇒ ` M path` 進來時已經是 `M path`，
+                //   固定切 3 個字會**多吃掉路徑的第一個字元**。
+                //   （2026-09-10 探針實測：印出 `UCL_Core/CL_Core_Scripts/…`，開頭的 U 不見了。
+                //     那種壞法不會報錯，只會產出一條**看起來很像真的**的假路徑。）
+                //   ⇒ 改成把狀態欄整段吃掉，不假設它有幾個字。
+                Match aM = s_PorcelainHead.Match(aL);
+                if (!aM.Success) continue;
+                string aPath = aL.Substring(aM.Length).Trim();
                 int aArrow = aPath.IndexOf(" -> ", StringComparison.Ordinal);
                 if (aArrow >= 0) aPath = aPath.Substring(aArrow + 4);
                 aPath = aPath.Trim('"');
