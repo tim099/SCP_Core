@@ -301,19 +301,13 @@ namespace SCP.Core.Cmd
             var aHeld = SCP_ActivitySessionStore.Load<SCP_CodingSession>(iRoot, iBlocker.persona,
                 SCP_ActivitySessionKind.Coding);
             string aTheirScope = aHeld != null ? aHeld.scope : "";
-            // ⚠ **擋下的理由有三種，處置不同** —— 壓成一句「場被佔了」會讓人去做錯的那件事：
-            //   (1) 我沒宣告範圍 ⇒ 我自己補 `--arg scope=` 就可能直接進得去（不必等任何人）
-            //   (2) 他沒宣告範圍 ⇒ 要他補，我等不出結果
-            //   (3) 兩邊都宣告了而真的撞到 ⇒ 說出是哪兩段路徑撞
-            string aWhy;
-            if (iScope.Length == 0)
-                aWhy = "  · 擋你的是**你自己沒宣告施工範圍** ⇒ 本場退化成全域獨佔。"
-                       + "補上 `--arg scope=<絕對路徑>` 再試一次，範圍不撞就進得去。";
-            else if (aTheirScope.Length == 0)
-                aWhy = "  · 他**沒有宣告施工範圍** ⇒ 視同他可能改任何地方 ⇒ 擋你。"
-                       + "⛔ 這一格你補不了，要他補（或等他到期）。";
-            else
-                aWhy = "  · 範圍撞到：" + SCP_SessionScope.Explain(iScope, aTheirScope);
+            // ⚠ **擋下的理由有三種，處置不同** —— 壓成一句「場被佔了」會讓人去做錯的那件事。
+            //   ⛔ 判定與措辭**不寫在這裡**：同一段話 Unity 那側也要印，寫兩份就是 TASK-0203 那隻。
+            SCP_SessionScope.BlockKind aBlockKind = SCP_SessionScope.Classify(iScope, aTheirScope);
+            string aWhy = "  · " + SCP_SessionScope.ReasonOf(aBlockKind, iScope, aTheirScope);
+            string aScopeExit = SCP_SessionScope.ExitOf(aBlockKind,
+                SCP_CmdRegistry.Invoke("coding --arg op=start --arg persona=" + iPersona
+                                       + " --arg status=<一句> --arg scope=<絕對路徑>"));
             return SCP_CmdResult.Fail(2,
                 "✗ **@" + iBlocker.persona + "** 正在 Coding（`" + iBlocker.session_id + "`）—— 而他的範圍擋到你",
                 "  · 他在改：" + (aHeld != null && aHeld.status.Length > 0 ? aHeld.status : "（沒寫 status）"),
@@ -321,7 +315,10 @@ namespace SCP.Core.Cmd
                 "  · 你的範圍：" + (iScope.Length > 0 ? "`" + iScope + "`" : "**（沒宣告 ⇒ 整棵樹）**"),
                 aWhy,
                 "  · 租期至：" + (iBlocker.until_local.Length > 0 ? iBlocker.until_local : "（無截止）"),
-                "  處理方式：等他到期，或去酒館問他還要多久；查現況 " + SCP_CmdRegistry.Invoke("coding"),
+                // ⚠ 只有「我自己沒宣告」那一種有自己補得了的出口 —— 它要排在「等他」前面，
+                //   不然讀的人會照著「等」去等一件他本來不必等的事。
+                aScopeExit.Length > 0 ? "  處理方式：" + aScopeExit
+                    : "  處理方式：等他到期，或去酒館問他還要多久；查現況 " + SCP_CmdRegistry.Invoke("coding"),
                 "  ⛔ 不要直接關別人的場 —— 那要顯式走 "
                     + SCP_CmdRegistry.Invoke("sessions --arg op=close --arg target_persona=" + iBlocker.persona + " --arg confirm=1"));
         }
