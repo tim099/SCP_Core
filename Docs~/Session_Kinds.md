@@ -1,7 +1,7 @@
 ---
 title: 新增一種 activity session kind
 description: 「一人一檔位」的 session 層要新增一種 kind 時，要動哪幾格、哪幾格會自動生效、以及三個不會報錯的漏做。
-last_updated: 2026-09-05
+last_updated: 2026-09-11
 target_audience: [AI_Agent, Tools_Maintainer, Backend_Programmer]
 related:
   - Coding_Standards.md | SCP 專案撰寫規範 | 方言／JSON／prefs／路徑單一落點
@@ -65,6 +65,28 @@ if (!UCL_SessionStartGuard.TryStart(aPersona, aSession, Kind, out string aReason
 - **被擋時一個位元組都不寫** ⇒ 守衛之後的發券／擲骰／公告一格都不會發生。
 - ⚠ **「同 kind 疊開」不歸它管** —— 那是各 kind 自己的守衛。兩條是**正交的軸**，
   混在一起會讓其中一條的失效被另一條的通過掩蓋。
+### 📐 全域互斥的 kind 要多傳一個「施工範圍」（TASK-0201，2026-09-11）
+
+`TryStart` 的最後一個參數是**選填**的 `iScope`（絕對路徑）。它只被
+`SCP_ActivitySessionKind.IsGlobalExclusive(kind)` 為真的那些 kind 讀。
+
+判準從「這個 kind 有人在跑就擋」收窄成「有人在跑**而且範圍撞到我**才擋」——
+重疊＝**路徑包含**（`…/Assets/Scripts` 與 `…/Assets/Scripts/Conditions` 重疊）。
+實作在 `SCP_SessionScope`（正規化＋重疊）與 `SCP_ActivitySessionStore.FindConflictingGlobal`。
+
+- ⛔ **兩側任一沒宣告範圍 ⇒ 退化成舊行為（全擋）。** 那是安全側：
+  反過來（缺欄位就放行）會讓舊 session 檔在升級的那一刻**靜默失去保護**，
+  而症狀是兩個人同時進場、各自以為自己是唯一。
+- ⚠ **範圍解不開 ≠ 沒宣告** —— 呼叫端要當場擋下並說原因，⛔ 不可以靜默退化：
+  靜默退化會讓打錯路徑的人拿到一個他沒要的全域鎖，而輸出跟「我刻意不宣告」一模一樣。
+- ⚠ 判準是**純路徑**（Tim 2026-09-11 拍板）：同一個 repo 的兩份工作副本
+  （`Senate/SCP_Core` 與 `LY/Assets/Plugins/SCP_Core`）**不算衝突**。
+  代價已知且被選擇：兩人各改一份副本的同一支檔時這道閘不叫，要到 push 分叉才現形。
+- ⚠ `FindRunningGlobal`（有沒有人在跑）與 `FindConflictingGlobal`（有沒有人擋到我）
+  **不可以互相取代** —— show 那種問題問前者，進場守衛問後者。
+  列全部在場的人走 `ListRunningGlobal`：只印第一場的話，
+  「只有一個人在場上」與「有三個人但我只看得到一個」在輸出上同形。
+
 - ⚠ 每一條**建立 session 的路徑**都要走它，不是只有那個叫 `start` 的。
   🩸 觀影有兩條：`step=start` 與 **`step=join`** —— 後者最容易漏，因為那支上面已經擋過
   「你自己那場觀影」，而那道守衛看不見別的 kind。
