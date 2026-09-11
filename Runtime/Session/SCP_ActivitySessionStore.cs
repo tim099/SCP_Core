@@ -182,8 +182,14 @@ namespace SCP.Core.Session
         /// ⇒ 守衛放行 ⇒ `Save` 覆蓋掉它。**擋在寫入端，不是擋在每個呼叫端的記性上。**
         /// </remarks>
         /// <param name="oBlockedBy">被擋下時，這裡是**擋住你的那一場**（給呼叫端組「原因＋處理方式」）。</param>
+        /// <param name="iScope">
+        /// 施工範圍（絕對路徑，TASK-0201）。**只有全域互斥的 kind 會讀它。**
+        /// ⚠ 空字串／不給 ＝ **沒宣告範圍 ⇒ 退化成舊行為（整個 kind 全域獨佔）**。
+        /// 那是刻意的安全側：舊入口與舊 session 檔都沒有這一格，
+        /// 而「少一個欄位」絕不可以讓一道既有的閘變成誰都擋不住。
+        /// </param>
         public static bool TryStart(SCP_DataRoot iRoot, string? iPersona, SCP_ActivitySession iSession,
-            string iKind, DateTime iNowLocal, out SCP_ActivitySession? oBlockedBy)
+            string iKind, DateTime iNowLocal, out SCP_ActivitySession? oBlockedBy, string? iScope = null)
         {
             oBlockedBy = null;
 
@@ -205,7 +211,9 @@ namespace SCP.Core.Session
             //      會共用一個回傳，而那兩件事的**處理方式相反**（前者關自己的場，後者要等別人）。
             if (SCP_ActivitySessionKind.IsGlobalExclusive(iKind))
             {
-                SCP_ActivitySession? aHolder = FindRunningGlobal(iRoot, iKind, iNowLocal, iPersona);
+                // ⭐ TASK-0201：判準從「這個 kind 有人在跑」收窄成「有人在跑**而且範圍撞到我**」。
+                //   ⚠ 收窄的是**擋的條件**，不是擋的強度 —— 沒宣告範圍的那一側仍然照舊全擋。
+                SCP_ActivitySession? aHolder = FindConflictingGlobal(iRoot, iKind, iNowLocal, iPersona, iScope);
                 if (aHolder != null)
                 {
                     oBlockedBy = aHolder;
@@ -242,6 +250,81 @@ namespace SCP.Core.Session
                 if (aS.IsRunningAt(iNowLocal, out _)) return aS;
             }
             return null;
+        }
+
+        // ===========================================================
+        // 區塊職責：全域互斥那條軸的**新判準** —— 找「同 kind、進行中、而且範圍撞到我」的那一場。
+        // 物理意義：<see cref="FindRunningGlobal"/> 回答「有沒有人在跑」，本函式回答「有沒有人擋到我」。
+        //           兩者**不可以互相取代**：show 那種「現在誰在場上」的問題要問前者，
+        //           進場守衛要問後者 —— 混用會讓「場上有人」被讀成「我進不去」。
+        // 數值影響：與 FindRunningGlobal 同一條走訪（LoadAll，O(檔數)、零快取）。
+        //
+        // ⚠ **兩側都沒宣告範圍就退化成舊行為**，而那是安全側不是偷懶：
+        //   · 我沒宣告 ⇒ 我可能改任何地方 ⇒ 誰在場上都擋我。
+        //   · 對方沒宣告 ⇒ 他可能改任何地方 ⇒ 他擋我。
+        //   ⛔ 反過來（缺欄位就放行）會讓舊 session 檔在升級的那一刻**靜默失去保護**，
+        //      而那一格不會報錯 —— 兩個人會同時進場，然後各自以為自己是唯一。
+        // ⚠ 範圍字串**解不開**時一律當成「沒宣告」⇒ 擋。打錯路徑的代價是排隊，不是失去互斥。
+        // ===========================================================
+        /// <summary>同 kind、進行中、且範圍與 <paramref name="iScope"/> 重疊的那一場；沒有回 null。</summary>
+        public static SCP_ActivitySession? FindConflictingGlobal(SCP_DataRoot iRoot, string? iKind,
+            DateTime iNowLocal, string? iExceptPersona, string? iScope)
+        {
+            if (string.IsNullOrEmpty(iKind)) return null;
+            bool aHasMine = SCP_SessionScope.TryNormalize(iScope, out string aMine, out _);
+            List<SCP_ActivitySession> aAll = LoadAll(iRoot);
+            for (int i = 0; i < aAll.Count; ++i)
+            {
+                SCP_ActivitySession aS = aAll[i];
+                if (!string.Equals(aS.kind, iKind, StringComparison.Ordinal)) continue;
+                if (!string.IsNullOrEmpty(iExceptPersona)
+                    && string.Equals(aS.persona, iExceptPersona, StringComparison.Ordinal)) continue;
+                if (!SCP_ActivitySessionKind.IsRegistered(aS.kind)) continue;
+                if (!aS.IsRunningAt(iNowLocal, out _)) continue;
+
+                if (!aHasMine) return aS;                                   // 我沒宣告 ⇒ 誰都擋我
+                if (!SCP_SessionScope.TryNormalize(ScopeOf(aS), out string aTheirs, out _))
+                    return aS;                                              // 他沒宣告 ⇒ 他擋我
+                if (SCP_SessionScope.Overlaps(aMine, aTheirs)) return aS;
+            }
+            return null;
+        }
+
+        /// <summary>某 kind 現正進行中的**全部**場（掃全體）—— show 那一側用，⛔ 不要拿它當守衛。</summary>
+        /// <remarks>
+        /// 🩸 為什麼要有「全部」而不是沿用只回第一場的 <see cref="FindRunningGlobal"/>：
+        /// 範圍判準上路之後**場上可以同時有好幾個人**，而只印第一個會讓
+        /// 「只有一個人在場上」與「有三個人但我只看得到一個」在輸出上同形。
+        /// </remarks>
+        public static List<SCP_ActivitySession> ListRunningGlobal(SCP_DataRoot iRoot, string? iKind,
+            DateTime iNowLocal)
+        {
+            var aOut = new List<SCP_ActivitySession>();
+            if (string.IsNullOrEmpty(iKind)) return aOut;
+            List<SCP_ActivitySession> aAll = LoadAll(iRoot);
+            for (int i = 0; i < aAll.Count; ++i)
+            {
+                SCP_ActivitySession aS = aAll[i];
+                if (!string.Equals(aS.kind, iKind, StringComparison.Ordinal)) continue;
+                if (!SCP_ActivitySessionKind.IsRegistered(aS.kind)) continue;
+                if (aS.IsRunningAt(iNowLocal, out _)) aOut.Add(aS);
+            }
+            return aOut;
+        }
+
+        /// <summary>JSON 裡施工範圍那一格的鍵名（＝<c>SCP_CodingSession.scope</c> 的欄位名）。</summary>
+        public const string ScopeKey = "scope";
+
+        // 區塊職責：從**任何**一場（含只讀成基底型別的那些）取出範圍字串。
+        // 物理意義：`LoadAll` 讀回來的是基底 <see cref="SCP_ActivitySession"/>，kind 專屬欄位一個都不認識 ——
+        //           但 <see cref="SCP_ActivitySession.Raw"/> 原樣留著那些鍵（這就是 Raw 存在的理由）。
+        //           ⇒ **讀取只有這一個入口**，不要在呼叫端各自 `Raw["scope"]`：兩份讀法會漂。
+        /// <summary>這一場宣告的施工範圍；沒宣告或讀不到回空字串。</summary>
+        public static string ScopeOf(SCP_ActivitySession? iSession)
+        {
+            SCP_JsonData? aRaw = iSession?.Raw;
+            if (aRaw == null || aRaw.Type != SCP_JsonType.Object) return "";
+            return aRaw.GetString(ScopeKey, "");
         }
 
         /// <summary>

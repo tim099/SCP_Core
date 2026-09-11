@@ -45,8 +45,18 @@ namespace SCP.Core.Cmd
         public override string Details =>
             "⛔ **射程**：本 Cmd 是 **Senate 側**的入口（TASK-0058 A2）。Unity 那側走 `ucmd run Coding`。\n"
             + "兩邊寫的是**同一個檔位**（`<data_root>/sessions/<persona>.json`）⇒ 互相擋得到。\n"
-            + "⭐ 全域獨佔（同時至多一人）由 `SCP_ActivitySessionStore.TryStart` 那一層保證，本 Cmd 不自己判 ——\n"
+            + "⭐ 全域互斥由 `SCP_ActivitySessionStore.TryStart` 那一層保證，本 Cmd 不自己判 ——\n"
             + "   自己判就是第三份判準，而它會跟前兩份不一致且**不報錯**。\n"
+            + "📐 **施工範圍**（TASK-0201）：`op=start --arg scope=<絕對路徑>` 宣告這一場要動哪一塊，\n"
+            + "   **範圍不重疊的人可以同時開場**；重疊才擋（重疊＝路徑包含，\n"
+            + "   `…/Assets/Scripts` 與 `…/Assets/Scripts/Conditions` 重疊）。\n"
+            + "   ⚠ 宣告要取**最大範圍** —— 宣告得比實際改的窄，擋不住真正會撞的人，\n"
+            + "     而失效樣子是兩個人都進場了然後改到同一支檔，**這道閘不會叫**。\n"
+            + "   ⛔ **不宣告 ⇒ 退化成舊行為（整個 kind 全域獨佔，誰都擋）** —— 那是安全側，\n"
+            + "     不是「還沒做的那一半」。\n"
+            + "   ⚠ 判準是**純路徑**（Tim 2026-09-11 拍板）：同一個 repo 的兩份工作副本\n"
+            + "     （`Senate/SCP_Core` 與 `LY/Assets/Plugins/SCP_Core`）**不算衝突**。\n"
+            + "     代價已知：兩人各改一份副本的同一支檔時這道閘不叫，要到 push 分叉才現形。\n"
             + "⚠ `op=start` 一律帶租期（預設 " + DefaultLeaseHours + " 小時）：沒有 `end_ts` 的場永遠不會變成殘留，\n"
             + "   而那代表**持有者掉線之後沒有人能回收它**。續期走 `op=status`（那一步本來就要跑）。\n"
             + "⚠ `op=end` 的編譯閘**由宿主注入**：沒登記時明說「未驗編譯」——「沒有量」不是「綠燈」。\n"
@@ -78,6 +88,8 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("persona", "誰的場（start／status／end 必填 —— ⚠ 不猜身分）"),
             new SCP_CmdArgSpec("status", "正在改哪一部分，一句話（start 必填；status 用它更新）"),
             new SCP_CmdArgSpec("hours", "租期小時數（start 選填，預設 " + DefaultLeaseHours + "；status 會用它續期）"),
+            new SCP_CmdArgSpec("scope", "這一場的**施工範圍**（絕對路徑，取施工的最大範圍）。start 選填。"
+                               + "範圍不重疊的人可以同時開場；⛔ **不給＝整個 kind 全域獨佔**（舊行為）"),
             new SCP_CmdArgSpec("force", "end 用：編譯紅燈時顯式硬退（要同時給 force_reason）"),
             new SCP_CmdArgSpec("force_reason", "force 退場的理由 —— 會寫進 session 檔，事後查得到"),
             // ⚠ 綁定是**多對多**：一場多單、一單多場都成立 ⇒ 這裡收的是清單不是單一值。
@@ -97,7 +109,7 @@ namespace SCP.Core.Cmd
             {
                 case "show": return OpShow(aRoot);
                 case "start": return OpStart(aRoot, aPersona, iArgs.Get("status").Trim(), ParseHours(iArgs),
-                                             iArgs.Get("tasks").Trim());
+                                             iArgs.Get("tasks").Trim(), iArgs.Get("scope").Trim());
                 case "bind": return OpBind(aRoot, aPersona, iArgs.Get("tasks").Trim());
                 case "autoclose": return OpAutoClose(aRoot, aPersona);
                 case "status": return OpStatus(aRoot, aPersona, iArgs.Get("status").Trim(), ParseHours(iArgs));
@@ -118,35 +130,68 @@ namespace SCP.Core.Cmd
 
         // ── show ──────────────────────────────────────────────────
 
+        // ⚠ 範圍判準上路之後**場上可以同時有好幾個人**（TASK-0201）⇒ 這裡一律列**全部**。
+        //   🩸 只印第一場的話，「只有一個人在場上」與「有三個人但我只看得到一個」在輸出上同形，
+        //     而讀的人會拿它去推「我撞不撞得到」—— 那個推論會錯得很安靜。
         static SCP_CmdResult OpShow(SCP_DataRoot iRoot)
         {
-            SCP_ActivitySession? aHolder = SCP_ActivitySessionStore.FindRunningGlobal(
+            var aHolders = SCP_ActivitySessionStore.ListRunningGlobal(
                 iRoot, SCP_ActivitySessionKind.Coding, DateTime.Now);
-            if (aHolder == null)
+            if (aHolders.Count == 0)
             {
                 var aFree = SCP_CmdResult.Success("· Coding 場：**沒有人持有**（掃全體 session 檔）",
                     "⚠ 「沒查到」的射程：**只涵蓋走過 `TryStart` 的那些場** —— 直接 `Save` 開的場不在裡面。");
-                return aFree.AddValue("held", "0");
+                return aFree.AddValue("held", "0").AddValue("holders", "0");
             }
-            var aS = SCP_ActivitySessionStore.Load<SCP_CodingSession>(iRoot, aHolder.persona,
-                SCP_ActivitySessionKind.Coding);
-            var aOut = SCP_CmdResult.Success(
-                "· Coding 場持有者：**" + aHolder.persona + "**　`" + aHolder.session_id + "`",
-                "· 在改：" + (aS != null && aS.status.Length > 0 ? aS.status : "（沒寫 status）"),
-                "· 租期至：" + (aHolder.until_local.Length > 0 ? aHolder.until_local : "（無截止 —— 這種場回收不了，見 Session_Kinds.md §5.5）"));
-            return aOut.AddValue("held", "1").AddValue("holder", aHolder.persona);
+            var aLines = new List<string>
+            {
+                "· Coding 場：**" + aHolders.Count + " 人在場**（範圍不重疊可同時開場）",
+            };
+            int aNoScope = 0;
+            for (int i = 0; i < aHolders.Count; ++i)
+            {
+                SCP_ActivitySession aH = aHolders[i];
+                var aS = SCP_ActivitySessionStore.Load<SCP_CodingSession>(iRoot, aH.persona,
+                    SCP_ActivitySessionKind.Coding);
+                string aScope = aS != null ? aS.scope : "";
+                if (aScope.Length == 0) ++aNoScope;
+                aLines.Add("  · **" + aH.persona + "**　`" + aH.session_id + "`");
+                aLines.Add("    在改：" + (aS != null && aS.status.Length > 0 ? aS.status : "（沒寫 status）"));
+                aLines.Add("    範圍：" + (aScope.Length > 0 ? "`" + aScope + "`"
+                                            : "**（沒宣告 ⇒ 視同整棵樹，會擋所有人）**"));
+                aLines.Add("    租期至：" + (aH.until_local.Length > 0 ? aH.until_local
+                    : "（無截止 —— 這種場回收不了，見 Session_Kinds.md §5.5）"));
+            }
+            if (aNoScope > 0)
+                aLines.Add("⚠ 其中 **" + aNoScope + " 場沒宣告範圍** ⇒ 那幾場會擋下所有人，不論你宣告什麼範圍。");
+            var aOut = SCP_CmdResult.Success(aLines.ToArray());
+            return aOut.AddValue("held", "1").AddValue("holders", aHolders.Count.ToString())
+                       .AddValue("holder", aHolders[0].persona)
+                       .AddValue("no_scope", aNoScope.ToString());
         }
 
         // ── start ─────────────────────────────────────────────────
 
         static SCP_CmdResult OpStart(SCP_DataRoot iRoot, string iPersona, string iStatus, int iHours,
-                                     string iTasks)
+                                     string iTasks, string iScope)
         {
             if (iPersona.Length == 0) return SCP_CmdResult.Fail(2, "✗ op=start 需要 --arg persona=<你>（不猜身分）");
             if (iStatus.Length == 0)
                 return SCP_CmdResult.Fail(2, "✗ op=start 需要 --arg status=<正在改哪一部分，一句話>",
                     "  ⚠ 它不是文書工作：**別人被擋下時看到的就是這一句**。沒有它，擋人的訊息說不出你在做什麼。");
             if (iHours < 0) return SCP_CmdResult.Fail(2, "✗ --arg hours 要是正整數（小時）");
+
+            // ⚠ 範圍**解不開**時當場擋下，⛔ 不要靜默退化成「沒宣告」——
+            //   那會讓打錯路徑的人拿到一個他沒要的全域鎖，而輸出上跟「我刻意不宣告」一模一樣。
+            string aScope = "";
+            if (iScope.Length > 0)
+            {
+                if (!SCP_SessionScope.TryNormalize(iScope, out aScope, out string aScopeErr))
+                    return SCP_CmdResult.Fail(2,
+                        "✗ --arg scope 解析不了：`" + iScope + "`"
+                            + (aScopeErr.Length > 0 ? "（" + aScopeErr + "）" : ""),
+                        "  要的是**絕對路徑**，例：`D:/Unity/LY/Assets/Plugins/UCL_Core`");
+            }
 
             DateTime aNow = DateTime.Now;
 
@@ -206,14 +251,15 @@ namespace SCP.Core.Cmd
                 status = iStatus,
                 status_updated = SCP_ActivitySession.NowIso(),
                 tasks = NormalizeTasks(iTasks),
+                scope = aScope,
             };
 
             if (!SCP_ActivitySessionStore.TryStart(iRoot, iPersona, aSession, SCP_ActivitySessionKind.Coding,
-                                                   aNow, out SCP_ActivitySession? aBlocker))
+                                                   aNow, out SCP_ActivitySession? aBlocker, aScope))
             {
                 if (aBlocker == null)
                     return SCP_CmdResult.Fail(70, "✗ session 寫入失敗（不是被擋）—— 確認資料根可寫：" + iRoot.Value);
-                return Blocked(iRoot, iPersona, aBlocker);
+                return Blocked(iRoot, iPersona, aBlocker, aScope);
             }
 
             var aOk = SCP_CmdResult.Success(
@@ -224,16 +270,24 @@ namespace SCP.Core.Cmd
                 "⚠ 租期到期**不會自動釋放**，只是落回「殘留」；別人要搶場得顯式 "
                     + SCP_CmdRegistry.Invoke("sessions --arg op=close --arg target_persona=" + iPersona + " --arg confirm=1"),
                 ScopeCaveat);
+            // ⚠ 沒宣告範圍要**明說它的後果**，不要安靜 —— 安靜的話「我沒宣告」會被讀成「我宣告了全部」，
+            //   而那兩句話在擋人的結果上一樣、在使用者的預期上相反。
+            aOk.Lines.Add(aScope.Length > 0
+                ? "· 施工範圍：`" + aScope + "` ⇒ **範圍不重疊的人可以同時開場**"
+                : "· ⚠ **沒宣告施工範圍** ⇒ 本場退化成**整個 kind 全域獨佔**（誰都進不來）。要宣告："
+                    + SCP_CmdRegistry.Invoke("coding --arg op=start --arg persona=" + iPersona
+                                             + " --arg status=<一句> --arg scope=<絕對路徑>"));
             // ⚠ 沒綁單就明說「不會自動收」 —— 這一格如果安靜，人會以為自動收場對所有場都成立。
             aOk.Lines.Add(aSession.tasks.Length > 0
                 ? "· 綁定單：**" + aSession.tasks + "** ⇒ 它們**全部**離開施工狀態（in_review／done）時本場會自動收"
                 : "· ⚠ **沒有綁單** ⇒ 本場**不會自動收**（只能手動 op=end）。要綁："
                     + SCP_CmdRegistry.Invoke("coding --arg op=bind --arg persona=" + iPersona + " --arg tasks=<單號>"));
             return aOk.AddValue("session_id", aSession.session_id).AddValue("until_local", aSession.until_local)
-                      .AddValue("tasks", aSession.tasks);
+                      .AddValue("tasks", aSession.tasks).AddValue("scope", aScope);
         }
 
-        static SCP_CmdResult Blocked(SCP_DataRoot iRoot, string iPersona, SCP_ActivitySession iBlocker)
+        static SCP_CmdResult Blocked(SCP_DataRoot iRoot, string iPersona, SCP_ActivitySession iBlocker,
+                                     string iScope)
         {
             bool aMine = string.Equals(iBlocker.persona, iPersona, StringComparison.Ordinal);
             // ⚠ 兩條軸擋下來的東西**不同形**，處理方式相反：
@@ -246,9 +300,26 @@ namespace SCP.Core.Cmd
             }
             var aHeld = SCP_ActivitySessionStore.Load<SCP_CodingSession>(iRoot, iBlocker.persona,
                 SCP_ActivitySessionKind.Coding);
+            string aTheirScope = aHeld != null ? aHeld.scope : "";
+            // ⚠ **擋下的理由有三種，處置不同** —— 壓成一句「場被佔了」會讓人去做錯的那件事：
+            //   (1) 我沒宣告範圍 ⇒ 我自己補 `--arg scope=` 就可能直接進得去（不必等任何人）
+            //   (2) 他沒宣告範圍 ⇒ 要他補，我等不出結果
+            //   (3) 兩邊都宣告了而真的撞到 ⇒ 說出是哪兩段路徑撞
+            string aWhy;
+            if (iScope.Length == 0)
+                aWhy = "  · 擋你的是**你自己沒宣告施工範圍** ⇒ 本場退化成全域獨佔。"
+                       + "補上 `--arg scope=<絕對路徑>` 再試一次，範圍不撞就進得去。";
+            else if (aTheirScope.Length == 0)
+                aWhy = "  · 他**沒有宣告施工範圍** ⇒ 視同他可能改任何地方 ⇒ 擋你。"
+                       + "⛔ 這一格你補不了，要他補（或等他到期）。";
+            else
+                aWhy = "  · 範圍撞到：" + SCP_SessionScope.Explain(iScope, aTheirScope);
             return SCP_CmdResult.Fail(2,
-                "✗ **@" + iBlocker.persona + "** 正在 Coding（`" + iBlocker.session_id + "`）—— 這種場全域同時只能一個人",
+                "✗ **@" + iBlocker.persona + "** 正在 Coding（`" + iBlocker.session_id + "`）—— 而他的範圍擋到你",
                 "  · 他在改：" + (aHeld != null && aHeld.status.Length > 0 ? aHeld.status : "（沒寫 status）"),
+                "  · 他的範圍：" + (aTheirScope.Length > 0 ? "`" + aTheirScope + "`" : "**（沒宣告 ⇒ 整棵樹）**"),
+                "  · 你的範圍：" + (iScope.Length > 0 ? "`" + iScope + "`" : "**（沒宣告 ⇒ 整棵樹）**"),
+                aWhy,
                 "  · 租期至：" + (iBlocker.until_local.Length > 0 ? iBlocker.until_local : "（無截止）"),
                 "  處理方式：等他到期，或去酒館問他還要多久；查現況 " + SCP_CmdRegistry.Invoke("coding"),
                 "  ⛔ 不要直接關別人的場 —— 那要顯式走 "
@@ -489,6 +560,21 @@ namespace SCP.Core.Cmd
             var aS = Mine(iRoot, iPersona, out SCP_CmdResult? aErr);
             if (aS == null) return aErr!;
 
+            // ⚠ TASK-0201：多場並行之後，**編譯閘量的是整棵樹，不是我那一塊** ——
+            //   它讀不出「這個紅字是誰造的」。⇒ 這裡把「同時還有誰在場」印出來，讓讀的人自己判。
+            //   ⛔ **不拿它去放寬紅燈**（那會讓我自己弄壞的也一起被放過）；也⛔ 不擋 ——
+            //     只是把一個沒有定語的讀數補上定語。
+            var aOthers = SCP_ActivitySessionStore.ListRunningGlobal(
+                iRoot, SCP_ActivitySessionKind.Coding, DateTime.Now);
+            var aOtherNames = new List<string>();
+            for (int i = 0; i < aOthers.Count; ++i)
+                if (!string.Equals(aOthers[i].persona, iPersona, StringComparison.Ordinal))
+                    aOtherNames.Add("@" + aOthers[i].persona);
+            string aConcurrentNote = aOtherNames.Count == 0
+                ? ""
+                : "  ⚠ **同時在場的還有 " + string.Join("、", aOtherNames.ToArray())
+                  + "** ⇒ 這個編譯讀數涵蓋整棵樹，**它分不出紅字是誰造的**。";
+
             SCP_CodingExitVerdict? aVerdict = SCP_CodingExitGateHost.Run();
             var aLines = new List<string>();
             if (aVerdict == null)
@@ -498,13 +584,23 @@ namespace SCP.Core.Cmd
             }
             else if (!aVerdict.Value.Green && !iForce)
             {
-                return SCP_CmdResult.Fail(2,
+                var aRed = SCP_CmdResult.Fail(2,
                     "✗ 編譯閘**紅燈** —— 不放行：" + aVerdict.Value.Summary,
-                    "  射程：" + aVerdict.Value.Scope,
+                    "  射程：" + aVerdict.Value.Scope);
+                if (aConcurrentNote.Length > 0)
+                {
+                    aRed.Lines.Add(aConcurrentNote);
+                    aRed.Lines.Add("    ⇒ 先看紅的是不是你範圍內的檔；不是的話去問他，"
+                                   + "⛔ 別替別人改（也別拿它當 force 的理由）。");
+                }
+                aRed.Lines.AddRange(new[]
+                {
                     "  處理方式（擇一）：",
                     "    ① 修完再退（**建議**）",
                     "    ② 顯式硬退：" + SCP_CmdRegistry.Invoke("coding --arg op=end --arg persona=" + iPersona + " --arg force=1 --arg force_reason=<為什麼帶著紅燈退場>"),
-                    "  ⚠ ② 的理由會寫進 session 檔 —— 事後查得到是誰、為什麼。");
+                    "  ⚠ ② 的理由會寫進 session 檔 —— 事後查得到是誰、為什麼。",
+                });
+                return aRed;
             }
             else if (!aVerdict.Value.Green)
             {
@@ -517,6 +613,9 @@ namespace SCP.Core.Cmd
                 aLines.Add("- 🔒 編譯閘：**綠燈** —— " + aVerdict.Value.Summary);
                 aLines.Add("  · 射程：" + aVerdict.Value.Scope);
             }
+            // ⚠ 綠燈也要這句：綠的射程同樣是整棵樹 ⇒ 它**不是**「我那一塊是對的」的證據，
+            //   而是「此刻整棵樹編得過」。兩者在同一個字上，差別只有定語。
+            if (aConcurrentNote.Length > 0) aLines.Add(aConcurrentNote);
 
             // Coding 沒有金流 ⇒ base close（翻三欄）。⚠ 這是**顯式的**，不是「還沒接結算」。
             SCP_ActivitySessionStore.Close(iRoot, iPersona, aS, iForce ? "coding-end-forced" : "coding-end");
