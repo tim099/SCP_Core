@@ -355,12 +355,33 @@ namespace SCP.Core.Cmd
 
         // ── end（過閘才放行）─────────────────────────────────────
 
+        // 區塊職責：把幾張單**補綁**到某人現有的 Coding 場上（load → 合併 → 落檔 → 回讀）。
+        // 物理意義：這一段有**兩個消費端** —— 本檔的 `op=bind`，與 Unity 側 `Cmd_Task` 的
+        //           「認領一張單順手綁到我的場上」（TASK-0202）。
+        //           ⛔ 兩邊各寫一次的話，「去前導零／去重」那層正規化遲早只有一邊有，
+        //           而失效樣子是**自動收場永遠不成立**（綁的是 `0202`、推進的是 `202`，比不到）
+        //           —— 沒有人會知道是比對沒對上。
+        // 數值影響：一次 Save ＋ 一次回讀。⛔ 回傳的是**回讀那一份**，不是寫入端的回傳值。
+        /// <summary>把 <paramref name="iTasks"/> 併進這個人現有 Coding 場的 `tasks`；回讀後的值。沒有場／落不了檔回 null。</summary>
+        public static string? BindTasks(SCP_DataRoot iRoot, string iPersona, string iTasks)
+        {
+            var aS = SCP_ActivitySessionStore.Load<SCP_CodingSession>(iRoot, iPersona,
+                                                                     SCP_ActivitySessionKind.Coding);
+            if (aS == null || !aS.active) return null;
+            aS.tasks = NormalizeTasks(aS.tasks + "," + iTasks);
+            SCP_ActivitySessionStore.Save(iRoot, iPersona, aS);
+            var aBack = SCP_ActivitySessionStore.Load<SCP_CodingSession>(iRoot, iPersona,
+                                                                        SCP_ActivitySessionKind.Coding);
+            return aBack == null ? null : aBack.tasks;
+        }
+
         // 區塊職責：單號清單正規化 —— 去空白、去重、去前導零、保序。
         // 物理意義：`TASK-0129` / `129` / `0129` 是**同一張單**，而它們當字串比不相等。
         //           不正規化的話「綁的是 0129、推進的是 129」會讓自動收場永遠不成立，
         //           而那個失效的樣子是「場就是不會自己收」—— 沒有人會知道是比對沒對上。
         // 數值影響：純字串處理，不碰檔案。
-        static string NormalizeTasks(string iRaw)
+        /// <summary>單號清單正規化。**公開**是因為 Unity 側 `Cmd_Task` 也要用同一份判準（TASK-0202）。</summary>
+        public static string NormalizeTasks(string iRaw)
         {
             var aOut = new List<string>();
             var aSeen = new HashSet<string>(StringComparer.Ordinal);
@@ -384,12 +405,10 @@ namespace SCP.Core.Cmd
             if (iTasks.Length == 0) return SCP_CmdResult.Fail(2, "✗ op=bind 需要 --arg tasks=<單號，逗號分隔>");
             var aS = Mine(iRoot, iPersona, out SCP_CmdResult? aErr);
             if (aS == null) return aErr!;
-            aS.tasks = NormalizeTasks(aS.tasks + "," + iTasks);
-            SCP_ActivitySessionStore.Save(iRoot, iPersona, aS);
-            // ⛔ 不信寫入端的回傳 —— 回讀那個欄位。
-            var aBack = SCP_ActivitySessionStore.Load<SCP_CodingSession>(iRoot, iPersona,
-                                                                        SCP_ActivitySessionKind.Coding);
-            string aRead = aBack == null ? "" : aBack.tasks;
+            string? aRead = BindTasks(iRoot, iPersona, iTasks);
+            if (aRead == null)
+                return SCP_CmdResult.Fail(70, "✗ 綁定沒有落檔 —— 回讀不到那一場："
+                    + SCP_ActivitySessionStore.PathOf(iRoot, iPersona));
             return SCP_CmdResult.Success(
                 "✓ 綁定更新：**" + iPersona + "** 的 Coding 場 `" + aS.session_id + "`",
                 "· 回讀 tasks = **" + aRead + "**（回讀單檔，不是寫入端的回傳值）",
