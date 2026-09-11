@@ -86,8 +86,38 @@ namespace SCP.Core.Cmd
                 else { aState = "⚪ 已收工"; aClosed++; }
                 string aKind = aS.kind.Length == 0 ? "(未標 kind)" : aS.kind;
                 if (!SCP_ActivitySessionKind.IsRegistered(aS.kind)) aKind += "（未登記 —— 本層不當它是現行 session）";
+                // ── 時刻欄（TASK-0136）─────────────────────────────────────
+                // 🩸 這一欄原本一律印 `until_local`（**租期末**）而標題寫「收工時刻」：
+                //   ⇒ 已收工的場會印出一個**比事實晚兩三小時、甚至還在未來**的時刻，
+                //     而「已收工」＋「收工時刻在未來」是邏輯上不可能的組合 —— 它印在每一行上。
+                //   ⇒ 而這條讀數是**被守衛擋下的人唯一被指去跑的那支**
+                //     （`SCP_SessionStartGuard.ExitOther` 就寫著「查現況：sessions --arg op=list」）
+                //     ⇒ 他會照指示去查，然後拿到一個假的「剛剛才收」。
+                // 📌 修法取 (B)「兩欄都印」而不是 (A)「換成 ended_at」：
+                //   已收工的場「本來打算開到幾點」仍有用（分辨**提前收**與**到期收**），
+                //   而**進行中的場根本沒有收工時刻** —— 那時只該印租期。
+                // ⚠ `ended_at` 是 ISO UTC、`until_local` 是本地字串 ⇒ 併排印前**先轉本地**
+                //   （`ParseIsoToLocal`）。兩個時區並排是另一種同形：兩個都對，而讀的人會拿它們相減。
+                // 2026-09-11 實測（同一份 sessions/）：summit FreeTime 印 12:10 而實際 15:08（差 2h58m）；
+                //   kiara Coding 印 17:13（**未來**）而實際 14:49；⚠ 而「到期即收」的場
+                //   （calli FreeTime）兩值只差 **0.3 秒** ⇒ **症狀在那些場上被掩蓋，不是不存在。**
+                string aLease = aS.until_local.Length == 0 ? "—" : aS.until_local;
+                string aWhen;
+                if (aRun)
+                {
+                    // 進行中 ⇒ 不印「收工時刻」（它還沒收工，⛔ 別造一個名字比事實大的欄位）
+                    aWhen = "　租期至 " + aLease;
+                }
+                else
+                {
+                    DateTime? aEndedLocal = SCP_ActivitySession.ParseIsoToLocal(aS.ended_at);
+                    aWhen = "　收工 " + (aEndedLocal.HasValue
+                                ? aEndedLocal.Value.ToString("yyyy-MM-dd HH:mm:ss")
+                                : "（未記 ended_at）")
+                          + "　租期至 " + aLease;
+                }
                 aResult.Lines.Add("・" + Pad(aS.persona, 12) + " " + Pad(aKind, 16) + " " + aState
-                                  + "　收工時刻 " + (aS.until_local.Length == 0 ? "—" : aS.until_local)
+                                  + aWhen
                                   + (aS.end_reason.Length == 0 ? "" : "　reason=" + aS.end_reason));
             }
             for (int i = 0; i < aProblems.Count; ++i) aResult.Lines.Add("⚠ " + aProblems[i]);
