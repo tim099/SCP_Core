@@ -27,6 +27,19 @@ using SCP.Core.Tasks;
 
 namespace SCP.Core.Letters
 {
+    /// <summary>
+    /// 一張閱讀卡的出處。**三態，不是 bool** —— 「讀不到」不可以長得像「它是舊卡」。
+    /// </summary>
+    public enum SCP_BookshelfCardOrigin
+    {
+        /// <summary>檔頭有現行寫入端蓋的戳 ⇒ 背後有 reader.json。</summary>
+        Mechanical,
+        /// <summary>檔頭沒有那個戳 ⇒ 另一個時代／另一支工具寫的，Sync 不會動它。</summary>
+        Legacy,
+        /// <summary>檔頭讀不到 ⇒ 這一格沒有讀數（⛔ 不准併進 Legacy）。</summary>
+        Unreadable,
+    }
+
     /// <summary>一段區塊。<see cref="Essential"/> ＝ 溢出時也不准移走。</summary>
     public sealed class SCP_BriefSection
     {
@@ -937,20 +950,88 @@ namespace SCP.Core.Letters
             if (aCards.Count == 0) return aEmpty;
             aCards.Sort(StringComparer.Ordinal);
 
+            int aLegacy = 0, aUnreadable = 0;
+            foreach (string aPath in aCards)
+            {
+                SCP_BookshelfCardOrigin aOrigin = CardOrigin(aPath);
+                if (aOrigin == SCP_BookshelfCardOrigin.Legacy) aLegacy++;
+                else if (aOrigin == SCP_BookshelfCardOrigin.Unreadable) aUnreadable++;
+            }
+
             int aPick = (int)(StableHash(iPersona + ":bookshelf:" + iWakeCount) % (uint)aCards.Count);
             string aCard = aCards[aPick];
 
+            // 母體含舊卡是**刻意**的：過濾掉會讓「這張卡是舊時代的」與「它不存在」同形，
+            // 而舊卡只有被抽中、被看見，才會有人去處置它。所以照抽，改成**標定語**。
+            string aCount = "共 " + aCards.Count + " 張";
+            if (aLegacy > 0) aCount += "・其中 " + aLegacy + " 張不是機械投影";
+            if (aUnreadable > 0) aCount += "・" + aUnreadable + " 張檔頭讀不到";
+
             var aLines = new List<string>
             {
-                "**📖 穩定端上一張閱讀卡（共 " + aCards.Count + " 張・全文）**",
+                "**📖 穩定端上一張閱讀卡（" + aCount + "・全文）**",
                 "",
             };
             aLines.AddRange(SCP_LetterText.DemoteHeadings(BodyLines(aCard)));
             aLines.Add("");
-            aLines.Add("> 來源：`" + BookshelfDirName + "/" + Path.GetFileName(aCard)
-                       + "`（機械投影，改內容請改 reader.json 後重新 Sync）");
+            aLines.Add(CardSourceLine(aCard));
             return new SCP_BriefSection { Title = "📖 §6.6 見書 — 我在讀什麼", Lines = aLines, Essential = false };
         }
+
+        // 區塊職責：判一張閱讀卡是不是**現行寫入端**產的。
+        // 物理意義：判準取自寫入端自己蓋的那個戳（`UCL_ReadingLibraryIO.SyncBookshelf` 寫
+        //           <see cref="MechanicalMarker"/>），不是本段自己猜的欄位形狀 ——
+        //           猜欄位形狀會在寫入端換欄位時靜默判反，而戳是雙方講好的同一個字。
+        // 數值影響：只影響顯示（定語與計數），**不過濾抽籤母體**。
+        static SCP_BookshelfCardOrigin CardOrigin(string iPath)
+        {
+            try
+            {
+                int aFence = 0;
+                foreach (string aLine in File.ReadLines(iPath))
+                {
+                    string aTrim = aLine.Trim();
+                    if (aTrim == "---")
+                    {
+                        aFence++;
+                        if (aFence >= 2) break;   // frontmatter 收尾 —— 正文裡的同名字串不算數
+                        continue;
+                    }
+                    if (aFence == 0) break;       // 根本沒有 frontmatter ⇒ 不可能有那個戳
+                    if (aTrim.StartsWith(MechanicalMarker, StringComparison.Ordinal))
+                        return SCP_BookshelfCardOrigin.Mechanical;
+                }
+                return SCP_BookshelfCardOrigin.Legacy;
+            }
+            catch (Exception)
+            {
+                return SCP_BookshelfCardOrigin.Unreadable;
+            }
+        }
+
+        // 區塊職責：出處那一行 —— 三態各講各的話。
+        // 物理意義：舊版無條件斷言「機械投影，改 reader.json 後重新 Sync」，而那句話對
+        //           **不是機械投影的卡是假的**：那些卡背後沒有 reader.json，改了再 Sync 也不會動到它。
+        //           一句沒有量過就印出來的出處，比沒有出處更難查。
+        static string CardSourceLine(string iPath)
+        {
+            string aName = "`" + BookshelfDirName + "/" + Path.GetFileName(iPath) + "`";
+            switch (CardOrigin(iPath))
+            {
+                case SCP_BookshelfCardOrigin.Mechanical:
+                    return "> 來源：" + aName + "（機械投影，改內容請改 reader.json 後重新 Sync）";
+                case SCP_BookshelfCardOrigin.Legacy:
+                    return "> 來源：" + aName + "　⚠ **這張不是機械投影** —— 檔頭沒有 `"
+                           + MechanicalMarker + "`。它背後沒有 reader.json，"
+                           + "**改 reader.json 再 Sync 不會動到這張**；現行寫入端產的檔名是 `<media_id>.md`。";
+                default:
+                    return "> 來源：" + aName + "　⚠ **檔頭讀不到** —— 這一格沒有讀數（⛔ 不是「它是舊卡」）。";
+            }
+        }
+
+        /// <summary>現行寫入端蓋在閱讀卡 frontmatter 上的戳（跨端契約：與
+        /// `UCL_ReadingLibraryIO.SyncBookshelf` 寫出的那一行同字）。</summary>
+        public const string MechanicalMarker = "generated: mechanical";
 
         /// <summary>閱讀卡目錄名（跨端契約：python `wake_brief.BOOKSHELF_DIR_NAME` 同名）。</summary>
         public const string BookshelfDirName = "bookshelf";
