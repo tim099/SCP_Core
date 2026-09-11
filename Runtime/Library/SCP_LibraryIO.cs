@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using SCP.Core.Io;
 using SCP.Core.Json;
 
 // 區塊職責：新 Library store 的**資料鍵、JSON/文字讀寫、以及讀取端**（reader.json 載入與章節分類）。
@@ -9,7 +10,8 @@ using SCP.Core.Json;
 //          「路徑在哪」，本層回答「那個檔裡有什麼、讀不讀得動、讀出來算第幾章」。
 //          ⛔ **寫入端（media_init / note_chapter / bookmark / add_character / revise_view）還沒搬**。
 // 數值影響：`LoadJson` 讀不動一律回 null ＋ error（⛔ 不回空物件 —— 那會讓下一次寫入把壞檔
-//          覆蓋成「乾淨」，原始資料連救都救不回來）。寫檔一律 UTF-8 無 BOM ＋ **CRLF**（見下）。
+//          覆蓋成「乾淨」，原始資料連救都救不回來）。寫檔一律 UTF-8 無 BOM ＋ **CRLF**
+//          —— 那段手勢與它的血證住 `SCP.Core.Io.SCP_TextFile.WriteCrLf`（2026-09-11 提取，TASK-0200）。
 namespace SCP.Core.Library
 {
     /// <summary>章節與現有進度的關係（Tim 2026-08-06 拍板：**分類，不是閘門**）。</summary>
@@ -53,26 +55,6 @@ namespace SCP.Core.Library
         /// <summary>合法的 media_kind —— ⚠ media_id 的前綴必須與它同字（兩欄互為校驗）。</summary>
         public static readonly string[] MediaKinds = { "comic", "anim", "film", "series", "stream", "book" };
 
-        // ── 檔案寫入 ────────────────────────────────────────────────────────
-        // 🩸 **CRLF 不是風格選擇**：磁碟上既有的 chapter.json 量到 CRLF 14／純 LF 0，
-        //   而 `SCP_JsonWriter` 的 `NewLineIndent` 送的是 LF。直接寫出去的話
-        //   **內容一樣而逐位元組不同**，342 份檔會在下一次寫入時整批翻紅，
-        //   ⛔ 而那件事沒有任何一層會喊（`SCP_Cmd_Book` 檔頭記的是同一隻，TASK-0143 第五刀血證）。
-        // ⚠ 本函式與 `SCP_Cmd_Book.WriteTextCrLf` **同源而各留一份** —— 兩層的產物格式其實不同
-        //   （Books 是 2 空格縮排、Library 是 tab），只有「換行正規化＋近 atomic 落檔」這段一樣。
-        //   ⇒ 現在提取共用要動 Books 那條**已逐位元組對拍過**的路徑，成本大於收益；
-        //     等第三個使用者出現時再提取（那時它才真的是共用邏輯，而不是兩個巧合）。
-        static void WriteTextCrLf(string iPath, string iText)
-        {
-            string aDir = Path.GetDirectoryName(iPath) ?? "";
-            if (aDir.Length > 0) Directory.CreateDirectory(aDir);
-            string aNormalized = iText.Replace("\r\n", "\n").Replace("\n", "\r\n");
-            string aTmp = iPath + ".tmp" + Guid.NewGuid().ToString("N").Substring(0, 8);
-            File.WriteAllText(aTmp, aNormalized, new UTF8Encoding(false));
-            if (File.Exists(iPath)) File.Delete(iPath);
-            File.Move(aTmp, iPath);
-        }
-
         /// <summary>
         /// 讀 JSON。讀不動一律回 <c>null</c> ＋ <paramref name="oError"/>。
         /// ⛔ **不回空物件** —— 那會讓下一次寫入把壞檔覆蓋成「乾淨」，原始資料救不回來。
@@ -96,18 +78,27 @@ namespace SCP.Core.Library
 
         /// <summary>寫 JSON（UTF-8 無 BOM、tab 縮排、非 ASCII 原生字元、CRLF）。父目錄自動建立。</summary>
         /// <remarks>
+        /// ⚠ **本層的產物與磁碟上絕大多數既有檔不同形** —— `SCP_JsonWriter` 在 `iIndented` 時
+        ///   冒號後**補一個空格**，而 359 份既有 `chapter.json` 裡 **244 份是冒號後沒有空格**
+        ///   （UCL 那側 `ToJsonBeautify` 的產物），只有 4 份跟本層同形。
+        /// ⇒ 寫入端搬進來的那一刀要先決定：收斂格式（既有檔整批翻紅一次）還是改本層去對齊磁碟。
+        ///   ⛔ 那是**拍板**不是 dev 自決 —— 讀數與選項在 TASK-0166 ① 的留言上。
+        /// 🩸 而這一格不是「CRLF 那條血證的重複」：**行尾那根軸已經處理對了**（純 LF 全庫 0 份），
+        ///   換到冒號那根軸同一族的錯又站起來，而守衛（那段 CRLF 註解）當時就在這個函式正上方。
+        /// </remarks>
+        /// <remarks>
         /// ⭐ 非 ASCII **不需要**額外還原：`SCP_JsonWriter.WriteString` 天生照原字寫
         /// （UCL 那版得先跑一支 `UnescapeNonAscii` 把逃脫轉回來，本層不必搬那個補丁）。
         /// </remarks>
         public static void SaveJson(string iPath, SCP_JsonData iData)
         {
-            WriteTextCrLf(iPath, iData.ToJson(true) + "\n");
+            SCP_TextFile.WriteCrLf(iPath, iData.ToJson(true) + "\n");
         }
 
         /// <summary>寫純文字（UTF-8 無 BOM、CRLF）。父目錄自動建立。</summary>
         public static void SaveText(string iPath, string iText)
         {
-            WriteTextCrLf(iPath, iText);
+            SCP_TextFile.WriteCrLf(iPath, iText);
         }
 
         public static string Today()

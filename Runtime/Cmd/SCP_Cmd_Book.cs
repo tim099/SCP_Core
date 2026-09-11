@@ -38,6 +38,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using SCP.Core.Books;
+using SCP.Core.Io;
 using SCP.Core.Json;
 
 namespace SCP.Core.Cmd
@@ -240,7 +241,7 @@ namespace SCP.Core.Cmd
             Directory.CreateDirectory(Path.Combine(aBookDir, "characters"));
 
             string aText = SCP_JsonWriter.Write(aData, iIndented: true, iIndent: "  ") + "\n";
-            WriteTextCrLf(aBookJson, aText);
+            SCP_TextFile.WriteCrLf(aBookJson, aText);
 
             string aKind = aOrigin == "authored" ? "✍ 原創書(草稿)" : "📖 書";
             string aAuthorTail = aOrigin == "authored"
@@ -313,7 +314,7 @@ namespace SCP.Core.Cmd
             aBody.Add("## 伏筆 / 待解");
             AppendBullets(aBody, SplitList(iArgs.Get("foreshadow")), "（無）");
             aBody.Add("");
-            WriteTextCrLf(aChapterPath, string.Join("\n", aBody));
+            SCP_TextFile.WriteCrLf(aChapterPath, string.Join("\n", aBody));
 
             // book.json：章號只往前推（python 同判斷），last_read 每次都寫。
             string aBookJson = Path.Combine(aBookDir, "book.json");
@@ -341,7 +342,7 @@ namespace SCP.Core.Cmd
             if (aChapter > aCurrent)
                 aProgress.Set("current_chapter", SCP_JsonData.NewNumber(aChapter));
             aProgress.Set("last_read", SCP_JsonData.NewString(Today()));
-            WriteTextCrLf(aBookJson, SCP_JsonWriter.Write(aData, iIndented: true, iIndent: "  ") + "\n");
+            SCP_TextFile.WriteCrLf(aBookJson, SCP_JsonWriter.Write(aData, iIndented: true, iIndent: "  ") + "\n");
 
             var aResult = SCP_CmdResult.Success(
                 $"✅ 記錄章節: {aBook} ch{aChapter} → {aFileName}",
@@ -392,7 +393,7 @@ namespace SCP.Core.Cmd
             };
             AppendBullets(aBody, SplitList(iArgs.Get("threads")), "（待補）");
             aBody.Add("");
-            WriteTextCrLf(aArcPath, string.Join("\n", aBody));
+            SCP_TextFile.WriteCrLf(aArcPath, string.Join("\n", aBody));
 
             string aBookJson = Path.Combine(aBookDir, "book.json");
             if (!TryReadJsonFile(aBookJson, out SCP_JsonData aData, out string aWhy))
@@ -419,7 +420,7 @@ namespace SCP.Core.Cmd
             aNew.Set("date", SCP_JsonData.NewString(Today()));
             aArcs.Add(aNew);
             aData.Set("arcs", aArcs);
-            WriteTextCrLf(aBookJson, SCP_JsonWriter.Write(aData, iIndented: true, iIndent: "  ") + "\n");
+            SCP_TextFile.WriteCrLf(aBookJson, SCP_JsonWriter.Write(aData, iIndented: true, iIndent: "  ") + "\n");
 
             var aResult = SCP_CmdResult.Success(
                 $"✅ 階段大綱: {aBook} 第 {aChapters} 章 — {aTitle}",
@@ -556,7 +557,7 @@ namespace SCP.Core.Cmd
                 aProgress.Set("bookmark_note", SCP_JsonData.NewString(aSeedNote));
                 aData.Set("progress", aProgress);
                 aData.Set("characters", SCP_JsonData.NewArray());
-                WriteTextCrLf(aBranchJson,
+                SCP_TextFile.WriteCrLf(aBranchJson,
                               SCP_JsonWriter.Write(aData, iIndented: true, iIndent: "  ") + "\n");
                 oBranchNote = $"🌿 已開分支筆記: {iBook}/branches/{aReader}/"
                               + (aContinueFrom.Length > 0
@@ -636,22 +637,5 @@ namespace SCP.Core.Cmd
             return DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         }
 
-        /// <summary>
-        /// 寫檔：UTF-8 **無 BOM** ＋ **CRLF**，temp → replace（近 atomic）。
-        /// 🩸 CRLF 不是風格選擇：python 那側是文字模式寫入，在 Windows 上就是 CRLF，
-        ///   而「內容一樣、逐位元組不同」沒有任何一層會喊（TASK-0143 第五刀的血證）。
-        /// </summary>
-        static void WriteTextCrLf(string iPath, string iText)
-        {
-            string aDir = Path.GetDirectoryName(iPath) ?? "";
-            if (aDir.Length > 0) Directory.CreateDirectory(aDir);
-            string aNormalized = iText.Replace("\r\n", "\n").Replace("\n", "\r\n");
-            // python 用 pid 當 temp 尾碼避免撞名；netstandard2.1 沒有 `Environment.ProcessId`，
-            // 這裡改用 GUID —— 它只影響 temp 檔名，**不落在產物裡**，所以不破壞逐位元組對拍。
-            string aTmp = iPath + ".tmp" + Guid.NewGuid().ToString("N").Substring(0, 8);
-            File.WriteAllText(aTmp, aNormalized, new UTF8Encoding(false));
-            if (File.Exists(iPath)) File.Delete(iPath);
-            File.Move(aTmp, iPath);
-        }
     }
 }
