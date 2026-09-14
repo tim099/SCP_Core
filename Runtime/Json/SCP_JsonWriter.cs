@@ -18,12 +18,22 @@ namespace SCP.Core.Json
 
         public static string Write(SCP_JsonData iData, bool iIndented = true, string? iIndent = null)
         {
+            return Write(iData, SCP_JsonStyle.Default.WithIndent(iIndent ?? DefaultIndent), iIndented);
+        }
+
+        /// <summary>指定版面寫出（縮排／冒號後空格／開括號位置）。</summary>
+        /// <remarks>
+        /// ⚠ 要寫進**既有資料夾**時請帶 <see cref="SCP_JsonStyle.UclLegacy"/> ——
+        /// 版面不合的產物仍是合法 JSON、逐鍵相同，而整批翻紅時沒有任何一層會喊。
+        /// </remarks>
+        public static string Write(SCP_JsonData iData, SCP_JsonStyle iStyle, bool iIndented = true)
+        {
             var sb = new StringBuilder();
-            WriteValue(iData, sb, iIndented, iIndent ?? DefaultIndent, 0);
+            WriteValue(iData, sb, iIndented, iStyle, 0);
             return sb.ToString();
         }
 
-        static void WriteValue(SCP_JsonData iData, StringBuilder oSb, bool iIndented, string iIndent, int iDepth)
+        static void WriteValue(SCP_JsonData iData, StringBuilder oSb, bool iIndented, SCP_JsonStyle iStyle, int iDepth)
         {
             switch (iData.Type)
             {
@@ -47,16 +57,26 @@ namespace SCP.Core.Json
 
                 case SCP_JsonType.Array:
                 {
-                    if (iData.Count == 0) { oSb.Append("[]"); break; }
+                    if (iData.Count == 0 && !iStyle.EmptyContainerExpanded) { oSb.Append("[]"); break; }
                     oSb.Append('[');
+                    // 空陣列展開成 `[`＋**兩個**換行＋`]` —— 中間那個空行是
+                    // UCL_JsonData.SerializeValueBeautify 的「開括號後換一行、關括號前再換一行」
+                    // 兩段各自成立、而中間沒有元素的結果。⛔ 不是筆誤，磁碟上就是長這樣。
+                    if (iData.Count == 0)
+                    {
+                        NewLineIndent(oSb, iIndented, iStyle, 0);
+                        NewLineIndent(oSb, iIndented, iStyle, iDepth);
+                        oSb.Append(']');
+                        break;
+                    }
                     int i = 0;
                     foreach (var aItem in iData)
                     {
                         if (i++ > 0) oSb.Append(',');
-                        NewLineIndent(oSb, iIndented, iIndent, iDepth + 1);
-                        WriteValue(aItem, oSb, iIndented, iIndent, iDepth + 1);
+                        NewLineIndent(oSb, iIndented, iStyle, iDepth + 1);
+                        WriteValue(aItem, oSb, iIndented, iStyle, iDepth + 1);
                     }
-                    NewLineIndent(oSb, iIndented, iIndent, iDepth);
+                    NewLineIndent(oSb, iIndented, iStyle, iDepth);
                     oSb.Append(']');
                     break;
                 }
@@ -64,29 +84,44 @@ namespace SCP.Core.Json
                 case SCP_JsonType.Object:
                 {
                     IReadOnlyList<string> aKeys = iData.Keys;
-                    if (aKeys.Count == 0) { oSb.Append("{}"); break; }
+                    if (aKeys.Count == 0 && !iStyle.EmptyContainerExpanded) { oSb.Append("{}"); break; }
                     oSb.Append('{');
+                    if (aKeys.Count == 0)
+                    {
+                        NewLineIndent(oSb, iIndented, iStyle, 0);
+                        NewLineIndent(oSb, iIndented, iStyle, iDepth);
+                        oSb.Append('}');
+                        break;
+                    }
                     for (int i = 0; i < aKeys.Count; i++)
                     {
                         if (i > 0) oSb.Append(',');
-                        NewLineIndent(oSb, iIndented, iIndent, iDepth + 1);
+                        NewLineIndent(oSb, iIndented, iStyle, iDepth + 1);
                         WriteString(aKeys[i], oSb);
                         oSb.Append(':');
-                        if (iIndented) oSb.Append(' ');
-                        WriteValue(iData[aKeys[i]], oSb, iIndented, iIndent, iDepth + 1);
+                        SCP_JsonData aValue = iData[aKeys[i]];
+                        // Allman 只對**陣列**成立（既有產物是 "k":<換行><縮排>[ ）——
+                        // 物件的 { 貼在冒號後（"progress":{），純量也貼著。
+                        // ⚠ 空陣列**照樣**走 Allman（"facts":<換行><縮排>[<換行><換行><縮排>]），
+                        //   那是 UCL_JsonData.SerializeValueBeautify 的形狀，不是例外。
+                        bool aAllman = iIndented && iStyle.ArrayBracketOnOwnLine
+                                       && aValue.Type == SCP_JsonType.Array;
+                        if (aAllman) NewLineIndent(oSb, iIndented, iStyle, iDepth + 1);
+                        else if (iIndented && iStyle.SpaceAfterColon) oSb.Append(' ');
+                        WriteValue(aValue, oSb, iIndented, iStyle, iDepth + 1);
                     }
-                    NewLineIndent(oSb, iIndented, iIndent, iDepth);
+                    NewLineIndent(oSb, iIndented, iStyle, iDepth);
                     oSb.Append('}');
                     break;
                 }
             }
         }
 
-        static void NewLineIndent(StringBuilder oSb, bool iIndented, string iIndent, int iDepth)
+        static void NewLineIndent(StringBuilder oSb, bool iIndented, SCP_JsonStyle iStyle, int iDepth)
         {
             if (!iIndented) return;
             oSb.Append('\n');
-            for (int i = 0; i < iDepth; i++) oSb.Append(iIndent);
+            for (int i = 0; i < iDepth; i++) oSb.Append(iStyle.Indent);
         }
 
         static void WriteString(string iValue, StringBuilder oSb)

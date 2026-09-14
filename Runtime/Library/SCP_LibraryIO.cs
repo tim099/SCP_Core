@@ -8,7 +8,8 @@ using SCP.Core.Json;
 // 區塊職責：新 Library store 的**資料鍵、JSON/文字讀寫、以及讀取端**（reader.json 載入與章節分類）。
 // 物理意義：這是 `UCL_ReadingLibraryIO` 移進 SCP_Core 的第二刀。第一刀（`SCP_LibraryStore`）只回答
 //          「路徑在哪」，本層回答「那個檔裡有什麼、讀不讀得動、讀出來算第幾章」。
-//          ⛔ **寫入端（media_init / note_chapter / bookmark / add_character / revise_view）還沒搬**。
+//          ⛔ **寫入端（media_init / note_chapter / bookmark / add_character / revise_view）還沒搬**；
+//          但它們落地要用的**版面**已經對齊舊 writer（見 SaveJson 的 remarks）。
 // 數值影響：`LoadJson` 讀不動一律回 null ＋ error（⛔ 不回空物件 —— 那會讓下一次寫入把壞檔
 //          覆蓋成「乾淨」，原始資料連救都救不回來）。寫檔一律 UTF-8 無 BOM ＋ **CRLF**
 //          —— 那段手勢與它的血證住 `SCP.Core.Io.SCP_TextFile.WriteCrLf`（2026-09-11 提取，TASK-0200）。
@@ -78,21 +79,28 @@ namespace SCP.Core.Library
 
         /// <summary>寫 JSON（UTF-8 無 BOM、tab 縮排、非 ASCII 原生字元、CRLF）。父目錄自動建立。</summary>
         /// <remarks>
-        /// ⚠ **本層的產物與磁碟上絕大多數既有檔不同形** —— `SCP_JsonWriter` 在 `iIndented` 時
-        ///   冒號後**補一個空格**，而 359 份既有 `chapter.json` 裡 **244 份是冒號後沒有空格**
-        ///   （UCL 那側 `ToJsonBeautify` 的產物），只有 4 份跟本層同形。
-        /// ⇒ 寫入端搬進來的那一刀要先決定：收斂格式（既有檔整批翻紅一次）還是改本層去對齊磁碟。
-        ///   ⛔ 那是**拍板**不是 dev 自決 —— 讀數與選項在 TASK-0166 ① 的留言上。
-        /// 🩸 而這一格不是「CRLF 那條血證的重複」：**行尾那根軸已經處理對了**（純 LF 全庫 0 份），
-        ///   換到冒號那根軸同一族的錯又站起來，而守衛（那段 CRLF 註解）當時就在這個函式正上方。
+        /// ⭐ 版面走 <see cref="SCP_JsonStyle.UclLegacy"/> —— 那是舊寫入端
+        /// <c>UCL_ReadingLibraryIO.SaveJson</c>（<c>ToJsonBeautify()</c>）的形狀：
+        /// tab 縮排／冒號後**不**補空格／陣列的 <c>[</c> 自己佔一行／空容器展開成兩行。
+        /// <para>⚠ 為什麼不是「用 SCP 預設、既有檔翻紅一次就算了」：遷移期間**兩個寫入端並存**，
+        /// 而 TASK-0166 ③ 要的讀數正是「同輸入、兩邊輸出逐位元組相同」。版面不同 ⇒ 那一格永遠對不上，
+        /// 而對不上的樣子是「內容逐鍵相同、整批翻紅」——沒有任何一層會喊。</para>
         /// </remarks>
         /// <remarks>
-        /// ⭐ 非 ASCII **不需要**額外還原：`SCP_JsonWriter.WriteString` 天生照原字寫
-        /// （UCL 那版得先跑一支 `UnescapeNonAscii` 把逃脫轉回來，本層不必搬那個補丁）。
+        /// 🩸 <b>磁碟不是規格。</b>（2026-09-14 calli 逐位元組量的，TASK-0166 ①）
+        /// 我 09-11 從磁碟取樣推「主流格式」，據以判定只要改冒號那一根軸。今天逐位元組跑完 596 份：
+        /// 對得上的只有 426 份，其餘是**另外兩支 writer**（2 空格那批、tab＋冒號有空格那批）的沉積；
+        /// 而行尾那一根軸**整根不算數** —— `AgentCommands` repo 的 <c>core.autocrlf=true</c>，
+        /// checkout 會把整份換成 CRLF（含結尾那一個 LF）⇒ 工作樹上的行尾是 git 的產物，不是 writer 的。
+        /// ⇒ 判準：對拍的對象是**舊 writer**，不是磁碟；磁碟只拿來間接驗「我有沒有把舊 writer 抄對」。
+        /// </remarks>
+        /// <remarks>
+        /// ⭐ 非 ASCII **不需要**額外還原：<c>SCP_JsonWriter.WriteString</c> 天生照原字寫
+        /// （UCL 那版得先跑一支 <c>UnescapeNonAscii</c> 把逃脫轉回來，本層不必搬那個補丁）。
         /// </remarks>
         public static void SaveJson(string iPath, SCP_JsonData iData)
         {
-            SCP_TextFile.WriteCrLf(iPath, iData.ToJson(true) + "\n");
+            SCP_TextFile.WriteCrLf(iPath, SCP_JsonWriter.Write(iData, SCP_JsonStyle.UclLegacy) + "\n");
         }
 
         /// <summary>寫純文字（UTF-8 無 BOM、CRLF）。父目錄自動建立。</summary>
