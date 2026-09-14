@@ -45,6 +45,27 @@ namespace SCP.Core.Reflect
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, Inherited = true)]
     public sealed class SCP_IgnoreAttribute : Attribute { }
 
+    // 區塊職責：**未知鍵的收容所** —— 反序列化時本版不認得的 key 存這裡，序列化時原樣寫回去。
+    // 物理意義：沒有這一格的話，「舊版讀了新版寫的檔、再存回去」＝ 新版的欄位**被舊版刪掉**，
+    //          而症狀是「一切正常」（我認得的欄位都還在）。
+    //          🩸 那不是格式化差異，是**寫入端省略不可逆**：反序列化丟掉的東西，序列化就再也寫不回來。
+    //          （血證原文在 <Senate>/src/Senate.Core/SenateConfig.cs —— 本能力就是為了接它，見 D25。）
+    // 數值影響：純資料搬運，零 IO。
+    // 設計取捨：① 型別**只收 `Dictionary<string, SCP_JsonData>`** —— 收 object 會讓「寫回去的是不是
+    //            原來那個東西」變成要靠 mapper 猜，而猜錯不報錯。
+    //          ② 收容所**不進 `Members`**（照掛 [SCP_Ignore]，GUI 不畫它）；mapper 另外用
+    //            `SCP_TypeSchema.ExtensionData` 取。⇒ 「存得回去」與「畫得出來」刻意分開。
+    //          ③ 一個型別最多一個 —— 兩個的話「未知鍵進哪一個」沒有答案，
+    //            而任何一種挑法都會在某一次靜默丟掉另一邊。
+    /// <summary>
+    /// 掛在 <c>Dictionary&lt;string, SCP_JsonData&gt;</c> 的欄位／屬性上 ⇒
+    /// 反序列化時**沒有對應成員的 key** 收進來，序列化時再寫回去（本版不認得的欄位不會被吃掉）。
+    /// <para>⚠ 一個型別最多一個；型別不符或掛超過一個 ⇒ **不啟用**，並由 mapper 在 Diagnostics 記一筆
+    /// （⛔ 不靜默降級 —— 靜默的失效樣子就是「使用者的設定檔少一塊」）。</para>
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, Inherited = true)]
+    public sealed class SCP_JsonExtensionDataAttribute : Attribute { }
+
     /// <summary>一個成員的描述。</summary>
     public sealed class SCP_MemberSchema
     {
@@ -130,11 +151,23 @@ namespace SCP.Core.Reflect
         /// <summary>有無公開無參數建構子（null 的巢狀成員能不能「建立」一份）。</summary>
         public bool CanCreate { get; }
 
+        /// <summary>
+        /// 掛了 <see cref="SCP_JsonExtensionDataAttribute"/> 的那個成員（未知鍵的收容所），沒有就是 null。
+        /// <para>⚠ 它**不在 <see cref="Members"/> 裡** —— 收容所配 [SCP_Ignore] 用，不該被自動繪製。
+        /// 型別是否合法（<c>Dictionary&lt;string, SCP_JsonData&gt;</c>）**由 mapper 判**，
+        /// 因為 Reflect 這一層刻意不認識 Json 的型別（不製造 Reflect → Json 的反向相依）。</para>
+        /// </summary>
+        public SCP_MemberSchema? ExtensionData { get; }
+
+        /// <summary>收容所有問題時的原因（掛超過一個）。null ＝ 沒問題。⛔ 有值時 mapper 必須記 Diagnostics，不得靜默。</summary>
+        public string? ExtensionDataProblem { get; }
+
         internal SCP_TypeSchema(Type iType)
         {
             Type = iType ?? throw new ArgumentNullException(nameof(iType));
 
             var aList = new List<SCP_MemberSchema>();
+            var aExt = new List<SCP_MemberSchema>();
 
             // 只收**公開實例成員**：private 欄位要不要進來是個政策問題，
             // 而「預設把別人的內部狀態攤到畫面上並存進 JSON」是不可逆的決定 ⇒ 預設不收。
@@ -143,6 +176,9 @@ namespace SCP.Core.Reflect
             foreach (FieldInfo f in iType.GetFields(aFlags))
             {
                 if (f.IsStatic || f.IsLiteral) continue;
+                // ⚠ 收容所的判定在 IsIgnored **之前** —— 它正常情況下就掛著 [SCP_Ignore]
+                //    （不該被畫出來），先被 ignore 濾掉的話這個能力永遠不會生效。
+                if (IsExtensionData(f)) { aExt.Add(new SCP_MemberSchema(f, null, f.FieldType)); continue; }
                 if (IsIgnored(f)) continue;
                 aList.Add(new SCP_MemberSchema(f, null, f.FieldType));
             }
@@ -151,17 +187,34 @@ namespace SCP.Core.Reflect
             {
                 if (p.GetIndexParameters().Length > 0) continue;         // 索引子沒有「一個值」可畫
                 if (p.GetMethod == null || !p.GetMethod.IsPublic) continue;
+                if (IsExtensionData(p)) { aExt.Add(new SCP_MemberSchema(null, p, p.PropertyType)); continue; }
                 if (IsIgnored(p)) continue;
                 aList.Add(new SCP_MemberSchema(null, p, p.PropertyType));
             }
 
             Members = aList;
+
+            // 兩個以上 ⇒ 「未知鍵進哪一個」沒有答案。任何一種挑法都會在某一次靜默丟掉另一邊
+            // ⇒ 整個能力不啟用，並留下原因讓 mapper 印出來。⛔ 不挑第一個湊合。
+            if (aExt.Count == 1) { ExtensionData = aExt[0]; }
+            else if (aExt.Count > 1)
+            {
+                var aNames = new List<string>();
+                foreach (SCP_MemberSchema m in aExt) aNames.Add(m.Name);
+                ExtensionDataProblem =
+                    $"{iType.Name} 掛了 {aExt.Count} 個 [SCP_JsonExtensionData]（{string.Join(", ", aNames)}）"
+                    + " ⇒ 未知鍵沒有唯一去處，本型別的收容所**不啟用**";
+            }
+
             CanCreate = !iType.IsAbstract
                         && (iType.IsValueType || iType.GetConstructor(System.Type.EmptyTypes) != null);
         }
 
         static bool IsIgnored(MemberInfo iMember)
             => iMember.GetCustomAttribute<SCP_IgnoreAttribute>() != null;
+
+        static bool IsExtensionData(MemberInfo iMember)
+            => iMember.GetCustomAttribute<SCP_JsonExtensionDataAttribute>() != null;
 
         public SCP_MemberSchema? Find(string iName)
         {

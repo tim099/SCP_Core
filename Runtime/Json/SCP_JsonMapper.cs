@@ -123,6 +123,26 @@ namespace SCP.Core.Json
                         aNode.Set(m.Name, WriteValue(aMemberValue, m.Type, aMemberPath, iOpt, iDepth + 1, iStack));
                     }
 
+                    // 收容所：把「上次讀進來時本版不認得的 key」原樣寫回去。
+                    // ⚠ 順序必須在成員之後 —— 真成員贏。某個 key 之前是未知、這一版長出對應成員時，
+                    //   舊值會蓋掉新成員寫出去的值，而那是靜默的資料倒退。
+                    Dictionary<string, SCP_JsonData>? aBagW = TryGetExtensionBag(iValue, aSchema, iPath, iOpt, false);
+                    if (aBagW != null)
+                    {
+                        foreach (KeyValuePair<string, SCP_JsonData> kv in aBagW)
+                        {
+                            if (kv.Value == null || !kv.Value.Exists) continue;
+                            if (aNode.Contains(kv.Key))
+                            {
+                                iOpt.Note($"{iPath}.{kv.Key}",
+                                          "這個 key 已經有對應成員了 ⇒ 收容所裡那份**沒有寫出去**（成員優先）。"
+                                          + "本版已經認得它，收容所該清掉那一筆");
+                                continue;
+                            }
+                            aNode.Set(kv.Key, kv.Value);
+                        }
+                    }
+
                     if (!aType.IsValueType) iStack.RemoveAt(iStack.Count - 1);
                     return aNode;
                 }
@@ -167,6 +187,80 @@ namespace SCP.Core.Json
 
                 ReadInto(iTarget, m, aNode, aPath, iOpt, iDepth);
             }
+
+            CaptureUnknownKeys(iTarget, aSchema, iData, iPath, iOpt);
+        }
+
+        // 區塊職責：把這份 JSON 裡**沒有對應成員**的 key 收進收容所。
+        // 物理意義：這是「舊版讀了新版寫的檔」那一格的唯一防線 —— 沒收住的 key，
+        //          下一次序列化就從檔案上消失了，而檔案看起來完全正常。
+        // 數值影響：只搬節點參照，不複製樹（這份 JSON 是這一次載入解析出來的，呼叫端不會再改它）。
+        // ⚠ 語意是「**這一份文件**的未知鍵」⇒ 先清空再填。
+        //   不清的話，換一份 JSON 載進同一個實例時，上一份的未知鍵會被當成這一份的寫回去
+        //   —— 那會把別人的欄位長到不該有它的檔案上，而兩邊都不會報錯。
+        static void CaptureUnknownKeys(object iTarget, SCP_TypeSchema iSchema, SCP_JsonData iData,
+                                       string iPath, SCP_JsonMapOptions iOpt)
+        {
+            if (!iData.IsObject) return;
+            Dictionary<string, SCP_JsonData>? aBag = TryGetExtensionBag(iTarget, iSchema, iPath, iOpt, true);
+            if (aBag == null) return;
+
+            aBag.Clear();
+            int aCount = 0;
+            foreach (string aKey in iData.Keys)
+            {
+                if (iSchema.Find(aKey) != null) continue;     // 有成員接 ⇒ 不是未知鍵
+                aBag[aKey] = iData[aKey];
+                aCount++;
+            }
+            if (aCount > 0)
+                iOpt.Note(iPath, $"{aCount} 個本版不認得的 key 收進 `{iSchema.ExtensionData!.Name}`（序列化時會原樣寫回）");
+        }
+
+        // 取收容所本體。⛔ 型別不合／掛超過一個 ⇒ **記一筆並回 null**（不啟用），不靜默降級：
+        //   靜默的失效樣子是「設定檔安靜地少一塊」，而那要等使用者自己發現。
+        static Dictionary<string, SCP_JsonData>? TryGetExtensionBag(object iOwner, SCP_TypeSchema iSchema,
+                                                                   string iPath, SCP_JsonMapOptions iOpt,
+                                                                   bool iCreateIfNull)
+        {
+            if (iSchema.ExtensionDataProblem != null)
+            {
+                iOpt.Note(iPath, iSchema.ExtensionDataProblem);
+                return null;
+            }
+            SCP_MemberSchema? aMember = iSchema.ExtensionData;
+            if (aMember == null) return null;
+
+            if (aMember.Type != typeof(Dictionary<string, SCP_JsonData>))
+            {
+                iOpt.Note($"{iPath}.{aMember.Name}",
+                          $"[SCP_JsonExtensionData] 只收 Dictionary<string, SCP_JsonData>，這裡是 {aMember.Type.Name}"
+                          + " ⇒ 收容所**不啟用**（未知鍵會在下一次序列化時消失）");
+                return null;
+            }
+
+            object? aRaw;
+            try { aRaw = aMember.Get(iOwner); }
+            catch (Exception e)
+            {
+                iOpt.Note($"{iPath}.{aMember.Name}", $"收容所讀取失敗：{e.GetType().Name} ⇒ 不啟用");
+                return null;
+            }
+
+            if (aRaw is Dictionary<string, SCP_JsonData> aBag) return aBag;
+
+            if (!iCreateIfNull)
+            {
+                // 寫出去那一側遇到 null ⇒ 沒有東西要寫回，不是錯（例如這個實例從來沒被 Populate 過）。
+                return null;
+            }
+            var aNew = new Dictionary<string, SCP_JsonData>(StringComparer.Ordinal);
+            if (!aMember.TrySet(iOwner, aNew, out string aErr))
+            {
+                iOpt.Note($"{iPath}.{aMember.Name}", $"收容所是 null 而且建不起來（{aErr}）⇒ 不啟用");
+                return null;
+            }
+            return aNew;
         }
 
         static void ReadInto(object iOwner, SCP_MemberSchema iMember, SCP_JsonData iNode,

@@ -71,6 +71,19 @@ namespace SCP.Core.Paths
         [SCP_PathAuto(SCP_PathId.AgentCommandsRoot, "ChatTavern/baton/letters")]
         LettersRoot,
 
+        [SCP_PathInfo("銀行資料根（新版）",
+            "⚠ **Global 且刻意可設定**（Tim 2026-09-14）—— 目的就是**跨專案共用同一套銀行**："
+            + "LY／Bar／Senate 指到同一個根，錢才只有一份。"
+            + " 🩸 為什麼是 Stored 不是 Derived：舊 Treasury 從**各專案自己的**資料根推出來 ⇒ **一個區一本帳**。"
+            + "2026-09-14 實測，`Codex`(246)／`Luna`(84) 這種「別區的綁定卻在本區有餘額」就是那個形狀的產物，"
+            + "而它沒有任何一層會喊。⇒ 這一格 Stored **正是為了讓它不跟著專案漂**。"
+            + " ⛔ **刻意沒有 `auto` 推導**：能推的只有「本專案底下」，而那正是要避免的那件事"
+            + "（Tim 2026-09-14：預設放**宿主自己**的 git-ignore 資料夾，然後可以手動改）。"
+            + " ⇒ 留空 ＝ 用**宿主的預設**（Senate：`<repo>/SenateData/Bank`，該目錄已 gitignore）；"
+            + "要跨專案共用就手填一個共用的絕對路徑。")]
+        [SCP_PathStored("bankRoot", SCP_PathScope.Global)]
+        BankRoot,
+
         [SCP_PathInfo("session token 表目錄",
             "住 `_tokens.json` / `_token_enforce.json`。⚠ persona lock **不在這裡**："
             + "2026-09-03（TASK-0105）起住 `letters/<p>/profile/_session.json`，位置由 persona 目錄唯一決定。")]

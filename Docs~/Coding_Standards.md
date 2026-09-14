@@ -1,7 +1,7 @@
 ---
 title: SCP 專案撰寫規範
 description: SCP_Core 與其消費端（Senate / Unity）共用的 C# 撰寫規則 —— 方言限制、JSON 一律走 SCP_Json、設定一律走專案層 prefs、純函式邊界、路徑單一落點（含「決定點包含值存在哪」與「讀取端不准讀原始值」）。
-last_updated: 2026-09-05
+last_updated: 2026-09-14
 target_audience: [AI_Agent, Tools_Maintainer, Backend_Programmer]
 related:
   - ../README.md | SCP_Core README | 兩條規矩的來源（方言 / 邊界）
@@ -83,7 +83,17 @@ related:
 |---|---|
 | 已在 `SCP_Core/**` | `SCP_Json`（沒得選，編不過） |
 | 在消費端，但**已規劃搬進** SCP_Core | **現在就用 `SCP_Json`** —— 搬家時才換等於把移植成本延後並放大 |
-| 純宿主專屬、確定不會搬（例：Senate 的 CLI 參數解析） | 可用宿主自己的 |
+| 純宿主專屬、確定不會搬（例：Senate 的 CLI 參數解析） | 可用宿主自己的 —— ⚠ **消費端可以自行收掉這一格**，見下 |
+
+> [!WARNING]
+> **第三格的判準是一個預測，而預測會錯。**
+> 🩸 2026-09-14 實測：`ServerHost` / `ServerExecutor` 當初都被判在「確定不會搬」——
+> 而要把常駐 Server 拆成獨立 exe 時，**卡住它們往下搬進 `SCP_Core` 的正是 `System.Text.Json`**。
+> ⇒ 上一列那句「搬家時才換等於把移植成本延後並放大」，應驗在寫它的人身上。
+>
+> ⇒ **消費端可以自行把第三格收掉。** 已收的：
+> **Senate（全 repo 不得用 `System.Text.Json`，`<Senate>/Docs/Logs/Decisions.md` D25，Tim 2026-09-14 拍板）**。
+> ⛔ 本文件**不替所有消費端決定** —— 其他 repo 維持三格，要收各自在自己的拍板紀錄裡收。
 
 ⚠ 判準是**規劃**不是現況。「先用 `System.Text.Json`，搬的時候再改」的實際結果是：
 搬家那天要同時處理「換 JSON 層」與「拆宿主依賴」兩件事，而它們的失敗互相遮蔽。
