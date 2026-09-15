@@ -461,7 +461,33 @@ namespace SCP.Core.Cmd
                     if (aHas.Add(aN)) aSeen.Add(new KeyValuePair<string, string>(aN, aKw[1]));
                 }
             }
-            if (aSeen.Count == 0) return;
+            // 🩸 2026-09-15（basecamp 自己踩的）：訊息裡寫了 `（Fixes TASK-0209）`——
+            //   在句中、不頂格 ⇒ 上面那條 `^` 錨定沒命中，而這裡**直接 return** ⇒
+            //   commit 印 ✅、錢也領了、單子一個字都沒動，**沒有任何一層說「我沒找到單號」**。
+            //   ⚠ 失效樣子：「我沒寫 Fixes」與「我寫了但它沒錨定」在輸出上逐字同形。
+            //   ⛔ 不放寬那條 `^`（頂格錨定是為了不讓引述別人的 trailer 觸發推進，那條仍然對）——
+            //   ⇒ 改成**出聲**：句中出現了 Fixes/Refs TASK-n 而沒有一條錨定 ⇒ 說出來並印補救指令。
+            if (aSeen.Count == 0)
+            {
+                Regex aLoose = new Regex(@"(?:Fixes|Refs)[ 	]+TASK-(\d+)", RegexOptions.IgnoreCase);
+                var aMissed = new List<string>();
+                foreach (Match aM in aLoose.Matches(iMessage))
+                {
+                    string aN = int.Parse(aM.Groups[1].Value, CultureInfo.InvariantCulture)
+                                   .ToString(CultureInfo.InvariantCulture);
+                    if (!aMissed.Contains(aN)) aMissed.Add(aN);
+                }
+                if (aMissed.Count > 0)
+                {
+                    ioResult.Lines.Add("⚠ 訊息裡有 `Fixes/Refs TASK-n`，但**沒有一條頂格** ⇒ 單子狀態沒有動、sha 也沒掛上去。");
+                    ioResult.Lines.Add("   （頂格錨定是刻意的：縮排代表引用，引述別人的 trailer 不該推進別人的單。）");
+                    foreach (string aN in aMissed)
+                        ioResult.Lines.Add("   · TASK-" + aN + "　手動補：senate ucmd run Task --persona "
+                                           + iPersona + " --arg op=commit --arg index=" + aN
+                                           + " --arg sha=" + iSha + " --arg mode=refs|fixes");
+                }
+                return;
+            }
 
             SCP_ITaskCommitGateway? aGate = SCP_TaskCommitGatewayHost.Create(iDataRoot);
             if (aGate == null)
