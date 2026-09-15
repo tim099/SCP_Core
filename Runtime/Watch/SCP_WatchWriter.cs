@@ -26,6 +26,14 @@ namespace SCP.Core.Watch
         public string OutPath = "";
         public string Book = "";
         public string Chapter = "";
+        /// <summary>
+        /// 這一次寫出去的是第幾版：**1 ＝ 正本 `NNN.txt`**；≥2 ＝ `NNN_vN.txt`（TASK-0152）。
+        /// <para>⚠ 讀的人要分得出來：`OutPath` 是**真的寫到哪**，而 `Chapter` 仍然是章號
+        /// —— 兩者在 v1 時同形，v2 之後就不是了。</para>
+        /// </summary>
+        public int Version = 1;
+        /// <summary>v≥2 時：被讓開的那個正本路徑（**它一個位元組都沒被動過**）。</summary>
+        public string BasePath = "";
         /// <summary>回讀落地檔案量到的（⛔ 不是組字串時算的）。</summary>
         public int BackLines;
         public int BackChars;
@@ -80,6 +88,13 @@ namespace SCP.Core.Watch
             }
             return aExisting.Count == 1 ? aExisting[0] : aCands[aCands.Count - 1];
         }
+
+        /// <summary>
+        /// 第 N 版的路徑（<c>NNN_vN.txt</c>，N≥2）。TASK-0152：既有章**永不覆蓋**，重出往這裡放。
+        /// <para>⚠ 檔名刻意**不符合** <c>^\d{3}$</c> ⇒ 章的列舉（`???.txt`）看不到它。**版本不是章。**</para>
+        /// </summary>
+        public static string VersionPath(string iBookDir, string iChapter, int iVersion)
+            => iBookDir.TrimEnd('/') + "/" + iChapter + "_v" + iVersion.ToString(CultureInfo.InvariantCulture) + ".txt";
 
         /// <summary>章號：給了就三位數正規化；沒給就取現有 <c>NNN.txt</c> 的 max+1（沒有就 001）。</summary>
         public static string ResolveChapter(string iBookDir, string? iChapter)
@@ -160,10 +175,36 @@ namespace SCP.Core.Watch
             string aOutPath = Path.Combine(aBdir, aChapter + ".txt").Replace('\\', '/');
             aOut.OutPath = aOutPath;
 
-            if (File.Exists(aOutPath) && !iForce)
+            // ── TASK-0152（Tim 2026-09-15 拍板）：**無論如何都不覆蓋既有章。** ──
+            // 🩸 為什麼：含人工修訂的章只靠正文裡一行字保護自己，而收工自動匯出天生帶
+            //   `iForce: true` ⇒ 一次重出，手改與那行警告**一起消失**，之後連「被改過」都讀不出來。
+            //   ⇒ 修法不是把警告寫得更好，是**把覆寫這個選項拿掉**。
+            // 形狀：既有 `NNN.txt` 一個位元組都不動，新的那份出成 `NNN_v2.txt`（再來 _v3…）。
+            // ⚠ `_vN` **不符合 `^\d{3}$`** ⇒ 它不會被 `ResolveChapter`／`FindOverlaps` 當成新的一章，
+            //   也不會把章號往前推。⛔ 這是刻意的：版本不是章。
+            // 📌 `iForce` 的語意因此收窄（⛔ 它不再是「覆寫」）：
+            //   · `false` ⇒ 既有章存在就**拒絕**（沒說要重出的人維持原行為，錯誤訊息照舊）
+            //   · `true`  ⇒ 允許重出，而重出**落在新版本上**
+            //   ⚠ 這個參數名現在比它的行為大 —— 改名要跨兩個 repo 的呼叫端，留一筆待辦，⛔ 不在本次順手改。
+            if (File.Exists(aOutPath))
             {
-                aOut.Error = $"❌ {aOutPath} 已存在 —— **拒絕覆寫**。要重出請先刪除該檔，或改 chapter。";
-                return aOut;
+                if (!iForce)
+                {
+                    aOut.Error = $"❌ {aOutPath} 已存在 —— **拒絕重出**（⛔ 本層永不覆蓋）。"
+                                 + "要重出請顯式允許（force）⇒ 會另外出一份 `NNN_v2.txt`，既有那份不動。";
+                    return aOut;
+                }
+                string aBase = aOutPath;
+                int aV = 2;
+                while (File.Exists(VersionPath(aBdir, aChapter, aV))) aV++;
+                aOutPath = VersionPath(aBdir, aChapter, aV);
+                aOut.Version = aV;
+                aOut.BasePath = aBase;
+                aOut.OutPath = aOutPath;
+                oLines.Add($"📄 `{Path.GetFileName(aBase)}` 已存在 ⇒ **不覆蓋**，本次出成 "
+                           + $"`{Path.GetFileName(aOutPath)}`（第 {aV} 版，TASK-0152）");
+                oLines.Add("   ⚠ 正本仍是 `" + Path.GetFileName(aBase) + "` —— 讀的人預設讀到的還是它；"
+                           + "要讓新版取代它是**人的決定**，⛔ 機器不替你決定");
             }
 
             var aClash = FindOverlaps(aBdir, aChapter + ".txt", iRanges);
@@ -183,6 +224,15 @@ namespace SCP.Core.Watch
             if (aCh.Error.Length > 0) { aOut.Error = aCh.Error; return aOut; }
 
             Directory.CreateDirectory(aBdir);
+            // 🔴 最後一道防線：走到這裡 `aOutPath` **必須**不存在。
+            //   ⛔ 不是為了防上面那段（它就在二十行前），是為了防**未來有人在中間插一條路** ——
+            //   而那種插入不會有任何一層喊，症狀是一份手改安靜地消失。
+            if (File.Exists(aOutPath))
+            {
+                aOut.Error = $"❌ 內部錯誤：走到落檔時 {aOutPath} 仍然存在 ⇒ **拒絕寫入**"
+                             + "（TASK-0152 的不變式是「永不覆蓋」）。這是程式錯誤，不是使用者錯誤。";
+                return aOut;
+            }
             // ⚠ 行尾：python 那支用**文字模式**寫（`write_text` 的 newline=None
             //   ⇒ Windows 上 `\n` 被翻成 `\r\n`）⇒ 磁碟上既有的章**全部是 CRLF**。
             //   這裡跟著平台走，否則同一個資料夾裡兩種行尾，內容全對而 git diff 整段翻動

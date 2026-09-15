@@ -167,7 +167,9 @@ namespace SCP.Core.Books
         {
             string aDir = Path.Combine(iDataRoot, "Books", iSlug);
             if (!Directory.Exists(aDir)) return 0;
-            try { return Directory.GetFiles(aDir, "*.txt").Length; }
+            // ⚠ `???.txt` 不是 `*.txt`（TASK-0152）：重出的版本檔叫 `NNN_v2.txt`，
+            //   用 `*.txt` 數會把**同一章的第二版算成多一章** —— 而那個數字看起來完全正常。
+            try { return Directory.GetFiles(aDir, "???.txt").Length; }
             catch (Exception) { return 0; }
         }
 
