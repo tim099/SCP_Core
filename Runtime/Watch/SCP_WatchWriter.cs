@@ -54,6 +54,9 @@ namespace SCP.Core.Watch
         static readonly Regex s_ChapterFile = new Regex(@"^\d{3}$", RegexOptions.Compiled);
         static readonly Regex s_SeqRangeCell = new Regex(@"seq 區間 \|([^|]+)\|", RegexOptions.Compiled);
         static readonly Regex s_SeqPair = new Regex(@"(\d+)\s*[–\-]\s*(\d+)", RegexOptions.Compiled);
+        /// <summary>第一則實錄的 `### [seq N] …` 與它底下的本文（TASK-0217 身分核對用）。</summary>
+        static readonly Regex s_FirstEntry = new Regex(@"^### \[seq (\d+)\][^\n]*\n\n(.{0,200})",
+            RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.Singleline);
 
         /// <summary>
         /// 決定書 slug。
@@ -88,6 +91,71 @@ namespace SCP.Core.Watch
             }
             return aExisting.Count == 1 ? aExisting[0] : aCands[aCands.Count - 1];
         }
+
+        /// <summary>
+        /// 既有章檔的「身分核對」—— **這一章的 seq，現在還指著同一批訊息嗎？**（TASK-0217）
+        /// <para>🩸 為什麼要這一格：章檔表頭只記 `seq A – B`，**沒有記是哪一區的 seq**，
+        /// 而酒館 seq 會隨區域分岔。2026-09-15 逐章量：有實錄段的 39 章裡
+        /// **本文對得上 0 章**、對不上 27 章、那個 seq 現在根本不存在 12 章。
+        /// ⇒ 重出任一章都會產出一份**格式完整、seq 連續、回讀驗證全過**而內容是別人工作公告的東西。</para>
+        /// <para>⛔ 比的是**本文**不是時間：第一版拿章裡的 `HH:mm` 去比訊息 `ts` 的 UTC 時分 ⇒ 40/40 全紅，
+        /// 其中還有「同一個人差兩分鐘」的格 —— 那是尺壞了，不是資料全錯。</para>
+        /// <returns>對得上 ＝ true；false 時 <paramref name="oWhy"/> 一定有話說（空字串是 bug）。</returns>
+        /// </summary>
+        public static bool VerifyChapterIdentity(string iDataRoot, string iRoom, string iChapterPath,
+                                                 out string oWhy)
+        {
+            oWhy = "";
+            string aText;
+            try { aText = File.ReadAllText(iChapterPath, Encoding.UTF8); }
+            catch (Exception e) { oWhy = $"讀不動既有章檔（{e.GetType().Name}: {e.Message}）"; return false; }
+
+            Match m = s_FirstEntry.Match(aText);
+            if (!m.Success)
+            {
+                // ⚠ 沒有實錄段 ⇒ **沒有可比的東西**，不是「對得上」。
+                //   ⛔ 這裡回 true 的話，「無從判斷」就跟「驗過了」同形。
+                oWhy = "既有章檔裡找不到任何一則實錄（`### [seq N]`）⇒ **無從核對身分**";
+                return false;
+            }
+            long aSeq = long.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+            string aWas = Squash(m.Groups[2].Value);
+
+            var aWarn = new List<string>();
+            List<(long Seq, SCP_JsonData? Msg, string File)> aNow =
+                SCP_WatchExport.IterMessages(iDataRoot, iRoom, aSeq, aSeq, aWarn);
+            if (aNow.Count == 0 || aNow[0].Msg == null)
+            {
+                oWhy = $"章檔第一則是 seq **{aSeq}**，而這個 seq 在 `{iRoom}` 現在的訊息庫裡**不存在**"
+                       + "　⇒ 那些號碼多半屬於**另一條 seq 軸**（酒館 seq 隨區域分岔），"
+                       + "⛔ 不是「訊息被刪了」";
+                return false;
+            }
+            string aIs = Squash(aNow[0].Msg!.GetString("body", ""));
+            int aN = Math.Min(24, Math.Min(aWas.Length, aIs.Length));
+            if (aN > 0 && string.CompareOrdinal(aWas, 0, aIs, 0, aN) == 0) return true;
+
+            oWhy = $"章檔第一則是 seq **{aSeq}**，而那個號碼現在指著**別的訊息**："
+                   + $"　章檔說「{Clip(aWas)}…」／現在是「{Clip(aIs)}…」"
+                   + "　⇒ 多半是跨區（酒館 seq 隨區域分岔）或 seq 重新編號過";
+            return false;
+        }
+
+        /// <summary>把空白壓掉再比 —— 行尾與縮排不是內容。</summary>
+        static string Squash(string iText)
+        {
+            var sb = new StringBuilder();
+            foreach (char c in iText)
+            {
+                if (char.IsWhiteSpace(c)) continue;
+                sb.Append(c);
+                if (sb.Length >= 64) break;
+            }
+            return sb.ToString();
+        }
+
+        static string Clip(string iText) => iText.Length <= 22 ? iText : iText.Substring(0, 22);
+
 
         /// <summary>
         /// 第 N 版的路徑（<c>NNN_vN.txt</c>，N≥2）。TASK-0152：既有章**永不覆蓋**，重出往這裡放。
@@ -188,6 +256,18 @@ namespace SCP.Core.Watch
             //   ⚠ 這個參數名現在比它的行為大 —— 改名要跨兩個 repo 的呼叫端，留一筆待辦，⛔ 不在本次順手改。
             if (File.Exists(aOutPath))
             {
+                // 🔴 TASK-0217：重出之前先問**這一章的 seq 現在還指著同一批訊息嗎**。
+                //   對不上就整個拒絕 —— ⛔ 連 v2 都不出：一份內容全錯的 v2 比沒有更糟，
+                //   它日後會被當成「另一版」而不是「另一批人的訊息」。
+                //   ⚠ 這一格要排在 `iForce` 判斷**之前**：身分不對時，「有沒有說要重出」根本不該被問到。
+                if (!VerifyChapterIdentity(iDataRoot, iRoom, aOutPath, out string aIdWhy))
+                {
+                    aOut.Error = "❌ **拒絕重出**：" + aIdWhy
+                                 + "。⛔ 本次一個檔都沒有生出來（含 `_vN`）。"
+                                 + "　⇒ 要重出這一章，得先把它的 seq 換成**本區**的號碼（或在本區重新匯出成新的一章）。";
+                    return aOut;
+                }
+
                 if (!iForce)
                 {
                     aOut.Error = $"❌ {aOutPath} 已存在 —— **拒絕重出**（⛔ 本層永不覆蓋）。"
