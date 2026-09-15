@@ -115,6 +115,12 @@ namespace SCP.Core.Gui
             for (int i = 0; i < m_Problems.Count; ++i) g.Note("⚠ " + m_Problems[i]);
             g.Note("· 掃描範圍（已登記的 kind）：" + string.Join(" / ", SCP_ActivitySessionKind.Kinds)
                    + "　⚠ 未登記的 kind 本頁看不到 —— 「沒查到」不等於「他不在任何 session」");
+            // ⚠ 這一行是**語意**不是裝飾：沒有它，「兩個人合法並存」與「互斥守衛壞了」在本頁同形。
+            //   kind 名單取自 `GlobalExclusiveKinds` 而不是寫死「Coding」—— 表變了這行要跟著變，
+            //   ⛔ 否則它自己就會變成下一句過期的字面（TASK-0210 治的正是那個）。
+            g.Note("· `" + string.Join(" / ", SCP_ActivitySessionKind.GlobalExclusiveKinds)
+                   + "` 是**範圍**互斥：範圍不重疊的人可以同時 ● 進行中"
+                   + " ⇒ **兩列同時進行中不代表守衛壞了**；未宣告範圍的那一場退化成全域獨佔（擋所有人）");
             if (m_CloseJob != null)
                 g.Note("⏳ 委派中：正在請 Editor 關掉 `" + m_CloseJobTarget + "` 的場（1〜3 秒，畫面不會凍住）…");
             if (m_Message != null) g.Note(m_Message);
@@ -201,6 +207,24 @@ namespace SCP.Core.Gui
                         g.Label("剩 " + ((int)Math.Max(0, (aEnd.Value - aNow).TotalMinutes)) + " 分");
                     else if (!aS.active && aS.end_reason.Length > 0)
                         g.Label("reason=" + aS.end_reason);
+
+                    // 區塊職責：把這一場宣告的**施工範圍**畫出來。
+                    // 物理意義：只對**全域互斥**的 kind 畫 —— 其餘 kind 沒有「範圍」這個概念，
+                    //           替它們畫一個永遠空的欄位，讀的人會把它讀成「這個人沒宣告」。
+                    // 數值影響：純讀 `Raw`（`ScopeOf` 是唯一入口，⛔ 不在這裡各自 `Raw["scope"]`）；零 IO。
+                    // 🩸 為什麼它值得佔一格版面（2026-09-15 summit 一小時內兩次現場）：
+                    //   本頁印得出 `running=2` 卻印不出「他們各自在哪一塊」⇒
+                    //   **「兩個人合法並存」與「互斥守衛壞了」在這個畫面上同形**，
+                    //   而我兩次都用推的去補那一格，兩次都推錯（一次差點去修一個沒壞的守衛，
+                    //   一次拿十分鐘前的列表當現況）。⇒ 補的是讀數，不是提醒。
+                    // ⚠ 已收工的場仍印範圍（那是歷史事實，狀態欄已寫著「○ 已收工」）；
+                    //   但「未宣告」那句**只對還擋得到人的場**印 —— 對收工的場說「擋所有人」是假的。
+                    if (SCP_ActivitySessionKind.IsGlobalExclusive(aS.kind))
+                    {
+                        string aScope = SCP_ActivitySessionStore.ScopeOf(aS);
+                        if (aScope.Length > 0) g.Label("範圍=" + aScope);
+                        else if (aRun || aStale) g.Label("⚠ 未宣告範圍 ⇒ 全域獨佔（擋所有人）");
+                    }
 
                     // ① 只有殘留能從這裡收。進行中的場**不畫鈕** —— 畫了就是在邀請人做那件不該做的事。
                     if (!aStale) continue;
