@@ -469,7 +469,7 @@ namespace SCP.Core.Cmd
             //   ⇒ 改成**出聲**：句中出現了 Fixes/Refs TASK-n 而沒有一條錨定 ⇒ 說出來並印補救指令。
             if (aSeen.Count == 0)
             {
-                Regex aLoose = new Regex(@"(?:Fixes|Refs)[ 	]+TASK-(\d+)", RegexOptions.IgnoreCase);
+                Regex aLoose = new Regex(@"(?:Fixes|Refs)[ 	]+TASK-(\d+)\b", RegexOptions.IgnoreCase);
                 var aMissed = new List<string>();
                 foreach (Match aM in aLoose.Matches(iMessage))
                 {
