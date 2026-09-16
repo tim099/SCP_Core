@@ -44,6 +44,12 @@ namespace SCP.Core.Cmd
                 + "backlog / todo / in_progress / in_review / done / cancelled，"
                 + "外加兩個**篩選成員**：`all`（全部）／`open`（未關的）。"
                 + "⛔ 認不得的值**不會靜默回 0 筆** —— 出聲並 exit 2（同 `senate ui --page` 的語意）"),
+            new SCP_CmdArgSpec("type",
+                "只列這個種類。合法值＝`SCP_TaskType` 全體："
+                + "feature / improvement / refactor / spike / subtask / bug / epic，"
+                + "外加一個**篩選成員**：`all`（全部）。"
+                + "⛔ 認不得的值同 status：出聲並 exit 2，不回「0 張」。"
+                + "可與 status 同時給（兩個條件是 AND）"),
             new SCP_CmdArgSpec("out_json", "把完整資料落成 JSON 的路徑（巢狀資料走檔案，不進 values）"),
             new SCP_CmdArgSpec("wrapup",
                 "`1` ＝ 改印**收工閘**候選（這次上線後動過／還開著／我是參與者／收工紀錄已過期）。"
@@ -121,6 +127,25 @@ namespace SCP.Core.Cmd
                     "  合法值：" + string.Join(" / ", Enum.GetNames(typeof(SCP_TaskStatus))),
                     "  · 其中 `all`（全部）與 `open`（未關的）是**篩選成員**，不會是任何單子的狀態",
                     "  ⛔ 不回「0 張」—— 那跟「真的沒有符合的單」長得一樣");
+
+            // ===========================================================
+            // type 篩選：跟上面 status 那一格**同一種語意**，⛔ 不另立規矩。
+            // 物理意義：`SCP_TaskType` 的第一格也是 `all`（篩選成員、不落盤），
+            //   所以泛型 `SCP_TaskWire.TryParse` 兩邊共用，認不得的值一律 exit 2。
+            // 🩸 為什麼補這一格（2026-09-16，calli wake#52）：早安 brief §6 印的指路指令是
+            //   `cmd tasks --arg data_root=<root> --arg type=bug` —— 而本 Cmd 當時**沒有 type**，
+            //   照著跑當場被 ArgSpec 預檢擋下（exit 2）。⇒ 補的是「讓那條指路指令變成真的」，
+            //   ⛔ 不是改 brief 去指一條較弱的路（`status=open` 列得出來但不分種類）。
+            // ===========================================================
+            string aTypeFilter = iArgs.Get("type");
+            SCP_TaskType aTypeWanted = SCP_TaskType.all;
+            if (aTypeFilter.Length > 0 && !SCP_TaskWire.TryParse(aTypeFilter, out aTypeWanted))
+                return SCP_CmdResult.Fail(2,
+                    "✗ 認不得的 type：`" + aTypeFilter + "`",
+                    "  合法值：" + string.Join(" / ", Enum.GetNames(typeof(SCP_TaskType))),
+                    "  · 其中 `all`（全部）是**篩選成員**，不會是任何單子的種類",
+                    "  ⛔ 不回「0 張」—— 那跟「真的沒有符合的單」長得一樣");
+
             string aPersona = aPersona0;
             var aRows = new List<SCP_TaskEntry>();
             int aOpen = 0, aMine = 0, aMineOpen = 0;
@@ -136,7 +161,8 @@ namespace SCP.Core.Cmd
                     aMine++;
                     if (!e.IsClosed()) aMineOpen++;
                 }
-                if (KeepByStatus(e, aStatusFilter, aStatusWanted)) aRows.Add(e);
+                if (KeepByStatus(e, aStatusFilter, aStatusWanted)
+                    && KeepByType(e, aTypeFilter, aTypeWanted)) aRows.Add(e);
             }
 
             aResult.Lines.Add("# 📋 任務單 —— 共 " + aAll.Count + " 張（開著 " + aOpen + "）");
@@ -145,8 +171,17 @@ namespace SCP.Core.Cmd
             aResult.Lines.Add("· 種類分布：" + Describe(aByType));
             if (aPersona.Length > 0)
                 aResult.Lines.Add("· " + aPersona + " 參與 " + aMine + " 張（其中開著 " + aMineOpen + "）");
-            if (aStatusFilter.Length > 0)
-                aResult.Lines.Add("· 篩選 status=" + aStatusFilter + " ⇒ " + aRows.Count + " 張");
+            // ⚠ 兩個篩選是 AND，所以那個張數**屬於兩者的交集** —— 要把兩個條件一起印出來。
+            //   只印其中一個的話，「status=open ⇒ 1 張」看起來會像「open 只有 1 張」，
+            //   而真相是「open 且 type=bug 有 1 張」：同一個數字，兩種讀法。
+            if (aStatusFilter.Length > 0 || aTypeFilter.Length > 0)
+            {
+                var aCond = new List<string>();
+                if (aStatusFilter.Length > 0) aCond.Add("status=" + aStatusFilter);
+                if (aTypeFilter.Length > 0) aCond.Add("type=" + aTypeFilter);
+                aResult.Lines.Add("· 篩選 " + string.Join(" 且 ", aCond.ToArray())
+                                  + " ⇒ " + aRows.Count + " 張");
+            }
             aResult.Lines.Add("");
             foreach (SCP_TaskEntry e in aRows)
                 aResult.Lines.Add("- " + e.Id + "　" + e.status + "／" + e.type + "／" + e.priority
@@ -355,6 +390,19 @@ namespace SCP.Core.Cmd
             if (iWanted == SCP_TaskStatus.all) return true;
             if (iWanted == SCP_TaskStatus.open) return !iEntry.IsClosed();
             return iEntry.status == iWanted;
+        }
+
+        // ===========================================================
+        // type 篩選的唯一判準 —— 形狀刻意跟 `KeepByStatus` 一模一樣。
+        // ⚠ 這裡**沒有** `open` 那種跨狀態的篩選成員：種類只有 `all`，
+        //   因為「未關」是狀態的性質，不是種類的性質。⛔ 別在這裡混進狀態判斷，
+        //   那會讓 `--arg type=` 這一格悄悄多出一個只有它自己知道的語意。
+        // ===========================================================
+        static bool KeepByType(SCP_TaskEntry iEntry, string iWire, SCP_TaskType iWanted)
+        {
+            if (iWire.Length == 0) return true;               // 不給 ＝ 全部（維持既有預設）
+            if (iWanted == SCP_TaskType.all) return true;
+            return iEntry.type == iWanted;
         }
 
         static void Bump(Dictionary<string, int> ioMap, string iKey)
