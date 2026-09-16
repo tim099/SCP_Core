@@ -39,7 +39,11 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("index", "只看某一張單（給了就印那張的細節）"),
             new SCP_CmdArgSpec("persona", "以誰的視角統計「跟我有關的未關單」（選填）"),
-            new SCP_CmdArgSpec("status", "只列這個狀態（wire 名，如 todo / in_review）"),
+            new SCP_CmdArgSpec("status",
+                "只列這個狀態。合法值＝`SCP_TaskStatus` 全體："
+                + "backlog / todo / in_progress / in_review / done / cancelled，"
+                + "外加兩個**篩選成員**：`all`（全部）／`open`（未關的）。"
+                + "⛔ 認不得的值**不會靜默回 0 筆** —— 出聲並 exit 2（同 `senate ui --page` 的語意）"),
             new SCP_CmdArgSpec("out_json", "把完整資料落成 JSON 的路徑（巢狀資料走檔案，不進 values）"),
             new SCP_CmdArgSpec("wrapup",
                 "`1` ＝ 改印**收工閘**候選（這次上線後動過／還開著／我是參與者／收工紀錄已過期）。"
@@ -99,6 +103,24 @@ namespace SCP.Core.Cmd
             }
 
             string aStatusFilter = iArgs.Get("status");
+            // ===========================================================
+            // `all` / `open` 是 `SCP_TaskStatus` 的前兩格 —— **篩選成員，不可落盤**
+            //   （Tim 2026-08-26 拍板不另開第二個 enum）。
+            //   ⇒ 它們**不會出現在任何單檔的 status 上**，所以純字面比對永遠回 0 筆。
+            // 🩸 血證 2026-09-16（TASK-0221）：`--arg status=open` 印「0 張」，
+            //   而**同一畫面**的 `open_count` 是 15 —— 一則輸出裡兩個數字講相反的事，沒有一層出聲。
+            //   ⛔ 而「未實作」跟「真的沒有符合的單」在輸出上完全同形。
+            // 認不得的值走 exit 2 ＋ 印合法清單：**跟 `senate ui --page <壞 key>` 同一種語意**
+            //   （靜默開在首頁會讓「打錯 key」與「那頁是空的」同形 —— 同一顆 exe 不該有兩套規矩）。
+            // ⛔ 沒動預設：不給 status 仍是「全部」。改預設會動到既有呼叫端，那是拍板的事。
+            // ===========================================================
+            SCP_TaskStatus aStatusWanted = SCP_TaskStatus.all;
+            if (aStatusFilter.Length > 0 && !SCP_TaskWire.TryParse(aStatusFilter, out aStatusWanted))
+                return SCP_CmdResult.Fail(2,
+                    "✗ 認不得的 status：`" + aStatusFilter + "`",
+                    "  合法值：" + string.Join(" / ", Enum.GetNames(typeof(SCP_TaskStatus))),
+                    "  · 其中 `all`（全部）與 `open`（未關的）是**篩選成員**，不會是任何單子的狀態",
+                    "  ⛔ 不回「0 張」—— 那跟「真的沒有符合的單」長得一樣");
             string aPersona = aPersona0;
             var aRows = new List<SCP_TaskEntry>();
             int aOpen = 0, aMine = 0, aMineOpen = 0;
@@ -114,8 +136,7 @@ namespace SCP.Core.Cmd
                     aMine++;
                     if (!e.IsClosed()) aMineOpen++;
                 }
-                if (aStatusFilter.Length == 0 || string.Equals(e.status.ToString(), aStatusFilter, StringComparison.Ordinal))
-                    aRows.Add(e);
+                if (KeepByStatus(e, aStatusFilter, aStatusWanted)) aRows.Add(e);
             }
 
             aResult.Lines.Add("# 📋 任務單 —— 共 " + aAll.Count + " 張（開著 " + aOpen + "）");
@@ -320,6 +341,20 @@ namespace SCP.Core.Cmd
                 }
             }
             return sb.Append('"').ToString();
+        }
+
+        // ===========================================================
+        // status 篩選的唯一判準（⚠ 呼叫端已保證 iWire 解得出來 —— 解不出的在 Execute 就 exit 2 了）。
+        // ⭐ `open` 走的是 `IsClosed()`，**跟頁首 `open_count` 同一支判準** ——
+        //   那兩個數字本來就該一致，而它們不一致正是 TASK-0221 的病灶。
+        //   ⛔ 別在這裡另寫一份「什麼叫關了」，那會長出第二個答案。
+        // ===========================================================
+        static bool KeepByStatus(SCP_TaskEntry iEntry, string iWire, SCP_TaskStatus iWanted)
+        {
+            if (iWire.Length == 0) return true;               // 不給 ＝ 全部（維持既有預設）
+            if (iWanted == SCP_TaskStatus.all) return true;
+            if (iWanted == SCP_TaskStatus.open) return !iEntry.IsClosed();
+            return iEntry.status == iWanted;
         }
 
         static void Bump(Dictionary<string, int> ioMap, string iKey)
