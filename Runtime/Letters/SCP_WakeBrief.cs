@@ -514,6 +514,15 @@ namespace SCP.Core.Letters
                 aLines.Add("- ⚠ 見林進度：最後一份是 `" + Path.GetFileName(aDigests[aDigests.Count - 1])
                            + "`，但檔名解不出涵蓋到第幾個 wake ⇒ **gap 量不到**（不是 0）");
             }
+            else if (iWakeCount - aCovered < 0)
+            {
+                // ⚠ 第二道：檔名**解出來了，而它不可能是真的**（涵蓋到的 wake 比現在還大）。
+                //   上面那道只擋「解不出」，擋不住這種 —— 而錯的那個值長得像合法讀數，
+                //   🩸 負 gap 又永遠 < 門檻 ⇒ 它會拿到一個 `✓`，提醒靜默失效。
+                aLines.Add("- ⚠ 見林進度：最後一份是 `" + Path.GetFileName(aDigests[aDigests.Count - 1])
+                           + "`，解出「涵蓋到 wake " + aCovered + "」而本次才 wake " + iWakeCount
+                           + " ⇒ **gap 量不到**（不是 0，也不是負數）");
+            }
             else
             {
                 int aGap = iWakeCount - aCovered;
@@ -565,14 +574,28 @@ namespace SCP.Core.Letters
         }
 
         /// <summary>從見林檔名（`wake_072-081.md`）取涵蓋到的最後一個 wake。解不出來回 0。</summary>
+        // ⚠ **整個檔名**都要合形（`wake_<數字>-<數字>`），不是只驗最後一個 `-` 之後那一段。
+        //   只驗尾巴的話，任何「尾巴是數字」的檔名都會解析成功，而錯的那個值長得像合法讀數：
+        //   🩸 `wake_000_prologue-2030.md`（2030 序章，不是 wake 範圍檔）被讀成「涵蓋到 wake 2030」
+        //      ⇒ gap = 12 − 2030 = **−2018**，而負 gap 永遠 < 門檻 ⇒ 濃縮提醒從此不再響，且靜默。
+        //   ⇒ 回 0 的語意是「**量不到**」，由呼叫端印成 ⚠ —— ⛔ 不是「gap 為零」。
         static int LastCoveredWake(string iPath)
         {
             string aName = Path.GetFileNameWithoutExtension(iPath);
             int aDash = aName.LastIndexOf('-');
             if (aDash < 0 || aDash + 1 >= aName.Length) return 0;
             string aTail = aName.Substring(aDash + 1);
-            return int.TryParse(aTail, NumberStyles.None, CultureInfo.InvariantCulture, out int aValue)
-                   ? aValue : 0;
+            if (!int.TryParse(aTail, NumberStyles.None, CultureInfo.InvariantCulture, out int aValue))
+                return 0;
+
+            // dash 之前必須是 `wake_<純數字>` —— **起點解不出來，終點就沒有資格被採信。**
+            const string aPrefix = "wake_";
+            string aHead = aName.Substring(0, aDash);
+            if (!aHead.StartsWith(aPrefix, StringComparison.Ordinal)) return 0;
+            if (!int.TryParse(aHead.Substring(aPrefix.Length), NumberStyles.None,
+                              CultureInfo.InvariantCulture, out int _)) return 0;
+
+            return aValue;
         }
 
         // ── §6.5 見人 ─────────────────────────────────────────────
