@@ -134,9 +134,17 @@ namespace SCP.Core.Cmd
                           aTrailers, aProblems, aResult);
             if (aProblems.Count > 0)
             {
+                // 🩸 TASK-0211：出口**逐問題**印，不是清單尾巴無條件附一行。
+                //   舊版三支問題共用「要硬幹請顯式帶 allow_unset=1」，而那個旗標只對信箱那支有效
+                //   ⇒ 讀的人照做會拿到**逐字相同的輸出**，然後去懷疑自己參數打錯。
+                //   每則問題自己帶 `\n` 分隔的出口行；這裡只負責把第一行掛 ⛔、其餘原樣印。
                 SCP_CmdResult aFail = SCP_CmdResult.Fail(3);
-                foreach (string aOne in aProblems) aFail.Lines.Add("⛔ " + aOne);
-                aFail.Lines.Add("   ⇒ 假位址進了 git history 就改不掉；要硬幹請顯式帶 `--arg allow_unset=1`。");
+                foreach (string aOne in aProblems)
+                {
+                    string[] aLines = (aOne ?? "").Replace("\r\n", "\n").Split('\n');
+                    for (int i = 0; i < aLines.Length; i++)
+                        aFail.Lines.Add(i == 0 ? "⛔ " + aLines[i] : aLines[i]);
+                }
                 return aFail;
             }
 
@@ -250,6 +258,16 @@ namespace SCP.Core.Cmd
             return aOut;
         }
 
+        // 區塊職責：把一行出口指路接在問題訊息後面（失敗分支會照 `\n` 拆開逐行印）。
+        // 物理意義：出口必須跟**它所屬的那一支問題**綁在一起 —— 共用一行出口＝對兩支無效的指路。
+        const string AllowUnsetUseless =
+            "⛔ `allow_unset=1` 對這一支**無效**（它只放行「信箱未設定／形狀可疑」那一支）";
+
+        static string ExitLine(string iExit) { return "\n   ⇒ " + iExit; }
+
+        // 區塊職責：接一行「這一支吃不下 allow_unset」的定句（不是出口，是把假出口擋在門外）。
+        static string NoteLine(string iNote) { return "\n   " + iNote; }
+
         // 區塊職責：每位 persona 一行 trailer；擋不下的問題收進 oProblems。
         // 數值影響：⛔ 信箱是哨兵或形狀可疑 ⇒ **預設擋下**（除非 allow_unset）。
         //          agent 欄空白只出聲不擋 —— 那會印成 `?@<persona>`，難看但不是假資訊。
@@ -274,15 +292,22 @@ namespace SCP.Core.Cmd
                 if (aProfile == null)
                 {
                     oProblems.Add("persona 檔不存在或讀不到：" + aPersona + "（打錯名字會靜默生出一行掛在"
-                                  + "不存在的人身上的 trailer）");
+                                  + "不存在的人身上的 trailer）"
+                                  + ExitLine("先確認名字拼法：`senate cmd persona --arg letters_root="
+                                             + (iLettersRoot.Length == 0 ? "<同一個>" : iLettersRoot)
+                                             + " --arg all=1`（唯讀，列出整個 pool）")
+                                  + NoteLine(AllowUnsetUseless));
                     continue;
                 }
                 if ((aProfile.GetString("agent", "") ?? "").Trim().Length == 0)
                 {
                     // ⚠ 最常見的成因**不是那個人沒有帳號，是沒給 `region`** —— agent 欄要它才解析得出來。
                     oProblems.Add(aPersona + " 的 agent 欄是空的 ⇒ trailer 的身分會變成 `?`"
-                                  + (iRegion.Length == 0 ? "　⇒ 多半是**沒給 `region`**（agent 欄要它）"
-                                                         : "　（region=" + iRegion + " 之下仍查無帳號綁定）"));
+                                  + ExitLine(iRegion.Length == 0
+                                             ? "多半是**沒給 `region`** ⇒ 補 `--arg region=<區域>`（agent 欄要它才解析得出來）"
+                                             : "region=" + iRegion + " 之下仍查無帳號綁定 ⇒ 到 Editor 的 "
+                                               + "Persona & Agent 管理頁確認 " + aPersona + " 的綁定")
+                                  + NoteLine(AllowUnsetUseless));
                     continue;
                 }
                 SCP_AgentEmailInfo aInfo = SCP_AgentEmail.Resolve(iLettersRoot, aPersona, iRegion,
@@ -297,7 +322,14 @@ namespace SCP.Core.Cmd
                     string aMsg = aPersona + " 的信箱未設定或形狀可疑（" + aInfo.Email
                                   + "）—— 到 Editor 的 Persona & Agent 管理頁設定";
                     if (iAllowUnset) ioResult.Lines.Add("⚠ " + aMsg + "（`allow_unset=1` 已放行）");
-                    else { oProblems.Add(aMsg); continue; }
+                    else
+                    {
+                        // 📌 三支問題裡**只有這一支**吃得下 allow_unset —— 所以出口只印在這裡。
+                        oProblems.Add(aMsg
+                                      + ExitLine("要硬幹請顯式帶 `--arg allow_unset=1`"
+                                                 + "（假位址進了 git history 就改不掉）"));
+                        continue;
+                    }
                 }
                 oTrailers.Add(SCP_AgentEmail.BuildTrailer(iLettersRoot, aPersona, iRegion, iDataRoot,
                                                           w => ioResult.Lines.Add("⚠ " + w)));
