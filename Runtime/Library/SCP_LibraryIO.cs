@@ -52,6 +52,12 @@ namespace SCP.Core.Library
         public const string Key_Name = "name";
         public const string Key_NameOriginal = "name_original";
         public const string Key_Facts = "facts";
+        // ── round 條目的三欄（TASK-0166 第一刀搬 RenderRecall 時補上；鍵名與 Editor 端逐字相同）──
+        // ⚠ `segments` 不是裝飾：它讓「一話分兩場寫完」與「看了兩遍」在讀回視圖上分得開；
+        //   不印的話那兩件事同形，而誤讀不會有任何一層報錯（TASK-0121 ③）。
+        public const string Key_Segments = "segments";
+        public const string Key_Gap = "gap";
+        public const string Key_SharedSeq = "shared_seq";
 
         /// <summary>合法的 media_kind —— ⚠ media_id 的前綴必須與它同字（兩欄互為校驗）。</summary>
         public static readonly string[] MediaKinds = { "comic", "anim", "film", "series", "stream", "book" };

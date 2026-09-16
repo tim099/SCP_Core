@@ -32,6 +32,10 @@ namespace SCP.Core.Library
         public const string ReaderJsonName = "reader.json";
         public const string MediaJsonName = "media.json";
         public const string WorkJsonName = "work.json";
+        // ── 讀者層底下的三個檔名（TASK-0166 第一刀補上；與 Editor 端逐字相同）──
+        public const string ChapterJsonName = "chapter.json";
+        public const string ProfileJsonName = "profile.json";
+        public const string BookshelfName = "bookshelf.md";
 
         /// <summary>序章保留章號 —— `0000` 不是「第 0 章」，是**序章**。</summary>
         public const string PrologueChapterId = "0000";
