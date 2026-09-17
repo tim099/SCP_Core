@@ -72,16 +72,18 @@ namespace SCP.Core.Paths
         LettersRoot,
 
         [SCP_PathInfo("銀行資料根（新版）",
-            "⚠ **Global 且刻意可設定**（Tim 2026-09-14）—— 目的就是**跨專案共用同一套銀行**："
-            + "LY／Bar／Senate 指到同一個根，錢才只有一份。"
-            + " 🩸 為什麼是 Stored 不是 Derived：舊 Treasury 從**各專案自己的**資料根推出來 ⇒ **一個區一本帳**。"
-            + "2026-09-14 實測，`Codex`(246)／`Luna`(84) 這種「別區的綁定卻在本區有餘額」就是那個形狀的產物，"
-            + "而它沒有任何一層會喊。⇒ 這一格 Stored **正是為了讓它不跟著專案漂**。"
-            + " ⛔ **刻意沒有 `auto` 推導**：能推的只有「本專案底下」，而那正是要避免的那件事"
-            + "（Tim 2026-09-14：預設放**宿主自己**的 git-ignore 資料夾，然後可以手動改）。"
-            + " ⇒ 留空 ＝ 用**宿主的預設**（Senate：`<repo>/SenateData/Bank`，該目錄已 gitignore）；"
-            + "要跨專案共用就手填一個共用的絕對路徑。")]
-        [SCP_PathStored("bankRoot", SCP_PathScope.Global)]
+            "**Derived —— 跟著資料根走，不額外設定**（Tim 2026-09-17 改判）：新銀行就住 `<資料根>/Bank`，"
+            + "與舊 `Treasury/` 同一棵樹、同一份 git 歷史。"
+            + " 🩸 前一版（2026-09-14）是 Stored，目的是「跨專案共用同一套銀行」，"
+            + "而**那個目的今天沒有成立**：各專案的 `AgentCommands` 本來就是各自的 repo／branch"
+            + "（實測 LY＝`Persona9999/AgentCommands` 分支 `LY`／Bar＝`tim099/Valhalla` detached），"
+            + "帳號綁定也**逐區不同 id**（basecamp：Florin→`claude-code`／BTC→`cc`）"
+            + " ⇒ 帳本本來就是一區一本，多一格可填的路徑只是給漂移一個住的地方。"
+            + " ⚠ 代價要講在這裡，因為它不會叫：**跨區共用同一套銀行這條路，這一版沒有了** ——"
+            + "要做的話是把 Bank 目錄本身做成跨樹共用的 repo，不是回頭讓這一格可填。"
+            + " ⚠ 而它現在**在版控裡**（`AgentCommands` 是 submodule）——"
+            + "舊的 `<repo>/SenateData/Bank` 是 gitignored 的，兩者對「錢的歷史留不留得下來」相反。")]
+        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, "Bank", SCP_PathScope.Global)]
         BankRoot,
 
         [SCP_PathInfo("session token 表目錄",
