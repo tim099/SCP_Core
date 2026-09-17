@@ -277,7 +277,10 @@ namespace SCP.Core.Gui
         /// </summary>
         public sealed override void Draw(SCP_Ui iUi)
         {
-            DrawToolBar(iUi);
+            // ⭐ 工具列包在 `TopBar()` 裡 ⇒ **不跟內容一起捲**（Tim 2026-09-17，概念同 `UCL_EditorPage`）。
+            //   🩸 沒有這一層時，內容一長就得先捲回最上面才按得到返回鈕 ——
+            //     而那顆鈕正是「我迷路了」時要按的那一顆。
+            using (iUi.TopBar()) DrawToolBar(iUi);
             DrawContent(iUi);
         }
     }

@@ -68,6 +68,18 @@ namespace SCP.Core.Gui
         /// </summary>
         public bool UniformWidth { get; init; }
 
+        /// <summary>
+        /// **釘在最上面、不跟內容一起捲**（只有 Root 的直接子節點有意義）。
+        /// <para>概念取自 Unity 的 `UCL_EditorPage`：`TopBar()` 畫在 ScrollView **外面**，
+        /// `ContentOnGUI()` 畫在裡面 ⇒ 捲到第 200 行時返回鈕還在。</para>
+        /// <para>⚠ 刻意做成**節點上的一個欄位**而不是新的 `Kind`：新增一種 Kind 要同時改 5 個地方
+        /// （enum／撰寫端／文字 renderer／ImGui renderer／可互動元件清單），而漏掉的那一處不會報錯。
+        /// 一個 bool 只有「會捲的 renderer」需要看它，其餘一律當它不存在。</para>
+        /// <para>⚠ 文字 renderer **不理它**：終端機沒有捲動這回事，輸出照順序印 ——
+        /// 而那正好是對的（那一份要能 diff）。</para>
+        /// </summary>
+        public bool Pinned { get; init; }
+
         /// <summary>Table 的表頭；其他 Kind 不使用。</summary>
         public IReadOnlyList<string> Headers { get; init; } = Array.Empty<string>();
 

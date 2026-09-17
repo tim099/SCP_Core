@@ -104,6 +104,18 @@ namespace SCP.Core.Gui
         }
         public Scope Row() { m_Ids.PushLevel("row"); Push(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Row }); return new Scope(this); }
 
+        /// <summary>
+        /// **釘在最上面的那一條**（不跟內容一起捲）—— 概念同 Unity `UCL_EditorPage` 的 `TopBar()`。
+        /// <para>⚠ 只有**放在 Root 底下第一層**才有意義：renderer 是在「畫內容之前」把它先畫掉的。</para>
+        /// <para>⚠ 沒有捲動的 renderer（文字／指令）會當它是一般 Column ⇒ 行為不變。</para>
+        /// </summary>
+        public Scope TopBar()
+        {
+            m_Ids.PushLevel("topbar");
+            Push(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Column, Pinned = true });
+            return new Scope(this);
+        }
+
         public Scope Box(string iTitle = "", string? iKey = null, bool iUniformWidth = false)
         {
             m_Ids.PushLevel(iKey ?? iTitle);
