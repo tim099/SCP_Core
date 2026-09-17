@@ -69,9 +69,14 @@ namespace SCP.Core.Gui
         public bool UniformWidth { get; init; }
 
         /// <summary>
-        /// **釘在最上面、不跟內容一起捲**（只有 Root 的直接子節點有意義）。
+        /// **釘在最上面、不跟內容一起捲**（⭐ 掉在樹的**第幾層都算數**）。
         /// <para>概念取自 Unity 的 `UCL_EditorPage`：`TopBar()` 畫在 ScrollView **外面**，
         /// `ContentOnGUI()` 畫在裡面 ⇒ 捲到第 200 行時返回鈕還在。</para>
+        /// <para>🩸 TASK-0236：這一行原本寫「只有 Root 的直接子節點有意義」，而那是**真的**——
+        /// renderer 當時只掃 `Root.Children`。於是 `SCP_GuiPageController.Draw` 的
+        /// `IdScope(page.Key)` 多 Push 一個 Column、把 TopBar 擠到孫層之後，
+        /// 釘住**整個失效**而沒有任何一層會喊。⇒ 條件改成「整棵樹去找」，
+        /// 因為「頁面外面有沒有人多包一層」不是撰寫端該記得的事。</para>
         /// <para>⚠ 刻意做成**節點上的一個欄位**而不是新的 `Kind`：新增一種 Kind 要同時改 5 個地方
         /// （enum／撰寫端／文字 renderer／ImGui renderer／可互動元件清單），而漏掉的那一處不會報錯。
         /// 一個 bool 只有「會捲的 renderer」需要看它，其餘一律當它不存在。</para>

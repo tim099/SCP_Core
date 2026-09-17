@@ -106,7 +106,9 @@ namespace SCP.Core.Gui
 
         /// <summary>
         /// **釘在最上面的那一條**（不跟內容一起捲）—— 概念同 Unity `UCL_EditorPage` 的 `TopBar()`。
-        /// <para>⚠ 只有**放在 Root 底下第一層**才有意義：renderer 是在「畫內容之前」把它先畫掉的。</para>
+        /// <para>⭐ 放在**第幾層都算數**（TASK-0236）：renderer 會整棵樹去找釘住的節點，
+        /// 在「畫內容之前」先把它們畫掉、畫內容那一遍再跳過。
+        /// ⇒ 頁面外面有沒有人多包一層群組（例如 `IdScope`），撰寫端不必知道。</para>
         /// <para>⚠ 沒有捲動的 renderer（文字／指令）會當它是一般 Column ⇒ 行為不變。</para>
         /// </summary>
         public Scope TopBar()
