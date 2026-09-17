@@ -76,8 +76,10 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("op", "add（建一本新書）｜log-chapter（記一章）｜arc（記階段大綱）"
                                + "｜writing（列出寫到一半的書，**純讀**）"
+                               + "｜donations（共享圖書館捐贈簿，純讀）｜tips（打賞簿，純讀）"
                                + " —— 預設 writing，⭐ 純讀的那個當預設"),
             new SCP_CmdArgSpec("persona", "op=writing 用：只看這位作者的書（省略＝全部作者）"),
+            new SCP_CmdArgSpec("book_filter", "op=tips 用：只看這一本的打賞（省略＝全部）"),
             new SCP_CmdArgSpec("book", "op=log-chapter／arc 用：書本 slug（必填）"),
             new SCP_CmdArgSpec("chapter", "op=log-chapter 用：章號，整數（必填）"),
             new SCP_CmdArgSpec("slug", "op=log-chapter 用：章節檔名 slug（省略＝由 title 生成，再省略＝ch<N>）"),
@@ -116,8 +118,10 @@ namespace SCP.Core.Cmd
                 "log-chapter" => OpLogChapter(aDataRoot, iArgs),
                 "arc" => OpArc(aDataRoot, iArgs),
                 "writing" => OpWriting(aDataRoot, iArgs),
+                "donations" => OpDonations(aDataRoot),
+                "tips" => OpTips(aDataRoot, iArgs),
                 _ => SCP_CmdResult.Fail(2,
-                    $"✗ 不認得的 op：`{aOp}`（吃的是 add｜log-chapter｜arc｜writing）"),
+                    $"✗ 不認得的 op：`{aOp}`（吃的是 add｜log-chapter｜arc｜writing｜donations｜tips）"),
             };
         }
 
@@ -164,6 +168,32 @@ namespace SCP.Core.Cmd
                     + $"　讀自 `{aBook.SourcePath}`");
             }
             aResult.AddValue("writing", aBooks.Count.ToString(CultureInfo.InvariantCulture));
+            return aResult;
+        }
+
+        // ── op=donations / op=tips ────────────────────────────────────────────
+        // 區塊職責：共享圖書館的兩份報表 —— **CLI 這一側的入口**（TASK-0234 ①）。
+        // 🩸 為什麼這兩個 op 是新加的：在此之前 CLI **根本沒有**這兩個入口 ——
+        //   於是 0166 ② 那條「兩個入口同輸入對拍」在結構上量不了，
+        //   而「量不了」在看板上跟「還沒量」長得一樣。
+        // ⛔ 版面在 `SCP_BooksDonations`，本處**原樣輸出、不重排**：
+        //   在這裡再排一次就是第二份實作，而對拍會變成「兩份實作碰巧一致」，
+        //   那不是驗收要的東西（要的是「兩個入口讀到的是同一份」）。
+        static SCP_CmdResult OpDonations(string iDataRoot)
+            => Emit(SCP_BooksDonations.RenderDonations(iDataRoot));
+
+        static SCP_CmdResult OpTips(string iDataRoot, SCP_CmdArgs iArgs)
+            => Emit(SCP_BooksDonations.RenderTips(iDataRoot, iArgs.Get("book_filter").Trim()));
+
+        /// <summary>把報表整段逐行放進結果 —— ⚠ 尾端空行**不吃掉**（吃掉就跟 Editor 那側差一格）。</summary>
+        static SCP_CmdResult Emit(string iText)
+        {
+            string aText = (iText ?? "").Replace("\r\n", "\n");
+            var aLines = new List<string>(aText.Split(new[] { '\n' }));
+            // 報表以 AppendLine 收尾 ⇒ 最後一格必是空字串；那是**行尾**不是空行，去掉它才等長。
+            if (aLines.Count > 0 && aLines[aLines.Count - 1].Length == 0) aLines.RemoveAt(aLines.Count - 1);
+            var aResult = SCP_CmdResult.Success(aLines.Count > 0 ? aLines[0] : "");
+            for (int i = 1; i < aLines.Count; i++) aResult.Lines.Add(aLines[i]);
             return aResult;
         }
 
