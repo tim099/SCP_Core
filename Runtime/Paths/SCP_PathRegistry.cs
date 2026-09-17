@@ -77,7 +77,7 @@ namespace SCP.Core.Paths
             + " 🩸 前一版（2026-09-14）是 Stored，目的是「跨專案共用同一套銀行」，"
             + "而**那個目的今天沒有成立**：各專案的 `AgentCommands` 本來就是各自的 repo／branch"
             + "（實測 LY＝`Persona9999/AgentCommands` 分支 `LY`／Bar＝`tim099/Valhalla` detached），"
-            + "帳號綁定也**逐區不同 id**（basecamp：Florin→`claude-code`／BTC→`cc`）"
+            + "帳號綁定也**逐區不同 id**（實測綁定檔，basecamp：BTC→`claude-code`／Florin→`cc`）"
             + " ⇒ 帳本本來就是一區一本，多一格可填的路徑只是給漂移一個住的地方。"
             + " ⚠ 代價要講在這裡，因為它不會叫：**跨區共用同一套銀行這條路，這一版沒有了** ——"
             + "要做的話是把 Bank 目錄本身做成跨樹共用的 repo，不是回頭讓這一格可填。"
