@@ -23,6 +23,20 @@ namespace SCP.Core.Library
         public const string ScanReportName = "scan_report.md";
         public const string ArchiveDirName = "Archive";
 
+        // ⚠ registry 的 `state` 只有這三種**被程式讀**（其餘值會被當成「還沒裁決」）：
+        //   · migrated     ＝ 這筆 Archive 的內容已經進正本 ⇒ 掃描預設隱藏（重複資料）
+        //   · kept_archive ＝ **刻意不遷**，Archive 就是它的正本 ⇒ ⛔ 不隱藏，但標成已裁決
+        //   · born_new     ＝ 這筆資料是新流程直接在 Library 建的，**不經遷移**（TASK-0171 ④）
+        // 🩸 TASK-0171：本檔原本只認得 `migrated` ⇒ 帳本回答的是「誰用過 migrate」，
+        //   而「刻意不遷」與「還沒遷」在帳上同形、「新流程直接建」在帳上根本不存在。
+        public const string StateMigrated = "migrated";
+        public const string StateKeptArchive = "kept_archive";
+        public const string StateBornNew = "born_new";
+
+        /// <summary>registry.json 的絕對路徑（唯一入口 —— ⛔ 不要在別處各自組一次）。</summary>
+        public static string RegistryPath(string iDataRoot)
+            => Path.Combine(SCP_BookStore.BookNotesRoot(iDataRoot), MigrationDirName, RegistryJsonName);
+
         // ===========================================================
         // 區塊職責：讀「已遷移 Archive」集合。
         // 物理意義：**Archive 不可修改**（Tim 鐵律），所以「已遷移」不寫進 Archive 本身，
@@ -33,8 +47,31 @@ namespace SCP.Core.Library
         public static HashSet<string> LoadMigratedArchiveSlugs(string iDataRoot)
         {
             var aOut = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            string aPath = Path.Combine(SCP_BookStore.BookNotesRoot(iDataRoot), MigrationDirName, RegistryJsonName);
-            SCP_JsonData? aReg = SCP_LibraryIO.LoadJson(aPath, out _);
+            foreach (KeyValuePair<string, ArchiveDecision> kv in LoadArchiveDecisions(iDataRoot))
+                if (kv.Value.State == StateMigrated) aOut.Add(kv.Key);
+            return aOut;
+        }
+
+        /// <summary>registry 對某個 Archive slug 的裁決：狀態＋人話理由（理由可以是空字串）。</summary>
+        public readonly struct ArchiveDecision
+        {
+            public readonly string State;
+            public readonly string Reason;
+            public ArchiveDecision(string iState, string iReason) { State = iState; Reason = iReason; }
+        }
+
+        // ===========================================================
+        // 區塊職責：把 registry 裡**所有對 Archive 的裁決**讀成一張表（不只 migrated）。
+        // 物理意義：「已裁決」與「還沒裁決」是兩件事，而**處置不同**：
+        //          已遷移 ⇒ 隱藏（重複）／刻意不遷 ⇒ 顯示但標註（它就是正本）／沒有紀錄 ⇒ 要人看。
+        // 數值影響：唯讀，一次檔案讀取；缺檔／壞檔 → 空表（fail-open，理由同下面那支）。
+        // ⚠ 同一個 slug 有多筆紀錄時**取最後一筆** —— registry 是 append-only 的帳，
+        //   後面那筆是比較新的決定；⛔ 不合併兩筆（合併＝替人重寫他的決定）。
+        // ===========================================================
+        public static Dictionary<string, ArchiveDecision> LoadArchiveDecisions(string iDataRoot)
+        {
+            var aOut = new Dictionary<string, ArchiveDecision>(StringComparer.OrdinalIgnoreCase);
+            SCP_JsonData? aReg = SCP_LibraryIO.LoadJson(RegistryPath(iDataRoot), out _);
             if (aReg == null || !aReg.Contains("records")) return aOut;
             SCP_JsonData aRecords = aReg["records"];
             if (aRecords == null || !aRecords.IsArray) return aOut;
@@ -44,12 +81,75 @@ namespace SCP.Core.Library
             {
                 SCP_JsonData aRec = aRecords[i];
                 if (aRec == null || !aRec.IsObject) continue;
-                if (aRec.GetString("state", "") != "migrated") continue;
+                string aState = aRec.GetString("state", "");
+                if (aState != StateMigrated && aState != StateKeptArchive) continue;
                 string aSrc = aRec.GetString("source_id", "");
-                if (aSrc.StartsWith(aPrefix, StringComparison.Ordinal))
-                    aOut.Add(aSrc.Substring(aPrefix.Length).Trim().TrimEnd('/'));
+                if (!aSrc.StartsWith(aPrefix, StringComparison.Ordinal)) continue;
+                string aSlug = aSrc.Substring(aPrefix.Length).Trim().TrimEnd('/');
+                aOut[aSlug] = new ArchiveDecision(aState, aRec.GetString("disposition", ""));
             }
             return aOut;
+        }
+
+        // ===========================================================
+        // 區塊職責：往 registry append 一筆紀錄（唯一寫入端）。
+        // 物理意義：registry 是**帳**不是快取 ⇒ append-only、不改既有紀錄、不排序。
+        // 數值影響：`iDedupeSourceId` 已經有紀錄時**零寫入**回 false ——
+        //          重跑 `media_init` 是常態（它自己就是冪等的），帳不該因此長出第二筆。
+        // ⚠ 寫回時整份重新序列化（2 空格＋冒號後空格，貼齊手寫的原樣）——
+        //   ⛔ 不用字串接龍插一段：那會產生第二種 JSON 寫法，而壞掉的樣子是「檔在、解析不了」。
+        // ===========================================================
+        public static bool AppendRecord(string iDataRoot, SCP_JsonData iRecord, string iDedupeSourceId,
+                                        out string? oError)
+        {
+            oError = null;
+            string aPath = RegistryPath(iDataRoot);
+            SCP_JsonData? aReg = SCP_LibraryIO.LoadJson(aPath, out string? aErr);
+            if (aReg == null) { oError = aErr ?? "registry 讀不回來"; return false; }
+            if (!aReg.Contains("records") || !aReg["records"].IsArray)
+            { oError = "registry 沒有 records 陣列 —— ⛔ 不自己建一份，那會蓋掉一份讀不懂的帳"; return false; }
+
+            SCP_JsonData aRecords = aReg["records"];
+            for (int i = 0; i < aRecords.Count; i++)
+                if (aRecords[i].IsObject
+                    && string.Equals(aRecords[i].GetString("source_id", ""), iDedupeSourceId,
+                                     StringComparison.OrdinalIgnoreCase))
+                    return false;                                  // 已經在帳上 ⇒ 不重複記
+
+            aRecords.Add(iRecord);
+            try
+            {
+                SCP_TextFile.WriteCrLf(aPath,
+                    SCP_JsonWriter.Write(aReg, SCP_JsonStyle.Default.WithIndent("  ")) + "\n");
+            }
+            catch (Exception e) { oError = $"registry 寫不進去：{e.GetType().Name}: {e.Message}"; return false; }
+            return true;
+        }
+
+        // ===========================================================
+        // 區塊職責：`op=media_init` 建出一個**新流程直接生在 Library 的 media** 時記一筆。
+        // 物理意義：TASK-0171 ④ —— 遷移帳本原本只記「誰用過 migrate」，
+        //          於是 StreamWatch／閱讀流程直接建的 media 在帳上永遠是「沒遷」，
+        //          而那跟「該遷還沒遷」同形。⇒ 這一筆讓帳回答「資料現在在哪」。
+        // 數值影響：只在 media.json **真的被建立**那一次呼叫；重跑 ⇒ AppendRecord 判重、零寫入。
+        // ⛔ 它**不宣告**任何 Archive slug 已被取代 —— 那個連結是人的判斷（`op=scan` 的 A 類候選），
+        //    工具替它簽名就是替遷移決策簽名。
+        // ===========================================================
+        public static bool RecordBornNew(string iDataRoot, string iMediaId, string iWorkId, string iMediaKind,
+                                         string iPersona, out string? oError)
+        {
+            string aSourceId = "Library/media/" + iMediaId;
+            SCP_JsonData aRec = SCP_JsonData.NewObject()
+                .Set("source_id", aSourceId)
+                .Set("state", StateBornNew)
+                .Set("target_work_id", iWorkId)
+                .Set("target_media_id", iMediaId)
+                .Set("media_kind", iMediaKind ?? "")
+                .Set("target_reader", iPersona ?? "")
+                .Set("created_at", SCP_LibraryIO.Today())
+                .Set("decided_by", "（機械）op=media_init 直接在新 store 建，未經遷移")
+                .Set("disposition", "新流程產物 ⇒ 不是遷移待辦；⛔ 本筆不宣告任何 Archive slug 已被取代");
+            return AppendRecord(iDataRoot, aRec, aSourceId, out oError);
         }
 
         // ===========================================================
@@ -70,8 +170,10 @@ namespace SCP.Core.Library
             oReportPath = null;
             var aSb = new StringBuilder();
             List<SCP_MediaEntry> aMediaEntries = SCP_LibraryCatalog.ListMediaEntries(iDataRoot);
-            HashSet<string> aMigrated = LoadMigratedArchiveSlugs(iDataRoot);
+            Dictionary<string, ArchiveDecision> aDecisions = LoadArchiveDecisions(iDataRoot);
             int aHiddenMigrated = 0;
+            var aSectionKept = new StringBuilder();
+            int aKeptCount = 0;
 
             // media 的 normalize 鍵集合（title／mediaId 去前綴／work_id／aliases）
             var aMediaKeys = new List<(SCP_MediaEntry Entry, HashSet<string> Keys)>();
@@ -118,7 +220,8 @@ namespace SCP.Core.Library
                     string aSlug = Path.GetFileName(aDir);
                     // `_` 開頭是系統目錄（_recommended／_search_reports…），不是書
                     if (aSlug.StartsWith("_", StringComparison.Ordinal)) continue;
-                    if (!iShowMigrated && aMigrated.Contains(aSlug)) { aHiddenMigrated++; continue; }
+                    aDecisions.TryGetValue(aSlug, out ArchiveDecision aDecision);
+                    if (!iShowMigrated && aDecision.State == StateMigrated) { aHiddenMigrated++; continue; }
                     aArchiveCount++;
                     SCP_JsonData? aBook = SCP_LibraryIO.LoadJson(Path.Combine(aDir, "book.json"), out string? aBookErr);
                     if (aBook == null)
@@ -138,6 +241,16 @@ namespace SCP.Core.Library
                         foreach (string k in aArchiveKeys)
                             if (aKeys.Contains(k)) { aHit = true; break; }
                         if (!aHit) continue;
+                        // 🩸 TASK-0171 ③：**刻意不遷**的那些，命中了也不算候選 ——
+                        //   它們已經有人裁決過，繼續列在 A 類就跟「還沒有人看過」同形，
+                        //   而那正是這張單要拆開的那一格。⛔ 但它們不隱藏（Archive 就是它的正本）。
+                        if (aDecision.State == StateKeptArchive)
+                        {
+                            aKeptCount++;
+                            aSectionKept.AppendLine($"- Archive `{aSlug}`（{aTitle}） ↔ Library `{m.MediaId}`（{m.Title}）"
+                                + (aDecision.Reason.Length > 0 ? $"　⛔ 刻意不遷：{aDecision.Reason}" : "　⛔ 刻意不遷"));
+                            continue;
+                        }
                         aHitCount++;
                         aSectionA.AppendLine($"- Archive `{aSlug}`（{aTitle}） ↔ Library `{m.MediaId}`（{m.Title}）" +
                                              $"　readers: {string.Join(", ", m.Readers)}");
@@ -152,6 +265,13 @@ namespace SCP.Core.Library
             aSb.AppendLine($"## A. Archive ↔ Library 疑似同作品（{aHitCount} 組 —— 逐組人工裁決，不自動遷移）");
             aSb.AppendLine();
             aSb.Append(aSectionA.Length > 0 ? aSectionA.ToString() : "（無命中）\n");
+            aSb.AppendLine();
+            // ⚠ 這一節**一定印**（0 組也印）—— 「已裁決不遷」如果只在有資料時才出現，
+            //   那麼「沒有人裁決過」與「這份報告沒有這一節」在讀的人眼裡又會同形。
+            aSb.AppendLine($"## A′. 已裁決：**刻意不遷**（{aKeptCount} 組 —— registry `state=kept_archive`，"
+                           + "⛔ 不是候選、也不隱藏：Archive 就是它們的正本）");
+            aSb.AppendLine();
+            aSb.Append(aSectionKept.Length > 0 ? aSectionKept.ToString() : "（無）\n");
             aSb.AppendLine();
 
             // ── B：Library 內部疑似重複 ──

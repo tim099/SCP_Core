@@ -133,6 +133,15 @@ namespace SCP.Core.Library
             {
                 SCP_LibraryIO.SaveJson(aMediaPath, BuildMediaJson(iMediaId, iWorkId, iMediaKind));
                 aLog.AppendLine($"- ✅ 建立 media.json：`{iMediaId}`（{iMediaKind}）");
+                // 🩸 TASK-0171 ④：遷移帳本原本只記「誰用過 migrate」⇒ 這條路（新流程直接在
+                //   Library 建）造出來的資料在帳上永遠是「沒遷」，而那跟「該遷還沒遷」同形。
+                // ⚠ 記不進去**不擋建檔** —— media.json 已經落地了，帳沒記是帳的問題；
+                //   但它必須**出聲**：靜默漏記正是本單要修的那隻病。
+                if (SCP_LibraryScan.RecordBornNew(iDataRoot, iMediaId, iWorkId, iMediaKind, iPersona,
+                                                  out string? aRegErr))
+                    aLog.AppendLine($"- 📒 遷移帳記一筆：`Library/media/{iMediaId}` state=`born_new`（新流程直接建，非遷移）");
+                else if (aRegErr != null)
+                    aLog.AppendLine($"- ⚠ 遷移帳**沒記到**（media.json 已建，資料不受影響）：{aRegErr}");
             }
 
             aLog.Append(EnsureReaderJson(iLettersRoot, iDataRoot, iMediaId, iPersona, iAnticipation, out _));
