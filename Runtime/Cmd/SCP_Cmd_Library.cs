@@ -42,7 +42,15 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根目錄（絕對路徑）—— 閱讀卡與追回檔的落點",
                                iRequired: true),
             new SCP_CmdArgSpec("op", "media_init｜register_reader｜note_chapter｜bookmark｜add_character"
-                                     + "｜revise_view｜recall｜sync_shelf｜paths（預設 paths＝純讀）"),
+                                     + "｜revise_view｜recall｜sync_shelf｜paths（預設 paths＝純讀）"
+                                     + "｜**scan｜comics｜authored_diff｜authored_migrate｜share_body**"
+                                     + "（後四支不需要 persona／media_id）"),
+            new SCP_CmdArgSpec("show_migrated", "op=scan 用：=1 ⇒ 連已遷移的 Archive 一起列（預設隱藏，而隱藏幾筆會印出來）"),
+            new SCP_CmdArgSpec("comic_root", "op=comics 用：外部實體漫畫庫根目錄（**必填** —— "
+                                             + "⛔ 本層不自己去讀 Editor 的偏好設定，那會變成同一個量兩個真相源）"),
+            new SCP_CmdArgSpec("book", "authored_diff／authored_migrate 用：舊 store 的書 slug（必填）"),
+            new SCP_CmdArgSpec("confirm", "op=authored_migrate 用：=1 才真的寫（預設 dry-run，零寫入）"),
+            new SCP_CmdArgSpec("round", "op=share_body 用：要貼哪一個 round（省略＝該章最大那個）"),
             new SCP_CmdArgSpec("persona", "讀者 persona（除了 paths 之外都必填）"),
             new SCP_CmdArgSpec("media_id", "媒材 id（除了 paths 之外都必填）"),
             new SCP_CmdArgSpec("work_id", "op=media_init 用：作品 id（必填）"),
@@ -92,7 +100,10 @@ namespace SCP.Core.Cmd
 
             string aPersona = iArgs.Get("persona").Trim();
             string aMediaId = iArgs.Get("media_id").Trim();
-            if (aOp != "paths" && (aPersona.Length == 0 || aMediaId.Length == 0))
+            // ⚠ 這幾支是**庫層**的（掃全庫／比對兩個 store／外部漫畫）—— 它們沒有「誰的進度」這一維，
+            //   要求 persona／media_id 只會讓人被迫填兩個不會被讀的值，而那種值日後會被人當成真的。
+            bool aLibraryWideOp = aOp is "paths" or "scan" or "comics" or "authored_diff" or "authored_migrate";
+            if (!aLibraryWideOp && (aPersona.Length == 0 || aMediaId.Length == 0))
                 return SCP_CmdResult.Fail(2, $"✗ op=`{aOp}` 需要 `persona` 與 `media_id` —— 兩者都不代取",
                     "  ⚠ 讀可以跨 persona，**寫只寫自己**：身分猜錯是把心得記到別人頭上。");
 
@@ -107,9 +118,15 @@ namespace SCP.Core.Cmd
                 "revise_view" => OpReviseView(aDataRoot, aLetters, aPersona, aMediaId, iArgs),
                 "recall" => OpRecall(aDataRoot, aLetters, aPersona, aMediaId, iArgs),
                 "sync_shelf" => OpSyncShelf(aDataRoot, aLetters, aPersona, aMediaId),
+                "scan" => OpScan(aDataRoot, iArgs),
+                "comics" => OpComics(aDataRoot, iArgs),
+                "authored_diff" => OpAuthoredDiff(aDataRoot, iArgs),
+                "authored_migrate" => OpAuthoredMigrate(aDataRoot, iArgs),
+                "share_body" => OpShareBody(aDataRoot, aPersona, aMediaId, iArgs),
                 _ => SCP_CmdResult.Fail(2,
                     $"✗ 不認得的 op：`{aOp}`（吃的是 media_init｜register_reader｜note_chapter｜bookmark"
-                    + "｜add_character｜revise_view｜recall｜sync_shelf｜paths）"),
+                    + "｜add_character｜revise_view｜recall｜sync_shelf｜paths"
+                    + "｜scan｜comics｜authored_diff｜authored_migrate｜share_body）"),
             };
         }
 
@@ -301,6 +318,117 @@ namespace SCP.Core.Cmd
             foreach (string aKind in SCP_LibraryIO.MediaKinds)
                 if (iMediaId.StartsWith(aKind + "-", StringComparison.Ordinal)) return aKind;
             return "";
+        }
+
+        // ── op=scan（純讀；唯一寫入是報告檔）────────────────────────────────
+        static SCP_CmdResult OpScan(string iDataRoot, SCP_CmdArgs iArgs)
+        {
+            string aReport = SCP_LibraryScan.ScanLibrary(iDataRoot, out string? aPath, out string? aErr,
+                                                         Truthy(iArgs.Get("show_migrated")));
+            var aR = new SCP_CmdResult();
+            aR.Lines.Add(aReport.TrimEnd());
+            // ⚠ 報告落檔失敗**不吞**，而且不讓它看起來像整支失敗 —— 印出來的那份還在。
+            if (aErr != null) aR.Lines.Add("  ⚠ " + aErr);
+            if (aPath != null) aR.AddOutput(aPath);
+            return aR;
+        }
+
+        // ── op=comics（純讀）──────────────────────────────────────────────
+        static SCP_CmdResult OpComics(string iDataRoot, SCP_CmdArgs iArgs)
+        {
+            string aRoot = iArgs.Get("comic_root").Trim();
+            if (aRoot.Length == 0)
+                return SCP_CmdResult.Fail(2, "✗ op=comics 需要 `comic_root`（外部實體漫畫庫的根目錄）",
+                    "  ⛔ 本層不去讀 Editor 的偏好設定：那個根的真相源住在 Unity 那側，"
+                    + "而同一個量有兩個真相源時，它們分岔的樣子是**兩邊都讀得出一條看起來正常的路徑**。");
+
+            List<SCP_ExternalComicSeries> aList = SCP_LibraryComics.ScanExternalComics(iDataRoot, aRoot, out string? aWarn);
+            var aR = new SCP_CmdResult();
+            aR.Lines.Add($"# 📚 外部漫畫庫掃描：`{aRoot}`");
+            if (aWarn != null) aR.Lines.Add("  ⚠ " + aWarn);
+            int aSynced = 0, aMissing = 0, aUnreg = 0;
+            foreach (SCP_ExternalComicSeries s in aList)
+            {
+                string aMark = s.Status switch
+                {
+                    SCP_ComicMatchStatus.Synced => "🟢",
+                    SCP_ComicMatchStatus.MissingSource => "🟡",
+                    _ => "⚪",
+                };
+                if (s.Status == SCP_ComicMatchStatus.Synced) aSynced++;
+                else if (s.Status == SCP_ComicMatchStatus.MissingSource) aMissing++;
+                else aUnreg++;
+                aR.Lines.Add($"  {aMark} {s.SeriesName}　`{s.MediaId}`"
+                             + $"　卷 {s.Volumes.Count}／章 {s.TotalChapters}／頁 {s.TotalPages}"
+                             + (s.RegisteredTitle.Length > 0 ? $"　（庫內：{s.RegisteredTitle}）" : ""));
+            }
+            if (aList.Count == 0) aR.Lines.Add("  （掃不到任何系列 —— 根目錄不存在或底下沒有資料夾）");
+            aR.Values.Add(new KeyValuePair<string, string>("series", aList.Count.ToString()));
+            aR.Values.Add(new KeyValuePair<string, string>("synced", aSynced.ToString()));
+            aR.Values.Add(new KeyValuePair<string, string>("missing_source", aMissing.ToString()));
+            aR.Values.Add(new KeyValuePair<string, string>("unregistered", aUnreg.ToString()));
+            return aR;
+        }
+
+        // ── op=authored_diff（純讀）───────────────────────────────────────
+        static SCP_CmdResult OpAuthoredDiff(string iDataRoot, SCP_CmdArgs iArgs)
+        {
+            string aBook = iArgs.Get("book").Trim();
+            string aWorkId = iArgs.Get("work_id").Trim();
+            if (aBook.Length == 0 || aWorkId.Length == 0)
+                return SCP_CmdResult.Fail(2, "✗ authored_diff 需要 `book`（舊 store slug）與 `work_id`（新 store）",
+                    "  ⛔ 兩邊的 id 慣例不同，互相推導會讓「id 對不上」與「這本沒搬」同形。");
+
+            SCP_AuthoredDiffOutcome aOutcome = SCP_LibraryAuthored.DiffWorkAuthored(
+                iDataRoot, aBook, aWorkId, out List<string> aMismatch, out string aReport);
+            var aR = new SCP_CmdResult();
+            aR.Lines.Add($"# 🔎 寫書線逐欄對拍：**{aOutcome}**");
+            aR.Lines.Add(aReport.TrimEnd());
+            aR.Values.Add(new KeyValuePair<string, string>("outcome", aOutcome.ToString()));
+            aR.Values.Add(new KeyValuePair<string, string>("mismatched", string.Join(",", aMismatch)));
+            // ⚠ 判定用 Values 交出去，⛔ 不靠 exit code 分級：
+            //   `AllMatch` 之外有七種各自不同的成因，壓成一個非零碼就等於把它們講成同一件事。
+            return aR;
+        }
+
+        // ── op=authored_migrate（預設 dry-run）────────────────────────────
+        static SCP_CmdResult OpAuthoredMigrate(string iDataRoot, SCP_CmdArgs iArgs)
+        {
+            string aBook = iArgs.Get("book").Trim();
+            string aWorkId = iArgs.Get("work_id").Trim();
+            if (aBook.Length == 0 || aWorkId.Length == 0)
+                return SCP_CmdResult.Fail(2, "✗ authored_migrate 需要 `book` 與 `work_id`");
+
+            bool aConfirm = Truthy(iArgs.Get("confirm"));
+            SCP_AuthoredMigrateOutcome aOutcome = SCP_LibraryAuthored.MigrateAuthoredWork(
+                iDataRoot, aBook, aWorkId, aConfirm, out string aReport, out string? aErr);
+            if (aErr != null) return SCP_CmdResult.Fail(1, $"✗ authored_migrate（{aOutcome}）：{aErr}", aReport);
+            var aR = new SCP_CmdResult();
+            aR.Lines.Add($"# 🚚 寫書線搬遷：**{aOutcome}**");
+            aR.Lines.Add(aReport.TrimEnd());
+            aR.Values.Add(new KeyValuePair<string, string>("outcome", aOutcome.ToString()));
+            return aR;
+        }
+
+        // ── op=share_body（純讀 —— ⛔ 本支不發文）──────────────────────────
+        static SCP_CmdResult OpShareBody(string iDataRoot, string iPersona, string iMediaId, SCP_CmdArgs iArgs)
+        {
+            string aChapterId = iArgs.Get("chapter_id").Trim();
+            if (aChapterId.Length == 0)
+                return SCP_CmdResult.Fail(2, "✗ share_body 需要 `chapter_id`");
+            int aRound = 0;
+            string aRaw = iArgs.Get("round").Trim();
+            if (aRaw.Length > 0 && !int.TryParse(aRaw, out aRound))
+                return SCP_CmdResult.Fail(2, $"✗ round 不是整數：`{aRaw}`");
+
+            string? aBody = SCP_LibraryShare.BuildShareBody(iDataRoot, iMediaId, iPersona, aChapterId,
+                                                            ref aRound, out string? aErr);
+            if (aBody == null) return SCP_CmdResult.Fail(1, "✗ share_body：" + aErr);
+            var aR = new SCP_CmdResult();
+            aR.Lines.Add($"# 📖 發文內文（r{aRound}）—— ⛔ 本支**沒有發文**，只是把要貼的東西組出來");
+            aR.Lines.Add(aBody);
+            aR.Values.Add(new KeyValuePair<string, string>("round", aRound.ToString()));
+            return aR;
         }
 
         static bool Truthy(string? iValue)
