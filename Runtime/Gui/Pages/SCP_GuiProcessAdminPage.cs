@@ -99,7 +99,7 @@ namespace SCP.Core.Gui
         {
             string aDir = SCP_ProcessRegistry.RegistryDir ?? "";
             // ⚠ 先收集動作、離開 Row 之後才執行 —— handler 裡 Refresh 會改 m_Rows，
-            //   在 Row 中途改變版面會讓後面幾顆鈕的 id 跟著漂（同 SCP_GuiToolPage.DrawToolBar 的規矩）。
+            //   在 Row 中途改變版面會讓後面幾顆鈕的 id 跟著漂（同 SCP_GuiToolPage.DrawTopBar 的規矩）。
             int aAction = 0;   // 0 none / 1 refresh / 2 cleanup / 3 open dir
             using (g.Row())
             {

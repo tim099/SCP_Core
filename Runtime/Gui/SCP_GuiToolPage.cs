@@ -12,14 +12,14 @@ using System.Runtime.CompilerServices;
 namespace SCP.Core.Gui
 {
     /// <summary>
-    /// 帶工具列的一頁。子類實作 <see cref="DrawContent"/>，要在工具列加鈕就覆寫 <see cref="ToolBarButtons"/>。
+    /// 帶工具列的一頁。子類實作 <see cref="DrawContent"/>，要在工具列加鈕就覆寫 <see cref="TopBarButtons"/>。
     /// <code>
     /// sealed class MyPage : SCP_GuiToolPage
     /// {
     ///     public override string Key => "my";
     ///     public override string Title => "我的頁面";
     ///     public override string? MenuGroup => "工具";        // null ＝ 不列進入口頁的清單
-    ///     protected override void ToolBarButtons(SCP_Ui g)
+    ///     protected override void TopBarButtons(SCP_Ui g)
     ///     {
     ///         if (g.Button("重新載入", "my/reload")) Reload();
     ///     }
@@ -159,7 +159,7 @@ namespace SCP.Core.Gui
         /// handler 裡的 push／pop 會改變 <see cref="ShowBackButton"/> 的答案，
         /// 在同一輪的 Row 中途改變版面會讓後面幾顆鈕的 id 跟著漂。
         /// </summary>
-        protected virtual void DrawToolBar(SCP_Ui iUi)
+        protected virtual void DrawTopBar(SCP_Ui iUi)
         {
             int aAction = 0;   // 0 none / 1 back / 2 home
             using (iUi.Row())
@@ -176,7 +176,7 @@ namespace SCP.Core.Gui
                 // ⚠ 這裡刻意**不 try/catch**：工具列的按鈕炸掉是程式錯誤，
                 //   吞掉它只會讓「那顆鈕沒反應」變成沒有人查得到的事（UCL 那側有 Debug.LogException
                 //   可以吞得起來，共用層沒有 logger —— 吞了就是真的沒有讀數）。
-                ToolBarButtons(iUi);
+                TopBarButtons(iUi);
 
                 if (ShowKeyHint)
                     iUi.Label(NeedsClassInHint
@@ -265,7 +265,7 @@ namespace SCP.Core.Gui
         }
 
         /// <summary>子類在工具列上加自己的鈕（對應 UCL 的 <c>TopBarButtons</c>）。</summary>
-        protected virtual void ToolBarButtons(SCP_Ui iUi) { }
+        protected virtual void TopBarButtons(SCP_Ui iUi) { }
 
         /// <summary>頁面內容（對應 UCL 的 <c>ContentOnGUI</c>）。</summary>
         protected abstract void DrawContent(SCP_Ui iUi);
@@ -280,7 +280,7 @@ namespace SCP.Core.Gui
             // ⭐ 工具列包在 `TopBar()` 裡 ⇒ **不跟內容一起捲**（Tim 2026-09-17，概念同 `UCL_EditorPage`）。
             //   🩸 沒有這一層時，內容一長就得先捲回最上面才按得到返回鈕 ——
             //     而那顆鈕正是「我迷路了」時要按的那一顆。
-            using (iUi.TopBar()) DrawToolBar(iUi);
+            using (iUi.TopBar()) DrawTopBar(iUi);
             DrawContent(iUi);
         }
     }

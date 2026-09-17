@@ -42,7 +42,7 @@ namespace SCP.Core.Gui
         protected override bool ShowBackButton { get { return false; } }
         protected override bool ShowHomeButton { get { return false; } }
 
-        protected override void ToolBarButtons(SCP_Ui g)
+        protected override void TopBarButtons(SCP_Ui g)
         {
             // 對應 UCL 選單上那顆「↻」—— 丟掉目錄的中繼資料快取後重新探測
             if (g.Button("↻ 重掃頁面清單", "home/reload")) m_Catalog.Invalidate();
