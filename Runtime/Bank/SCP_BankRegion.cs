@@ -110,12 +110,23 @@ namespace SCP.Core.Bank
         /// </summary>
         public static string AuthorityFromBankRoot(string iBankRoot)
         {
+            string aDataRoot = DataRootOfBankRoot(iBankRoot);
+            return aDataRoot.Length == 0 ? AuthorityLegacy : ReadAuthority(aDataRoot);
+        }
+
+        /// <summary>
+        /// 銀行帳本根 → **資料根**。⚠ 上面那條「Bank 住在資料根底下」的關係只有本檔知道，
+        /// 這支就是它唯一的出口 —— ⛔ 呼叫端不要各自 `GetParent`。
+        /// </summary>
+        /// <returns>推不出來時回**空字串**（⛔ 不回一個看起來合理的路徑）。</returns>
+        public static string DataRootOfBankRoot(string iBankRoot)
+        {
             try
             {
                 var aParent = Directory.GetParent(iBankRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                return aParent == null ? AuthorityLegacy : ReadAuthority(aParent.FullName);
+                return aParent == null ? "" : aParent.FullName;
             }
-            catch { return AuthorityLegacy; }
+            catch { return ""; }
         }
 
         /// <summary>合法性 ＝ **能安全當檔名**。⚠ 與舊系統 `IsValidCurrencyId` 同一條規則。</summary>
