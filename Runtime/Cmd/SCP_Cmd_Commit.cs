@@ -28,6 +28,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
+using SCP.Core.Bank;
 using SCP.Core.Git;
 using SCP.Core.Json;
 using SCP.Core.Letters;
@@ -74,7 +75,6 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("message", "commit 訊息 —— 長內文走 `--arg-file message=<檔>`", iRequired: true),
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根目錄（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根 —— 信箱預設表、公告與推單都要用", iRequired: true),
-            new SCP_CmdArgSpec("region", "現地的區域（貨幣）ID —— **不給的話 trailer 的 agent 欄會缺席**"),
             // ⚠ **必填**（TASK-0193，2026-09-10）—— 它原本是選填的，而那等於沒有防線。
             //   顯式放棄要打 `expect_files=any`：那會留下痕跡，而「忘了帶」不會。
             new SCP_CmdArgSpec("expect_files",
@@ -109,7 +109,6 @@ namespace SCP.Core.Cmd
             string aRepo = iArgs.Get("repo");
             string aLettersRoot = iArgs.Get("letters_root");
             string aDataRoot = iArgs.Get("data_root");
-            string aRegion = iArgs.Get("region");
             string aBody = iArgs.Get("message");
             bool aDryRun = IsOn(iArgs.Get("dry_run"));
             bool aAllowUnset = IsOn(iArgs.Get("allow_unset"));
@@ -123,9 +122,10 @@ namespace SCP.Core.Cmd
                 return SCP_CmdResult.Fail(2, "⛔ 不是 git 工作目錄：" + aRepo);
 
             SCP_CmdResult aResult = SCP_CmdResult.Success();
-            if (aRegion.Length == 0)
-                aResult.Lines.Add("⚠ 沒給 `region` ⇒ trailer 的 **agent 欄會缺席**（`?@<persona>`）。"
-                                  + "那是**沒人告訴我區域**，不是這個人沒有帳號。");
+            // 區域一律依當前資料樹自動判定（Treasury/bank_settings.json 的 currency_id，TASK-0248，Tim 2026-09-18 拍板）
+            string aRegion = SCP_BankRegion.Read(aDataRoot, out string? aRegionWhy);
+            if (aRegionWhy != null)
+                aResult.Lines.Add("⚠ 區域判定說明（" + aRegionWhy + "）⇒ 使用 `" + aRegion + "`");
 
             // ── ① trailer（本地跑，不需要 Editor）──────────────────────────
             List<string> aTrailers = new List<string>();
@@ -301,12 +301,9 @@ namespace SCP.Core.Cmd
                 }
                 if ((aProfile.GetString("agent", "") ?? "").Trim().Length == 0)
                 {
-                    // ⚠ 最常見的成因**不是那個人沒有帳號，是沒給 `region`** —— agent 欄要它才解析得出來。
                     oProblems.Add(aPersona + " 的 agent 欄是空的 ⇒ trailer 的身分會變成 `?`"
-                                  + ExitLine(iRegion.Length == 0
-                                             ? "多半是**沒給 `region`** ⇒ 補 `--arg region=<區域>`（agent 欄要它才解析得出來）"
-                                             : "region=" + iRegion + " 之下仍查無帳號綁定 ⇒ 到 Editor 的 "
-                                               + "Persona & Agent 管理頁確認 " + aPersona + " 的綁定")
+                                  + ExitLine("區域 " + iRegion + " 之下仍查無帳號綁定 ⇒ 到 Editor 的 "
+                                             + "Persona & Agent 管理頁確認 " + aPersona + " 的綁定")
                                   + NoteLine(AllowUnsetUseless));
                     continue;
                 }
