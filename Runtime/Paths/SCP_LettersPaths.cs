@@ -77,6 +77,44 @@ namespace SCP.Core.Paths
         public static string KeysOpenPath(SCP_LettersRoot iRoot, string iPersona)
             => PersonaDir(iRoot, iPersona) + "/" + KeysOpenFileName;
 
+        // ===========================================================
+        // 區塊職責：**券**（`vouchers/<券名>.json`）—— 一種券一檔，跟著人走。
+        // 物理意義：Tim 2026-09-18 拍板（TASK-0243）：券綁 persona、放進信件夾、**由 Server 管理**，
+        //          而且**可以跨區使用** ⇒ 這裡**沒有區的維度**（⛔ 跟隔壁 `bank/<區>.md` 相反）。
+        // 🩸 那個相反不是不一致，是兩種資源的差別：
+        //   帳號一區一檔，是因為「同一個 letters repo 被多個專案掛著」，存單一值的檔會被互相覆寫；
+        //   券**刻意**要跨區共用 ⇒ 擋住那個對撞的不是路徑形狀，是
+        //   「**同時只有一個區在跑**」這個營運前提（Tim 2026-09-18：兩個專案是接力模式）。
+        //   ⚠ 它是**前提不是保證**：真的同時開兩個專案，後寫的會蓋掉先寫的，
+        //     而券沒有歷史 ⇒ 蓋掉之後**回推不出來**，且留下的數字完全合法。
+        //   ⇒ 所以券檔要記 `updated_region` / `updated_at_utc`：
+        //     把一個看不見的覆蓋，變成一條看得見的線索。
+        // ===========================================================
+        public const string VouchersDirName = "vouchers";
+
+        public static string VouchersDir(SCP_LettersRoot iRoot, string iPersona)
+            => PersonaDir(iRoot, iPersona) + "/" + VouchersDirName;
+
+        /// <summary>某一種券的檔（<paramref name="iVoucher"/> ＝ 券名；⚠ 呼叫端要先過 <see cref="IsValidVoucherName"/>）。</summary>
+        public static string VoucherPath(SCP_LettersRoot iRoot, string iPersona, string iVoucher)
+            => VouchersDir(iRoot, iPersona) + "/" + iVoucher + ".json";
+
+        /// <summary>
+        /// 券名合法性 ＝ **能安全當檔名**（與 `currency_id` 同一條規則）。
+        /// <para>🩸 含 `/` 或 `..` 就是寫到別的地方去，而寫檔會自動建目錄
+        /// ⇒ 症狀是**憑空長出一個資料夾**，不是錯誤。</para>
+        /// </summary>
+        public static bool IsValidVoucherName(string? iName)
+        {
+            if (string.IsNullOrWhiteSpace(iName)) return false;
+            string aValue = iName!.Trim();
+            if (aValue == "." || aValue == "..") return false;
+            if (aValue.IndexOf('/') >= 0 || aValue.IndexOf('\\') >= 0) return false;
+            foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+                if (aValue.IndexOf(c) >= 0) return false;
+            return true;
+        }
+
         public static string LatestPointerPath(SCP_LettersRoot iRoot, string iPersona)
             => PersonaDir(iRoot, iPersona) + "/" + LatestPointerFileName;
 

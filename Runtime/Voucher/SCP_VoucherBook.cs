@@ -1,0 +1,307 @@
+// 區塊職責：**券**的資料本體與讀寫（TASK-0243）—— 一個 persona、一種券、一個檔。
+// 物理意義：`letters/<persona>/vouchers/<券名>.json`。券**跟著人走、跨區共用**，
+//           ⛔ 沒有區的維度（跟隔壁 `bank/<區>.md` 刻意相反，理由見 `SCP_LettersPaths` 那一節）。
+// 數值影響：一次寫入 ＝ 整個檔重寫（原子寫：tmp → replace）。
+//
+// 🩸 三格判準，每一格都有一個「不這樣做會怎樣」：
+//
+//   ① **券不記歷史**（Tim 2026-09-18 拍板）⇒ 存的是**狀態**不是事件。
+//      ⚠ 這跟新銀行**正好相反**（那邊 append-only、餘額靠重放求和）。
+//      代價要寫在這裡而不是埋著：**扣錯了無法稽核、無法回推** —— 只剩一個數字。
+//      ⇒ 所以「**只有一個寫入端**」不是架構偏好，是這個設計成立的唯一前提。
+//      本層擋不住有人在 Server 之外呼叫它；那道閘在 Cmd 那層（`ServerDelegateCmd`）。
+//      📌 同一句話 `SCP_BankLedger` 檔頭也寫過 —— 兩邊的前提相同，而**券沒有歷史可以事後對帳**，
+//        所以它比銀行更依賴那個前提。
+//
+//   ② **到期在讀取端過濾，⛔ 不在寫入端刪。**
+//      判準：**寫入端省略不可逆，讀取端過濾可逆**。時鐘／時區／邊界判錯的時候，
+//      過濾錯了改判準就回來；刪錯了那批券就真的沒了。
+//      ⇒ 清理只發生在「本來就要寫這個檔」的時候，而且**回報清掉幾張**（⛔ 不靜默消失）。
+//
+//   ③ **消費先花最早到期的，再花永久券。**
+//      反過來的話，限時券會在使用者「還有券」的感覺下默默過期 ——
+//      而那個損失沒有任何一層會喊（它跟「他沒有花」在資料上同形）。
+#nullable enable
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using SCP.Core.Json;
+using SCP.Core.Paths;
+
+namespace SCP.Core.Voucher
+{
+    /// <summary>一批券。<see cref="ExpiresAtUtc"/> 空 ＝ 永久（⛔ 永久券不走這個型別，見 <see cref="SCP_VoucherBook.Permanent"/>）。</summary>
+    public sealed class SCP_VoucherBatch
+    {
+        public int Amount;
+        public string ExpiresAtUtc = "";
+        public string GrantedAtUtc = "";
+        public string Source = "";
+        public string Ref = "";
+
+        public SCP_JsonData ToJson()
+        {
+            var aData = SCP_JsonData.NewObject();
+            aData.Set("amount", SCP_JsonData.NewNumber(Amount));
+            aData.Set("expires_at_utc", SCP_JsonData.NewString(ExpiresAtUtc));
+            aData.Set("granted_at_utc", SCP_JsonData.NewString(GrantedAtUtc));
+            if (Source.Length > 0) aData.Set("source", SCP_JsonData.NewString(Source));
+            if (Ref.Length > 0) aData.Set("ref", SCP_JsonData.NewString(Ref));
+            return aData;
+        }
+
+        public static SCP_VoucherBatch FromJson(SCP_JsonData iData) => new SCP_VoucherBatch
+        {
+            Amount = iData.GetInt("amount", 0),
+            ExpiresAtUtc = iData.GetString("expires_at_utc", ""),
+            GrantedAtUtc = iData.GetString("granted_at_utc", ""),
+            Source = iData.GetString("source", ""),
+            Ref = iData.GetString("ref", ""),
+        };
+
+        /// <summary>到期時刻解不出來時回 null —— ⛔ 那**不是**「永不過期」，呼叫端要自己決定怎麼辦。</summary>
+        public DateTime? ExpiresAt()
+        {
+            if (string.IsNullOrWhiteSpace(ExpiresAtUtc)) return null;
+            return DateTime.TryParse(ExpiresAtUtc, CultureInfo.InvariantCulture,
+                                     DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal,
+                                     out DateTime aWhen)
+                ? aWhen : (DateTime?)null;
+        }
+    }
+
+    public sealed class SCP_VoucherBook
+    {
+        public string Persona = "";
+        public string Voucher = "";
+
+        /// <summary>永久券（不會過期）。</summary>
+        public int Permanent;
+
+        /// <summary>限時券，**一次發放一批**、各自帶到期時刻（⛔ 不合併：兩批的到期時間不同）。</summary>
+        public List<SCP_VoucherBatch> Expiring = new List<SCP_VoucherBatch>();
+
+        /// <summary>最後一次寫入的時刻與**區** —— 券沒有歷史，這兩欄是唯一的「誰動過它」線索。</summary>
+        public string UpdatedAtUtc = "";
+        public string UpdatedRegion = "";
+
+        /// <summary>已經跑過遷移的區（⇒ 同一區不會再加總第二次）。</summary>
+        public List<string> MigratedRegions = new List<string>();
+
+        public SCP_JsonData ToJson()
+        {
+            var aData = SCP_JsonData.NewObject();
+            aData.Set("persona", SCP_JsonData.NewString(Persona));
+            aData.Set("voucher", SCP_JsonData.NewString(Voucher));
+            aData.Set("permanent", SCP_JsonData.NewNumber(Permanent));
+            var aArr = SCP_JsonData.NewArray();
+            foreach (SCP_VoucherBatch aBatch in Expiring) aArr.Add(aBatch.ToJson());
+            aData.Set("expiring", aArr);
+            aData.Set("updated_at_utc", SCP_JsonData.NewString(UpdatedAtUtc));
+            aData.Set("updated_region", SCP_JsonData.NewString(UpdatedRegion));
+            var aMig = SCP_JsonData.NewArray();
+            foreach (string aRegion in MigratedRegions) aMig.Add(SCP_JsonData.NewString(aRegion));
+            aData.Set("migrated_regions", aMig);
+            aData.Set("schema_version", SCP_JsonData.NewNumber(1));
+            return aData;
+        }
+
+        public static SCP_VoucherBook FromJson(SCP_JsonData iData)
+        {
+            var aBook = new SCP_VoucherBook
+            {
+                Persona = iData.GetString("persona", ""),
+                Voucher = iData.GetString("voucher", ""),
+                Permanent = iData.GetInt("permanent", 0),
+                UpdatedAtUtc = iData.GetString("updated_at_utc", ""),
+                UpdatedRegion = iData.GetString("updated_region", ""),
+            };
+            SCP_JsonData aArr = iData["expiring"];
+            if (aArr.Exists && aArr.IsArray)
+                foreach (SCP_JsonData aItem in aArr) aBook.Expiring.Add(SCP_VoucherBatch.FromJson(aItem));
+            SCP_JsonData aMig = iData["migrated_regions"];
+            if (aMig.Exists && aMig.IsArray)
+                foreach (SCP_JsonData aItem in aMig) aBook.MigratedRegions.Add(aItem.AsString());
+            return aBook;
+        }
+
+        // ── 讀數（純函式，⛔ 不改自己）──────────────────────────────
+
+        /// <summary>還沒過期的限時券張數（<paramref name="iNow"/> 一律 UTC）。</summary>
+        public int ExpiringAlive(DateTime iNow)
+        {
+            int aSum = 0;
+            foreach (SCP_VoucherBatch aBatch in Expiring)
+                if (IsAlive(aBatch, iNow)) aSum += aBatch.Amount;
+            return aSum;
+        }
+
+        /// <summary>可花總額 ＝ 永久 ＋ 未過期限時（⛔ 不是任何一批的餘額 —— glossary 那兩條詞已經定義過）。</summary>
+        public int Spendable(DateTime iNow) => Permanent + ExpiringAlive(iNow);
+
+        /// <summary>
+        /// 這一批還活著嗎。
+        /// <para>⚠ 到期時刻**解不出來**時視為**還活著**：那是資料壞了，
+        /// 而把壞資料當成「已過期」＝ 靜靜沒收別人的券。⇒ 往不沒收的那一側倒。</para>
+        /// </summary>
+        public static bool IsAlive(SCP_VoucherBatch iBatch, DateTime iNow)
+        {
+            if (iBatch.Amount <= 0) return false;
+            DateTime? aWhen = iBatch.ExpiresAt();
+            if (aWhen == null) return true;
+            return aWhen.Value > iNow;
+        }
+    }
+
+    /// <summary>
+    /// 券檔的讀寫。⛔ 不快取 —— 券檔很小，而快取要處理「別的 process 改了它」，
+    /// 那正是這個設計唯一不能有的東西（見 <see cref="SCP_VoucherBook"/> 判準①）。
+    /// </summary>
+    public static class SCP_VoucherStore
+    {
+        public static string PathOf(SCP_LettersRoot iRoot, string iPersona, string iVoucher)
+            => SCP_LettersPaths.VoucherPath(iRoot, iPersona, iVoucher);
+
+        /// <summary>讀一本券；檔不在回一本**空的**（⛔ 不 throw —— 「沒有這種券」與「零張」在語意上同值）。</summary>
+        public static SCP_VoucherBook Load(SCP_LettersRoot iRoot, string iPersona, string iVoucher, out string? oProblem)
+        {
+            oProblem = null;
+            string aPath = PathOf(iRoot, iPersona, iVoucher);
+            if (!File.Exists(aPath))
+                return new SCP_VoucherBook { Persona = iPersona, Voucher = iVoucher };
+            try
+            {
+                SCP_VoucherBook aBook = SCP_VoucherBook.FromJson(SCP_JsonParser.Parse(File.ReadAllText(aPath)));
+                aBook.Persona = iPersona;
+                aBook.Voucher = iVoucher;
+                return aBook;
+            }
+            catch (Exception e)
+            {
+                // ⛔ 讀不了**不是**「零張」：後者是一個讀數，前者是「我不知道」。
+                //   壓成同一個回傳值的話，一個壞掉的檔會讓人以為券花完了 —— 而下一步是去補發。
+                oProblem = $"券檔讀不了（{aPath}）：{e.GetType().Name}: {e.Message}";
+                return new SCP_VoucherBook { Persona = iPersona, Voucher = iVoucher };
+            }
+        }
+
+        /// <summary>
+        /// 寫回（原子）。順手清掉**已經過期**的批次並回報清掉幾張。
+        /// <para>⚠ 清理只在這裡發生 —— ⛔ 沒有另一支會刪東西的定時工。</para>
+        /// </summary>
+        public static bool Save(SCP_LettersRoot iRoot, SCP_VoucherBook iBook, DateTime iNow,
+                                string iRegion, out int oDroppedAmount, out string? oError)
+        {
+            oError = null;
+            oDroppedAmount = 0;
+
+            var aKeep = new List<SCP_VoucherBatch>(iBook.Expiring.Count);
+            foreach (SCP_VoucherBatch aBatch in iBook.Expiring)
+            {
+                if (SCP_VoucherBook.IsAlive(aBatch, iNow)) { aKeep.Add(aBatch); continue; }
+                if (aBatch.Amount > 0) oDroppedAmount += aBatch.Amount;   // 張數已歸零的不算「過期損失」
+            }
+            iBook.Expiring = aKeep;
+            iBook.UpdatedAtUtc = iNow.ToString("o", CultureInfo.InvariantCulture);
+            iBook.UpdatedRegion = iRegion ?? "";
+
+            string aPath = PathOf(iRoot, iBook.Persona, iBook.Voucher);
+            try
+            {
+                string? aDir = Path.GetDirectoryName(aPath);
+                if (!string.IsNullOrEmpty(aDir)) Directory.CreateDirectory(aDir);
+                // 原子寫：tmp → replace。⚠ 直接覆寫的話，寫到一半斷電留下的是**半個 JSON**，
+                //   而下一次讀它會走進「讀不了」那條 —— 而券沒有歷史可以回推。
+                string aTmp = aPath + ".tmp";
+                File.WriteAllText(aTmp, SCP_JsonWriter.Write(iBook.ToJson()) + "\n");
+                if (File.Exists(aPath)) File.Delete(aPath);
+                File.Move(aTmp, aPath);
+            }
+            catch (Exception e) { oError = $"券檔寫不進去（{aPath}）：{e.Message}"; return false; }
+            return true;
+        }
+
+        /// <summary>這個人有哪幾種券（＝ `vouchers/` 底下的檔名）。⛔ 不建清單檔，目錄自己就是清單。</summary>
+        public static List<string> ListVouchers(SCP_LettersRoot iRoot, string iPersona)
+        {
+            var aOut = new List<string>();
+            string aDir = SCP_LettersPaths.VouchersDir(iRoot, iPersona);
+            if (!Directory.Exists(aDir)) return aOut;
+            foreach (string aFile in Directory.GetFiles(aDir, "*.json"))
+                aOut.Add(Path.GetFileNameWithoutExtension(aFile));
+            aOut.Sort(StringComparer.Ordinal);
+            return aOut;
+        }
+
+        // ===========================================================
+        // 區塊職責：消費 —— **先花最早到期的限時券，再花永久券**。
+        // 🩸 反過來的話，限時券會在使用者「還有券」的感覺下默默過期，
+        //   而那個損失跟「他沒有花」在資料上同形 —— 沒有任何一層會喊。
+        // 數值影響：不足就**整筆不扣**（⛔ 不部分扣：部分扣之後呼叫端拿到的是
+        //   「失敗」，而錢已經少了一半，那是最難查的一種）。
+        // ===========================================================
+        public static bool TryConsume(SCP_VoucherBook ioBook, int iAmount, DateTime iNow, out string? oWhy)
+        {
+            oWhy = null;
+            if (iAmount <= 0) { oWhy = $"張數必須 > 0（收到 {iAmount}）"; return false; }
+            int aSpendable = ioBook.Spendable(iNow);
+            if (aSpendable < iAmount)
+            {
+                oWhy = $"券不足：可花 {aSpendable}（永久 {ioBook.Permanent} ＋ 未過期限時 "
+                       + $"{ioBook.ExpiringAlive(iNow)}），要花 {iAmount}";
+                return false;
+            }
+
+            var aAlive = new List<SCP_VoucherBatch>();
+            foreach (SCP_VoucherBatch aBatch in ioBook.Expiring)
+                if (SCP_VoucherBook.IsAlive(aBatch, iNow)) aAlive.Add(aBatch);
+            // 最早到期的排前面；解不出到期時刻的排最後（它們被當成還活著，但不該優先被花掉）
+            aAlive.Sort((a, b) =>
+            {
+                DateTime? aA = a.ExpiresAt(), aB = b.ExpiresAt();
+                if (aA == null && aB == null) return 0;
+                if (aA == null) return 1;
+                if (aB == null) return -1;
+                return aA.Value.CompareTo(aB.Value);
+            });
+
+            int aLeft = iAmount;
+            foreach (SCP_VoucherBatch aBatch in aAlive)
+            {
+                if (aLeft <= 0) break;
+                int aTake = Math.Min(aBatch.Amount, aLeft);
+                aBatch.Amount -= aTake;
+                aLeft -= aTake;
+            }
+            if (aLeft > 0) { ioBook.Permanent -= aLeft; aLeft = 0; }
+            return true;
+        }
+
+        // ===========================================================
+        // 區塊職責：遷移 —— 把**某一區**的舊券數量加總進來，並記下那一區已經遷過。
+        // 🩸 血證（TASK-0238，2026-09-17，銀行那側同一族）：開帳快照與鏡像游標沒對齊
+        //   ⇒ **2 筆錢被算兩次**，而兩邊都合法、`idem_key` 也不重複 ⇒ 沒有任何一層會喊。
+        //   券遷移是「數量**加總**」⇒ 加兩次與加一次都是合法數字。
+        // ⇒ 所以冪等鍵是**區名**，而且判斷寫在這裡（⛔ 不靠呼叫端記得）。
+        // ⚠ 而標記要在**加完之後**跟著同一次寫入落盤 —— 先寫標記再加總的話，
+        //   中途失敗留下的是「標記說遷過了、而券一張都沒加」，
+        //   **而它之後永遠不會再跑一次**。
+        // ===========================================================
+        public static bool AlreadyMigrated(SCP_VoucherBook iBook, string iRegion)
+        {
+            foreach (string aRegion in iBook.MigratedRegions)
+                if (string.Equals(aRegion, iRegion, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        public static void ApplyMigration(SCP_VoucherBook ioBook, string iRegion,
+                                          int iPermanent, List<SCP_VoucherBatch> iExpiring)
+        {
+            if (iPermanent > 0) ioBook.Permanent += iPermanent;
+            foreach (SCP_VoucherBatch aBatch in iExpiring)
+                if (aBatch.Amount > 0) ioBook.Expiring.Add(aBatch);
+            ioBook.MigratedRegions.Add(iRegion);
+        }
+    }
+}
