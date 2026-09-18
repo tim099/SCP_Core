@@ -28,16 +28,33 @@ using SCP.Core.Tasks;
 namespace SCP.Core.Letters
 {
     /// <summary>
-    /// 一張閱讀卡的出處。**三態，不是 bool** —— 「讀不到」不可以長得像「它是舊卡」。
+    /// 一張閱讀卡的出處。**四態，不是 bool** —— 「讀不到」不可以長得像「它是舊卡」，
+    /// 而「有戳」也不可以長得像「它指向的東西還在」。
     /// </summary>
     public enum SCP_BookshelfCardOrigin
     {
-        /// <summary>檔頭有現行寫入端蓋的戳 ⇒ 背後有 reader.json。</summary>
+        /// <summary>
+        /// 檔頭有現行寫入端蓋的戳。
+        /// <para>🩸 2026-09-18（TASK-0246）改正本格的文件：原本寫「有戳 ⇒ 背後有 reader.json」，
+        /// 而那個 `⇒` 是假的 —— 戳只證明它**曾經是**投影，不證明真相源現在還在。
+        /// 實測 122 張卡裡 4 張有戳而 `reader.json` 不存在，它們在舊三態下全部落在本格。</para>
+        /// <para>⚠ 本格的語意現在是「有戳，而**沒有判定**它的真相源在不在」——
+        /// 判定過且真相源不在的走 <see cref="Orphan"/>；
+        /// 沒給資料根（無法判定）時仍回本格 ＝「未量」，⛔ 不是「量過了、它有源」
+        /// （同 <c>BugCountLine</c> 的判準：未量 ≠ 零張）。要分辨就看呼叫端有沒有給 <c>iDataRoot</c>。</para>
+        /// </summary>
         Mechanical,
         /// <summary>檔頭沒有那個戳 ⇒ 另一個時代／另一支工具寫的，Sync 不會動它。</summary>
         Legacy,
         /// <summary>檔頭讀不到 ⇒ 這一格沒有讀數（⛔ 不准併進 Legacy）。</summary>
         Unreadable,
+        /// <summary>
+        /// **有戳、而回問到它指向的 `reader.json` 不存在** ⇒ 孤兒投影：真相源沒了，投影還在。
+        /// <para>⚠ 它跟 <see cref="Legacy"/> 的差別**不是程度而是處置**：Legacy 從來沒有真相源
+        /// （改 reader.json 再 Sync 也不會動它）；Orphan **曾經有** ⇒ 這張卡上的正文
+        /// **可能是那份心得的唯一副本**，⛔ 所以處置不是刪掉投影，是讓讀它的人知道它是孤兒。</para>
+        /// </summary>
+        Orphan,
     }
 
     /// <summary>一段區塊。<see cref="Essential"/> ＝ 溢出時也不准移走。</summary>
@@ -167,7 +184,7 @@ namespace SCP.Core.Letters
                 RecallSection(iLettersRoot, iPersona, iWakeCount),
                 MaintenanceSection(iLettersRoot, iPersona, iWakeCount, iDataRoot),
                 PeopleSection(iLettersRoot, iPersona),
-                BookshelfSection(iLettersRoot, iPersona, iWakeCount),
+                BookshelfSection(iLettersRoot, iPersona, iWakeCount, iDataRoot),
                 WritingSection(iDataRoot, iPersona),
                 NextActionsSection(iLettersRoot, iPersona, iWakeCount),
             };
@@ -960,7 +977,10 @@ namespace SCP.Core.Letters
         // 物理意義：閱讀卡是 reader.json 的機械投影，本段是**唯讀消費端**；
         //           要改內容去改 reader.json 再 Sync。
         // 數值影響：只影響顯示。抽籤同 §5.5 的理由與作法（穩定雜湊，不是真隨機）。
-        static SCP_BriefSection BookshelfSection(string iLettersRoot, string iPersona, int iWakeCount)
+        //          ⚠ `iDataRoot` 只用來**回問真相源在不在**（孤兒判定）；不給 ⇒ 那一格印「未量」，
+        //          ⛔ 不印「0 張孤兒」（同 BugCountLine 的判準：未量 ≠ 零張）。
+        static SCP_BriefSection BookshelfSection(string iLettersRoot, string iPersona, int iWakeCount,
+                                                 string? iDataRoot)
         {
             string aDir = SCP_LettersPaths.PersonaDir(new SCP_LettersRoot(iLettersRoot), iPersona)
                           + "/" + BookshelfDirName;
@@ -973,12 +993,13 @@ namespace SCP.Core.Letters
             if (aCards.Count == 0) return aEmpty;
             aCards.Sort(StringComparer.Ordinal);
 
-            int aLegacy = 0, aUnreadable = 0;
+            int aLegacy = 0, aUnreadable = 0, aOrphan = 0;
             foreach (string aPath in aCards)
             {
-                SCP_BookshelfCardOrigin aOrigin = CardOrigin(aPath);
+                SCP_BookshelfCardOrigin aOrigin = CardOrigin(aPath, iDataRoot, iPersona);
                 if (aOrigin == SCP_BookshelfCardOrigin.Legacy) aLegacy++;
                 else if (aOrigin == SCP_BookshelfCardOrigin.Unreadable) aUnreadable++;
+                else if (aOrigin == SCP_BookshelfCardOrigin.Orphan) aOrphan++;
             }
 
             int aPick = (int)(StableHash(iPersona + ":bookshelf:" + iWakeCount) % (uint)aCards.Count);
@@ -986,26 +1007,97 @@ namespace SCP.Core.Letters
 
             // 母體含舊卡是**刻意**的：過濾掉會讓「這張卡是舊時代的」與「它不存在」同形，
             // 而舊卡只有被抽中、被看見，才會有人去處置它。所以照抽，改成**標定語**。
+            // ⚠ 孤兒卡（TASK-0246）沿用**同一個**判準 —— ⛔ 不過濾：那幾張卡上的正文可能是
+            //   那份心得的唯一副本，把它從母體移掉 ＝ 讓「它是孤兒」與「沒有這張卡」同形。
             string aCount = "共 " + aCards.Count + " 張";
             if (aLegacy > 0) aCount += "・其中 " + aLegacy + " 張不是機械投影";
             if (aUnreadable > 0) aCount += "・" + aUnreadable + " 張檔頭讀不到";
+            // ⛔ 「沒給資料根」不可以印成「0 張孤兒」—— 那是把未量講成量過了（同 BugCountLine）。
+            if (string.IsNullOrEmpty(iDataRoot)) aCount += "・孤兒數**未量**（本次沒給資料根）";
+            else if (aOrphan > 0) aCount += "・⚠ " + aOrphan + " 張**真相源已不在**";
 
             var aLines = new List<string>
             {
                 "**📖 穩定端上一張閱讀卡（" + aCount + "・全文）**",
                 "",
             };
+            // 被抽中那張是孤兒 ⇒ 警語擺在**正文前面**：讀的人是照著卡片接回進度的，
+            // 而定語印在出處那一行（正文之後）時，他已經讀完並相信它了。
+            if (CardOrigin(aCard, iDataRoot, iPersona) == SCP_BookshelfCardOrigin.Orphan)
+            {
+                aLines.Add("> 🔴 **這張卡的真相源已經不在了**（孤兒投影）—— `reader.json` 不存在，"
+                           + "⇒ 卡上的進度與看法**停在真相源消失的那一刻**，⛔ 別把它當成現在的進度接回來。");
+                aLines.Add("> ⚠ 而它**不是**舊時代的卡（檔頭有 `" + MechanicalMarker + "`）⇒ 它曾經有真相源，"
+                           + "所以這張卡上的正文**可能是那份心得的唯一副本**。要接回去走 `Library op=media_init`（它不覆寫既有 work/media）。");
+                aLines.Add("");
+            }
             aLines.AddRange(SCP_LetterText.DemoteHeadings(BodyLines(aCard)));
             aLines.Add("");
-            aLines.Add(CardSourceLine(aCard));
+            aLines.Add(CardSourceLine(aCard, iDataRoot, iPersona));
             return new SCP_BriefSection { Title = "📖 §6.6 見書 — 我在讀什麼", Lines = aLines, Essential = false };
         }
 
-        // 區塊職責：判一張閱讀卡是不是**現行寫入端**產的。
+        // 區塊職責：判一張閱讀卡的出處 —— 檔頭三態 ＋ **回問真相源**那一態（TASK-0246）。
+        // 物理意義：有戳只證明它**曾經是**投影。真相源還在不在是**另一個問句**，
+        //           而它的答案不在這張卡裡 —— 要去 `BookNotes/Library` 回問。
+        //           🩸 2026-09-18：舊版只有檔頭三態，而孤兒卡（有戳、reader.json 不存在）
+        //           落在 Mechanical ⇒ **它通過了唯一那道檢查**，計數行一個字都不會提它。
+        // 數值影響：⛔ 只影響顯示（定語與計數），**不過濾抽籤母體**。
+        //          ⚠ `iDataRoot` 為空 ⇒ **不判孤兒**（回檔頭那三態）＝「未量」，
+        //          ⛔ 不可以當成「量過了、它有源」。
+        static SCP_BookshelfCardOrigin CardOrigin(string iPath, string? iDataRoot, string iPersona)
+        {
+            SCP_BookshelfCardOrigin aHead = CardOrigin(iPath);
+            // 只有「有戳」那一態需要回問 —— Legacy 本來就沒有真相源，Unreadable 連檔頭都沒讀到。
+            if (aHead != SCP_BookshelfCardOrigin.Mechanical) return aHead;
+            if (string.IsNullOrEmpty(iDataRoot)) return aHead;   // 未量 ⇒ 原樣回，⛔ 不猜
+
+            string aMediaId = MediaIdOf(iPath);
+            // ⚠ 有戳而讀不到 media_id 是**另一種**壞法（實測 122 張裡有 4 張缺這一欄）——
+            //   ⛔ 不把它判成孤兒：那會把兩種病混成一種，而它們的修法不同。
+            if (aMediaId.Length == 0) return aHead;
+
+            string aReaderJson = Path.Combine(SCP_BookStore.BookNotesRoot(iDataRoot!),
+                                              "Library", "media", aMediaId, "readers", iPersona, "reader.json");
+            return File.Exists(aReaderJson)
+                   ? SCP_BookshelfCardOrigin.Mechanical
+                   : SCP_BookshelfCardOrigin.Orphan;
+        }
+
+        // 區塊職責：讀一張閱讀卡 frontmatter 的 `media_id`（回問真相源要用它定位）。
+        // 物理意義：只讀 frontmatter 那一段 —— 正文裡的同名字串不算數（同 CardOrigin 的圍籬作法）。
+        // 數值影響：讀不到回**空字串**，由呼叫端決定怎麼處置。⛔ 不回一個猜出來的 media_id：
+        //          猜錯會讓「回問到別人的檔」與「回問到自己的檔」同形。
+        static string MediaIdOf(string iPath)
+        {
+            const string aKey = "media_id:";
+            try
+            {
+                int aFence = 0;
+                foreach (string aLine in File.ReadLines(iPath))
+                {
+                    string aTrim = aLine.Trim();
+                    if (aTrim == "---")
+                    {
+                        aFence++;
+                        if (aFence >= 2) break;
+                        continue;
+                    }
+                    if (aFence == 0) break;
+                    if (aTrim.StartsWith(aKey, StringComparison.Ordinal))
+                        return aTrim.Substring(aKey.Length).Trim().Trim('"').Trim('\'');
+                }
+            }
+            catch (Exception) { /* 讀不到 ⇒ 交回空字串，判定權在呼叫端 */ }
+            return string.Empty;
+        }
+
+        // 區塊職責：判一張閱讀卡是不是**現行寫入端**產的（純檔頭，不回問真相源）。
         // 物理意義：判準取自寫入端自己蓋的那個戳（`UCL_ReadingLibraryIO.SyncBookshelf` 寫
         //           <see cref="MechanicalMarker"/>），不是本段自己猜的欄位形狀 ——
         //           猜欄位形狀會在寫入端換欄位時靜默判反，而戳是雙方講好的同一個字。
-        // 數值影響：只影響顯示（定語與計數），**不過濾抽籤母體**。
+        // 數值影響：⚠ 本多載**答不出孤兒** —— 有戳而真相源不在時它回 `Mechanical`。
+        //          要那一格就走吃 `iDataRoot` 的那個多載。
         static SCP_BookshelfCardOrigin CardOrigin(string iPath)
         {
             try
@@ -1036,12 +1128,24 @@ namespace SCP.Core.Letters
         // 物理意義：舊版無條件斷言「機械投影，改 reader.json 後重新 Sync」，而那句話對
         //           **不是機械投影的卡是假的**：那些卡背後沒有 reader.json，改了再 Sync 也不會動到它。
         //           一句沒有量過就印出來的出處，比沒有出處更難查。
-        static string CardSourceLine(string iPath)
+        static string CardSourceLine(string iPath, string? iDataRoot, string iPersona)
         {
             string aName = "`" + BookshelfDirName + "/" + Path.GetFileName(iPath) + "`";
-            switch (CardOrigin(iPath))
+            switch (CardOrigin(iPath, iDataRoot, iPersona))
             {
+                case SCP_BookshelfCardOrigin.Orphan:
+                    // 🩸 這一格本來印的是 Mechanical 那句「改 reader.json 後重新 Sync」——
+                    //   而那個檔**不存在** ⇒ 逐字就是本段註解在罵的那件事：
+                    //   「一句沒有量過就印出來的出處，比沒有出處更難查。」
+                    return "> 來源：" + aName + "　🔴 **真相源已不在** —— 檔頭有 `"
+                           + MechanicalMarker + "`（它曾經是投影），而 `reader.json` 不存在。"
+                           + "⛔ 所以「改 reader.json 再 Sync」**這條路現在是假的**；"
+                           + "要接回去得先走 `Library op=media_init` 重新登記成 reader。";
                 case SCP_BookshelfCardOrigin.Mechanical:
+                    // ⚠ 沒給資料根時本格是「未量」，⇒ 那句斷言要收回來一點，⛔ 不宣稱回問過。
+                    if (string.IsNullOrEmpty(iDataRoot))
+                        return "> 來源：" + aName + "（機械投影，改內容請改 reader.json 後重新 Sync）"
+                               + "　⚠ 本次**沒有回問真相源在不在**（沒給資料根）";
                     return "> 來源：" + aName + "（機械投影，改內容請改 reader.json 後重新 Sync）";
                 case SCP_BookshelfCardOrigin.Legacy:
                     return "> 來源：" + aName + "　⚠ **這張不是機械投影** —— 檔頭沒有 `"
