@@ -45,4 +45,19 @@ namespace SCP.Core.Books
         /// <returns>成功回那一行字；失敗回 null 並把原因放進 <paramref name="oError"/>。</returns>
         string? DeliverDossier(string iBook, string iAuthorPersona, SCP_JsonData iEntry, out string oError);
     }
+
+    // ===========================================================
+    // 區塊職責：宿主把自己的閘裝上來的那一格。
+    // ⚠ 形狀**照抄 `SCP_CanvasGatewayHost`** —— 同一個問題已經有一份答案，
+    //   再發明第二套的代價是「兩個裝配時機」，而它們漂掉時兩邊都不會報錯。
+    // ⛔ 沒裝工廠就回 null，呼叫端要**大聲失敗** —— 回一個空實作的話，
+    //   「這個宿主不支援」會長得跟「做完了而什麼都沒發生」一模一樣。
+    // ===========================================================
+    public static class SCP_BooksGatewayHost
+    {
+        public static System.Func<string, SCP_IBooksGateway?>? Factory;
+
+        /// <summary>取這棵資料樹的閘；宿主沒裝工廠就回 null。</summary>
+        public static SCP_IBooksGateway? For(string iDataRoot) => Factory?.Invoke(iDataRoot);
+    }
 }

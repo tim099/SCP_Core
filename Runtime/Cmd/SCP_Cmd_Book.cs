@@ -77,7 +77,12 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("op", "add（建一本新書）｜log-chapter（記一章）｜arc（記階段大綱）"
                                + "｜writing（列出寫到一半的書，**純讀**）"
                                + "｜donations（共享圖書館捐贈簿，純讀）｜tips（打賞簿，純讀）"
+                               + "｜**donate／publish／tip／retry-tips（會動錢；需要宿主裝上書店閘）**"
                                + " —— 預設 writing，⭐ 純讀的那個當預設"),
+            new SCP_CmdArgSpec("bank", "錢包／帳戶身分（donate／publish／tip 必填 —— 錢從誰的帳出不能猜）"),
+            new SCP_CmdArgSpec("tokens", "金額（donate 預設 100；tip 必填 1~1000）"),
+            new SCP_CmdArgSpec("note", "備註（donate／publish／tip 選填）"),
+            new SCP_CmdArgSpec("actual_agent", "實際承載的桌面工具（選填，記錄用）"),
             new SCP_CmdArgSpec("persona", "op=writing 用：只看這位作者的書（省略＝全部作者）"),
             new SCP_CmdArgSpec("book_filter", "op=tips 用：只看這一本的打賞（省略＝全部）"),
             new SCP_CmdArgSpec("book", "op=log-chapter／arc 用：書本 slug（必填）"),
@@ -120,8 +125,14 @@ namespace SCP.Core.Cmd
                 "writing" => OpWriting(aDataRoot, iArgs),
                 "donations" => OpDonations(aDataRoot),
                 "tips" => OpTips(aDataRoot, iArgs),
+                // ⚠ 底下四支**會動錢** —— 它們要宿主裝上書店閘（`SCP_BooksGatewayHost.Factory`）。
+                "donate" => OpMoney(aDataRoot, iArgs, "donate"),
+                "publish" => OpMoney(aDataRoot, iArgs, "publish"),
+                "tip" => OpMoney(aDataRoot, iArgs, "tip"),
+                "retry-tips" => OpMoney(aDataRoot, iArgs, "retry-tips"),
                 _ => SCP_CmdResult.Fail(2,
-                    $"✗ 不認得的 op：`{aOp}`（吃的是 add｜log-chapter｜arc｜writing｜donations｜tips）"),
+                    $"✗ 不認得的 op：`{aOp}`（吃的是 add｜log-chapter｜arc｜writing｜donations｜tips"
+                    + "｜donate｜publish｜tip｜retry-tips）"),
             };
         }
 
@@ -181,6 +192,73 @@ namespace SCP.Core.Cmd
         //   那不是驗收要的東西（要的是「兩個入口讀到的是同一份」）。
         static SCP_CmdResult OpDonations(string iDataRoot)
             => Emit(SCP_BooksDonations.RenderDonations(iDataRoot));
+
+        // ===========================================================
+        // 區塊職責：四支**會動錢**的 op —— 本體在 `SCP_BooksOps`，本處只負責取閘與轉參數。
+        // 物理意義：閘由宿主裝（`SCP_BooksGatewayHost.Factory`）：
+        //          Senate CLI 裝 `SenateBooksGateway`（直接串 Server 的 `bank` / `voucher`），
+        //          Editor 裝 `UCL_BooksGateway`。⇒ **兩個入口共用同一份實作**（0166 ②／0234 ②）。
+        // ⛔ 沒裝閘就**大聲失敗** —— 回一句「成功」而什麼都沒發生，
+        //   跟真的做完在畫面上一模一樣。
+        // ⚠ 廣播不在本層：本體回 `broadcastBody`，要不要發、發到哪是呼叫端的事
+        //   （CLI 這條目前**不發**，⇒ 它印出來讓人自己決定，而不是假裝發過了）。
+        // ===========================================================
+        static SCP_CmdResult OpMoney(string iDataRoot, SCP_CmdArgs iArgs, string iOp)
+        {
+            SCP_IBooksGateway? aGate = SCP_BooksGatewayHost.For(iDataRoot);
+            if (aGate == null)
+                return SCP_CmdResult.Fail(2,
+                    "✗ 這個宿主沒有裝上書店閘（`SCP_BooksGatewayHost.Factory` 是 null）",
+                    "  ⇒ 會動錢的 op 需要它；純讀的那幾支（writing／donations／tips）不需要。");
+
+            string aBook = iArgs.Get("book").Trim();
+            string aBank = iArgs.Get("bank").Trim();
+            string aPersona = iArgs.Get("persona").Trim();
+            string aAgent = iArgs.Get("actual_agent");
+            string aNote = iArgs.Get("note");
+            string aTitle = iArgs.Get("title");
+
+            if (iOp != "retry-tips")
+            {
+                if (aBook.Length == 0) return SCP_CmdResult.Fail(2, "✗ 缺 `book`（書本 slug）");
+                if (aBank.Length == 0)
+                    return SCP_CmdResult.Fail(2, "✗ 缺 `bank` —— **錢從誰的帳出不能猜**（猜錯是扣別人的錢）");
+                if (aPersona.Length == 0)
+                    return SCP_CmdResult.Fail(2, "✗ 缺 `persona` —— 錢包綁 persona，而署名也要它");
+            }
+
+            string? aOut, aBroadcast = null, aError = null;
+            switch (iOp)
+            {
+                case "donate":
+                    aOut = SCP_BooksOps.Donate(iDataRoot, aGate, aBook, aBank, aPersona, aAgent,
+                        ParseTokens(iArgs, SCP_BooksOps.DonationBasePrice), aNote, out aBroadcast, out aError);
+                    break;
+                case "publish":
+                    aOut = SCP_BooksOps.Publish(iDataRoot, aGate, aBook, aBank, aPersona, aAgent,
+                        aTitle, aNote, out aBroadcast, out aError);
+                    break;
+                case "tip":
+                    aOut = SCP_BooksOps.Tip(iDataRoot, aGate, aBook, aBank, aPersona, aAgent,
+                        ParseTokens(iArgs, 0), aNote, out aBroadcast, out aError);
+                    break;
+                default:
+                    return Emit(SCP_BooksOps.RetryPendingTips(iDataRoot, aGate));
+            }
+
+            if (aOut == null) return SCP_CmdResult.Fail(1, "✗ " + (aError ?? "（沒有給理由）"));
+            var aResult = SCP_CmdResult.Success(aOut);
+            if (!string.IsNullOrEmpty(aBroadcast))
+            {
+                aResult.Lines.Add("");
+                aResult.Lines.Add("📣 **廣播稿（本入口不自動發）**：");
+                foreach (string aLine in aBroadcast!.Split('\n')) aResult.Lines.Add("  " + aLine);
+            }
+            return aResult;
+        }
+
+        static int ParseTokens(SCP_CmdArgs iArgs, int iFallback)
+            => int.TryParse(iArgs.Get("tokens"), out int aValue) ? aValue : iFallback;
 
         static SCP_CmdResult OpTips(string iDataRoot, SCP_CmdArgs iArgs)
             => Emit(SCP_BooksDonations.RenderTips(iDataRoot, iArgs.Get("book_filter").Trim()));
