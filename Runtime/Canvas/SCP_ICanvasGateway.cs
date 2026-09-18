@@ -55,11 +55,21 @@ namespace SCP.Core.Canvas
         /// <summary>永久券餘量；-1 ＝ 問不到。</summary>
         int QueryPermanentVouchers(string iPersona, out string oDetail);
 
+        /// <summary>
+        /// **酒館券**（個人錢包，券 id <c>tavern</c>）餘量；-1 ＝ 問不到。
+        /// <para>⚠ 它跟繪圖券是**兩本帳** —— 繪圖券只能畫畫；酒館券面額等於 1 token，
+        /// 在主動消費時自動先被吃掉（Tim 2026-09-18 拍板）。</para>
+        /// </summary>
+        int QueryTavernVouchers(string iPersona, out string oDetail);
+
         /// <summary>token 餘額；-1 ＝ 問不到（**不是 0** —— 0 是「查到了，沒錢」）。</summary>
         long QueryTokenBalance(string iAccountId, out string oDetail);
 
         /// <summary>扣券（限時優先由實作端決定，本體只說扣幾張）。</summary>
         SCP_CanvasGateResult ConsumeVouchers(string iPersona, int iCount, string iSourceRef, string iDescription);
+
+        /// <summary>扣**酒館券**。⚠ 與 <see cref="ConsumeVouchers"/> 分開 —— 兩本帳，扣錯一本不會有任何一層喊。</summary>
+        SCP_CanvasGateResult ConsumeTavernVouchers(string iPersona, int iCount, string iSourceRef, string iDescription);
 
         /// <summary>扣 token。</summary>
         SCP_CanvasGateResult DebitTokens(string iAccountId, int iAmount, string iSourceKind,

@@ -27,21 +27,23 @@ namespace SCP.Core.Canvas
         public SCP_CanvasPixel(int iX, int iY, int iColorIndex) { X = iX; Y = iY; ColorIndex = iColorIndex; }
     }
 
-    /// <summary>付款分配：三者合計 ＝ 像素數。</summary>
+    /// <summary>付款分配：**四者**合計 ＝ 像素數。</summary>
     public readonly struct SCP_CanvasPayPlan
     {
         /// <summary>限時券（事件檔裡的 key 是 <c>freetime</c>，沿用不改）。</summary>
         public readonly int Expiring;
-        /// <summary>永久券。</summary>
+        /// <summary>永久券（繪圖券）。</summary>
         public readonly int Permanent;
+        /// <summary>**酒館券**（個人錢包，面額與 token 1:1；Tim 2026-09-18 拍板「主動消費自動先扣券」）。</summary>
+        public readonly int Tavern;
         public readonly int Token;
 
-        public SCP_CanvasPayPlan(int iExpiring, int iPermanent, int iToken)
+        public SCP_CanvasPayPlan(int iExpiring, int iPermanent, int iTavern, int iToken)
         {
-            Expiring = iExpiring; Permanent = iPermanent; Token = iToken;
+            Expiring = iExpiring; Permanent = iPermanent; Tavern = iTavern; Token = iToken;
         }
 
-        public int Total => Expiring + Permanent + Token;
+        public int Total => Expiring + Permanent + Tavern + Token;
     }
 
     public static class SCP_CanvasPlace
@@ -131,6 +133,14 @@ namespace SCP.Core.Canvas
                 return false;
             }
 
+            // 酒館券（個人錢包）—— 只在 `auto` 這條路上會被動用；顯式指定付款方式時不碰它。
+            int aTavern = iGate.QueryTavernVouchers(iPersona, out string aTavWhy);
+            if (aTavern < 0)
+            {
+                oWhy = "查不到酒館券（" + aTavWhy + "）—— 這是「不知道」不是「沒有」，本次不扣款、不放點";
+                return false;
+            }
+
             long aToken = -1;
             if (iAccount.Length > 0)
             {
@@ -149,14 +159,14 @@ namespace SCP.Core.Canvas
                 case "expiring":
                     if (iCount > aExpiring)
                     { oWhy = "限時券不足：需 " + iCount + "，未過期限時券 " + aExpiring + "（不在自由時間時這個數字是 0）"; return false; }
-                    oPlan = new SCP_CanvasPayPlan(iCount, 0, 0);
+                    oPlan = new SCP_CanvasPayPlan(iCount, 0, 0, 0);
                     return true;
 
                 case "voucher":
                 case "permanent":
                     if (iCount > aPermanent)
                     { oWhy = "永久券不足：需 " + iCount + "，永久券 " + aPermanent + "（限時券另有 " + aExpiring + " 張，pay=auto 會先花它們）"; return false; }
-                    oPlan = new SCP_CanvasPayPlan(0, iCount, 0);
+                    oPlan = new SCP_CanvasPayPlan(0, iCount, 0, 0);
                     return true;
 
                 case "token":
@@ -164,21 +174,37 @@ namespace SCP.Core.Canvas
                     { oWhy = "pay=token 必須顯式帶 account —— ⛔ 不從 persona 猜一個帳戶（猜錯是扣別人的錢）"; return false; }
                     if (iCount > aToken)
                     { oWhy = "token 不足：需 " + iCount + "，" + iAccount + " 餘額 " + aToken; return false; }
-                    oPlan = new SCP_CanvasPayPlan(0, 0, iCount);
+                    // ⚠ 顯式 `pay=token` ＝「我就是要用 token」⇒ ⛔ **不動酒館券**。
+                    //   自動先扣券只發生在 `auto`：顯式指定被自動行為蓋過去的話，
+                    //   那個參數就沒有意義了。
+                    oPlan = new SCP_CanvasPayPlan(0, 0, 0, iCount);
                     return true;
 
                 default:
-                    // auto：限時券 → 永久券 → token
+                    // ===========================================================
+                    // auto：限時券 → 永久券 → **酒館券** → token
+                    // 物理意義：由「會消失的」排到「不會消失的」——
+                    //   限時券會過期、繪圖券只能畫畫、酒館券能當錢花但只在主動消費時吃得到、
+                    //   token 什麼都能做。⇒ 先花選擇性最少的那一種。
+                    // 🩸 放點是**主動消費**（`SCP_SpendPolicy` 白名單裡的 `canvas_pixel`）
+                    //   ⇒ 酒館券在這裡會被自動吃掉，這是 Tim 2026-09-18 拍板的行為，不是副作用。
+                    // ⚠ 而檢查在**扣款之前一次做完**（Tim 同日拍板）：合計不夠就整筆不做，
+                    //   ⛔ 不「能扣多少算多少」—— 半扣的帳沒有人能對。
+                    // ===========================================================
                     int aRemaining = iCount;
                     int aUseExp = Math.Min(aExpiring, aRemaining); aRemaining -= aUseExp;
                     int aUsePerm = Math.Min(aPermanent, aRemaining); aRemaining -= aUsePerm;
+                    int aUseTavern = 0;
+                    if (aRemaining > 0 && SCP.Core.Bank.SCP_SpendPolicy.IsActiveSpend("canvas_pixel"))
+                    { aUseTavern = Math.Min(aTavern, aRemaining); aRemaining -= aUseTavern; }
                     int aUseToken = 0;
                     if (aRemaining > 0)
                     {
                         if (iAccount.Length == 0)
                         {
-                            oWhy = "券不夠（限時 " + aExpiring + " ＋ 永久 " + aPermanent + " ＝ "
-                                   + (aExpiring + aPermanent) + "，需 " + iCount + "），而沒給 account"
+                            oWhy = "券不夠（限時 " + aExpiring + " ＋ 永久 " + aPermanent + " ＋ 酒館券 "
+                                   + aTavern + " ＝ " + (aExpiring + aPermanent + aTavern)
+                                   + "，需 " + iCount + "），而沒給 account"
                                    + " ⇒ 不足的 " + aRemaining + " 顆要用 token，但**我不猜帳戶**（猜錯是扣別人的錢）";
                             return false;
                         }
@@ -188,10 +214,11 @@ namespace SCP.Core.Canvas
                     if (aRemaining > 0)
                     {
                         oWhy = "資源合計不足：需 " + iCount + "，限時券 " + aExpiring + " ＋ 永久券 "
-                               + aPermanent + " ＋ token " + aToken + " ＝ " + (aExpiring + aPermanent + aToken);
+                               + aPermanent + " ＋ 酒館券 " + aTavern + " ＋ token " + aToken
+                               + " ＝ " + (aExpiring + aPermanent + aTavern + aToken);
                         return false;
                     }
-                    oPlan = new SCP_CanvasPayPlan(aUseExp, aUsePerm, aUseToken);
+                    oPlan = new SCP_CanvasPayPlan(aUseExp, aUsePerm, aUseTavern, aUseToken);
                     return true;
             }
         }
@@ -289,6 +316,7 @@ namespace SCP.Core.Canvas
             //   顯示名（限時券／永久券）在人讀那一行對映，不動 key。
             aBreakdown["freetime"] = iPlan.Expiring;
             aBreakdown["voucher"] = iPlan.Permanent;
+            aBreakdown["tavern"] = iPlan.Tavern;
             aBreakdown["token"] = iPlan.Token;
             aEvent["pay_breakdown"] = aBreakdown;
             SCP_JsonData aRefs = SCP_JsonData.NewArray();

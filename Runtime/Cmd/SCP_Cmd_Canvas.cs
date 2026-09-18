@@ -559,6 +559,15 @@ namespace SCP.Core.Cmd
                         return SCP_CmdResult.Fail(3, "✗ place 拒絕（扣永久券失敗，未畫任何像素）：" + aR.Detail);
                     aLedgerRefs.Add("voucher:" + aUuid);
                 }
+                // 酒館券（個人錢包）—— 只有主動消費會走到這裡（白名單見 `SCP_SpendPolicy`）。
+                if (aPlan.Tavern > 0)
+                {
+                    SCP_CanvasGateResult aR = aGate.ConsumeTavernVouchers(aPersona, aPlan.Tavern, aUuid,
+                        "canvas " + aPlan.Tavern + " px (酒館券) by " + aPersona);
+                    if (!aR.Ok)
+                        return SCP_CmdResult.Fail(3, "✗ place 拒絕（扣酒館券失敗，未畫任何像素）：" + aR.Detail);
+                    aLedgerRefs.Add("voucher-tavern:" + aUuid);
+                }
             }
             finally { aLock.Dispose(); }
 
@@ -605,6 +614,9 @@ namespace SCP.Core.Cmd
             aResult.AddValue("event_uuid", aUuid);
             aResult.AddValue("pay_freetime", aPlan.Expiring.ToString(CultureInfo.InvariantCulture));
             aResult.AddValue("pay_voucher", aPlan.Permanent.ToString(CultureInfo.InvariantCulture));
+            // ⚠ 這一欄不能省：少了它，「3 券 ＋ 7 token」與「7 token」在畫面上只差一個總數，
+            //   而付款方式看不出來 —— 那正是券被吃掉而沒有人知道的樣子。
+            aResult.AddValue("pay_tavern", aPlan.Tavern.ToString(CultureInfo.InvariantCulture));
             aResult.AddValue("pay_token", aPlan.Token.ToString(CultureInfo.InvariantCulture));
             aResult.AddValue("painted_pixels", aOpaque.ToString(CultureInfo.InvariantCulture));
             if (aVerified != aN)
