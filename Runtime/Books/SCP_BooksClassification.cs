@@ -80,7 +80,7 @@ namespace SCP.Core.Books
         public const string HistorySlugPrefix = "history-";
         /// <summary>酒館史一律屬於同一個系列（Tim 2026-08-19：歷史書可以當成一整系列）。</summary>
         public const string SeriesTavernHistory = "tavern-history";
-        /// <summary>觀影實錄的 slug 前綴（library.py export-watch 的產物）。</summary>
+        /// <summary>觀影實錄的 slug 前綴（`senate cmd watch --arg op=export` 的產物；⚠ 舊入口 `library.py export-watch` 已整支退場）。</summary>
         public const string WatchSlugPrefix = "watch-";
 
         // -------- 字串 <-> 列舉（列舉一律用字串進出：JSON 有 python 讀取端，序號跨語言沒有意義）--------
