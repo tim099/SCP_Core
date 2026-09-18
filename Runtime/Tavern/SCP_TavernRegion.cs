@@ -59,6 +59,19 @@ namespace SCP.Core.Tavern
         public string Kind = "";
         public string Body = "";
 
+        /// <summary>
+        /// 訊息的 `meta` 欄（tag／_writer／…）。⚠ 2026-09-18 加上：查詢層要用 `meta.tag` 印 «標籤»。
+        /// ⛔ 空 Dictionary 與「沒有 meta」在這裡**同形** —— 本模型刻意不分辨那兩者，
+        ///   因為沒有任何一個消費端需要分辨，而多一個 nullable 會讓每個呼叫端各判一次。
+        /// 📌 跨區讀那條路（走 `git show`）目前**不填它** ⇒ 那條路上的 Meta 一定是空的。
+        ///   ⚠ 那是「未填」不是「沒有」 —— 要用它就先確認自己走的是哪條 loader。
+        /// </summary>
+        public System.Collections.Generic.Dictionary<string, string> Meta
+            = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.Ordinal);
+
+        /// <summary>落盤有沒有署名。false ⇒ 顯示層要降級成 SenderId，而**那一格要出聲**。</summary>
+        public bool HasSenderName { get { return SenderName.Length > 0; } }
+
         /// <summary>它在那個 ref 的樹裡的路徑（**印出來的路徑才是真的**，不要背路徑）。</summary>
         public string Path = "";
 
