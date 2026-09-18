@@ -34,7 +34,22 @@ namespace SCP.Core.Voucher
     /// <summary>一批券。<see cref="ExpiresAtUtc"/> 空 ＝ 永久（⛔ 永久券不走這個型別，見 <see cref="SCP_VoucherBook.Permanent"/>）。</summary>
     public sealed class SCP_VoucherBatch
     {
+        /// <summary>**還剩幾張**（會被消費扣減）。</summary>
         public int Amount;
+
+        // ===========================================================
+        // 區塊職責：這一批**當初發了幾張** —— 發放後永不變動。
+        // 物理意義：券**不記歷史**（Tim 2026-09-18 拍板）⇒ 「本場那 10 張用了幾張」
+        //          在只有 `Amount` 的檔上**結構上答不出來**：剩 3 張時，
+        //          「發 10 用 7」與「發 3 用 0」逐位元組相同。
+        // 數值影響：只被 `op=usage` 讀。⛔ 不進入任何餘額算式 ——
+        //          它是**發放量**不是餘額，混用會把已花掉的券算回去。
+        // ⚠ 舊檔沒有這一欄 ⇒ 讀成 `Amount`（＝「一張都沒花」），
+        //   那是**唯一不會憑空生出用量**的預設；⛔ 不預設 0，否則 used 會變成負值再被夾成 0，
+        //   而那個 0 跟「真的沒花」同形。
+        // ===========================================================
+        public int Granted;
+
         public string ExpiresAtUtc = "";
         public string GrantedAtUtc = "";
         public string Source = "";
@@ -44,6 +59,7 @@ namespace SCP.Core.Voucher
         {
             var aData = SCP_JsonData.NewObject();
             aData.Set("amount", SCP_JsonData.NewNumber(Amount));
+            aData.Set("granted", SCP_JsonData.NewNumber(Granted > 0 ? Granted : Amount));
             aData.Set("expires_at_utc", SCP_JsonData.NewString(ExpiresAtUtc));
             aData.Set("granted_at_utc", SCP_JsonData.NewString(GrantedAtUtc));
             if (Source.Length > 0) aData.Set("source", SCP_JsonData.NewString(Source));
@@ -54,6 +70,8 @@ namespace SCP.Core.Voucher
         public static SCP_VoucherBatch FromJson(SCP_JsonData iData) => new SCP_VoucherBatch
         {
             Amount = iData.GetInt("amount", 0),
+            // ⚠ 預設回 `amount`（不是 0）—— 見欄位註解：0 會讓 used 假裝成「沒花」。
+            Granted = iData.GetInt("granted", iData.GetInt("amount", 0)),
             ExpiresAtUtc = iData.GetString("expires_at_utc", ""),
             GrantedAtUtc = iData.GetString("granted_at_utc", ""),
             Source = iData.GetString("source", ""),
