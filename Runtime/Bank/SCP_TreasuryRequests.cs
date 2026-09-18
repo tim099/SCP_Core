@@ -1,0 +1,208 @@
+// 區塊職責：**請款單**與**轉帳單**的讀取與裁決（Senate 側）。
+// 物理意義：單據住在舊系統那兩個資料夾（`Treasury/requests/<日>/*.json`、
+//           `Treasury/transfer_requests/<日>/*.json`）——⛔ **不搬**：
+//           它們是**單據不是帳**，而帳已經在新銀行了。
+//           搬單據等於在切換當天多做一次遷移，而那次遷移沒有人在等。
+// 數值影響：本層**一毛錢都不動** —— 只讀單子、只寫單子的裁決欄。
+//           錢由呼叫端走 `cmd bank`（Server）動，兩件事**分開結算**。
+//
+// 🩸 判準：
+//   ① **裁決欄寫在錢動完之後。** 反過來的話，中途失敗留下的是
+//      「單子寫著 approved、而錢沒撥」——⚠ 那張單之後**不會再出現在待審清單裡**，
+//      所以沒有人會回來看它。⇒ 寧可「錢撥了而單子還是 pending」（那個會被再看到一次）。
+//   ② **`decided_by` / `decision_note` 不可省**：三個月後要答得出「誰批的、憑什麼」。
+//   ③ ⚠ **這兩個資料夾有第二個寫入端**（Unity 端 `UCL_BankAdminPage` 也能批）。
+//      今天靠的是「同時只有一個人在批」這個營運前提，⛔ 不是機械。
+//      ⇒ 本層每次裁決都**先回讀狀態**：已經不是 pending 就拒絕，
+//        讓「被別處批過了」變成一句話，而不是一次重複撥款。
+#nullable enable
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using SCP.Core.Json;
+
+namespace SCP.Core.Bank
+{
+    public sealed class SCP_PayoutRequest
+    {
+        public string Path = "";
+        public string RequestId = "";
+        public string RequestedAt = "";
+        public string Status = "";
+        public string TargetBank = "";
+        public int Amount;
+        public string Currency = "tavern_token";
+        public string Reason = "";
+        public string RequesterPersona = "";
+        public string RequesterAgent = "";
+        public string DecidedBy = "";
+        public string DecisionNote = "";
+    }
+
+    public sealed class SCP_TransferRequest
+    {
+        public string Path = "";
+        public string RequestId = "";
+        public string RequestedAt = "";
+        public string Status = "";
+        public string FromBank = "";
+        public string ToBank = "";
+        public int Amount;
+        public string Currency = "tavern_token";
+        public string Reason = "";
+        public string Kind = "";
+        public string RequesterPersona = "";
+        public string DecidedBy = "";
+        public string DecisionNote = "";
+    }
+
+    public static class SCP_TreasuryRequests
+    {
+        public const string PayoutDirName = "requests";
+        public const string TransferDirName = "transfer_requests";
+        public const string StatusPending = "pending";
+
+        public static string PayoutDir(string iDataRoot)
+            => System.IO.Path.Combine(iDataRoot, "Treasury", PayoutDirName);
+
+        public static string TransferDir(string iDataRoot)
+            => System.IO.Path.Combine(iDataRoot, "Treasury", TransferDirName);
+
+        /// <summary>央行帳號 —— 與舊系統**同一格設定**（`bank_settings.json`），⛔ 不另立一份。</summary>
+        public const string DefaultCentralBank = "pacific-standard-public-deposit-bank";
+
+        public static string ReadCentralBank(string iDataRoot)
+        {
+            string aPath = SCP_BankRegion.SettingsPath(iDataRoot);
+            if (!File.Exists(aPath)) return DefaultCentralBank;
+            try
+            {
+                SCP_JsonData? aJd = SCP_JsonData.Parse(File.ReadAllText(aPath));
+                if (aJd == null || !aJd.IsObject) return DefaultCentralBank;
+                string v = aJd.GetString("central_bank_account", "");
+                return string.IsNullOrWhiteSpace(v) ? DefaultCentralBank : v.Trim();
+            }
+            catch (Exception) { return DefaultCentralBank; }
+        }
+
+        // ── 讀 ────────────────────────────────────────────────────
+
+        public static List<SCP_PayoutRequest> LoadPendingPayouts(string iDataRoot, List<string>? oProblems = null)
+        {
+            var aOut = new List<SCP_PayoutRequest>();
+            foreach (string aFile in ScanJson(PayoutDir(iDataRoot), oProblems))
+            {
+                SCP_JsonData? aJd = TryParse(aFile, oProblems);
+                if (aJd == null) continue;
+                if (!string.Equals(aJd.GetString("status", ""), StatusPending, StringComparison.Ordinal)) continue;
+                aOut.Add(new SCP_PayoutRequest
+                {
+                    Path = aFile,
+                    RequestId = aJd.GetString("request_id", ""),
+                    RequestedAt = aJd.GetString("requested_at", ""),
+                    Status = aJd.GetString("status", ""),
+                    TargetBank = aJd.GetString("target_bank", ""),
+                    Amount = aJd.GetInt("amount", 0),
+                    Currency = aJd.GetString("currency", "tavern_token"),
+                    Reason = aJd.GetString("reason", ""),
+                    RequesterPersona = aJd.GetString("requester_persona", ""),
+                    RequesterAgent = aJd.GetString("requester_agent", ""),
+                });
+            }
+            aOut.Sort((a, b) => string.CompareOrdinal(a.RequestedAt, b.RequestedAt));
+            return aOut;
+        }
+
+        public static List<SCP_TransferRequest> LoadPendingTransfers(string iDataRoot, List<string>? oProblems = null)
+        {
+            var aOut = new List<SCP_TransferRequest>();
+            foreach (string aFile in ScanJson(TransferDir(iDataRoot), oProblems))
+            {
+                SCP_JsonData? aJd = TryParse(aFile, oProblems);
+                if (aJd == null) continue;
+                if (!string.Equals(aJd.GetString("status", ""), StatusPending, StringComparison.Ordinal)) continue;
+                aOut.Add(new SCP_TransferRequest
+                {
+                    Path = aFile,
+                    RequestId = aJd.GetString("request_id", ""),
+                    RequestedAt = aJd.GetString("requested_at", ""),
+                    Status = aJd.GetString("status", ""),
+                    FromBank = aJd.GetString("from_bank", ""),
+                    ToBank = aJd.GetString("to_bank", ""),
+                    Amount = aJd.GetInt("amount", 0),
+                    Currency = aJd.GetString("currency", "tavern_token"),
+                    Reason = aJd.GetString("reason", ""),
+                    Kind = aJd.GetString("kind", ""),
+                    RequesterPersona = aJd.GetString("requester_persona", ""),
+                });
+            }
+            aOut.Sort((a, b) => string.CompareOrdinal(a.RequestedAt, b.RequestedAt));
+            return aOut;
+        }
+
+        // ── 寫（只動裁決欄）────────────────────────────────────────
+
+        /// <summary>
+        /// 寫回裁決。⚠ **先回讀**：不是 `pending` 就拒絕 ——
+        /// 讓「別處已經批過了」變成一句話，⛔ 而不是一次重複撥款。
+        /// </summary>
+        public static bool Decide(string iPath, string iStatus, string iDecidedBy, string iNote,
+                                  IReadOnlyDictionary<string, string>? iExtraFields, out string oError)
+        {
+            oError = "";
+            if (string.IsNullOrWhiteSpace(iDecidedBy)) { oError = "decided_by 必填 —— 沒有署名的裁決事後查不出是誰批的"; return false; }
+            SCP_JsonData? aJd;
+            try { aJd = SCP_JsonData.Parse(File.ReadAllText(iPath)); }
+            catch (Exception e) { oError = $"單子讀不了（{iPath}）：{e.Message}"; return false; }
+            if (aJd == null || !aJd.IsObject) { oError = $"單子不是物件（{iPath}）"; return false; }
+
+            string aNow = aJd.GetString("status", "");
+            if (!string.Equals(aNow, StatusPending, StringComparison.Ordinal))
+            { oError = $"這張單現在是 `{aNow}` 不是 `pending` ⇒ **沒有動作**（可能剛剛被別處批過了）"; return false; }
+
+            aJd["status"] = iStatus;
+            aJd["decided_at"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            aJd["decided_by"] = iDecidedBy;
+            aJd["decision_note"] = iNote ?? "";
+            if (iExtraFields != null)
+                foreach (KeyValuePair<string, string> kv in iExtraFields) aJd[kv.Key] = kv.Value;
+
+            try
+            {
+                string aTmp = iPath + ".tmp";
+                File.WriteAllText(aTmp, SCP_JsonWriter.Write(aJd, SCP_JsonStyle.UclLegacy) + "\n");
+                if (File.Exists(iPath)) File.Delete(iPath);
+                File.Move(aTmp, iPath);
+            }
+            catch (Exception e) { oError = $"單子寫不回去（{iPath}）：{e.Message}"; return false; }
+            return true;
+        }
+
+        // ── 共用 ──────────────────────────────────────────────────
+
+        static List<string> ScanJson(string iDir, List<string>? oProblems)
+        {
+            var aOut = new List<string>();
+            if (!Directory.Exists(iDir)) return aOut;
+            try { aOut.AddRange(Directory.GetFiles(iDir, "*.json", SearchOption.AllDirectories)); }
+            catch (Exception e)
+            {
+                // ⛔ 掃不到**不是**「沒有待審單」：後者是讀數，前者是「我不知道」。
+                oProblems?.Add($"掃單據夾失敗（{iDir}）：{e.Message}");
+            }
+            aOut.Sort(StringComparer.Ordinal);
+            return aOut;
+        }
+
+        static SCP_JsonData? TryParse(string iFile, List<string>? oProblems)
+        {
+            try
+            {
+                SCP_JsonData? aJd = SCP_JsonData.Parse(File.ReadAllText(iFile));
+                return aJd != null && aJd.IsObject ? aJd : null;
+            }
+            catch (Exception e) { oProblems?.Add($"單子讀不了（{iFile}）：{e.Message}"); return null; }
+        }
+    }
+}
