@@ -76,44 +76,6 @@ namespace SCP.Core.Bank
         }
 
         // ===========================================================
-        // 區塊職責：**金流權威** —— 這棵樹的錢現在記在哪一本帳上（同一個設定檔的 `money_authority`）。
-        // 物理意義：TASK-0216 ⑨（Tim 2026-09-18：「全面改用 Senate 銀行作為實際金流」）。
-        //          `legacy` ＝ 舊 `Treasury/` 仍是權威；`senate_bank` ＝ **這本帳就是權威**。
-        // 🩸 為什麼要讀它：`Cmd_Bank` 每一次輸出都附一句定語（「這不是那本帳」）。
-        //   那句話在切換之後**整句是假的**，而**過期不會叫** —— 一句過期的真話比沒有話貴，
-        //   因為它看起來是對的。⇒ 定語改成**推導**，而不是「記得回來改」。
-        // ⛔ 認不得的值一律當 `legacy`：一個打錯字就靜默宣布權威的設定，比沒有設定危險。
-        // ===========================================================
-        public const string AuthorityKey = "money_authority";
-        public const string AuthorityLegacy = "legacy";
-        public const string AuthoritySenateBank = "senate_bank";
-
-        /// <summary>這棵樹的金流權威（回 <see cref="AuthorityLegacy"/> 或 <see cref="AuthoritySenateBank"/>）。</summary>
-        public static string ReadAuthority(string iDataRoot)
-        {
-            string aPath = SettingsPath(iDataRoot);
-            if (!File.Exists(aPath)) return AuthorityLegacy;
-            try
-            {
-                SCP_JsonData? aJd = SCP_JsonData.Parse(File.ReadAllText(aPath));
-                if (aJd == null || !aJd.IsObject || !aJd.Contains(AuthorityKey)) return AuthorityLegacy;
-                string aValue = (aJd.GetString(AuthorityKey, "") ?? "").Trim().ToLowerInvariant();
-                return aValue == AuthoritySenateBank ? AuthoritySenateBank : AuthorityLegacy;
-            }
-            catch { return AuthorityLegacy; }
-        }
-
-        /// <summary>
-        /// 同上，但入口是**銀行帳本根**（`&lt;資料根&gt;/Bank`）。
-        /// ⚠ 「Bank 就住在資料根底下」這個關係**只有這裡知道** —— ⛔ 別在呼叫端各自 `GetParent`：
-        /// 那會變成同一條路徑規則的第二份，而兩份漂掉時兩邊都讀得出一個存在的目錄。
-        /// </summary>
-        public static string AuthorityFromBankRoot(string iBankRoot)
-        {
-            string aDataRoot = DataRootOfBankRoot(iBankRoot);
-            return aDataRoot.Length == 0 ? AuthorityLegacy : ReadAuthority(aDataRoot);
-        }
-
         /// <summary>
         /// 銀行帳本根 → **資料根**。⚠ 上面那條「Bank 住在資料根底下」的關係只有本檔知道，
         /// 這支就是它唯一的出口 —— ⛔ 呼叫端不要各自 `GetParent`。

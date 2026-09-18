@@ -89,7 +89,7 @@ namespace SCP.Core.Bank
 
         /// <summary>
         /// 寫幾格政策參數（**read-modify-write**）。
-        /// <para>⚠ 整份覆寫會把 `currency_id` / `money_authority` 那些格吃掉 —— 它們住同一個檔。</para>
+        /// <para>⚠ 整份覆寫會把 `currency_id` 那些格吃掉 —— 它們住同一個檔。</para>
         /// </summary>
         public static bool Write(string iDataRoot, Action<SCP_JsonData> iMutate, out string? oError)
         {
