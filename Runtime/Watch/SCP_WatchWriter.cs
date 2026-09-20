@@ -54,8 +54,12 @@ namespace SCP.Core.Watch
         static readonly Regex s_ChapterFile = new Regex(@"^\d{3}$", RegexOptions.Compiled);
         static readonly Regex s_SeqRangeCell = new Regex(@"seq 區間 \|([^|]+)\|", RegexOptions.Compiled);
         static readonly Regex s_SeqPair = new Regex(@"(\d+)\s*[–\-]\s*(\d+)", RegexOptions.Compiled);
-        /// <summary>第一則實錄的 `### [seq N] …` 與它底下的本文（TASK-0217 身分核對用）。</summary>
-        static readonly Regex s_FirstEntry = new Regex(@"^### \[seq (\d+)\][^\n]*\n\n(.{0,200})",
+        /// <summary>第一則實錄的 `### [seq N] …` 與它底下的本文（TASK-0217 身分核對用）。
+        /// <para>🩸 TASK-0254：第一版寫死 LF（`\n\n`），而章檔在 Windows 上是 **CRLF** 落盤 ⇒
+        /// `[^\n]*` 吃掉 CR 之後下一個位元組還是 CR，**45/45 有實錄段的章檔全部匹配失敗**。
+        /// 而失敗的樣子是守衛喊「找不到任何一則實錄」並改口指控跨區 seq ——
+        /// **一個行尾字元讓錯誤訊息指向了另一個成因**。⇒ 行尾一律 `\r?\n`，⛔ 別再假設 LF。</para></summary>
+        static readonly Regex s_FirstEntry = new Regex(@"^### \[seq (\d+)\][^\r\n]*\r?\n\r?\n(.{0,200})",
             RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.Singleline);
 
         /// <summary>
