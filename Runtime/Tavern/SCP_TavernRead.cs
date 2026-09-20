@@ -79,6 +79,23 @@ namespace SCP.Core.Tavern
                     SCP.Core.Json.SCP_JsonData aMeta = aJson["meta"];
                     foreach (string aK in aMeta.Keys) aMsg.Meta[aK] = aMeta.GetString(aK, "");
                 }
+                // ⚠ TASK-0247：`reply_to` / `refs` 是**選填欄位**（多數訊息沒有）。
+                //   ⛔ 沒有 ≠ 0／空 —— `ReplyTo` 刻意用 nullable，理由見模型那邊的註解。
+                if (aJson.Contains("reply_to")) aMsg.ReplyTo = aJson.GetInt("reply_to", 0);
+                if (aJson.Contains("refs"))
+                {
+                    SCP.Core.Json.SCP_JsonData aRefs = aJson["refs"];
+                    for (int i = 0; i < aRefs.Count; ++i)
+                    {
+                        SCP.Core.Json.SCP_JsonData aRef = aRefs[i];
+                        aMsg.Refs.Add(new SCP_TavernRef
+                        {
+                            Path = aRef.GetString("path", ""),
+                            Label = aRef.GetString("label", ""),
+                            Anchor = aRef.GetString("anchor", ""),
+                        });
+                    }
+                }
                 return aMsg;
             }
             catch (Exception e)

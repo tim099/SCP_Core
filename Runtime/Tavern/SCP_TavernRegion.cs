@@ -45,6 +45,14 @@ namespace SCP.Core.Tavern
         public string Freshness { get { return "ref " + Ref + "　tip " + TipSha + " · " + TipTime; } }
     }
 
+    /// <summary>訊息附帶的一筆參照。三個欄位都可能是空的（落盤就允許）。</summary>
+    public sealed class SCP_TavernRef
+    {
+        public string Path = "";
+        public string Label = "";
+        public string Anchor = "";
+    }
+
     /// <summary>一則讀回來的訊息（**已經帶著它的定語** —— region 與 uuid 不可以跟本文分家）。</summary>
     public sealed class SCP_TavernMessage
     {
@@ -68,6 +76,22 @@ namespace SCP.Core.Tavern
         /// </summary>
         public System.Collections.Generic.Dictionary<string, string> Meta
             = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.Ordinal);
+
+        /// <summary>
+        /// 回覆哪一則（`reply_to`）。**null ＝ 落盤沒有這個欄位**（多數訊息都沒有）。
+        /// <para>⚠ 2026-09-20 加上（TASK-0247）：`op=read` 的算繪要印 `_(↩ N)_`。
+        /// ⛔ 不用 0 當「沒有」—— seq 0 是合法的值，兩者同形的話回覆鏈會少一格而沒有人會發現。</para>
+        /// <para>📌 跨區讀那條路（走 `git show`）目前**不填它** ⇒ 那條路上一定是 null。
+        /// 那是「未填」不是「沒有」。</para>
+        /// </summary>
+        public int? ReplyTo;
+
+        /// <summary>
+        /// 附帶的參照（`refs`：path／label／anchor）。**空清單與「沒有 refs」在此同形**（同 <see cref="Meta"/> 的理由）。
+        /// <para>📌 跨區讀那條路同樣不填它。</para>
+        /// </summary>
+        public System.Collections.Generic.List<SCP_TavernRef> Refs
+            = new System.Collections.Generic.List<SCP_TavernRef>();
 
         /// <summary>落盤有沒有署名。false ⇒ 顯示層要降級成 SenderId，而**那一格要出聲**。</summary>
         public bool HasSenderName { get { return SenderName.Length > 0; } }
