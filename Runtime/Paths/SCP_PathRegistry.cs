@@ -101,7 +101,11 @@ namespace SCP.Core.Paths
         SettingsFile,
 
         [SCP_PathInfo("酒館根",
-            "訊息、seq、inbox 都在這下面。**寫入端只有 Editor**（`_seq.txt` 沒有跨 process lock）。")]
+            "訊息、seq、inbox 都在這下面。**寫入端由 `tavern.writer` 決定**（TASK-0106）："
+            + "`editor`（預設，今天的行為）／`server`（Senate 常駐 Server 單一寫入端）。"
+            + "⚠ 舊註記寫著「`_seq.txt` 沒有跨 process lock」—— 那句的**受詞已經不對**："
+            + "seq 的權威是訊息**檔數**、檔名就是 seq，而建檔走原子建檔（TASK-0256）"
+            + "⇒ 撞檔會出聲，⛔ 不再是靜默覆蓋。")]
         [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, "ChatTavern", SCP_PathScope.Global)]
         ChatTavern,
 
