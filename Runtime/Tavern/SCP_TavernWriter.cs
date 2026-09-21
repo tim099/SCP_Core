@@ -180,25 +180,13 @@ namespace SCP.Core.Tavern
         }
 
         /// <summary>
-        /// 原子建檔。回 <c>false</c> **只代表「那個檔名已經有人了」**；
+        /// 原子建檔。回 <c>false</c> **只代表「那個檔名已經有人了」**（win32 80／183）；
         /// ⛔ 磁碟滿／路徑失效那類原樣往上炸（把它們降級成撞檔會讓自我校正白跑三次，然後報一個錯的成因）。
+        /// <para>🩸 判準**不是** `File.Exists`（@kiara 2026-09-21 QA）：`FileStream(CreateNew)` 一建構檔就在了
+        /// ⇒ 那個條件在任何建構後的 IOException 上都成立，磁碟滿會被降級成撞檔並留下 0-byte 孤兒檔佔住 seq。</para>
         /// </summary>
         static bool TryCreateNew(string iPath, string iJson)
-        {
-            try
-            {
-                using (var aStream = new FileStream(iPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                using (var aWriter = new StreamWriter(aStream, new UTF8Encoding(false)))
-                {
-                    aWriter.Write(iJson);
-                }
-                return true;
-            }
-            catch (IOException) when (File.Exists(iPath))
-            {
-                return false;
-            }
-        }
+            => SCP.Core.Io.SCP_AtomicFile.TryCreateNew(iPath, iJson);
 
         /// <summary>
         /// 磁碟上的訊息檔數。⛔ **不走 `SCP_TavernRead.CountMessages`** ——
