@@ -110,6 +110,12 @@ namespace SCP.Core.Proc
         /// <summary>
         /// append 一筆 OneShot 指令到 `queue.json` 並寫 `pending.trigger`，回傳 cmd_id。
         /// <para>⚠ 既有指令（含本版不認得的欄位）**原樣保留** —— 讀改寫，⛔ 不整檔重生。</para>
+        /// <para>🔴 **讀改寫整段在 <see cref="SCP_FileLock"/> 裡**（TASK-0263）：這顆 queue 有多個
+        /// 寫入端（每顆 CLI／Unity Editor／Server 執行器）。沒有互斥時兩邊各自讀到同一份舊內容、
+        /// 各自寫回，**後寫的把先寫的那一筆整個吃掉** —— 而每一層都回報成功。
+        /// 實測（2026-09-21，60 筆併發委派）：落盤 55，client **全部 exit 0**。</para>
+        /// <para>⛔ 別把 `WriteAtomic` 讀成已經有互斥了：它保護的是「寫到一半的檔」，
+        /// 不是「讀到一半的世界」——兩者中間隔著一整個決策。</para>
         /// </summary>
         public static string Submit(string iServerRoot, string iLane, string iCmdType,
                                     IReadOnlyDictionary<string, string> iArgs)
@@ -117,29 +123,36 @@ namespace SCP.Core.Proc
             string aCmdId = MakeId(iCmdType);
             string aFolder = QueueFolder(iServerRoot, iLane);
             Directory.CreateDirectory(aFolder);
+            string aQueuePath = QueuePath(iServerRoot, iLane);
 
-            SCP_JsonData aRoot = LoadQueue(QueuePath(iServerRoot, iLane));
-            SCP_JsonData aCommands = aRoot["Commands"];
+            using (SCP.Core.Io.SCP_FileLock.Acquire(aQueuePath))
+            {
+                // ⚠ 載入**在鎖裡面**：拿著鎖去寫一份拿鎖之前讀的副本，鎖一點忙都幫不上。
+                SCP_JsonData aRoot = LoadQueue(aQueuePath);
+                SCP_JsonData aCommands = aRoot["Commands"];
 
-            SCP_JsonData aArgs = SCP_JsonData.NewObject();
-            if (!iArgs.ContainsKey("_caller_client")) aArgs.Set("_caller_client", SCP_JsonData.NewString(ClientId));
-            foreach (KeyValuePair<string, string> kv in iArgs) aArgs.Set(kv.Key, SCP_JsonData.NewString(kv.Value));
+                SCP_JsonData aArgs = SCP_JsonData.NewObject();
+                if (!iArgs.ContainsKey("_caller_client")) aArgs.Set("_caller_client", SCP_JsonData.NewString(ClientId));
+                foreach (KeyValuePair<string, string> kv in iArgs) aArgs.Set(kv.Key, SCP_JsonData.NewString(kv.Value));
 
-            SCP_JsonData aCmd = SCP_JsonData.NewObject();
-            aCmd.Set("Id", SCP_JsonData.NewString(aCmdId));
-            aCmd.Set("Type", SCP_JsonData.NewString(iCmdType));
-            aCmd.Set("Mode", SCP_JsonData.NewString("OneShot"));
-            aCmd.Set("RunCount", SCP_JsonData.NewNumber(0));
-            aCmd.Set("Args", aArgs);
-            aCmd.Set("CreatedAt", SCP_JsonData.NewString(UtcStamp()));
-            aCmd.Set("LastRunAt", SCP_JsonData.NewNull());
-            aCmd.Set("LastRunResult", SCP_JsonData.NewNull());
-            aCmd.Set("LastRunError", SCP_JsonData.NewNull());
-            aCmd.Set("Description", SCP_JsonData.NewNull());
-            aCommands.Add(aCmd);
+                SCP_JsonData aCmd = SCP_JsonData.NewObject();
+                aCmd.Set("Id", SCP_JsonData.NewString(aCmdId));
+                aCmd.Set("Type", SCP_JsonData.NewString(iCmdType));
+                aCmd.Set("Mode", SCP_JsonData.NewString("OneShot"));
+                aCmd.Set("RunCount", SCP_JsonData.NewNumber(0));
+                aCmd.Set("Args", aArgs);
+                aCmd.Set("CreatedAt", SCP_JsonData.NewString(UtcStamp()));
+                aCmd.Set("LastRunAt", SCP_JsonData.NewNull());
+                aCmd.Set("LastRunResult", SCP_JsonData.NewNull());
+                aCmd.Set("LastRunError", SCP_JsonData.NewNull());
+                aCmd.Set("Description", SCP_JsonData.NewNull());
+                aCommands.Add(aCmd);
 
-            WriteAtomic(QueuePath(iServerRoot, iLane), SCP_JsonWriter.Write(aRoot) + "\n");
+                WriteAtomic(aQueuePath, SCP_JsonWriter.Write(aRoot) + "\n");
+            }
 
+            // ⚠ trigger 在鎖**外面**：它不是讀改寫（整檔覆寫，內容只是「有人送東西了」），
+            //   而且必須在 queue 落盤之後才寫 —— 反過來的話執行器可能在看到 trigger 時讀到舊 queue。
             SCP_JsonData aTrigger = SCP_JsonData.NewObject();
             aTrigger.Set("createdAt", SCP_JsonData.NewString(UtcStamp()));
             aTrigger.Set("submittedBy", SCP_JsonData.NewString(ClientId + " → " + iCmdType));
