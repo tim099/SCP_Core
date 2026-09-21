@@ -80,6 +80,20 @@ namespace SCP.Core.Tavern
         /// </summary>
         public const string WriterSignatureValue = "scp_tavern_v1";
 
+        /// <summary>
+        /// 酒館委派走的那條 Server queue lane —— **固定一條**
+        /// （TASK-0106 驗收 ③，PM @basecamp 2026-09-21 拍板候選 A）。
+        /// <para>⚠ 它是 <c>queues/</c> 底下的**目錄名** ⇒ ⛔ 不可以含 `/`（那會變成協議的子分道，
+        /// 而 `ServerExecutor.Tick` **讀不到子分道且不出聲**）或 `:`（Windows 的 ADS 分隔字元）。</para>
+        /// <para>🩸 為什麼常數住在這裡而不是各自寫死：送出端在 Unity（`UCL_ChatTavernIO`）、
+        /// 收下端在 Senate CLI（`Cmd_TavernWrite`），**而兩邊唯一共同編得到的組件是本 SCP_Core**。
+        /// 在這之前兩邊是各自的字串字面＋一句「與對面同字面」的註解 ——
+        /// 而 lane 對不上的失效樣子是 **15 秒逾時、沒有任何一層說不認得**。
+        /// ⇒ 一致性從「有人記得改兩邊」換成「只有一個地方可以改」。</para>
+        /// <para>⚠ 名字跟預設房間同字面（`tavern`）是巧合 —— 這是 lane 不是房名。</para>
+        /// </summary>
+        public const string LaneName = "tavern";
+
         const int MaxHealRetries = 3;
 
         // per-room lock 池：不同房互不阻塞（同 Editor 側的取捨）。
