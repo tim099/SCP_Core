@@ -107,6 +107,32 @@ namespace SCP.Core.Library
             }
             oRoundNumber = aMaxRound + 1;
 
+            // 區塊職責：接回「round 與索引已落檔、reader 投影尚未落檔」的中斷寫入。
+            // 物理意義：同日完全相同的 r1 已是這次閱讀的事實源；再開 r2 會把 I/O 中斷誤記成重讀。
+            // 數值影響：只在 reader 尚未指向本章、索引僅含當日 r1、且正文逐字相同時重用 r1；
+            //           其他任何情形仍照既有規則開新 round，避免吞掉真正的重讀。
+            bool aRecoverPendingProjection = false;
+            string aRecoveredFileName = "";
+            if (!iAppend && aRounds.Count == 1 && !aRounds[0].IsString &&
+                aRounds[0].GetInt(SCP_LibraryIO.Key_Round, 0) == 1 &&
+                aRounds[0].GetString(SCP_LibraryIO.Key_ReadingDate, "") == SCP_LibraryIO.Today())
+            {
+                string aCurrentChapter = aReader.Contains(SCP_LibraryIO.Key_Progress)
+                    ? aReader[SCP_LibraryIO.Key_Progress].GetString(SCP_LibraryIO.Key_CurrentChapterId, "") : "";
+                string aCandidateFile = aRounds[0].GetString(SCP_LibraryIO.Key_File, "");
+                string aCandidatePath = Path.Combine(aChapterDir, aCandidateFile);
+                if (aCurrentChapter != iChapterId && !string.IsNullOrEmpty(aCandidateFile) &&
+                    File.Exists(aCandidatePath) &&
+                    string.Equals(File.ReadAllText(aCandidatePath, Encoding.UTF8).TrimEnd(), iBody.TrimEnd(),
+                        System.StringComparison.Ordinal))
+                {
+                    aRecoverPendingProjection = true;
+                    aRecoveredFileName = aCandidateFile;
+                    oRoundNumber = 1;
+                    oRoundFilePath = aCandidatePath;
+                }
+            }
+
             // ── 續寫（TASK-0121）：追加進既有 round，不開下一個 r{N} ──────────────
             // ⚠ 這一段是**唯一**會動到既有 round 檔的路，所以三件事都要說出來而不是靜默處理：
             //   ① 指定的 round 不在索引裡　② 索引指的檔在磁碟上不見了　③ 這一章根本還沒有第一場。
@@ -114,7 +140,11 @@ namespace SCP.Core.Library
             bool aAppended = false;
             int aSegmentCount = 1;
             string aFileName;
-            if (iAppend && aMaxRound > 0)
+            if (aRecoverPendingProjection)
+            {
+                aFileName = aRecoveredFileName;
+            }
+            else if (iAppend && aMaxRound > 0)
             {
                 int aTarget = iAppendRound > 0 ? iAppendRound : aMaxRound;
                 SCP_JsonData? aTargetEntry = null;
@@ -203,7 +233,9 @@ namespace SCP.Core.Library
                             (string.IsNullOrEmpty(iTimeRange) ? "" : $"　（{iTimeRange}）"));
             // ⚠ 續寫時**不印** RelationLabel：那句話回答的是「這一章跟上次讀到哪的關係」，
             //   而續寫的答案永遠是「同一章」—— 印出來會變成一句永遠成立、因此不帶資訊的話。
-            aLog.AppendLine(aAppended
+            aLog.AppendLine(aRecoverPendingProjection
+                ? $"- round：**r{oRoundNumber}**（恢復先前中斷的 reader 投影；沒有開新的 round）"
+                : aAppended
                 ? $"- round：**r{oRoundNumber}**（續寫・第 {aSegmentCount} 場 —— **沒有開新的 round**；" +
                   "`r{N}` 是第 N 次讀這一話，不是第 N 次寫入）"
                 : $"- round：**r{oRoundNumber}**（{SCP_LibraryInit.RelationLabel(aRelation)}）");

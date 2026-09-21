@@ -41,8 +41,34 @@ namespace SCP.Core.Io
             //   是**看起來從來不存在**（而讀取端多半對「不存在」是 fail-soft 的）。
             // ⚠ `File.Move(src, dst, overwrite)` 那個三參數多載是 .NET Core 3.0 才有，
             //   netstandard2.1 編不過 ⇒ 目標存在時走 `File.Replace`，不存在才 `File.Move`。
-            if (File.Exists(iPath)) File.Replace(aTmp, iPath, null);
-            else File.Move(aTmp, iPath);
+            if (!File.Exists(iPath))
+            {
+                File.Move(aTmp, iPath);
+                return;
+            }
+
+            try
+            {
+                File.Replace(aTmp, iPath, null);
+            }
+            catch (IOException aReplaceError)
+            {
+                // 區塊職責：在 Windows 拒絕 `File.Replace` 時，安全地完成同一份 temp 的覆寫。
+                // 物理意義：Library 的章節索引已經落檔後，防毒、同步或檔案監看器可短暫讓
+                //           Replace 無法移除目的檔；此時先 Delete 會把「尚未同步」偽裝成「從未閱讀」。
+                // 數值影響：成功時內容仍是同一份 UTF-8/CRLF temp；Copy 失敗會保留原檔，並帶著
+                //           Replace 的根因拋出，絕不以刪除目的檔換取成功。
+                try
+                {
+                    File.Copy(aTmp, iPath, true);
+                    File.Delete(aTmp);
+                }
+                catch (IOException aCopyError)
+                {
+                    throw new IOException($"無法以安全覆寫落檔：{iPath}",
+                        new AggregateException(aReplaceError, aCopyError));
+                }
+            }
         }
     }
 }
