@@ -24,6 +24,15 @@ namespace SCP.Core.Paths
         public const string LettersDirName = "letters";
 
         /// <summary>
+        /// 資料根層設定檔（<c>&lt;資料根&gt;/agent_settings.json</c>）—— 走 <c>SCP_JsonPrefs</c>，各消費端各佔一個頂層 section。
+        /// <para>⚠ **落點是資料根不是 repo**（Tim 2026-09-21 拍板）：這裡放的是「這棵資料樹上大家要一致的那些開關」
+        /// （第一個是 TASK-0106 的 <c>tavern.writer</c>）。放進 <c>senate.local.json</c> 的話 Unity Editor 那側**讀不到**
+        /// ⇒ 兩個宿主會各看各的開關，而那正是這條線要根治的病。</para>
+        /// <para>⛔ 跟 <c>secrets_config.json</c> 不同檔：那個是憑證、不進版控；這個是行為開關、要跟資料一起被 review。</para>
+        /// </summary>
+        public const string SettingsFileName = "agent_settings.json";
+
+        /// <summary>
         /// Cmd 回傳判定檔的目錄名（<c>&lt;某個根&gt;/_cmd_results/&lt;cmd_id&gt;.json</c>）。
         /// <para>⚠ **它掛在兩個不同的根底下，而那是刻意的**：派遣端寫在**資料根**
         /// （<c>AgentCmdClient</c>，Editor Runner 讀它）、Server 執行器寫在**Server 根**
@@ -85,6 +94,10 @@ namespace SCP.Core.Paths
         /// </summary>
         public static string SessionDir(SCP_DataRoot iRoot)
             => iRoot.Value + "/" + SessionDirName;
+
+        /// <summary>資料根層設定檔的完整路徑。</summary>
+        public static string Settings(SCP_DataRoot iRoot)
+            => iRoot.Value + "/" + SettingsFileName;
 
         public static string ChatTavern(SCP_DataRoot iRoot)
             => iRoot.Value + "/" + ChatTavernDirName;

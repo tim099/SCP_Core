@@ -92,6 +92,14 @@ namespace SCP.Core.Paths
         [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, "_session", SCP_PathScope.Global)]
         SessionDir,
 
+        [SCP_PathInfo("資料根層設定檔",
+            "`agent_settings.json` —— 這棵資料樹上**大家要一致**的那些開關（第一個是 `tavern.writer`，TASK-0106）。"
+            + "⚠ 它跟 `senate.local.json` 的差別是**誰讀得到**：那個檔只有 Senate 看得見，"
+            + "而這裡的開關 Unity Editor 與 Server 兩側都要照著走。"
+            + "⛔ 檔不在 ＝ 全部走預設值，那不是錯誤。")]
+        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, SCP_DataPaths.SettingsFileName, SCP_PathScope.Global)]
+        SettingsFile,
+
         [SCP_PathInfo("酒館根",
             "訊息、seq、inbox 都在這下面。**寫入端只有 Editor**（`_seq.txt` 沒有跨 process lock）。")]
         [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, "ChatTavern", SCP_PathScope.Global)]

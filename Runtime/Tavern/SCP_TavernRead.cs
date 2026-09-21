@@ -61,6 +61,30 @@ namespace SCP.Core.Tavern
             try
             {
                 SCP.Core.Json.SCP_JsonData aJson = SCP.Core.Json.SCP_JsonParser.Parse(File.ReadAllText(iFile));
+                return FromJson(aJson, iRoom, aSeq, iFile.Replace(BackSlash, '/'));
+            }
+            catch (Exception e)
+            {
+                // ⛔ **不靜默跳過**（形狀取自 `SCP_WatchExport.IterMessages`）——
+                //    呼叫端要看得到「這次有幾筆沒收錄」。
+                if (oWarn != null)
+                    oWarn.Add("⚠ 讀不動 " + Path.GetFileName(iFile) + "：" + e.Message
+                              + "（本筆計入『未收錄』）");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 一份已 parse 的訊息 JSON → <see cref="SCP_TavernMessage"/>。
+        /// <para>⚠ 這是**欄位對應的唯一一處**：讀檔那條路與寫入端（`SCP_TavernWriter` 的呼叫者，
+        /// 訊息從協議帶進來時）共用它。⛔ 別在別處再對一次 —— 兩份對應會在加欄位的那天分岔，
+        /// 而分岔的樣子是「某個欄位在某一條路上悄悄消失」。</para>
+        /// </summary>
+        public static SCP_TavernMessage FromJson(SCP.Core.Json.SCP_JsonData iJson, string iRoom, int iSeq, string iPath)
+        {
+            {
+                SCP.Core.Json.SCP_JsonData aJson = iJson;
+                int aSeq = iSeq;
                 var aMsg = new SCP_TavernMessage
                 {
                     Room = iRoom,
@@ -70,9 +94,11 @@ namespace SCP.Core.Tavern
                     SenderId = aJson.GetString("sender_id", ""),
                     SenderName = aJson.GetString("sender_name", ""),
                     SenderPersona = aJson.GetString("sender_persona", ""),
+                    SenderAvatarSprite = aJson.GetString("sender_avatar_sprite", ""),
+                    ReplyToUuid = aJson.GetString("reply_to_uuid", ""),
                     Kind = aJson.GetString("kind", ""),
                     Body = aJson.GetString("body", ""),
-                    Path = iFile.Replace(BackSlash, '/'),
+                    Path = iPath,
                 };
                 if (aJson.Contains("meta"))
                 {
@@ -97,15 +123,6 @@ namespace SCP.Core.Tavern
                     }
                 }
                 return aMsg;
-            }
-            catch (Exception e)
-            {
-                // ⛔ **不靜默跳過**（形狀取自 `SCP_WatchExport.IterMessages`）——
-                //    呼叫端要看得到「這次有幾筆沒收錄」。
-                if (oWarn != null)
-                    oWarn.Add("⚠ 讀不動 " + Path.GetFileName(iFile) + "：" + e.Message
-                              + "（本筆計入『未收錄』）");
-                return null;
             }
         }
 

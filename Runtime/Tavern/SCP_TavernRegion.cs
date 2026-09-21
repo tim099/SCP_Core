@@ -93,6 +93,19 @@ namespace SCP.Core.Tavern
         public System.Collections.Generic.List<SCP_TavernRef> Refs
             = new System.Collections.Generic.List<SCP_TavernRef>();
 
+        /// <summary>
+        /// 頭像（`sender_avatar_sprite`）。⚠ 2026-09-21 加上（TASK-0106）：**寫入端要能原樣寫回它** ——
+        /// 讀取端不用它，但少一個欄位的序列化就不是同一則訊息了。
+        /// <para>⛔ 空字串 ＝ 落盤沒有這個欄位（寫入端據此決定要不要 emit），⛔ 不是「沒有頭像」。</para>
+        /// </summary>
+        public string SenderAvatarSprite = "";
+
+        /// <summary>
+        /// 回覆哪一則的 uuid（`reply_to_uuid`）。同 <see cref="SenderAvatarSprite"/>：
+        /// 2026-09-21 為了**寫入端的完整性**補上，空字串＝落盤沒有這個欄位。
+        /// </summary>
+        public string ReplyToUuid = "";
+
         /// <summary>落盤有沒有署名。false ⇒ 顯示層要降級成 SenderId，而**那一格要出聲**。</summary>
         public bool HasSenderName { get { return SenderName.Length > 0; } }
 
