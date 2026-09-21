@@ -20,6 +20,22 @@ using SCP.Core.Json;
 namespace SCP.Core.Watch
 {
     /// <summary>落檔結果。<see cref="Error"/> 非空 ＝ **什麼都沒寫**（守衛擋下或排版失敗）。</summary>
+    /// <summary>`RetitleChapter` 的結果 —— ⚠ `Ok` 為 false 時 `Error` 一定有值。</summary>
+    public sealed class SCP_WatchRetitleResult
+    {
+        public bool Ok;
+        public string Error = "";
+        public string Book = "";
+        public string Chapter = "";
+        public string Path = "";
+        public string OldTitle = "";
+        public string NewTitle = "";
+        /// <summary>回讀驗證：除標題那一行外逐位元組相同（**讀數，不是宣稱**）。</summary>
+        public bool BodyUnchanged;
+        /// <summary>台帳對齊了幾個場次（0 ＝ 表頭沒有場次欄，或台帳不存在）。</summary>
+        public int LedgerSessions;
+    }
+
     public sealed class SCP_WatchWriteResult
     {
         public string Error = "";
@@ -225,7 +241,10 @@ namespace SCP.Core.Watch
         }
 
         /// <summary>
-        /// 排版 ＋ 落檔 ＋ 回讀 ＋ 台帳回填。**這是唯一會寫東西的入口。**
+        /// 排版 ＋ 落檔 ＋ 回讀 ＋ 台帳回填。**章的正文只有這一支寫得出來。**
+        /// <para>⚠ 本檔另有一個寫入端 <see cref="RetitleChapter"/>（TASK-0255）——
+        /// 它的射程**只有表頭那一行標題**，逐位元組驗證其餘內容不變。
+        /// ⛔ 那不是「又一個匯出入口」，它不產生內容、不碰台帳以外的東西。</para>
         /// </summary>
         /// <param name="iForce">既有章檔存在時是否覆寫。⛔ 預設不覆寫。</param>
         /// <param name="iAllowOverlap">seq 區間與既有章重疊時是否放行（要人明說要並存）。</param>
@@ -383,6 +402,154 @@ namespace SCP.Core.Watch
                 // ⚠ 章**已經落地**了 ⇒ 台帳失敗不回頭、不刪檔，只出聲。
                 //   兩本帳分開結算：產物成了、回填沒成 —— ⛔ 不把它報成整件事失敗。
                 oLines.Add($"   ⚠ 台帳 append export 紀錄失敗（**章已落地，不回頭**）：{e.Message}");
+            }
+            return aOut;
+        }
+
+        // ===========================================================
+        // 區塊職責：補章名 —— **只改章檔表頭那一行標題**，不重出、不動正文。
+        // 物理意義：TASK-0255。在此之前補名這條路沒有出口：
+        //   `op=untitled` 的指引寫「帶 force=1 重出」，而 TASK-0152 之後 force 的語意是
+        //   「重出落在新版本上」⇒ 正本仍叫哨兵、旁邊多一份有名字的 `_v2`，
+        //   而 `_vN` 不符合 `^\d{3}$` ⇒ 章的列舉看不到它 ⇒ 下次照樣報同樣的章數。
+        // 🩸 為什麼這樣不牴觸 TASK-0152：0152 保護的是**含人工修訂的正文**
+        //   （一次重出會把手改與那行警告一起抹掉）。本支不重跑匯出、不產生任何內容，
+        //   只把標題那一行換掉，且**逐位元組驗證其餘內容一字不變** ——
+        //   ⇒ 它保護的那個東西在這條路上結構性地動不到。
+        // 數值影響：寫 1 個檔（就地改一行）＋ 台帳 append N 筆修訂事件（沿用 export 事件形狀）。
+        //   ⛔ 不出 `_vN`：那是「重出」的產物，而這不是重出。
+        // ===========================================================
+        /// <summary>把既有章檔表頭的 `# 第 N 章 · &lt;title&gt;` 換成新標題。</summary>
+        /// <param name="iTitle">新章名（**親筆** —— 工具不代取，空字串直接擋）。</param>
+        public static SCP_WatchRetitleResult RetitleChapter(
+            string iDataRoot, string iBook, string iChapter, string iTitle, List<string> oLines)
+        {
+            var aOut = new SCP_WatchRetitleResult();
+
+            if (string.IsNullOrWhiteSpace(iTitle))
+            {
+                aOut.Error = "✗ `title` 是空的 —— ⛔ 章名不代取（工具沒有資格替人取名）。";
+                return aOut;
+            }
+            string aBook = (iBook ?? "").Trim();
+            string aChapter = (iChapter ?? "").Trim();
+            if (aBook.Length == 0 || aChapter.Length == 0)
+            {
+                aOut.Error = "✗ `book` 與 `chapter` 都要給 —— ⛔ 不猜是哪一章（猜錯是改到別章的名字）。";
+                return aOut;
+            }
+            if (aChapter.Length != 3 || !int.TryParse(aChapter, NumberStyles.Integer,
+                                                      CultureInfo.InvariantCulture, out int aChapterNum))
+            {
+                aOut.Error = "✗ `chapter` 要是三位數章號（收到 `" + aChapter + "`）。"
+                             + "⚠ `_vN` 不是章 —— 版本檔不在本支的射程內。";
+                return aOut;
+            }
+
+            string aBdir = Path.Combine(BooksRoot(iDataRoot), aBook).Replace('\\', '/');
+            string aPath = Path.Combine(aBdir, aChapter + ".txt").Replace('\\', '/');
+            aOut.Book = aBook;
+            aOut.Chapter = aChapter;
+            aOut.Path = aPath;
+            if (!File.Exists(aPath))
+            {
+                aOut.Error = "✗ 章檔不存在：" + aPath;
+                return aOut;
+            }
+
+            string aBefore;
+            try { aBefore = File.ReadAllText(aPath, Encoding.UTF8); }
+            catch (Exception e) { aOut.Error = "✗ 讀不到章檔：" + e.Message; return aOut; }
+
+            // 表頭那一行 —— 解析不出來就**拒絕**，⛔ 不猜第一行是不是標題
+            //   （手改過表頭的章，猜錯會把別的東西換掉，而那不會有任何一層喊）。
+            // 🩸 `\r?$` 不是裝飾（2026-09-21 實測）：章檔是 **CRLF**（`007.txt` 量到 1820 個
+            //   `\r\n`、0 個純 `\n`），而 .NET 的 `$` 在 Multiline 下匹配 `\n` 之前
+            //   ⇒ `\r` 擋在那裡。⚠ 而且捕獲組要用 `[^\r\n]*` 不是 `.*`：`.` 會把 `\r`
+            //   吃進 `aM.Value`，那樣替換後的新行**掉了 `\r`** ⇒ 一份 CRLF 檔裡混進一行 LF，
+            //   而 diff 看起來只是「改了標題」。
+            //   📌 這也是 `SCP_Cmd_Watch.s_ChapterTitleLine` 的同一條式子 —— 兩邊一起改。
+            var aRe = new Regex(@"^# 第 \d+ 章(?: · ([^\r\n]*))?\r?$", RegexOptions.Multiline);
+            Match aM = aRe.Match(aBefore);
+            if (!aM.Success)
+            {
+                aOut.Error = "✗ 這個章檔的表頭裡找不到 `# 第 N 章` 那一行 ⇒ **無從定位標題**。"
+                             + "　⛔ 本次一個位元組都沒有動。";
+                return aOut;
+            }
+            aOut.OldTitle = aM.Groups[1].Success ? aM.Groups[1].Value : "";
+            string aNewLine = "# 第 " + aChapterNum.ToString(CultureInfo.InvariantCulture)
+                              + " 章 · " + iTitle.Trim();
+            // 🔴 保留原行尾。🩸 2026-09-21 活體踩過：式子裡的 `\r?$` **會把 `\r` 吃進 `aM.Value`**
+            //   （`\r?` 是 match 的一部分，不是 lookahead）⇒ 被替換掉的範圍含 `\r`，
+            //   而新行沒有 ⇒ **一份 CRLF 檔裡多出一行 LF**。
+            //   實測：`006.txt` / `007.txt` 補名後第 1 行結尾的 CR 消失，全檔變成
+            //   「1559 個 CRLF ＋ 1 個純 LF」—— 而 `git diff` 只顯示「改了標題那一行」，
+            //   `--numstat` 也只有 1/1 ⇒ **兩條驗證路徑都看不到它**。
+            //   ⛔ 這一格不能靠「記得」：行尾是唯一一種 diff 工具預設會替你藏起來的差異。
+            if (aM.Value.EndsWith("\r", StringComparison.Ordinal)) aNewLine += "\r";
+            aOut.NewTitle = iTitle.Trim();
+            if (string.Equals(aM.Value, aNewLine, StringComparison.Ordinal))
+            {
+                aOut.Error = "✗ 這一章的標題已經是「" + aOut.NewTitle + "」—— 本次沒有要改的東西。";
+                return aOut;
+            }
+
+            string aAfter = aBefore.Substring(0, aM.Index) + aNewLine
+                            + aBefore.Substring(aM.Index + aM.Length);
+            try { File.WriteAllText(aPath, aAfter, new UTF8Encoding(false)); }
+            catch (Exception e) { aOut.Error = "✗ 寫不回章檔：" + e.Message; return aOut; }
+
+            // 🔴 回讀驗證 —— **把「我只動了一行」從宣稱變成讀數**。
+            //   ⛔ 不是驗「標題變了」（那只證明我想改的那格有動），
+            //   是驗**其餘每一個位元組都沒動**：把回讀的內容把標題行換回舊的，要跟改之前逐字相同。
+            string aBack;
+            try { aBack = File.ReadAllText(aPath, Encoding.UTF8); }
+            catch (Exception e) { aOut.Error = "✗ 寫了但回讀不到：" + e.Message; return aOut; }
+            if (!string.Equals(aBack, aAfter, StringComparison.Ordinal))
+            {
+                aOut.Error = "❌ 回讀與寫出去的內容不一致 —— **落地的不是我寫的那份**。";
+                return aOut;
+            }
+            string aRestored = aBack.Substring(0, aM.Index) + aM.Value
+                               + aBack.Substring(aM.Index + aNewLine.Length);
+            aOut.BodyUnchanged = string.Equals(aRestored, aBefore, StringComparison.Ordinal);
+            if (!aOut.BodyUnchanged)
+            {
+                aOut.Error = "❌ 除了標題那一行以外，內容也變了 —— ⛔ 本支不該碰正文。"
+                             + "　⚠ 檔案已經寫下去了（" + aPath + "），請用 git diff 看它動了什麼。";
+                return aOut;
+            }
+            aOut.Ok = true;
+            oLines.Add("✏️ `" + aBook + "/" + aChapter + ".txt` 標題："
+                       + (aOut.OldTitle.Length > 0 ? "`" + aOut.OldTitle + "`" : "（無）")
+                       + " ⇒ `" + aOut.NewTitle + "`");
+            oLines.Add("   ✅ 回讀：除標題那一行外**逐位元組相同**（不是「看起來沒動」）");
+
+            // 台帳對齊 —— 章名的真相源是台帳，只改章檔會長出第二個真相源。
+            //   場次 id 從**表頭**讀（它本來就寫在那裡）；讀不到就明說沒對齊，⛔ 不靜默。
+            SCP_WatchExport.TryParseChapterHeader(aBack, out _, out _, out _, out _,
+                                                  out string aWork, out string aSessions, out _);
+            if (string.IsNullOrWhiteSpace(aSessions))
+            {
+                oLines.Add("   ⚠ 表頭沒有「場次」欄 ⇒ **台帳未對齊**（台帳那側的 chapter_title 仍是舊值）。"
+                           + "　⛔ 這不是失敗，是這一章的台帳關聯查不到 —— 兩邊不一致時 `op=audit` 會看到。");
+                return aOut;
+            }
+            try
+            {
+                var aWarn = new List<string>();
+                var aIds = SCP_WatchLedger.AppendExportEvents(iDataRoot, aSessions.Split(','),
+                                                              aChapter, aBook, aOut.NewTitle, aWork, aWarn);
+                foreach (string w in aWarn) oLines.Add("   " + w);
+                aOut.LedgerSessions = aIds.Count;
+                if (aIds.Count > 0)
+                    oLines.Add("   📒 台帳 append " + aIds.Count.ToString(CultureInfo.InvariantCulture)
+                               + " 筆修訂事件（chapter_title 對齊；⛔ 不改既有行）");
+            }
+            catch (Exception e)
+            {
+                oLines.Add("   ⚠ 台帳 append 失敗（**章檔已改，不回頭**）：" + e.Message);
             }
             return aOut;
         }

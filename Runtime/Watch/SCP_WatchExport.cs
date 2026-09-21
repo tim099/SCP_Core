@@ -302,6 +302,17 @@ namespace SCP.Core.Watch
         // 數值影響：純唯讀、不碰檔案。解析不出來回 false ——
         //   ⛔ 呼叫端不准把它讀成「這章沒問題」，那是**沒讀到**不是通過。
         // ===========================================================
+        // 🩸 CRLF（2026-09-21，TASK-0255 順帶量到）：章檔是 **CRLF**
+        //   （`watch-humanity-has-declined/007.txt` 量到 1820 個 `\r\n`、0 個純 `\n`），
+        //   而 .NET 的 `$` 在 Multiline 下匹配的是 `\n` 之前 ⇒ **`\r` 擋在那裡**。
+        //   ⚠ 本函式原本 6 條式子全部以 `$` 結尾，其中**媒材**與 **seq 區間**是必要條件
+        //   ⇒ 它對每一個 CRLF 章檔都回 `false`，而回 false 的語意是「**沒讀到**」——
+        //   照註解，呼叫端不准把它讀成「這章沒問題」。
+        //   🔴 射程比本單大：`VerifyChapterIdentity`（TASK-0217 的身分核對）與 `op=audit`
+        //   都吃這個函式 ⇒ 它們拿到的一直是「解析不出來」那一格。**本次只修式子，
+        //   那兩條路各自受了什麼影響沒有量** —— 留言寫進 TASK-0255，由開單人判要不要另開。
+        //   ⛔ 捕獲組一律 `[^\r\n]*` 不是 `.*`：`.` 會把 `\r` 吃進捕獲值，
+        //   那樣「解析成功」會回一個尾巴帶控制字元的字串，而它在多數場合看起來完全正常。
         public static bool TryParseChapterHeader(string iText, out string oMedia,
                                                  out List<SCP_SeqRange> oRanges, out string oTitle,
                                                  out string oSubtitle, out string oWork,
@@ -310,27 +321,27 @@ namespace SCP.Core.Watch
             oMedia = ""; oRanges = new List<SCP_SeqRange>(); oTitle = ""; oSubtitle = "";
             oWork = ""; oSessions = ""; oNote = "";
 
-            Match aTitle = Regex.Match(iText, @"^# 第 \d+ 章(?: · (.*))?$", RegexOptions.Multiline);
+            Match aTitle = Regex.Match(iText, @"^# 第 \d+ 章(?: · ([^\r\n]*))?\r?$", RegexOptions.Multiline);
             if (!aTitle.Success) return false;
             oTitle = aTitle.Groups[1].Success ? aTitle.Groups[1].Value : "";
 
-            Match aSub = Regex.Match(iText, @"^### —— (.*)$", RegexOptions.Multiline);
+            Match aSub = Regex.Match(iText, @"^### —— ([^\r\n]*)\r?$", RegexOptions.Multiline);
             if (aSub.Success) oSubtitle = aSub.Groups[1].Value;
 
-            Match aMedia = Regex.Match(iText, @"^\| 媒材 \| `([^`]+)` \|$", RegexOptions.Multiline);
+            Match aMedia = Regex.Match(iText, @"^\| 媒材 \| `([^`]+)` \|\r?$", RegexOptions.Multiline);
             if (!aMedia.Success) return false;
             oMedia = aMedia.Groups[1].Value;
 
-            Match aWork = Regex.Match(iText, @"^\| 作品 \| (.*) \|$", RegexOptions.Multiline);
+            Match aWork = Regex.Match(iText, @"^\| 作品 \| ([^\r\n]*) \|\r?$", RegexOptions.Multiline);
             if (aWork.Success) oWork = aWork.Groups[1].Value;
 
-            Match aSess = Regex.Match(iText, @"^\| 場次 \| (.*) \|$", RegexOptions.Multiline);
+            Match aSess = Regex.Match(iText, @"^\| 場次 \| ([^\r\n]*) \|\r?$", RegexOptions.Multiline);
             if (aSess.Success) oSessions = aSess.Groups[1].Value.Replace(" ／ ", ",");
 
-            Match aNote = Regex.Match(iText, @"^\| 備註 \| (.*) \|$", RegexOptions.Multiline);
+            Match aNote = Regex.Match(iText, @"^\| 備註 \| ([^\r\n]*) \|\r?$", RegexOptions.Multiline);
             if (aNote.Success) oNote = aNote.Groups[1].Value;
 
-            Match aRng = Regex.Match(iText, @"^\| seq 區間 \| (.*) \|$", RegexOptions.Multiline);
+            Match aRng = Regex.Match(iText, @"^\| seq 區間 \| ([^\r\n]*) \|\r?$", RegexOptions.Multiline);
             if (!aRng.Success) return false;
             foreach (string aPart in aRng.Groups[1].Value.Split(new[] { " ／ " }, StringSplitOptions.None))
             {

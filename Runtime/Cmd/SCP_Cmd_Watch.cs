@@ -16,6 +16,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using SCP.Core.Json;
 using SCP.Core.Watch;
 
@@ -27,6 +28,7 @@ namespace SCP.Core.Cmd
 
         public override string Summary =>
             "觀影實錄：把酒館 seq 區間匯出成一章（`op=export`）／列出章名仍掛哨兵的章（`op=untitled`）"
+            + "／補既有章的章名（`op=retitle`）"
             + "—— **本地跑，不需要 Editor**";
 
         public override string Details =>
@@ -34,7 +36,8 @@ namespace SCP.Core.Cmd
             + "  `prepared/<media_id>.json` 只是**開場前的意圖**且是 per-media 單槽（下一話就被覆寫）\n"
             + "  ⇒ 跨集之後拿它解舊場會解成別集的章（TASK-0142）。兩邊不一致時採台帳並**印出兩個值**。\n"
             + "⚠ 產物是**機械匯出**：手改會被下次匯出覆寫，要改內容請改酒館訊息本身。\n"
-            + "⚠ 兩道守衛預設都是**擋**：章檔已存在（`force=1` 才覆寫）／seq 區間與既有章重疊\n"
+            + "⚠ 兩道守衛預設都是**擋**：章檔已存在（`force=1` ⇒ **不覆寫**，另出 `NNN_v2.txt`，TASK-0152）\n"
+            + "  ／seq 區間與既有章重疊\n"
             + "  （`allow_overlap=1` 才並存）—— 🩸 後者是 2026-08-17 首日就發生過的：\n"
             + "  同一話兩章、區間重疊，而**兩邊都成功、都不報錯**。\n"
             + "⚠ 排序來源（段序／tavern seq）**一律印在章的表頭** —— 沒有段台帳時不靜默 fallback，\n"
@@ -47,8 +50,9 @@ namespace SCP.Core.Cmd
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
-            new SCP_CmdArgSpec("op", "export｜untitled｜audit（預設 untitled —— **純讀的那個當預設**）"
-                               + "；audit＝把每一章重出一次逐位元組比並**替差異分類**（純讀）"),
+            new SCP_CmdArgSpec("op", "export｜untitled｜audit｜retitle（預設 untitled —— **純讀的那個當預設**）"
+                               + "；audit＝把每一章重出一次逐位元組比並**替差異分類**（純讀）"
+                               + "；retitle＝只改既有章表頭那一行章名（⛔ 不重出、不動正文，TASK-0255）"),
             new SCP_CmdArgSpec("from_session", "由台帳反查 media／seq 區間／同場清單／章號章名"
                                + "（收工自動匯出走這條）"),
             new SCP_CmdArgSpec("media", "媒材 id；用 from_session 時可省略"),
@@ -65,7 +69,9 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("note", "備註一行"),
             new SCP_CmdArgSpec("only_personas", "只收這些 persona（逗號分隔）；被排除的**一律列在未收錄清單**"),
             new SCP_CmdArgSpec("exclude_tags", "排除這些 meta.tag 的公告類訊息；給空字串＝全收"),
-            new SCP_CmdArgSpec("force", "=1 ⇒ 章檔已存在時覆寫"),
+            new SCP_CmdArgSpec("force", "=1 ⇒ 章檔已存在時**允許重出**，而重出落在新版本 `NNN_v2.txt`"
+                               + "（⛔ 它**不覆寫** —— TASK-0152 之後這個參數名比它的行為大）。"
+                               + "　⚠ 補章名別走這裡：`_vN` 不是章，正本的名字不會變 ⇒ 走 `op=retitle`"),
             new SCP_CmdArgSpec("allow_overlap", "=1 ⇒ seq 區間與既有章重疊時仍然寫（明說要並存）"),
             new SCP_CmdArgSpec("allow_zero_stripped", "=1 ⇒ 自動附掛清除數為 0 時放行"
                                + "（⛔ 預設擋 —— 那個數字回 0 通常代表樣式沒對上）"),
@@ -84,7 +90,8 @@ namespace SCP.Core.Cmd
                 "untitled" => OpUntitled(aDataRoot),
                 "audit" => OpAudit(aDataRoot),
                 "export" => OpExport(aDataRoot, iArgs),
-                _ => SCP_CmdResult.Fail(2, $"✗ 不認得的 op：`{aOp}`（吃的是 export｜untitled｜audit）"),
+                "retitle" => OpRetitle(aDataRoot, iArgs),
+                _ => SCP_CmdResult.Fail(2, $"✗ 不認得的 op：`{aOp}`（吃的是 export｜untitled｜audit｜retitle）"),
             };
         }
 
@@ -268,6 +275,21 @@ namespace SCP.Core.Cmd
             return -1;
         }
 
+        /// <summary>章檔表頭的標題那一行 —— 與 <c>SCP_WatchWriter.RetitleChapter</c> 用同一條式子。
+        /// <para>⚠ 兩處各寫一份就是兩個會各自漂的真相源；要改請兩邊一起改
+        /// （這裡不抽成共用常數是因為跨了 Cmd 層與 Writer 層，抽上去會讓 Writer 依賴 Cmd）。</para>
+        /// <para>🩸 <b>`\r?$` 不是裝飾</b>（2026-09-21 實測）：章檔是 <b>CRLF</b>
+        /// （`007.txt` 量到 1820 個 `\r\n`、0 個純 `\n`），而 .NET 的 `$` 在 Multiline 下
+        /// 匹配的是 `\n` 之前 ⇒ <b>`\r` 擋在那裡，不帶 `\r?` 的式子一行都匹配不到</b>。
+        /// ⚠ 舊式子 `(.*)$` 之所以「看起來能用」，是因為 `.` 會匹配 `\r` 把它吃進捕獲組，
+        /// 而呼叫端剛好有 `.Trim()` —— <b>那是運氣不是設計</b>，且它會讓替換後的那一行掉 `\r`。</para></summary>
+        static readonly Regex s_ChapterTitleLine =
+            new Regex(@"^# 第 \d+ 章(?: · ([^\r\n]*))?\r?$", RegexOptions.Multiline);
+
+        /// <summary>觀影章的識別 —— 表頭的媒材欄。⛔ 不是用書名前綴判（那是慣例不是規則）。</summary>
+        static readonly Regex s_WatchMediaRow =
+            new Regex(@"^\| 媒材 \| `[^`]+` \|$", RegexOptions.Multiline);
+
         /// <summary>哨兵值 —— 由**設定檔**供給（TASK-0064：改設定即改字串，兩端同源）。</summary>
         static string UntitledMarker(string iDataRoot, List<string> oLines)
         {
@@ -289,6 +311,32 @@ namespace SCP.Core.Cmd
             }
         }
 
+        // 區塊職責：`op=retitle` —— 補既有章的章名（TASK-0255 的出口）。
+        // 物理意義：薄殼，判斷與寫入全在 SCP_WatchWriter.RetitleChapter（含回讀驗證與台帳對齊）。
+        // 數值影響：成功時 exit 0 並回 `retitled=1`；任何一格不對都 Fail(1) 且**章檔不動**。
+        static SCP_CmdResult OpRetitle(string iDataRoot, SCP_CmdArgs iArgs)
+        {
+            var aResult = new SCP_CmdResult();
+            var aRes = SCP_WatchWriter.RetitleChapter(
+                iDataRoot, iArgs.Get("book").Trim(), iArgs.Get("chapter").Trim(),
+                iArgs.Get("title"), aResult.Lines);
+            if (!aRes.Ok)
+            {
+                var aFail = SCP_CmdResult.Fail(1, aRes.Error);
+                foreach (string l in aResult.Lines) aFail.Lines.Add(l);
+                return aFail;
+            }
+            aResult.AddValue("retitled", "1");
+            aResult.AddValue("book", aRes.Book);
+            aResult.AddValue("chapter", aRes.Chapter);
+            aResult.AddValue("old_title", aRes.OldTitle);
+            aResult.AddValue("new_title", aRes.NewTitle);
+            // ⚠ 這一格是**讀數**不是宣稱：它由回讀逐位元組比對出來的。
+            aResult.AddValue("body_unchanged", aRes.BodyUnchanged ? "1" : "0");
+            aResult.AddValue("ledger_sessions", aRes.LedgerSessions.ToString(CultureInfo.InvariantCulture));
+            return aResult;
+        }
+
         /// <summary>列出章名仍掛哨兵的章 —— **哨兵的可查性由這支提供**。</summary>
         /// <remarks>🩸 沒有這一格，本單就變成「書有了、名字永遠是哨兵，而沒有人會發現」——
         /// 那是把一種靜默換成另一種。實測活體：某章掛哨兵掛了 **2 天**，
@@ -301,6 +349,8 @@ namespace SCP.Core.Cmd
             if (!Directory.Exists(aRoot)) return SCP_CmdResult.Fail(1, "✗ 找不到 Books/（" + aRoot + "）");
 
             var aHits = new List<(string Book, string Chapter, string First)>();
+            // 表頭連標題那一行都解析不出來的章 —— 與「章名未定」分開報（見下方掃描迴圈的註解）。
+            var aBroken = new List<(string Book, string Chapter)>();
             var aBooks = new List<string>(Directory.GetDirectories(aRoot));
             aBooks.Sort(StringComparer.Ordinal);
             foreach (string aBook in aBooks)
@@ -313,22 +363,71 @@ namespace SCP.Core.Cmd
                     if (aStem.Length != 3 || !int.TryParse(aStem, out _)) continue;
                     string aAll;
                     try { aAll = File.ReadAllText(aCh, Encoding.UTF8); } catch { continue; }
-                    string aHead = aAll.Length > 2000 ? aAll.Substring(0, 2000) : aAll;
-                    if (aHead.IndexOf(aMarker, StringComparison.Ordinal) < 0) continue;
-                    string aFirst = aHead.Replace("\r\n", "\n").Split('\n')[0].Trim();
-                    aHits.Add((Path.GetFileName(aBook), Path.GetFileName(aCh), aFirst));
+
+                    // 🔴 TASK-0255：判定只看**表頭標題那一行**，⛔ 不掃前 N 個字元。
+                    //   🩸 舊版掃前 2000 字元找哨兵字串 ⇒ 只要有人在實錄正文裡**提到**哨兵
+                    //   （討論「我這場刻意留 ##None##」）那一章就被報成章名未定。
+                    //   活體：`watch-humanity-has-declined/002` 表頭逐字是
+                    //   「# 第 2 章 · 妖精們的秘密工廠（後編）—— 補位、出荷，與沒有作者的供給」，
+                    //   而哨兵出現在第 43／126 行的**別人的發言裡** ⇒ 它是假陽性，
+                    //   而且**補不掉**（表頭已經有名字，retitle 它也不會讓它從清單消失）。
+                    //   ⇒ 「章名是什麼」的真相在標題那一行，不在整份文件裡有沒有出現那個字串。
+                    // 🔴 射程：本 op 只管**觀影實錄**的章。
+                    //   判準是表頭那一行 `| 媒材 | `<id>` |` —— 那是 watch 匯出表頭的必備欄
+                    //   （`TryParseChapterHeader` 也拿它當必要條件）。
+                    //   🩸 少了這一格的代價實測到了：`Books/` 底下 54 本裡只有 13 本是 `watch-`，
+                    //   其餘 41 本是**寫作的書**（章檔沒有 `# 第 N 章` 表頭）⇒ 我第一版把它們
+                    //   全部歸進「表頭讀不出來」，印出 `header_broken = 436`。
+                    //   ⇒ 那不是 436 個壞掉的章，是一個問錯對象的判準。
+                    //   ⛔ 不用 `watch-` 前綴判：那是命名慣例不是規則，而慣例會有例外且不會喊。
+                    if (aAll.IndexOf("| 媒材 | `", StringComparison.Ordinal) < 0) continue;
+
+                    Match aT = s_ChapterTitleLine.Match(aAll);
+                    if (!aT.Success)
+                    {
+                        // ⚠ 表頭抓不到標題行**不是**章名未定 —— 兩者的處置不同，⛔ 不併成同一類。
+                        //   🩸 而且「抓不到」也**不等於壞掉**（2026-09-21 實測）：
+                        //   `watch-apocalypse-hotel/001.txt` 是「# 第一章 · 第 4682 次，與第 1 位」
+                        //   —— **中文數字，而且有章名**。⇒ 本 op 判不了它，不代表它有問題。
+                        //   ⛔ 刻意不擴充式子去吃中文數字：匯出端產生的一律是 `第 N 章`，
+                        //   吃下異類等於讓這條式子同時是「匯出格式」與「歷史格式」的判準，
+                        //   而那兩者之後會各自演化。
+                        aBroken.Add((Path.GetFileName(aBook), Path.GetFileName(aCh)));
+                        continue;
+                    }
+                    string aTitle = (aT.Groups[1].Success ? aT.Groups[1].Value : "").Trim();
+                    if (aTitle.Length > 0 && !string.Equals(aTitle, aMarker, StringComparison.Ordinal))
+                        continue;
+                    aHits.Add((Path.GetFileName(aBook), Path.GetFileName(aCh), aT.Value.Trim()));
                 }
             }
+            if (aBroken.Count > 0)
+            {
+                aResult.Lines.Add($"ℹ {aBroken.Count} 章的表頭**不是機械匯出的格式**"
+                                  + "（本 op 認的是 `# 第 N 章 …`，N 是阿拉伯數字）"
+                                  + " ⇒ **本 op 判不了它們的章名**，⛔ 這不等於它們沒有章名：");
+                foreach (var b in aBroken) aResult.Lines.Add($"  {b.Book}/{b.Chapter}");
+                aResult.Lines.Add("　🩸 活體：`watch-apocalypse-hotel/001.txt` 的表頭是"
+                                  + "「# 第一章 · 第 4682 次，與第 1 位」—— **中文數字，而且有名字**。"
+                                  + "　⇒ 它不是壞掉的檔，是另一種寫法；⛔ 別去「修」它。");
+            }
+            aResult.AddValue("header_unparsed", aBroken.Count.ToString(CultureInfo.InvariantCulture));
             if (aHits.Count == 0)
             {
-                aResult.Lines.Add($"✅ 沒有任何章掛著 {aMarker}");
+                aResult.Lines.Add($"✅ 沒有任何章的章名掛著 {aMarker}");
                 aResult.AddValue("untitled", "0");
                 return aResult;
             }
-            aResult.Lines.Add($"⚠ {aHits.Count} 章章名未定（{aMarker}）：");
+            aResult.Lines.Add($"⚠ {aHits.Count} 章章名未定（{aMarker}）—— 判定只看表頭標題那一行：");
             foreach (var h in aHits) aResult.Lines.Add($"  {h.Book}/{h.Chapter}  {h.First}");
-            aResult.Lines.Add("補名：改 `prepared/<media_id>.json` 的 chapter_title 後帶 `force=1` 重出，"
-                              + "或直接給 `title=` 重出 —— ⛔ **不能手改 .txt**（機械產物，下次匯出會覆寫）。");
+            aResult.Lines.Add("補名：`watch --arg op=retitle --arg book=<book> --arg chapter=<NNN> "
+                              + "--arg title=<親筆章名>` —— 它**只改表頭那一行**，逐位元組驗證正文不變，"
+                              + "並把台帳的 chapter_title 一起對齊。");
+            aResult.Lines.Add("　⛔ **不要用 `force=1` 重出補名**（TASK-0255 的病灶）："
+                              + "TASK-0152 之後 force 的語意是「重出落在新版本」⇒ 正本一個位元組都不動，"
+                              + "名字只出現在 `NNN_v2.txt` 上，而 `_vN` 不符合 `^\\d{3}$` ⇒ 本清單看不到它，"
+                              + "下次照樣報同樣的章數。");
+            aResult.Lines.Add("　⛔ 也不能手改 .txt 正文（機械產物，下次匯出會被新版本取代）。");
             aResult.AddValue("untitled", aHits.Count.ToString(CultureInfo.InvariantCulture));
             return aResult;
         }
