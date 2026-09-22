@@ -1,8 +1,10 @@
 // 區塊職責：**請款單**與**轉帳單**的讀取與裁決（Senate 側）。
-// 物理意義：單據住在舊系統那兩個資料夾（`Treasury/requests/<日>/*.json`、
-//           `Treasury/transfer_requests/<日>/*.json`）——⛔ **不搬**：
-//           它們是**單據不是帳**，而帳已經在新銀行了。
-//           搬單據等於在切換當天多做一次遷移，而那次遷移沒有人在等。
+// 物理意義：單據住在新帳本底下（`Bank/requests/<日>/*.json`、`Bank/transfer_requests/<日>/*.json`）。
+//           ⚠ 2026-09-22 之前它們留在舊 `Treasury/` —— 理由是「單據不是帳，搬它沒有人在等」，
+//           而那個理由在半年後**變成兇器**：🩸 TASK-0273 收尾要刪凍結的舊帳本時，
+//           量到同一個資料夾底下**還住著活的請款單**，兩者在 `ls` 底下長得一模一樣。
+//           ⇒ Tim 2026-09-22 拍板一次收乾淨（TASK-0274）：⛔ 沒有舊路徑 fallback ——
+//           留 fallback 就永遠不知道還有誰在讀舊的，而它不會叫。
 // 數值影響：本層**一毛錢都不動** —— 只讀單子、只寫單子的裁決欄。
 //           錢由呼叫端走 `cmd bank`（Server）動，兩件事**分開結算**。
 //
@@ -65,11 +67,14 @@ namespace SCP.Core.Bank
         public const string TransferDirName = "transfer_requests";
         public const string StatusPending = "pending";
 
+        /// <summary>單據的家 —— `<資料根>/Bank`（TASK-0274 起；⛔ 不是凍結的 `Treasury/`）。</summary>
+        public const string BankDirName = "Bank";
+
         public static string PayoutDir(string iDataRoot)
-            => System.IO.Path.Combine(iDataRoot, "Treasury", PayoutDirName);
+            => System.IO.Path.Combine(iDataRoot, BankDirName, PayoutDirName);
 
         public static string TransferDir(string iDataRoot)
-            => System.IO.Path.Combine(iDataRoot, "Treasury", TransferDirName);
+            => System.IO.Path.Combine(iDataRoot, BankDirName, TransferDirName);
 
         /// <summary>央行帳號 —— 與舊系統**同一格設定**（`bank_settings.json`），⛔ 不另立一份。</summary>
         public const string DefaultCentralBank = "pacific-standard-public-deposit-bank";

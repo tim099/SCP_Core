@@ -112,38 +112,31 @@ namespace SCP.Core.Bank
         // ── 讀 ──────────────────────────────────────────────────────────
 
         /// <summary>
-        /// 重放求和算餘額。**每次都列舉磁碟**（不讀內容的檔名列舉很便宜），
-        /// 所以別的 process 新寫的 entry 這裡看得到 —— ⛔ 不做記憶體快取：
-        /// 快取要處理「別人改了它」，而那個問題在這個系統裡的失效樣子是**餘額是舊的而看起來正常**。
+        /// 算餘額 —— **暖啟動**：最近一份每日結帳 ＋ 那天之後的 entry（`SCP_BankClosing`）。
+        /// ⭐ 結帳跟得上的時候，這裡只會掃到**今天那一個日期夾**（Tim 2026-09-22 的要求）。
+        /// ⛔ 仍然不做記憶體快取：別的 process 新寫的 entry 這裡要看得到，而快取的失效樣子是
+        ///    **餘額是舊的而看起來正常**。結帳檔不是快取 —— 它只涵蓋**已經結束的日子**，那些不會再變。
+        /// ⚠ 結帳鏈驗不過時會**自動退回全量重放**（不是丟錯）—— 答案照樣對，只是慢。
         /// </summary>
         public static int GetBalance(string iBankRoot, string iRawAccountId,
                                      string iCurrency = SCP_BankEntry.DefaultCurrency)
         {
             SCP_BankIdResult aId = SCP_BankId.Normalize(iRawAccountId);
             if (!aId.Ok) return 0;
-            int aSum = 0;
-            foreach (SCP_BankEntry e in EnumerateEntries(iBankRoot))
-            {
-                if (!string.Equals(e.AccountId, aId.Id, StringComparison.Ordinal)) continue;
-                if (!string.Equals(e.Currency, iCurrency, StringComparison.Ordinal)) continue;
-                aSum += e.Delta;
-            }
-            return aSum;
+            Dictionary<string, int> aAll = GetAllBalances(iBankRoot, iCurrency);
+            return aAll.TryGetValue(aId.Id, out int aSum) ? aSum : 0;
         }
 
-        /// <summary>所有帳號的餘額（重放一次算完，畫表用 —— ⛔ 別對每個帳號各叫一次 GetBalance）。</summary>
+        /// <summary>所有帳號的餘額（一次算完，畫表用 —— ⛔ 別對每個帳號各叫一次 GetBalance）。</summary>
         public static Dictionary<string, int> GetAllBalances(string iBankRoot,
                                                              string iCurrency = SCP_BankEntry.DefaultCurrency)
-        {
-            var aOut = new Dictionary<string, int>(StringComparer.Ordinal);
-            foreach (SCP_BankEntry e in EnumerateEntries(iBankRoot))
-            {
-                if (!string.Equals(e.Currency, iCurrency, StringComparison.Ordinal)) continue;
-                aOut.TryGetValue(e.AccountId, out int aCur);
-                aOut[e.AccountId] = aCur + e.Delta;
-            }
-            return aOut;
-        }
+            => SCP_BankClosing.GetAllBalancesWarm(iBankRoot, iCurrency, out _, out _);
+
+        /// <summary>同上，而且把**暖啟動有沒有生效**帶出來。⛔ 「掃了幾天」不可以只活在心裡。</summary>
+        public static Dictionary<string, int> GetAllBalances(string iBankRoot, string iCurrency,
+                                                             out int oScannedDays, out string oWarmFrom,
+                                                             List<string>? oProblems = null)
+            => SCP_BankClosing.GetAllBalancesWarm(iBankRoot, iCurrency, out oScannedDays, out oWarmFrom, oProblems);
 
         /// <summary>逐筆讀出帳本。⚠ 讀不了的檔**跳過但要被看見** —— 由 <paramref name="oProblems"/> 帶出去。</summary>
         public static IEnumerable<SCP_BankEntry> EnumerateEntries(string iBankRoot, List<string>? oProblems = null)

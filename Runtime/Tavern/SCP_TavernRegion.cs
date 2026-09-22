@@ -134,8 +134,24 @@ namespace SCP.Core.Tavern
         /// <summary>沒指定房間時看哪一房。</summary>
         public const string DefaultRoom = "tavern";
 
-        /// <summary>區的自報檔 —— 有 <c>currency_id</c> 才算一區（見檔頭）。</summary>
-        const string BankSettingsPath = "Treasury/bank_settings.json";
+        // 區塊職責：區的自報檔 —— 有 `currency_id` 才算一區（見檔頭）。
+        // 🔴 這裡**必須**留兩條路，而它跟「本區讀自己的設定 ⛔ 不留 fallback」不矛盾：
+        //   · 本區讀自己的設定：同一棵樹、我改得動 ⇒ 留 fallback 只會讓「誰還在讀舊路徑」永遠查不出來。
+        //   · 這裡讀的是**別的 ref**：BTC 區在另一條分支上（我改不動），而**歷史 commit 永遠停在舊路徑**。
+        // 🩸 只換新路徑的話，失效樣子是「那個 ref 不是一區」—— 下面那句 `if (!aBank.Ok) continue;`
+        //   是**判準不是錯誤** ⇒ 清單上靜默少一區，沒有任何一層會喊
+        //   （TASK-0274 動手前量到的，2026-09-22）。
+        // ⇒ 順序：新路徑優先，找不到才退舊路徑；兩條都沒有才判定「不是一區」。
+        const string BankSettingsPath = "Bank/bank_settings.json";
+        const string BankSettingsPathLegacy = "Treasury/bank_settings.json";
+
+        /// <summary>讀某個 ref 的自報檔 —— 新路徑優先，退回舊路徑（跨 ref／跨歷史一定要兩條）。</summary>
+        static SCP_GitResult ShowBankSettings(SCP_DataRoot iRepo, string iRefName)
+        {
+            SCP_GitResult aNew = SCP_Git.Run(iRepo.Value, "show", iRefName + ":" + BankSettingsPath);
+            if (aNew.Ok) return aNew;
+            return SCP_Git.Run(iRepo.Value, "show", iRefName + ":" + BankSettingsPathLegacy);
+        }
 
         /// <summary>掃哪一組 ref。⚠ 只掃 <c>origin</c>：同一條分支在多個 remote 上會變成同名的兩個「區」。</summary>
         public const string RemotePrefix = "refs/remotes/origin";
@@ -169,8 +185,8 @@ namespace SCP.Core.Tavern
                 if (aName.Length == 0) continue;
                 if (aSymref.Length > 0) continue;   // 別名 ⇒ 同一個區會出現兩次
 
-                SCP_GitResult aBank = SCP_Git.Run(iRepo.Value, "show", aName + ":" + BankSettingsPath);
-                if (!aBank.Ok) continue;   // 沒有自報檔 ⇒ 它不是一個區（這是判準，不是錯誤）
+                SCP_GitResult aBank = ShowBankSettings(iRepo, aName);
+                if (!aBank.Ok) continue;   // 兩條路都沒有自報檔 ⇒ 它不是一個區（這是判準，不是錯誤）
 
                 string aCurrency;
                 try { aCurrency = SCP_JsonParser.Parse(aBank.StdOut).GetString("currency_id", ""); }

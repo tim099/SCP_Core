@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using SCP.Core.Json;
 
-// 區塊職責：**這棵資料樹的區域（貨幣）名** —— 讀寫 `<資料根>/Treasury/bank_settings.json` 的 `currency_id`。
+// 區塊職責：**這棵資料樹的區域（貨幣）名** —— 讀寫 `<資料根>/Bank/bank_settings.json` 的 `currency_id`。
 // 物理意義：Tim 2026-09-17：「新銀行不用多區，參考原本的，只處理本區資料（Florin），一樣要有設定區域名稱功能。」
 //           ⇒ 新銀行**不自己發明區域設定**，直接讀舊系統那一格 —— 同一個檔、同一個鍵、同一條合法性規則。
 //           🩸 另立一份的話，兩邊會對「這裡是哪一區」給出不同答案，而兩邊都讀得出一個完全合法的字串。
@@ -14,8 +14,10 @@ namespace SCP.Core.Bank
 {
     public static class SCP_BankRegion
     {
-        /// <summary>設定檔在資料根底下的相對位置 —— 與舊系統**同一個檔**（⛔ 不另開一份）。</summary>
-        public const string SettingsRelPath = "Treasury/bank_settings.json";
+        /// <summary>設定檔在資料根底下的相對位置。⚠ 全系統只有這一份（⛔ 不另開第二份）。
+        /// 2026-09-22（TASK-0274）從 `Treasury/` 搬進 `Bank/` —— 舊 `Treasury/` 已整包刪除，
+        /// ⛔ 沒有 fallback：留著它就永遠不知道還有誰在讀舊路徑，而讀到舊的會拿到一個**合法的錯區域名**。</summary>
+        public const string SettingsRelPath = "Bank/bank_settings.json";
 
         /// <summary>`currency_id` 缺值／壞值時的預設。⚠ 與 Unity 那側的 `DefaultCurrencyId` 同值。</summary>
         public const string DefaultRegion = "Ducat";
