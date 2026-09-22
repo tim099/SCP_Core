@@ -1,4 +1,4 @@
-// 區塊職責：**help 指令** —— 列出所有 Cmd 與它們的參數。
+﻿// 區塊職責：**help 指令** —— 列出所有 Cmd 與它們的參數。
 // 物理意義：help 自己也是一支 Cmd，不是宿主的特例。
 //           ⇒ 任何接上 SCP_CMD 的宿主（CLI / 視窗 / 未來的 Senate）都**自動**有 help，
 //             不必各自抄一份清單；而抄一份清單就是抄一份會漂的清單。
@@ -112,6 +112,12 @@ namespace SCP.Core.Cmd
         static void AppendDetail(SCP_CmdResult oResult, SCP_Cmd iCmd)
         {
             oResult.Lines.Add("── " + iCmd.Name + " ──");
+
+            // 🩸 **實際派遣到哪個型別**（TASK-0266）—— 在這之前沒有任何入口回答得了這個問題。
+            //    那天 `tavern-write` 的說明是 `Cmd_TavernWrite` 的，而派遣到的是 selftest 的巢狀子類，
+            //    兩者逐字同形；唯一會叫的是 `Discover` 的撞名警告，而它印在第一行 —— 所有 `| tail` 都吃掉它。
+            // ⇒ 把「說明」與「派遣目標」印在**同一頁**，讀說明的人不必再去信另一個地方的一行字。
+            oResult.Lines.Add("型別：" + iCmd.GetType().FullName);
             oResult.Lines.Add(iCmd.Summary);
 
             // 執行位置在 Summary 正下方：它決定「這支現在能不能跑」，

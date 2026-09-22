@@ -1,4 +1,4 @@
-// 區塊職責：**SCP_CMD 的目錄與派遣** —— 有哪些 Cmd、名字對應誰、參數驗完再跑。
+﻿// 區塊職責：**SCP_CMD 的目錄與派遣** —— 有哪些 Cmd、名字對應誰、參數驗完再跑。
 // 物理意義：沒有 queue ⇒ 派遣就是一次同步呼叫。本檔是「字串 → 執行」中間**唯一**那一層，
 //           所以驗證放這裡而不是每支 Cmd 自己驗：放在必經路上的機械，才不需要每個人記得。
 // 數值影響：Discover() 會掃一次載入的型別（走 SCP_Reflect.AllTypes —— 不重造第二套掃描器），
@@ -46,7 +46,9 @@ namespace SCP.Core.Cmd
         public static readonly List<string> DiscoveryWarnings = new List<string>();
 
         /// <summary>
-        /// 掃描所有載入的組件，找出非抽象、有公開無參數建構子的 <see cref="SCP_Cmd"/> 子類別。
+        /// 掃描所有載入的組件，找出 <b>top-level public</b>、非抽象、有公開無參數建構子的 <see cref="SCP_Cmd"/> 子類別。
+        /// <para>⛔ 巢狀與非 public 的子類**不收**（TASK-0266）—— 測試探針繼承產品 Cmd 時會連指令名一起繼承，
+        /// 那條路上「說明」與「派遣目標」會分家而沒有任何一層在執行時說出來。</para>
         /// <para>⚠ 同名衝突不覆蓋、不靜默 —— 兩支同名的 Cmd 代表有人搬檔案時忘了改名字，
         /// 而後贏的那支是隨機的（型別列舉順序）。留第一支並把衝突記進 <see cref="DiscoveryWarnings"/>。</para>
         /// </summary>
@@ -68,6 +70,29 @@ namespace SCP.Core.Cmd
             foreach (Type aType in SCP_Reflect.AllTypes(w => DiscoveryWarnings.Add(w)))
             {
                 if (aType.IsAbstract || !typeof(SCP_Cmd).IsAssignableFrom(aType)) continue;
+
+                // ── 產品指令一律是 top-level public（TASK-0266）────────────────────
+                // 🩸 為什麼這道閘存在：`Senate.Cli.SelfTest+TavernLaneProbe` 是為了讀 protected
+                //    `Lane()` 而開的**測試用子類**，它連指令名一起繼承 ⇒ 兩支同名進同一張表，
+                //    而掃描順序讓探針先進去、真正的 `Cmd_TavernWrite` 被下面那格 continue 掉。
+                //    ⚠ 那天它沒咬到人**不是運氣，是繼承**：探針沒 override 任何成員，
+                //    行為與母類逐位元相同。⇒ 失效條件在未來：哪天探針 override 了什麼，
+                //    產品指令就靜默換成探針行為，而可觀測面（同一行警告、同一份 help）**一模一樣**。
+                // ⛔ 所以這裡治的不是「那一隻」（改名只治一隻），是讓它**結構上進不來**。
+                if (aType.IsNested)
+                {
+                    // 巢狀型別是宿主型別的實作細節 —— 測試探針、內部 helper 都長這樣。
+                    // ⚠ 這格**刻意不出聲**：它不是「少了一支 Cmd」，是一條宣告過的收錄條件。
+                    //   出聲的話每次 `cmd` 都會印一行永遠不會有人去修的雜訊。
+                    continue;
+                }
+                if (!aType.IsPublic)
+                {
+                    // top-level 卻不是 public ⇒ 這比較像**有人忘了寫 public**，不是刻意的實作細節。
+                    // ⇒ 這格要出聲：靜默少一支的症狀是「它明明在那裡卻叫不到」。
+                    DiscoveryWarnings.Add("略過 " + aType.FullName + "：Cmd 必須是 public（top-level）");
+                    continue;
+                }
                 if (aType.GetConstructor(Type.EmptyTypes) == null)
                 {
                     DiscoveryWarnings.Add("略過 " + aType.FullName + "：沒有公開無參數建構子");
