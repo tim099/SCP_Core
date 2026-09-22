@@ -35,6 +35,12 @@ namespace SCP.Core.Bank
         public const string KeyExemptCentral = "exempt_central_bank";
         public const string KeyMailFee = "registered_mail_fee";
 
+        // ── 保管費轉券（TASK-0270）────────────────────────────────────────────
+        /// <summary>保管費要轉成哪一種券（＝券名＝檔名）。**空字串＝不轉券**。</summary>
+        public const string KeyVoucherType = "voucher_type";
+        /// <summary>1 Token 換幾張券。**0＝不轉券**。</summary>
+        public const string KeyVoucherRatio = "ratio_per_token";
+
         public const int DefaultThreshold = 1000;
         /// <summary>千分比整數（50 ＝ 5.0%）。</summary>
         public const int DefaultFeePermille = 50;
@@ -46,6 +52,25 @@ namespace SCP.Core.Bank
         public const int MaxFeePermille = 500;
         public const int MinThreshold = 0;
 
+        /// <summary>
+        /// 每 Token 兌換券數的上限。
+        /// <para>⚠ 這一格是**鑄幣參數**：它乘上去的是扣繳額，而扣繳額每天都在變。
+        /// 把 20 打成 2000 不會有任何一層叫 —— 券發出去就在別人手上了，而**收不回來**。
+        /// ⇒ 上限不是潔癖，是「打錯一個零」與「真的想發那麼多」在輸入框裡同形的那道閘。
+        /// ⛔ 真的要超過就改這個常數（要過 review），不是在後台輸入框裡打。</para>
+        /// </summary>
+        public const int MaxVoucherRatio = 10000;
+        public const int MinVoucherRatio = 0;
+
+        public static int ClampVoucherRatio(int iValue)
+            => iValue < MinVoucherRatio ? MinVoucherRatio : (iValue > MaxVoucherRatio ? MaxVoucherRatio : iValue);
+
+        /// <summary>
+        /// 券名合法性 ＝ 能安全當檔名（券是一券一檔，與 TASK-0243 ③ 同一條規則）。
+        /// <para>⛔ 空字串**不是**非法 —— 它是「不轉券」這個明確的關閉手段。呼叫端自己先判空。</para>
+        /// </summary>
+        public static bool IsValidVoucherType(string? iId) => IsValidAccountId(iId);
+
         public static int ClampPermille(int iValue)
             => iValue < MinFeePermille ? MinFeePermille : (iValue > MaxFeePermille ? MaxFeePermille : iValue);
 
@@ -56,6 +81,18 @@ namespace SCP.Core.Bank
             public int FeePermille = DefaultFeePermille;
             public bool ExemptCentral = true;
             public int MailFee = DefaultMailFee;
+
+            /// <summary>保管費轉成哪一種券。空＝不轉券。</summary>
+            public string VoucherType = "";
+            /// <summary>1 Token 換幾張券。0＝不轉券。</summary>
+            public int VoucherRatio = 0;
+
+            /// <summary>
+            /// 這份設定會不會發券。
+            /// <para>⚠ 判準是**兩個條件都要成立** —— 只設券種沒設比例（或反過來）算**沒開**，
+            /// ⛔ 不猜使用者的意思。半套設定是最容易讀成「已經開了」的狀態。</para>
+            /// </summary>
+            public bool VoucherEnabled => VoucherType.Length > 0 && VoucherRatio > 0;
 
             /// <summary>費率的顯示字串：50‰ → "5"、25‰ → "2.5"。</summary>
             public string FeeRateDisplay => (FeePermille % 10 == 0)
@@ -84,6 +121,14 @@ namespace SCP.Core.Bank
             aOut.ExemptCentral = aJd.GetInt(KeyExemptCentral, 1) != 0;
             int aMail = aJd.GetInt(KeyMailFee, DefaultMailFee);
             aOut.MailFee = aMail < 0 ? 0 : aMail;
+
+            // ── 保管費轉券：⚠ 缺省一律回退成「不轉券」，⛔ 不 derive 一個看起來合理的預設 ──
+            //   🩸 這一格若預設成「開著」，那麼**沒有人設定過**與**有人決定要發**在讀數上同形，
+            //     而它的後果是憑空鑄出券。⇒ 預設必須是那個不會造成任何後果的值。
+            string aVt = aJd.GetString(KeyVoucherType, "").Trim();
+            // 非法券名（含路徑分隔字元之類）⇒ 當成沒設定。券名就是檔名，這條與發券端同一把尺。
+            aOut.VoucherType = IsValidVoucherType(aVt) ? aVt : "";
+            aOut.VoucherRatio = ClampVoucherRatio(aJd.GetInt(KeyVoucherRatio, 0));
             return aOut;
         }
 
