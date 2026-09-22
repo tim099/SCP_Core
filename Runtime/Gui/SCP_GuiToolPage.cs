@@ -112,14 +112,6 @@ namespace SCP.Core.Gui
         protected virtual bool ShowHomeButton => Controller != null && Controller.Count > 2;
 
         /// <summary>
-        /// 工具列尾巴要不要印 page key。預設 true。
-        /// <para>⭐ 這是 UCL「類名 ＋ Copy 鈕」那一格的對應物，但印的是 **page key 而不是類名** ——
-        /// 類名對使用者沒有用途，page key 才是 <c>--page</c> / session <c>nav</c> / 麵包屑共用的那個字。
-        /// （沒有 Copy 鈕：共用層碰不到剪貼簿，而「有一顆按了沒事的鈕」比沒有那顆鈕糟。）</para>
-        /// </summary>
-        protected virtual bool ShowKeyHint => true;
-
-        /// <summary>
         /// 工具列上要不要「原始碼」鈕。條件只有一個：**宿主裝了開檔案總管的能力**
         /// （<see cref="SCP_GuiHost.RevealInFileManager"/>）。
         /// <para>⚠ 沒裝就不畫 —— 畫一顆按了不會有事的鈕，比沒有那顆鈕糟
@@ -167,21 +159,19 @@ namespace SCP.Core.Gui
                 if (ShowBackButton && iUi.Button("◀ 返回", SCP_GuiPageController.BackButtonId)) aAction = 1;
                 if (ShowHomeButton && iUi.Button("⌂ 首頁", HomeButtonId)) aAction = 2;
 
+                string key = NeedsClassInHint? $"{Key}({SourceClassName})":Key;
                 // 「這一頁的碼在哪」—— UCL 那顆 Help 鈕的同一格（位置也一樣：導覽鈕之後、自訂鈕之前）。
                 // ⚠ 標籤刻意是純文字不是 📁：那顆 emoji 在不在字型的 glyph 範圍內是另一回事，
                 //   而缺字**不報錯**，只會變成一個方塊（SenateFonts 的血證就是這一族）。
-                if (ShowSourceButton && iUi.Button("原始碼", SourceButtonId)) aAction = 3;
-                else if (ShowCopyClassButton && iUi.Button("複製類別名", CopyClassButtonId)) aAction = 4;
+                if (ShowSourceButton && iUi.Button($"原始碼({key})", SourceButtonId)) aAction = 3;
+                else if (ShowCopyClassButton && iUi.Button($"複製類別名({SourceClassName})", CopyClassButtonId)) aAction = 4;
 
                 // ⚠ 這裡刻意**不 try/catch**：工具列的按鈕炸掉是程式錯誤，
                 //   吞掉它只會讓「那顆鈕沒反應」變成沒有人查得到的事（UCL 那側有 Debug.LogException
                 //   可以吞得起來，共用層沒有 logger —— 吞了就是真的沒有讀數）。
                 TopBarButtons(iUi);
 
-                if (ShowKeyHint)
-                    iUi.Label(NeedsClassInHint
-                        ? $"｜page key: {Key}（{SourceClassName}）"
-                        : "｜page key: " + Key);
+
             }
 
             if (aAction == 1) BackButtonClicked();
