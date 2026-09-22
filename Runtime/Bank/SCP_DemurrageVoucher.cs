@@ -257,6 +257,63 @@ namespace SCP.Core.Bank
             return aIssuedRows;
         }
 
+        // ==========================================================
+        // 區塊職責：**一趟結算要跑的那幾步**（算 → 視情況發 → 組一段可以貼進廣播的文字）。
+        // 物理意義：TASK-0270 ③④ 的落點 —— 跨日扣繳完成之後由**結算那一支**呼叫它。
+        // ⚠ 它照樣只讀帳本（`Plan` 先跑），⇒ 分層沒有被打破：發券仍然是扣款的下游一層，
+        //   差別只在「誰呼叫」。⛔ 不要把它搬進 `SCP_Demurrage.Apply` 的迴圈裡 ——
+        //   那會讓扣款的失敗與發券的失敗**共用一個出口**，而它們的補救方式相反
+        //   （扣款重跑是冪等的；發券重跑會再鑄一次，靠的是本層自己的簿子）。
+        // 數值影響：`iDryRun=true` ⇒ **零寫入**（只算、只組字）。
+        // ==========================================================
+        public static SCP_DemurragePlan RunForDate(string iDataRoot, string iLettersRoot, string iRegion,
+                                                   string iDate, bool iDryRun,
+                                                   List<string> oLines, List<string> oProblems)
+        {
+            SCP_DemurragePlan aPlan = Plan(iDataRoot, iLettersRoot, iRegion, iDate);
+            oProblems.AddRange(aPlan.Problems);
+
+            if (!aPlan.PolicyEnabled)
+            {
+                // ⚠ 這一句要說得出**為什麼不發** —— 「沒發」與「政策關著」在輸出上必須分得出來，
+                //   ⛔ 不可以只是安靜地少印一段（那跟發券壞掉同形）。
+                oLines.Add($"· 🎟 保管費轉券：**停用**（{PolicyWhy(aPlan)}）⇒ 一張都沒發");
+                return aPlan;
+            }
+
+            int aRows = 0;
+            foreach (SCP_DemurragePlanRow r in aPlan.Rows) if (!r.AlreadyIssued && r.TotalVouchers > 0) ++aRows;
+            oLines.Add($"· 🎟 保管費轉券：`{aPlan.VoucherType}` 券 × {aPlan.RatioPerToken}／Token"
+                       + $"　待發 **{aRows}** 筆"
+                       + (iDryRun ? "　—— **預覽，零寫入**" : ""));
+
+            if (iDryRun)
+            {
+                foreach (SCP_DemurragePlanRow r in aPlan.Rows)
+                {
+                    if (r.AlreadyIssued) { oLines.Add($"　· `{r.AccountId}`：跳過（已轉過券）"); continue; }
+                    if (r.TotalVouchers <= 0) { oLines.Add($"　· `{r.AccountId}`：換算 0 張 ⇒ 不發"); continue; }
+                    if (r.NoPersona)
+                    { oProblems.Add($"⚠ `{r.AccountId}` 底下沒有任何 persona ⇒ {r.TotalVouchers} 張**不會**發"); continue; }
+                    decimal aPer = (decimal)r.PerPersonaE8 / SCP_VoucherBook.FractionScale;
+                    oLines.Add($"　· `{r.AccountId}` 扣繳 {r.Fee} → **{r.TotalVouchers}** 張，"
+                               + $"均分給 {string.Join(", ", r.Personas)} 各 **{aPer:0.########}** 張（預計）");
+                }
+                return aPlan;
+            }
+
+            Issue(iDataRoot, iLettersRoot, iRegion, aPlan, oLines, oProblems);
+            return aPlan;
+        }
+
+        /// <summary>政策為什麼算「沒開」—— 兩個條件各自報，⛔ 不合成一句「沒設定」。</summary>
+        static string PolicyWhy(SCP_DemurragePlan iPlan)
+        {
+            if (iPlan.VoucherType.Length == 0 && iPlan.RatioPerToken <= 0) return "券種顯式清空，且比例 0";
+            if (iPlan.VoucherType.Length == 0) return "券種顯式清空（`voucher_type: \"\"`）";
+            return "比例顯式為 0（`ratio_per_token: 0`）";
+        }
+
         static bool AppendIssued(string iDataRoot, string iDate, List<string> iEntryIds, out string? oError)
         {
             oError = null;

@@ -36,10 +36,20 @@ namespace SCP.Core.Bank
         public const string KeyMailFee = "registered_mail_fee";
 
         // ── 保管費轉券（TASK-0270）────────────────────────────────────────────
-        /// <summary>保管費要轉成哪一種券（＝券名＝檔名）。**空字串＝不轉券**。</summary>
+        /// <summary>
+        /// 保管費要轉成哪一種券（＝券名＝檔名）。
+        /// <para>⭐ **這一格沒有寫在設定檔裡時，預設＝本區的區域 id**（Tim 2026-09-22：
+        /// 「BTC 區域預設轉換為 1 BTC 券」）⇒ 每一區的儲備券**天生跟著那一區的貨幣走**，
+        /// 不必逐區去後台設一次。</para>
+        /// <para>⛔ 關閉的手段是**顯式寫一格**（`voucher_type: ""` 或 `ratio_per_token: 0`），
+        /// ⚠ 不再是「什麼都不寫」—— 兩者從今天起語意相反，見 <see cref="Reading.VoucherTrace"/>。</para>
+        /// </summary>
         public const string KeyVoucherType = "voucher_type";
-        /// <summary>1 Token 換幾張券。**0＝不轉券**。</summary>
+        /// <summary>1 Token 換幾張券。**缺這一格＝預設 1**；顯式 `0`＝不轉券。</summary>
         public const string KeyVoucherRatio = "ratio_per_token";
+
+        /// <summary>沒有設定時每 Token 換幾張券（Tim 2026-09-22：單位預設 1）。</summary>
+        public const int DefaultVoucherRatio = 1;
 
         public const int DefaultThreshold = 1000;
         /// <summary>千分比整數（50 ＝ 5.0%）。</summary>
@@ -82,15 +92,24 @@ namespace SCP.Core.Bank
             public bool ExemptCentral = true;
             public int MailFee = DefaultMailFee;
 
-            /// <summary>保管費轉成哪一種券。空＝不轉券。</summary>
+            /// <summary>保管費轉成哪一種券。空＝不轉券。缺設定時＝區域 id。</summary>
             public string VoucherType = "";
-            /// <summary>1 Token 換幾張券。0＝不轉券。</summary>
+            /// <summary>1 Token 換幾張券。0＝不轉券。缺設定時＝<see cref="DefaultVoucherRatio"/>。</summary>
             public int VoucherRatio = 0;
 
             /// <summary>
+            /// 這兩格**各自**是哪裡來的：`區域預設`／`設定檔`／`設定檔(不合法⇒關)`。
+            /// <para>🩸 為什麼要留這一欄：預設值改成「會發券」之後，
+            /// **「沒有人設定過」與「有人決定要發」在 `VoucherEnabled` 上同形** ——
+            /// 而它乘上去的是扣繳額。⇒ 至少要讓讀報告的人一眼看出那個券種是誰決定的。</para>
+            /// </summary>
+            public string VoucherTrace = "";
+
+            /// <summary>
             /// 這份設定會不會發券。
-            /// <para>⚠ 判準是**兩個條件都要成立** —— 只設券種沒設比例（或反過來）算**沒開**，
-            /// ⛔ 不猜使用者的意思。半套設定是最容易讀成「已經開了」的狀態。</para>
+            /// <para>⚠ 判準是**兩個條件都要成立**：券種非空 ＋ 比例 &gt; 0。
+            /// ⭐ 2026-09-22 起兩格都有預設值（區域 id ／ 1）⇒ **預設是「會發」**（Tim 拍板）；
+            /// 關掉要顯式寫 `voucher_type: ""` 或 `ratio_per_token: 0`。</para>
             /// </summary>
             public bool VoucherEnabled => VoucherType.Length > 0 && VoucherRatio > 0;
 
@@ -100,10 +119,38 @@ namespace SCP.Core.Bank
                 : (FeePermille / 10.0).ToString("0.#");
         }
 
+
+        // ==========================================================
+        // 區塊職責：券那兩格的**預設值**（Tim 2026-09-22：券種＝區域 id、比例＝1）。
+        // ⚠ 它被三條早退路徑與正常路徑**共用** —— 規則只有一份，⛔ 不在呼叫點各寫一次。
+        // ==========================================================
+        static void ApplyVoucherDefaults(string iDataRoot, Reading oOut, string iWhy)
+        {
+            string aRegion = SCP_BankRegion.Read(iDataRoot, out _);
+            oOut.VoucherType = IsValidVoucherType(aRegion) ? aRegion : "";
+            oOut.VoucherRatio = DefaultVoucherRatio;
+            oOut.VoucherTrace = $"券種＝**區域預設**（`{aRegion}`；{iWhy}）／比例＝**預設 {DefaultVoucherRatio}**";
+        }
+
+        /// <summary>把 trace 的「券種＝…」或「比例＝…」那一半換掉（另一半原樣留著）。</summary>
+        static string ReplaceTrace(string iTrace, string? iTypePart = null, string? iRatioPart = null)
+        {
+            string[] aParts = iTrace.Split('／');
+            string aType = aParts.Length > 0 ? aParts[0] : "";
+            string aRatio = aParts.Length > 1 ? aParts[1] : "";
+            if (iTypePart != null) aType = iTypePart;
+            if (iRatioPart != null) aRatio = iRatioPart;
+            return aType + "／" + aRatio;
+        }
+
         public static Reading Read(string iDataRoot, out string? oWhy)
         {
             oWhy = null;
             var aOut = new Reading();
+            // ⚠ 三條「讀不到設定檔」的早退也要帶**同一組**券預設值 ——
+            //   ⛔ 不可以只在成功那條路上補：那樣「設定檔壞掉」會安靜地變成「不發券」，
+            //     而那是一個完全合法、看不出是壞掉的狀態（判準②：夾值兩側都做，同一族）。
+            ApplyVoucherDefaults(iDataRoot, aOut, "設定檔沒讀到");
             string aPath = SCP_BankRegion.SettingsPath(iDataRoot);
             if (!File.Exists(aPath)) { oWhy = $"設定檔不在（{aPath}）⇒ 全部用預設"; return aOut; }
             SCP_JsonData? aJd;
@@ -122,13 +169,31 @@ namespace SCP.Core.Bank
             int aMail = aJd.GetInt(KeyMailFee, DefaultMailFee);
             aOut.MailFee = aMail < 0 ? 0 : aMail;
 
-            // ── 保管費轉券：⚠ 缺省一律回退成「不轉券」，⛔ 不 derive 一個看起來合理的預設 ──
-            //   🩸 這一格若預設成「開著」，那麼**沒有人設定過**與**有人決定要發**在讀數上同形，
-            //     而它的後果是憑空鑄出券。⇒ 預設必須是那個不會造成任何後果的值。
-            string aVt = aJd.GetString(KeyVoucherType, "").Trim();
-            // 非法券名（含路徑分隔字元之類）⇒ 當成沒設定。券名就是檔名，這條與發券端同一把尺。
-            aOut.VoucherType = IsValidVoucherType(aVt) ? aVt : "";
-            aOut.VoucherRatio = ClampVoucherRatio(aJd.GetInt(KeyVoucherRatio, 0));
+            // ── 保管費轉券（Tim 2026-09-22 改判：缺省＝**區域 id × 1**，不再是「不轉券」）──
+            //   🩸 前一版的判準是「預設必須是那個不會造成任何後果的值」，理由是
+            //     『沒有人設定過』與『有人決定要發』會在讀數上同形，而後果是憑空鑄券。
+            //     ⇒ 那個顧慮**沒有消失**，只是 Tim 選了另一邊（每一區的儲備券跟著該區貨幣走，
+            //       不必逐區設定）。⇒ 代價由 `VoucherTrace` 扛：它明說這個券種是**誰決定的**，
+            //       而報告與廣播都印它。⛔ 別把 trace 當裝飾拿掉 —— 它是這次改判的對價。
+            //   ⚠ 判「有沒有這一格」用 `Contains`，⛔ 不是拿 `GetString` 的回傳值比空字串：
+            //     顯式寫 `""`（我要關掉）與整格不存在（沒人設定過）**必須分得出來**，
+            //     而它們在 `GetString` 的回傳值上同形。
+            if (aJd.Contains(KeyVoucherType))
+            {
+                string aVt = aJd.GetString(KeyVoucherType, "").Trim();
+                // 非法券名（含路徑分隔字元之類）⇒ 當成關掉。券名就是檔名，這條與發券端同一把尺。
+                bool aOk = IsValidVoucherType(aVt);
+                aOut.VoucherType = aOk ? aVt : "";
+                aOut.VoucherTrace = ReplaceTrace(aOut.VoucherTrace,
+                    iTypePart: aOk ? "券種＝設定檔" : $"券種＝設定檔的值不合法（`{aVt}`）⇒ **關**");
+            }
+            // 沒有這一格 ⇒ 早退前塞的區域預設**原樣留著**（⛔ 不在這裡再算一次，那是第二份規則）
+
+            if (aJd.Contains(KeyVoucherRatio))
+            {
+                aOut.VoucherRatio = ClampVoucherRatio(aJd.GetInt(KeyVoucherRatio, DefaultVoucherRatio));
+                aOut.VoucherTrace = ReplaceTrace(aOut.VoucherTrace, iRatioPart: "比例＝設定檔");
+            }
             return aOut;
         }
 
