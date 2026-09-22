@@ -94,8 +94,52 @@ namespace SCP.Core.Voucher
         public string Persona = "";
         public string Voucher = "";
 
-        /// <summary>永久券（不會過期）。</summary>
+        /// <summary>永久券（不會過期）。**可用的就是這個**。</summary>
         public int Permanent;
+
+        // ===========================================================
+        // 區塊職責：**不足一張的零頭**（TASK-0271）。
+        // 物理意義：均分除不盡時每人會分到帶小數的量（2900 ÷ 3 ＝ 966.666…）。
+        //          零頭**不能用**，它只累積；⇒ 加總滿 1 才進位成一張可用的券。
+        // 數值影響：⛔ **完全不進 `Spendable`**。使用端看不到它，也不該看到。
+        //
+        // 🩸 為什麼是**定點整數**而不是 double —— 而這條理由我第一次寫錯過，所以附實測：
+        //   我原本舉的例子是「`0.5 + 0.3 != 0.8`」，⛔ **那是錯的**（IEEE754 上它剛好相等，
+        //   我把經典的 `0.1 + 0.2 != 0.3` 記成別的了）。對照組當場打到我自己。
+        //   ⭐ 而真正咬本功能的那一個更難看，量出來是這樣：
+        //     `0.1` 累加 **10 次 ⇒ 0.9999999999999999**，`== 1.0` 是 **false**。
+        //   ⇒ double 之下「十次 0.1」會停在 0.9999999999999999，差一點點進不了位。
+        //   ⚠ 而**這個誤差 Tim 2026-09-22 判定可接受** —— ⛔ 所以我不拿它當「不做會出事」來賣。
+        //   📌 選定點的實際理由只有一條，而它跟風險無關：**它沒有比較貴，而進位變成精確的**
+        //     （`AddE8` 是兩個整數運算）。⇒ 同樣的效果，選前提少的那一個。
+        //   （同一條判準 @gura 自己寫過，seq 19960：「以聰為整數單位，避免浮點漂移」。）
+        //
+        // ⚠ 欄位名帶單位（`fractional_e8`）**不是囉唆**：
+        //   `"fractional": 50000000` 這個字面，讀成「0.5」與讀成「五千萬張」形狀完全一樣。
+        //   ⛔ 而我們不另外寫一個好看的 `fractional: 0.5` —— 同一個事實兩個欄位會漂。
+        // ===========================================================
+        /// <summary>零頭，單位 1e-8（＝聰那一級）。恆為 <c>0 ≤ x &lt; Scale</c>。</summary>
+        public long FractionalE8;
+
+        /// <summary>零頭的刻度：1 張券 ＝ 1e8 個最小單位。</summary>
+        public const long FractionScale = 100_000_000L;
+
+        /// <summary>零頭的十進位值（**唯讀投影**，給人看的 —— ⛔ 不落盤）。</summary>
+        public decimal FractionalValue => (decimal)FractionalE8 / FractionScale;
+
+        // ===========================================================
+        // 區塊職責：加一筆**帶零頭**的量，滿 1 就進位成可用券。
+        // 數值影響：`Permanent` 只會被整數部分推進；剩下的留在零頭池。
+        // ⚠ 只收非負 —— 「用掉零頭」這件事**不存在**（零頭不能用），
+        //   所以這裡不提供減法入口，⛔ 免得有人拿它當扣款用。
+        // ===========================================================
+        public void AddE8(long iUnitsE8)
+        {
+            if (iUnitsE8 <= 0) return;
+            long aTotal = FractionalE8 + iUnitsE8;
+            Permanent += (int)(aTotal / FractionScale);
+            FractionalE8 = aTotal % FractionScale;
+        }
 
         /// <summary>限時券，**一次發放一批**、各自帶到期時刻（⛔ 不合併：兩批的到期時間不同）。</summary>
         public List<SCP_VoucherBatch> Expiring = new List<SCP_VoucherBatch>();
@@ -113,6 +157,9 @@ namespace SCP.Core.Voucher
             aData.Set("persona", SCP_JsonData.NewString(Persona));
             aData.Set("voucher", SCP_JsonData.NewString(Voucher));
             aData.Set("permanent", SCP_JsonData.NewNumber(Permanent));
+            // ⚠ 零頭是 0 時**不落盤** —— 舊檔沒有這一欄，而「沒有這一欄」與「零頭是 0」同義。
+            //   ⇒ 不寫它，舊檔與新檔在零頭上長得一樣，⛔ 不製造一個只是格式差異的 diff。
+            if (FractionalE8 > 0) aData.Set("fractional_e8", SCP_JsonData.NewNumber(FractionalE8));
             var aArr = SCP_JsonData.NewArray();
             foreach (SCP_VoucherBatch aBatch in Expiring) aArr.Add(aBatch.ToJson());
             aData.Set("expiring", aArr);
@@ -132,6 +179,9 @@ namespace SCP.Core.Voucher
                 Persona = iData.GetString("persona", ""),
                 Voucher = iData.GetString("voucher", ""),
                 Permanent = iData.GetInt("permanent", 0),
+                // 舊檔沒有這一欄 ⇒ 0（＝沒有零頭）。這一格「缺席」與「0」**本來就同義**，
+                // ⛔ 不需要分辨（與 `granted` 那格不同：那一格的 0 會憑空生出用量）。
+                FractionalE8 = (long)iData.GetInt("fractional_e8", 0),
                 UpdatedAtUtc = iData.GetString("updated_at_utc", ""),
                 UpdatedRegion = iData.GetString("updated_region", ""),
             };
@@ -155,7 +205,11 @@ namespace SCP.Core.Voucher
             return aSum;
         }
 
-        /// <summary>可花總額 ＝ 永久 ＋ 未過期限時（⛔ 不是任何一批的餘額 —— glossary 那兩條詞已經定義過）。</summary>
+        /// <summary>
+        /// 可花總額 ＝ 永久 ＋ 未過期限時。
+        /// <para>⛔ **零頭不算在內**（TASK-0271 ③）—— 不足一張的東西不能花，
+        /// 而把它加進來會讓「可花 3」實際上只花得出 2 張。</para>
+        /// </summary>
         public int Spendable(DateTime iNow) => Permanent + ExpiringAlive(iNow);
 
         /// <summary>

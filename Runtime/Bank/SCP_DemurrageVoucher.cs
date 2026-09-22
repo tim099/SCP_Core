@@ -36,8 +36,11 @@ namespace SCP.Core.Bank
         public int Fee;                    // 那天被扣了幾個 Token
         public int TotalVouchers;          // fee × ratio
         public List<string> Personas = new List<string>();
-        public int PerPersona;             // 均分後每人幾張（floor）
-        public int Dust;                   // 除不盡的零頭
+        public int PerPersona;             // 每人拿到的**可用整數**張數
+        /// <summary>每人實際分到的量，單位 1e-8 —— 除不盡的部分進零頭池（TASK-0271）。</summary>
+        public long PerPersonaE8;
+        /// <summary>連 1e-8 都除不盡的殘量（單位 1e-8）。⛔ 不發給任何人。</summary>
+        public long UnsplittableE8;
         public bool AlreadyIssued;         // 這一筆之前已經轉過券
         /// <summary>沒有人綁在這個帳戶底下 ⇒ **一張都不發**（⛔ 不倒給央行、不憑空找一個人）。</summary>
         public bool NoPersona => Personas.Count == 0;
@@ -173,8 +176,16 @@ namespace SCP.Core.Bank
                 aRow.Personas = SCP_BankAccountResolver.GetBoundPersonas(iLettersRoot, iDataRoot, iRegion, aCanonical);
                 if (aRow.Personas.Count > 0 && aRow.TotalVouchers > 0)
                 {
-                    aRow.PerPersona = aRow.TotalVouchers / aRow.Personas.Count;
-                    aRow.Dust = aRow.TotalVouchers % aRow.Personas.Count;
+                    // 🩸 這裡**不 floor 丟掉零頭**（那是 2026-09-22 的佔位做法，Tim 當天就否掉了）：
+                    //   在只有整數的世界裡，除不盡的那幾張要嘛丟掉、要嘛塞給前面幾個人 ——
+                    //   後者是**發放順序決定誰多拿**，而那種不公平不會叫。
+                    //   ⇒ 改成連零頭一起發：每人拿 total/N（1e-8 精度），不足一張的留在他自己的零頭池，
+                    //     加總滿 1 才變成可用券（TASK-0271）。
+                    int aN = aRow.Personas.Count;
+                    long aTotalE8 = (long)aRow.TotalVouchers * SCP_VoucherBook.FractionScale;
+                    aRow.PerPersonaE8 = aTotalE8 / aN;
+                    aRow.UnsplittableE8 = aTotalE8 % aN;   // 連 1e-8 都除不盡的那一點點
+                    aRow.PerPersona = (int)(aRow.PerPersonaE8 / SCP_VoucherBook.FractionScale);
                 }
                 aPlan.Rows.Add(aRow);
             }
@@ -216,7 +227,9 @@ namespace SCP.Core.Bank
                     SCP_VoucherBook aBook = SCP_VoucherStore.Load(aRoot, p, iPlan.VoucherType, out string? aProblem);
                     if (aProblem != null)
                     { oProblems.Add($"✗ `{p}` 的 `{iPlan.VoucherType}` 券讀不了 ⇒ 沒發：{aProblem}"); aRowOk = false; continue; }
-                    aBook.Permanent += r.PerPersona;
+                    // ⚠ 走 `AddE8` 而不是直接加 `Permanent` —— 進位與零頭的規則只有一份（TASK-0271），
+                    //   在這裡自己算一次就是第二份，而兩份會漂。
+                    aBook.AddE8(r.PerPersonaE8);
                     if (!SCP_VoucherStore.Save(aRoot, aBook, aNow, iRegion, out int _, out string? aErr))
                     { oProblems.Add($"✗ `{p}` 發券寫入失敗 ⇒ {aErr}"); aRowOk = false; }
                 }
@@ -229,9 +242,12 @@ namespace SCP.Core.Bank
 
                 aDone.Add(r.FeeEntryId);
                 aIssuedRows++;
+                decimal aPer = (decimal)r.PerPersonaE8 / SCP_VoucherBook.FractionScale;
                 oLog.Add($"🏦 `{r.AccountId}` 扣繳 {r.Fee} Token → 提撥 **{r.TotalVouchers}** 張 `{iPlan.VoucherType}` 券，"
-                         + $"均分給 {string.Join(", ", r.Personas)} 各 **{r.PerPersona}** 張"
-                         + (r.Dust > 0 ? $"（零頭 {r.Dust} 張**未發** —— 除不盡，⛔ 不倒給任何人）" : ""));
+                         + $"均分給 {string.Join(", ", r.Personas)} 各 **{aPer:0.########}** 張"
+                         + (aPer != decimal.Truncate(aPer)
+                            ? $"（可用 {r.PerPersona} 張 ＋ 零頭，滿 1 張時自動進位）" : "")
+                         + (r.UnsplittableE8 > 0 ? $"　⚠ 另有 {r.UnsplittableE8}/1e8 連最小單位都除不盡，**未發**" : ""));
             }
 
             if (aDone.Count > 0 && !AppendIssued(iDataRoot, iPlan.Date, aDone, out string? aSaveErr))

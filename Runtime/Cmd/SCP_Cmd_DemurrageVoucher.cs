@@ -8,6 +8,7 @@
 using System.Collections.Generic;
 using System.IO;
 using SCP.Core.Bank;
+using SCP.Core.Voucher;
 
 namespace SCP.Core.Cmd
 {
@@ -24,7 +25,8 @@ namespace SCP.Core.Cmd
             + "· `op=issue`：真的發。**要 `confirm=1`**。\n"
             + "· `date` 省略 ⇒ 自動取**最近一天有扣繳的日子**；那天一筆都沒有時會說出來，⛔ 不回一個空的 0 筆。\n"
             + "· 綁定名單由**正向綁定檔**導出（`bank/<region>.md`），⛔ 不讀 registry 的 `bank_personas`。\n"
-            + "· 除不盡的零頭**不發**（⛔ 不倒給任何人）；小數累積是 TASK-0271 的事，不在這裡。\n"
+            + "· 除不盡的部分**照發**，只是不足一張的留在各自的零頭池（滿 1 張自動進位，TASK-0271）。\n"
+            + "  ⚠ 零頭**不能花** —— `Spendable` 結構上看不到它。\n"
             + "⚠ 冪等靠本 Cmd 自己的轉券簿（`Bank/voucher_issued/<date>.json`）——\n"
             + "  **券系統刻意不記歷史**，所以同一天跑兩次在券那一側是發兩次，而兩次都不會叫。";
 
@@ -86,24 +88,29 @@ namespace SCP.Core.Cmd
                 return aR;
             }
 
-            int aTotalV = 0, aTotalDust = 0, aPending = 0, aNoPersona = 0;
+            int aTotalV = 0, aPending = 0, aNoPersona = 0;
+            long aUnsplittable = 0;
             aR.Lines.Add("");
-            aR.Lines.Add("| 帳戶 | 扣繳 | 換算券 | persona | 每人 | 零頭 | 狀態 |");
+            aR.Lines.Add("| 帳戶 | 扣繳 | 換算券 | persona | 每人（含零頭） | 其中可用 | 狀態 |");
             aR.Lines.Add("|---|---:|---:|---|---:|---:|---|");
             foreach (SCP_DemurragePlanRow r in aPlan.Rows)
             {
                 string aState = r.AlreadyIssued ? "已轉過" : (r.NoPersona ? "🔴 沒有 persona" : "待發");
-                if (!r.AlreadyIssued && !r.NoPersona && r.TotalVouchers > 0) { aPending++; aTotalV += r.TotalVouchers; aTotalDust += r.Dust; }
+                if (!r.AlreadyIssued && !r.NoPersona && r.TotalVouchers > 0)
+                { aPending++; aTotalV += r.TotalVouchers; aUnsplittable += r.UnsplittableE8; }
                 if (r.NoPersona) aNoPersona++;
+                decimal aPer = (decimal)r.PerPersonaE8 / SCP_VoucherBook.FractionScale;
                 aR.Lines.Add($"| `{r.AccountId}` | {r.Fee} | {r.TotalVouchers} | "
                              + (r.Personas.Count == 0 ? "—" : string.Join(", ", r.Personas))
-                             + $" | {r.PerPersona} | {r.Dust} | {aState} |");
+                             + $" | {aPer:0.########} | {r.PerPersona} | {aState} |");
             }
             aR.AddValue("date", aDate);
             aR.AddValue("fee_rows", aPlan.Rows.Count.ToString());
             aR.AddValue("pending_rows", aPending.ToString());
             aR.AddValue("total_vouchers", aTotalV.ToString());
-            aR.AddValue("dust", aTotalDust.ToString());
+            // ⚠ 「連 1e-8 都除不盡」的殘量單獨報 —— ⛔ 別跟「零頭」混為一談：
+            //   零頭是**發出去了、只是還不能用**；這個是**沒有發出去**。
+            aR.AddValue("unsplittable_e8", aUnsplittable.ToString());
             aR.AddValue("no_persona_rows", aNoPersona.ToString());
 
             if (aOp == "preview")
