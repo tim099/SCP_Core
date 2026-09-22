@@ -102,8 +102,7 @@ namespace SCP.Core.Bank
             return aOut;
         }
 
-        public static SCP_DemurrageParityReport Run(string iDataRoot, string iBankRoot, string iLettersRoot,
-                                                    string iDate)
+        public static SCP_DemurrageParityReport Run(string iDataRoot, string iBankRoot, string iDate)
         {
             var aReport = new SCP_DemurrageParityReport { Date = iDate };
             aReport.SnapshotAtUtc = FindSnapshotMoment(iBankRoot, iDate);
@@ -146,8 +145,7 @@ namespace SCP.Core.Bank
             }
 
             // 新實作：同一份快照，dry-run（零寫入）
-            SCP_DemurrageOutcome aNew = SCP_Demurrage.Apply(iDataRoot, iBankRoot, iLettersRoot, iDate,
-                                                            iDryRun: true, aSnapshot);
+            SCP_DemurrageOutcome aNew = SCP_Demurrage.Apply(iDataRoot, iBankRoot, iDate, iDryRun: true, aSnapshot);
             // ⚠ **按歸一後的帳戶聚合** —— 帳本上的 `account_id` 是歸一後的那個。
             //   🩸 第一次跑這支時我用了未歸一的 id ⇒ sirius／spectre 兩格報「不符」，
             //     而錢其實一毛不差（sirius 的費用本來就扣在 spectre 身上）。

@@ -52,15 +52,13 @@ namespace SCP.Core.Bank
         public int Fee;
         public SCP_DemurrageBillRowKind Kind;
         /// <summary>
-        /// 這筆錢**真正會扣在哪個帳戶**（帳號歸一之後）。
-        /// <para>🩸 它跟 <see cref="AccountId"/> 常常不同，而那不是 bug 是既有行為：
-        /// 餘額表的 key 是帳本上的 `account_id`，而寫入端會再把它歸一一次
-        /// （`sirius` → `Spectre`，實測 2026-09-20 那一輪）。⛔ 不要拿 `AccountId` 去對帳本 ——
-        /// 那會把「歸一到別人身上」讀成「算錯了」。</para>
+        /// 這筆錢**真正會扣在哪個帳戶**。
+        /// <para>⭐ TASK-0279（Tim 2026-09-22）之後它**恆等於** <see cref="AccountId"/> ——
+        /// 本迴圈的單位是帳戶，餘額表的 key 本來就是帳本上的 `account_id`，⛔ 不再套 persona 解析。
+        /// 欄位留著是因為對帳那一側要有一個明確的「錢落在哪」的受詞，
+        /// ⛔ 不是為了將來還要歸一。</para>
         /// </summary>
         public string ChargeAccountId = "";
-        /// <summary>歸一的出處（`r.Trace`）—— 空＝沒換。</summary>
-        public string ResolveTrace = "";
     }
 
     /// <summary>實際落帳的結果 —— 一個帳戶一筆。</summary>
@@ -68,7 +66,7 @@ namespace SCP.Core.Bank
     {
         /// <summary>餘額表上的 key（＝算費用用的那一格）。</summary>
         public string AccountId = "";
-        /// <summary>錢**真的**扣在哪個帳戶（歸一後）。⚠ 對帳本要用這一格。</summary>
+        /// <summary>錢**真的**扣在哪個帳戶。⚠ 對帳本要用這一格（TASK-0279 之後它等於上面那格）。</summary>
         public string ChargeAccountId = "";
         public int BalanceBefore;
         public int Excess;
@@ -142,8 +140,7 @@ namespace SCP.Core.Bank
         //          餘額重跑一次，而不必偽造一次扣款。
         // ⚠ 排序用 `OrdinalIgnoreCase` 之外的一切都照舊：帳號字典序，跟舊實作同一把尺。
         // ===========================================================
-        public static SCP_DemurrageBill BuildPlan(string iDataRoot, string iBankRoot, string iLettersRoot,
-                                                  string iDate, IReadOnlyDictionary<string, int> iBalances)
+        public static SCP_DemurrageBill BuildPlan(string iDataRoot, string iBankRoot, string iDate, IReadOnlyDictionary<string, int> iBalances)
         {
             var aPlan = new SCP_DemurrageBill { Date = iDate };
 
@@ -167,9 +164,6 @@ namespace SCP.Core.Bank
             // 判準①：費率換算逐字照搬舊實作 —— `permille/1000.0` 之後 `Math.Floor`。
             double aRate = aPolicy.FeePermille / 1000.0;
 
-            // 區域（貨幣）ID —— 帳號歸一要它。讀不到就不歸一，而那一格**要出聲**（見下面迴圈）。
-            string aRegion = SCP_BankRegion.Read(iDataRoot, out string? aRegionWhy);
-            if (!string.IsNullOrEmpty(aRegionWhy)) aPlan.Problems.Add(aRegionWhy!);
 
             foreach (string aId in aIds)
             {
@@ -193,25 +187,20 @@ namespace SCP.Core.Bank
                 aRow.Excess = aBalance - aPolicy.Threshold;
                 aRow.Fee = (int)Math.Floor(aRow.Excess * aRate);
                 aRow.Kind = aRow.Fee <= 0 ? SCP_DemurrageBillRowKind.FloorZero : SCP_DemurrageBillRowKind.Charge;
-                // ⚠ 歸一**只對要收費的那幾格**做（它要讀信件庫，不便宜），而且**在扣款之前** ——
+                // ⛔ **這裡不做 persona → 帳號的歸一**（Tim 2026-09-22 拍板，TASK-0279）。
+                // 🩸 為什麼曾經做過、又為什麼收回來：
                 //   舊實作的歸一發生在寫入端（`UCL_TreasuryLedger.ResolveAccountOrThrow`），
-                //   ⇒ 搬進 in-process 之後這一跳沒有人做，錢就會落在**另一個帳戶**上。
-                //   🩸 那正是 TASK-0278 ② 的對拍第一次跑出來的那兩格（sirius／spectre）。
-                if (aRow.Kind == SCP_DemurrageBillRowKind.Charge)
-                {
-                    aRow.ChargeAccountId = aId;
-                    if (iLettersRoot.Length > 0 && aRegion.Length > 0)
-                    {
-                        SCP_BankResolution aRes = SCP_BankAccountResolver.Resolve(iLettersRoot, iDataRoot, aRegion, aId);
-                        if (aRes.Changed) { aRow.ChargeAccountId = aRes.AccountId; aRow.ResolveTrace = aRes.Trace; }
-                        // ⛔ 查無對應**照樣扣原帳號**（與舊實作同語意）：丟棄會讓一筆真的費用無聲消失，
-                        //   而那比記在孤兒帳戶上更難查。只是要出聲。
-                        else if (aRes.IsUnresolved)
-                            aPlan.Problems.Add($"帳號 `{aId}` 查無對應（孤兒帳戶）—— 本筆仍照原帳號扣");
-                    }
-                    else aPlan.Problems.Add($"沒有 letters_root／region ⇒ `{aId}` **沒有做帳號歸一**"
-                                            + "（⛔ 這與舊實作不同，錢可能落在不同帳戶）");
-                }
+                //   ⇒ 搬進 in-process 的第一版照抄了它，於是餘額表上那個叫 `sirius` 的**帳戶**
+                //     被解析成 persona `Sirius` 的帳號 `Spectre`，費用扣在 Spectre 身上。
+                //   後果是兩件事同時成立：`sirius` 的餘額**永遠不會下降** ⇒ 它每天被重新課一次；
+                //   而 Spectre 替它付（09-18／09-20／09-22 各 12，共 36）。
+                // ⭐ 判準（Tim 的話）：persona `Sirius` 的扣款與打款都對 `Spectre`，
+                //   ⛔ **不應該動到 `sirius` 這個帳戶** —— 而它是個**獨立的帳戶，不合併**。
+                //   ⇒ 本迴圈的單位是**帳戶**不是 persona：餘額表的 key 本來就是帳本上的 `account_id`，
+                //     再套一次 persona 解析是**型別錯誤** —— 拿一把「人 → 帳號」的尺去量一個帳號。
+                // ⚠ 代價寫清楚：對 09-20／09-22 這兩天的對拍會在 sirius／spectre 兩格出現差異，
+                //   **那是這次要的改動**，⛔ 不是搬家搬壞了。
+                if (aRow.Kind == SCP_DemurrageBillRowKind.Charge) aRow.ChargeAccountId = aId;
                 aPlan.Rows.Add(aRow);
             }
             return aPlan;
@@ -233,8 +222,7 @@ namespace SCP.Core.Bank
         // ⚠ 失敗**不中斷整輪**：一個帳戶扣不動不該讓其他人今天不用繳。
         //   ⇒ 每一筆的失敗落在自己那一列的 `Problem` 上，並被 `Problems` 收走。
         // ===========================================================
-        public static SCP_DemurrageOutcome Apply(string iDataRoot, string iBankRoot, string iLettersRoot,
-                                                 string iDate, bool iDryRun)
+        public static SCP_DemurrageOutcome Apply(string iDataRoot, string iBankRoot, string iDate, bool iDryRun)
         {
             var aProblems = new List<string>();
             Dictionary<string, int> aBalances;
@@ -245,18 +233,17 @@ namespace SCP.Core.Bank
                 aFail.Problems.Add($"讀不到餘額（{e.GetType().Name}: {e.Message}）⇒ **這一輪什麼都沒做**");
                 return aFail;
             }
-            return Apply(iDataRoot, iBankRoot, iLettersRoot, iDate, iDryRun, aBalances, aProblems);
+            return Apply(iDataRoot, iBankRoot, iDate, iDryRun, aBalances, aProblems);
         }
 
         /// <summary>同上，而餘額快照由呼叫端給（對拍用 —— 拿歷史上那一天的餘額重跑）。</summary>
-        public static SCP_DemurrageOutcome Apply(string iDataRoot, string iBankRoot, string iLettersRoot,
-                                                 string iDate, bool iDryRun,
+        public static SCP_DemurrageOutcome Apply(string iDataRoot, string iBankRoot, string iDate, bool iDryRun,
                                                  IReadOnlyDictionary<string, int> iBalances,
                                                  List<string>? iProblems = null)
         {
             var aOut = new SCP_DemurrageOutcome { DryRun = iDryRun };
             if (iProblems != null) aOut.Problems.AddRange(iProblems);
-            aOut.Plan = BuildPlan(iDataRoot, iBankRoot, iLettersRoot, iDate, iBalances);
+            aOut.Plan = BuildPlan(iDataRoot, iBankRoot, iDate, iBalances);
             aOut.Problems.AddRange(aOut.Plan.Problems);
 
             foreach (SCP_DemurrageBillRow aRow in aOut.Plan.Charges)
