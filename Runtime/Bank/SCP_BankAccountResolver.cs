@@ -13,6 +13,7 @@
 //
 // ⚠ 路徑一律由呼叫端傳進來（`iLettersRoot` / `iDataRoot`）——
 //   SCP_Core 不准知道任何宿主的安裝位置，寫死就會跨專案漂。
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
