@@ -383,8 +383,8 @@ SCP_DataPaths.QueueFolder(new SCP_DataRoot(aDataRoot), aPersona);
 
 | 步 | 做什麼 | 為什麼不能省 |
 |---|---|---|
-| ① 停 | `senate server stop`（`build.sh` / `build.ps1` 開頭已無條件呼叫，冪等） | Server 是**前景永駐**且執行的就是 `publish/senate.exe` ⇒ 不停它，publish 會撞 `GenerateBundle … Access to the path 'publish\senate.exe' is denied`（D10 血證，2026-09-03／09-04 各再撞一次） |
-| ② build | `./build.sh`（或 `.\build.ps1`） | 出廠驗收④ 會**自己起一顆臨時 Server** 做 round-trip，然後**在同一段裡收掉** |
+| ① 停 | `senate server stop`（`build.sh` 開頭已無條件呼叫，冪等） | Server 是**前景永駐**且執行的就是 `publish/senate.exe` ⇒ 不停它，publish 會撞 `GenerateBundle … Access to the path 'publish\senate.exe' is denied`（D10 血證，2026-09-03／09-04 各再撞一次） |
+| ② build | `./build.sh`（⚠ `build.ps1` 已於 2026-09-22 退場 —— 沒有第二個宿主實作了） | 出廠驗收④ 會**自己起一顆臨時 Server** 做 round-trip，然後**在同一段裡收掉** |
 | ③ 起 | `senate server start`（前景，開一個終端機掛著） | ⚠ **沒有人會幫你做這一步** —— ① 收掉的是你的、② 收掉的是它自己的，⇒ **build 結束時一定沒有 Server 在跑** |
 
 🩸 而漏掉 ③ 的症狀**不長得像「忘了起」**：下一個 `⤷Server` 的 Cmd 會 exit 3
