@@ -92,7 +92,7 @@ namespace SCP.Core.Cmd
             oResult.Lines.Add("");
             oResult.Lines.Add("執行位置：本地 " + (aAll.Count - aDelegated - aNotPorted - aServer)
                               + " ／ ⤷Unity " + aDelegated + " ／ ⤷Server " + aServer + " ／ ⛔未實作 " + aNotPorted
-                              + "　（⤷Unity ＝ **Editor 沒開就跑不完**；⤷Server ＝ **`senate server start` 沒跑就跑不完**；待移植的缺口見 help <name>）");
+                              + "　（⤷Unity ＝ **Editor 沒開就跑不完**；⤷Server ＝ **沒在跑會自動拉起一顆**（拉不起來仍然失敗，⛔ 不降級成本地跑）；待移植的缺口見 help <name>）");
             oResult.AddValue("delegated_count", aDelegated.ToString());
             oResult.AddValue("server_count", aServer.ToString());
             oResult.AddValue("not_ported_count", aNotPorted.ToString());
@@ -127,7 +127,7 @@ namespace SCP.Core.Cmd
                                   + "　⚠ **Editor 沒開就跑不完**");
             else if (iCmd.PortStatus == SCP_CmdPortStatus.DelegatedToServer)
                 oResult.Lines.Add("執行位置：⤷ Senate Server（走 AgentCommand 檔案協議，根是 Senate 自己的）"
-                                  + "　⚠ **`senate server start` 沒跑就跑不完，且不降級成本地跑**");
+                                  + "　⚠ **沒在跑會自動拉起一顆**（TASK-0267）——拉不起來／等不到上線 ⇒ **這一趟失敗**，⛔ 不降級成本地跑");
             else if (iCmd.PortStatus == SCP_CmdPortStatus.NotPorted)
                 oResult.Lines.Add("執行位置：⛔ 還沒有實作 —— 這是登記在案的缺口，不是打錯名字");
             if (iCmd.PortNote.Length > 0)
