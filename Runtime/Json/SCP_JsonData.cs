@@ -269,6 +269,9 @@ namespace SCP.Core.Json
         public int GetInt(string iKey, int iFallback)
         { var c = this[iKey]; return c.Exists && !c.IsNull ? c.AsInt() : iFallback; }
 
+        public double GetDouble(string iKey, double iFallback)
+        { var c = this[iKey]; return c.Exists && !c.IsNull ? c.AsDouble() : iFallback; }
+
         public bool GetBool(string iKey, bool iFallback)
         { var c = this[iKey]; return c.Exists && !c.IsNull ? c.AsBool() : iFallback; }
 
