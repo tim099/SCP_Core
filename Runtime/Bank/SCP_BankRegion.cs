@@ -98,6 +98,14 @@ namespace SCP.Core.Bank
             catch { return ""; }
         }
 
+        /// <summary>
+        /// **資料根 → 銀行帳本根**（上面那支的反向）。⚠ 同一條關係的另一個方向，
+        /// 住在同一個檔 —— ⛔ 呼叫端不要自己拼 `<資料根>/Bank`（TASK-0275 ⑥ 清舊路徑時
+        /// 發現 `bank-audit` 自己拼了一份、而且拼的還是**舊的**那個名字）。
+        /// </summary>
+        public static string BankRootOfDataRoot(string iDataRoot)
+            => Path.Combine(iDataRoot, SCP_TreasuryRequests.BankDirName);
+
         /// <summary>合法性 ＝ **能安全當檔名**。⚠ 與舊系統 `IsValidCurrencyId` 同一條規則。</summary>
         /// <remarks>含 `/` 或 `..` 就是寫到別的地方去，而寫檔會自動建目錄 ⇒ 症狀是憑空長出一個資料夾，不是錯誤。</remarks>
         public static bool IsValid(string? iRegion)

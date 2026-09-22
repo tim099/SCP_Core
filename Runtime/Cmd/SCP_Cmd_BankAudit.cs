@@ -31,9 +31,12 @@
 //
 //   ⚠ 而「把綁定值加進宇宙」之後，舊的 ③ 會**結構性地永遠是 0** ——
 //     一個不可能變紅的守衛不該繼續佔著錯誤欄位假裝在守。所以它改報**實體化狀態**並退出問題數。
-//   ⛔ 已知未量的缺口（誠實留著，不靜默）：綁定值與既有帳戶**只差大小寫**時（`Zeta`/`zeta`）
-//     沒有任何一格在報。resolver 的 `AddCanonical_NoLock` 註解說那代表 registry 有歧義、
-//     「要人去修，不該由解析器猜」—— 而現在也沒有人在替它量。**那要另開單，不在本次範圍。**
+//   ⭐ 2026-09-22（TASK-0275 ⑥）：上面那個「只差大小寫」的缺口**在帳號宇宙這一側消失了** ——
+//     帳戶來源換成新銀行的 `Bank/accounts/`（檔名是正規化過的小寫），而綁定檔存的是顯示寫法，
+//     ⇒ 兩邊一律用 `OrdinalIgnoreCase` 比。⛔ 它**不是**在猜：新銀行的身分規則本來就是
+//     `SCP_BankId.Normalize`（trim ＋ ToLowerInvariant），本 Cmd 只是照同一把尺讀。
+//     🩸 而這一格是換來源的當下量到的：不改比較方式的話，**13 位**會一次被報成
+//     「只靠合一成立、後台沒開過戶」—— 一句每一欄都合法的假話。
 //   ④ closed_acct   綁定指向已銷戶帳戶        ⇒ 🔴 最貴的一格
 //   ⑤ stale_reverse `bank_personas` 欄位還在  ⇒ 待清理（附它與正向差在哪，好判斷刪了會不會丟資訊）
 //
@@ -45,6 +48,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using SCP.Core.Bank;
 using SCP.Core.Json;
 using SCP.Core.Letters;
 
@@ -73,7 +77,7 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根目錄（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("region", "本區的區域（貨幣）ID。⛔ 必填，本 Cmd 不推導", iRequired: true),
-            new SCP_CmdArgSpec("data_root", "資料根 —— 帳戶檔（`Treasury/accounts/`）與 registry 都從這裡找", iRequired: true),
+            new SCP_CmdArgSpec("data_root", "資料根 —— 帳戶檔（`Bank/accounts/`）與 registry 都從這裡找", iRequired: true),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -92,8 +96,13 @@ namespace SCP.Core.Cmd
             // ── 帳號宇宙：帳戶檔 ∪ system_accounts ∪ agent_banks 值 ──────────────
             //    ⚠ 三者都要 —— 只看帳戶檔的話，還沒被寫過任何一筆的新帳戶會被判成不存在。
             string aRegistry = Path.Combine(aDataRoot, "AwakenInit", "_registry_meta.json");
-            var aKnown = new HashSet<string>(StringComparer.Ordinal);
-            var aClosed = new Dictionary<string, string>(StringComparer.Ordinal);
+            // ⚠ 帳號宇宙這幾個集合用 **OrdinalIgnoreCase**：新銀行的帳戶檔名是**正規化過的小寫**
+            //   （`SCP_BankId.Normalize`），而綁定檔與 registry 存的是顯示寫法（`Luna`／`Spectre`）。
+            //   🩸 實測（TASK-0275 ⑥ 把帳戶來源從舊 `Treasury/accounts` 換成 `Bank/accounts` 的那一刻）：
+            //     大小寫一比就把 **13 位**全報成「只靠合一成立、後台沒開過戶」——
+            //     那是一句每一欄都合法的假話，而它的下一步會是有人去「補開戶」一批已經存在的帳戶。
+            var aKnown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var aClosed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             SCP_JsonData? aMeta = null;
             if (File.Exists(aRegistry))
             {
@@ -109,8 +118,15 @@ namespace SCP.Core.Cmd
                     foreach (string aK in aMeta["closed_accounts"].Keys)
                         aClosed[aK] = aMeta["closed_accounts"].GetString(aK, "");
             }
-            string aAccDir = Path.Combine(aDataRoot, "Treasury", "accounts");
-            var aAccountFiles = new HashSet<string>(StringComparer.Ordinal);
+            // 🩸 TASK-0275 ⑥：這一行原本寫死 `Treasury/accounts` —— **舊路徑**。
+            //   新銀行 2026-09-18 起是唯一權威，而這支健檢還在拿一份**凍結的**帳戶清單當帳號宇宙。
+            //   ⇒ 症狀不是報錯：舊清單裡有的（`Tim`／`tavern-keeper`）它照收，
+            //     新開的（央行 `pacific-standard-…`）它看不到 ⇒ 「這個帳號不存在」與
+            //     「我在看另一本帳」在輸出上**逐字同形**（TASK-0260 那一族）。
+            //   ⛔ 而舊資料夾整包刪掉之後它會安靜地回「帳戶檔 0 份」——
+            //     那跟一棵剛開的新樹長得一模一樣。
+            string aAccDir = SCP_BankAccounts.AccountsDir(SCP_BankRegion.BankRootOfDataRoot(aDataRoot));
+            var aAccountFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (Directory.Exists(aAccDir))
                 foreach (string f in Directory.GetFiles(aAccDir, "*.json"))
                 {
@@ -141,7 +157,7 @@ namespace SCP.Core.Cmd
             //   ⚠ 這不是「多信任一張表」，是把**入帳那條路已經在用的定義**搬過來 ——
             //     兩邊用不同定義才是缺陷本身（TASK-0173）。
             //   ⛔ 銷戶仍然先判（見下方迴圈）：合一讓帳戶**存在**，不讓它**復活**。
-            var aUnified = new HashSet<string>(StringComparer.Ordinal);
+            var aUnified = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (KeyValuePair<string, string> aKv in aBinding)
                 if (!aKnown.Contains(aKv.Value)) aUnified.Add(aKv.Value);
             foreach (string aId in aUnified) aKnown.Add(aId);
