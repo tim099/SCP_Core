@@ -97,6 +97,9 @@ namespace SCP.Core.Bank
 
         public static List<SCP_PayoutRequest> LoadPendingPayouts(string iDataRoot, List<string>? oProblems = null)
         {
+            // 🚚 舊路徑自動搬（TASK-0275）。⛔ 這一格特別要命：單據沒搬 ⇒ 待審清單回「0 張」，
+            //   而「真的沒有待審」與「單子在另一個資料夾」在畫面上是**同一句話**。
+            SCP_BankMigration.EnsureOnce(iDataRoot);
             var aOut = new List<SCP_PayoutRequest>();
             foreach (string aFile in ScanJson(PayoutDir(iDataRoot), oProblems))
             {
@@ -123,6 +126,7 @@ namespace SCP.Core.Bank
 
         public static List<SCP_TransferRequest> LoadPendingTransfers(string iDataRoot, List<string>? oProblems = null)
         {
+            SCP_BankMigration.EnsureOnce(iDataRoot);   // 🚚 同上（TASK-0275）
             var aOut = new List<SCP_TransferRequest>();
             foreach (string aFile in ScanJson(TransferDir(iDataRoot), oProblems))
             {

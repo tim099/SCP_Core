@@ -31,6 +31,11 @@ namespace SCP.Core.Bank
         /// </summary>
         public static string Read(string iDataRoot, out string? oWhy)
         {
+            // 🚚 舊路徑自動搬（TASK-0275，冪等；已是新版時零成本）——⛔ 不是讀取端 fallback。
+            //   🩸 沒有這一格的話，BTC 那棵樹的設定檔還在 `Treasury/` ⇒ 這裡讀不到 ⇒ 靜靜退回
+            //     預設區域 `Ducat`，而那是一個**完全合法的字串** ⇒ 全員帳號一次解析不到，
+            //     且畫面上跟「這棵樹真的就是 Ducat」一模一樣（2026-09-22 本區實地踩過一次）。
+            SCP_BankMigration.EnsureOnce(iDataRoot);
             oWhy = null;
             string aPath = SettingsPath(iDataRoot);
             if (!File.Exists(aPath)) { oWhy = $"設定檔不在（{aPath}）⇒ 用預設"; return DefaultRegion; }
