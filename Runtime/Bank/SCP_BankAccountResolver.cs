@@ -70,7 +70,13 @@ namespace SCP.Core.Bank
         // 權威：persona（小寫）→ 帳號
         static readonly Dictionary<string, string> s_PersonaToAccount = new Dictionary<string, string>(StringComparer.Ordinal);
         // 反向：帳號 → 綁在它底下的 persona（**由正向導出，不是另一張表**）
-        static readonly Dictionary<string, List<string>> s_AccountToPersonas = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        // ⚠ 這張表比對用 **OrdinalIgnoreCase**，⛔ 不是 Ordinal（TASK-0270，2026-09-22）：
+        //   帳本寫的 `account_id` 是小寫（`sirius` / `myth`），綁定檔存的是原拼法（`Sirius` / `Myth`）。
+        //   Ordinal 之下 `sirius` 查到的是**空名單**，而空名單跟「這個帳戶底下真的沒有人」同形。
+        //   🩸 上一版的補法是先拿 `account_id` 去跑 `Resolve` 當大小寫歸一 —— 而那是 **persona → 帳號**
+        //     的表：`sirius`（persona）解出來是 `Spectre`，⇒ 帳戶 `Sirius` 的錢，券會發給 Spectre 底下三位。
+        //     ⇒ 大小寫要在**帳號自己這條軸**上歸一，⛔ 不借道人到帳號的那一跳。
+        static readonly Dictionary<string, List<string>> s_AccountToPersonas = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         // legacy：agent（小寫）→ 帳號
         static readonly Dictionary<string, string> s_AgentToAccount = new Dictionary<string, string>(StringComparer.Ordinal);
         // 別名（小寫）→ agent
@@ -299,6 +305,9 @@ namespace SCP.Core.Bank
         /// 綁在某帳號底下的 persona 清單（排序過）。
         /// <para>⭐ **由正向綁定檔導出** —— ⛔ 不讀 registry 的 `bank_personas`
         /// （那張表沒有寫入端，已於 2026-09-07 退出解析；它 2026-08-20 錯了 18 天沒有人喊）。</para>
+        /// <para>⭐ 帳號**大小寫不敏感**（TASK-0270）⇒ 呼叫端可以直接餵帳本的 `account_id`，
+        /// ⛔ **不要**先拿它去跑 <see cref="Resolve"/> 歸一：那是 persona → 帳號的表，
+        /// 撞名時會把一個帳戶的錢算到另一個帳戶的人頭上。</para>
         /// </summary>
         public static List<string> GetBoundPersonas(string iLettersRoot, string iDataRoot, string iRegion, string iAccountId)
         {

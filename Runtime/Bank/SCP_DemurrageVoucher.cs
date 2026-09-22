@@ -159,21 +159,22 @@ namespace SCP.Core.Bank
                 };
                 aRow.TotalVouchers = aPol.VoucherEnabled ? e.Amount * aPol.VoucherRatio : 0;
 
-                // 🩸 **先把帳本上的 account_id 歸一，再去查綁定** ——
-                //   帳本寫的是小寫（`myth` / `altair` / `frs`），而綁定檔存的是原拼法（`Myth` / `Altair` / `FRS`），
-                //   而綁定名單是 Ordinal 比對 ⇒ 直接拿帳本那個字串去查會**查到 0 個人**。
-                //   ⚠ 那個失效樣子最毒：它不是錯誤，是一個**看起來很合理的空名單** ——
-                //     報表會說「這個帳戶底下沒有人」，而實際上那底下有五個。
-                //   ⭐ 2026-09-22 第一次 preview 就是這樣：5 個帳戶有 3 個報「沒有 persona」。
-                //     ⇒ 抓到它的是 preview（零寫入），⛔ 不是我更仔細。
-                SCP_BankResolution aRes = SCP_BankAccountResolver.Resolve(iLettersRoot, iDataRoot, iRegion, e.AccountId);
-                string aCanonical = aRes.IsUnresolved ? e.AccountId : aRes.AccountId;
-                aRow.CanonicalAccountId = aCanonical;
+                // 🩸 **帳本的 `account_id` 直接拿去查綁定，⛔ 中間不插 persona 解析**（TASK-0270，2026-09-22）。
+                //   上一版在這裡跑 `Resolve` 當大小寫歸一 —— 而那支是 **persona → 帳號** 的表，
+                //   ⇒ 撞名時它換掉的不只是拼法，是**換了一個帳戶**：
+                //     實測（BTC，2026-09-22）`Resolve("sirius")` → `Spectre`（persona Sirius 用 Spectre 的帳），
+                //     而帳戶 `Sirius` 的主人是 apex-one ⇒ **錢從 apex-one 的帳戶出，券發給 Spectre 底下三位**。
+                //   ⚠ 它今天**不會叫**：券政策未開、`total_vouchers = 0`，要到開政策那天才現形。
+                //   ⭐ 大小寫那半改由綁定表自己吃（`s_AccountToPersonas` 換 `OrdinalIgnoreCase`）——
+                //     歸一要走**帳號自己那條軸**，⛔ 不借道人到帳號的那一跳。
+                //   ⚠ 而帳本上若真的寫了一個 persona 名，現在會落成「底下沒有任何 persona」並大聲報 ——
+                //     那是**安全側**：發不出去看得見，發給別人看不見。
+                aRow.CanonicalAccountId = e.AccountId;   // 帳本那個字串就是權威；本層不再改寫它
 
                 // ⚠ 綁定名單**由正向綁定檔導出**（`SCP_BankAccountResolver`）——
                 //   ⛔ 不讀 registry 的 `bank_personas`：那張表 2026-09-07 就退出解析，
                 //     而它今天還有兩筆是舊值 ⇒ 照它算，有人會拿到「0 個 persona」而沒有任何一層會叫。
-                aRow.Personas = SCP_BankAccountResolver.GetBoundPersonas(iLettersRoot, iDataRoot, iRegion, aCanonical);
+                aRow.Personas = SCP_BankAccountResolver.GetBoundPersonas(iLettersRoot, iDataRoot, iRegion, e.AccountId);
                 if (aRow.Personas.Count > 0 && aRow.TotalVouchers > 0)
                 {
                     // 🩸 這裡**不 floor 丟掉零頭**（那是 2026-09-22 的佔位做法，Tim 當天就否掉了）：
