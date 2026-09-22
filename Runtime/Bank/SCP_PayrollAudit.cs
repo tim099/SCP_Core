@@ -160,17 +160,32 @@ namespace SCP.Core.Bank
                 return r;
             }
 
-            // ① 帳上那一天的 work_post ref
+            // ① 帳上的 work_post ref —— **那一天與它之後的每一天**。
+            // 🩸 2026-09-22 血證：此前只掃「那一天」，而**補款的分錄一律寫在跑補款的那一天**
+            //   ⇒ 我補完 09-18／09-21 共 250 筆（每筆都帶正確的 `ref`），分錄全落在 09-22 那一夾，
+            //     而稽核照樣報「09-18 差 14／09-21 差 235」。
+            //   ⛔ 那個紅燈是**假的**，而它最危險的地方是它叫人「再補一次」——
+            //     照著它補就是把同一批錢發第二次。
+            // ⇒ 判準改成：**分錄不會早於它補的那一則訊息**，所以只往後掃。
+            //   ⚠ 往後掃的代價是 O(今天 − 那一天)；量測用的日子通常很近，可接受。
+            //   ⛔ 不掃「之前」的日子：那不會有答案，只會多讀一堆檔。
             var aPaidRefs = new HashSet<string>(StringComparer.Ordinal);
             string aBankRoot = Path.Combine(iDataRoot, BankDirName);
-            foreach (SCP_BankEntry e in SCP_BankClosing.EnumerateDay(aBankRoot, iDayKey, r.Problems))
+            foreach (string aLedgerDay in SCP_BankClosing.LedgerDayKeys(aBankRoot))
             {
+                if (string.CompareOrdinal(aLedgerDay, iDayKey) < 0) continue;
+                bool aIsSameDay = string.Equals(aLedgerDay, iDayKey, StringComparison.Ordinal);
+                foreach (SCP_BankEntry e in SCP_BankClosing.EnumerateDay(aBankRoot, aLedgerDay, r.Problems))
+                {
                 if (string.Equals(e.Kind, WorkPostKind, StringComparison.Ordinal))
                 {
-                    r.LedgerWorkPostEntries++;
+                    // ⚠ `LedgerWorkPostEntries` 仍只數**當天**那一夾 —— 它是「那天的帳長什麼樣」的讀數，
+                    //   把後來補的算進去會讓它跟 `Paid` 混成同一個意思。
+                    if (aIsSameDay) r.LedgerWorkPostEntries++;
                     if (e.Ref.Length > 0) aPaidRefs.Add(e.Ref);
                     continue;
                 }
+                if (!aIsSameDay) continue;   // 補償性入帳只看當天（它本來就是「那天被補了多少」）
                 // 補償性入帳：只算 credit（`payout_request` 同時會有央行那一腳 debit，
                 // ⛔ 兩腳都算會把金額算成 0 —— 而 0 看起來像「沒有補過」）。
                 if (string.Equals(e.Kind, CompensationKind, StringComparison.Ordinal)
@@ -178,6 +193,7 @@ namespace SCP.Core.Bank
                 {
                     r.CompensationEntries++;
                     r.CompensationTokens += e.Amount;
+                }
                 }
             }
 

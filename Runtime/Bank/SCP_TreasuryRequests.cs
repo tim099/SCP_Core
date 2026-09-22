@@ -42,6 +42,41 @@ namespace SCP.Core.Bank
         public string RequesterAgent = "";
         public string DecidedBy = "";
         public string DecisionNote = "";
+
+        /// <summary>
+        /// 錢從哪來：<c>central</c>＝央行撥款（公庫變少）／<c>mint</c>＝**增發**（憑空生出，不碰任何帳戶）。
+        /// <para>空字串＝單子沒宣告 ⇒ 由裁決端決定（預設 <c>central</c>，維持舊行為）。</para>
+        /// <para>🩸 為什麼要分（Tim 2026-09-22 拍板）：**補薪本來就該是增發** ——
+        /// 那筆錢是勞動新產生的價值，不是從公庫搬過來的。
+        /// 而 2026-09-22 的 114 token 補發走了央行撥款 ⇒ 公庫平白少了 114，
+        /// 事後得再增發一筆補回去（`payout_shape_correction`）。
+        /// ⛔ 兩種錢在單子上長得一模一樣（都是「請款 N token 給 X」），
+        /// 而它們對公庫的影響相反 —— **審批的人要看得出自己在批哪一種**。</para>
+        /// </summary>
+        public string Funding = "";
+    }
+
+    /// <summary>請款的資金來源。</summary>
+    public static class SCP_PayoutFunding
+    {
+        /// <summary>央行撥款：公庫 → 目標戶，總量守恆。</summary>
+        public const string Central = "central";
+
+        /// <summary>增發：憑空生出給目標戶，⛔ 不碰任何帳戶（總量變多）。</summary>
+        public const string Mint = "mint";
+
+        /// <summary>單子沒宣告時用哪一種 —— **央行**（維持 2026-09-22 之前的行為，⛔ 不默默改成增發）。</summary>
+        public const string Default = Central;
+
+        public static bool IsValid(string iValue)
+            => string.Equals(iValue, Central, StringComparison.Ordinal)
+            || string.Equals(iValue, Mint, StringComparison.Ordinal);
+
+        /// <summary>人讀的一句話（審批畫面與 CLI 都印它 —— ⛔ 兩種錢不可以長得一樣）。</summary>
+        public static string Describe(string iValue)
+            => string.Equals(iValue, Mint, StringComparison.Ordinal)
+               ? "**增發**（憑空生出，⛔ 不碰公庫；總量變多）"
+               : "**央行撥款**（公庫 → 目標戶，公庫變少）";
     }
 
     public sealed class SCP_TransferRequest
@@ -118,6 +153,9 @@ namespace SCP.Core.Bank
                     Reason = aJd.GetString("reason", ""),
                     RequesterPersona = aJd.GetString("requester_persona", ""),
                     RequesterAgent = aJd.GetString("requester_agent", ""),
+                    // ⚠ 缺席＝單子沒宣告，⛔ **不在這裡補預設** —— 補了的話「開單人選了央行」
+                    //   與「開單人沒說」就同形，而裁決端要看得出後者（那代表它要自己決定）。
+                    Funding = aJd.GetString("funding", ""),
                 });
             }
             aOut.Sort((a, b) => string.CompareOrdinal(a.RequestedAt, b.RequestedAt));

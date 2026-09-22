@@ -160,7 +160,7 @@ namespace SCP.Core.Cmd
                         return SCP_CmdResult.Fail(4,
                             "✗ `agent` 缺席，而**你沒給 region** —— 這不是「" + iPersona + " 沒有帳號」",
                             "  `agent`（帳號 id）讀的是 bank/<region>.md，沒有 region 就沒有要讀的檔",
-                            "  ⇒ 補 --arg region=<區域 ID>（真相源：宿主的 Treasury/bank_settings.json 的 currency_id）");
+                            "  ⇒ 補 --arg region=<區域 ID>（真相源：宿主的 Bank/bank_settings.json 的 currency_id）");
                     return SCP_CmdResult.Fail(4,
                         "✗ " + iPersona + " 沒有 `" + iField + "` 這一欄",
                         "  ⚠ 這是**查無該欄**，不是「那一欄是空的」—— 前者要改指令，後者要去設定",

@@ -24,7 +24,9 @@ namespace SCP.Core.Cmd
         public override string Summary => "列出酒館的「區」（seq 軸）：區名 → ref → 那條 ref 的 tip 有多新";
 
         public override string Details =>
-            "⭐ **哪些分支是區由分支自報**，不另外維護對照表：該 ref 的 `Treasury/bank_settings.json`\n"
+            "⭐ **哪些分支是區由分支自報**，不另外維護對照表：該 ref 的 `Bank/bank_settings.json`\n"
+            + "   （⚠ 2026-09-22 從 `Treasury/` 搬過來，TASK-0274；**跨 ref 讀仍會退回舊路徑** ——\n"
+            + "   　別區的分支與所有歷史 commit 都還在那裡，只認新路徑會讓那一區**靜默從清單消失**）\n"
             + "   有 `currency_id` 才算一區（已量：`origin/main → BTC`、`origin/LY → Florin`；\n"
             + "   `Bar` / `Dev` / `RingWorld` 沒有那個檔 ⇒ 自動不在清單裡）。\n"
             + "⚠ tip 是**上次 fetch 的快照**，不是遠端此刻 —— 本 Cmd **不自動 fetch**（讀取工具不偷連網）。\n"
@@ -59,7 +61,8 @@ namespace SCP.Core.Cmd
             for (int i = 0; i < aProblems.Count; ++i) aResult.Lines.Add("⚠ " + aProblems[i]);
 
             aResult.Lines.Add("· 掃描範圍：" + SCP_TavernRegion.RemotePrefix
-                              + "　判準＝該 ref 有 `Treasury/bank_settings.json` 的 `currency_id`");
+                              + "　判準＝該 ref 有 `Bank/bank_settings.json` 的 `currency_id`"
+                              + "（找不到就退回舊路徑 `Treasury/bank_settings.json` —— 歷史 ref 還在那裡）");
             aResult.Lines.Add("· ⛔ 不自動 fetch ⇒ 上面的 tip 是上次 fetch 的快照，不是遠端此刻");
             aResult.Lines.Add("· 讀某一區的訊息：" + SCP_CmdRegistry.Invoke(
                 "msg --arg region=<區名> --arg seq=<號>"));
