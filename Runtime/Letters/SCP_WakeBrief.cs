@@ -21,6 +21,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using SCP.Core.Bank;
 using SCP.Core.Books;
 using SCP.Core.Paths;
 using SCP.Core.Tasks;
@@ -183,6 +184,7 @@ namespace SCP.Core.Letters
                 TreeSection(iLettersRoot, iPersona, aPointer),
                 RecallSection(iLettersRoot, iPersona, iWakeCount),
                 MaintenanceSection(iLettersRoot, iPersona, iWakeCount, iDataRoot),
+                PayrollSection(iLettersRoot, iDataRoot, aRegion),
                 PeopleSection(iLettersRoot, iPersona),
                 BookshelfSection(iLettersRoot, iPersona, iWakeCount, iDataRoot),
                 WritingSection(iDataRoot, iPersona),
@@ -554,6 +556,54 @@ namespace SCP.Core.Letters
             aLines.Add(BugCountLine(iDataRoot));
             aLines.Add(OpenTaskCountLine(iPersona, iDataRoot));
             return new SCP_BriefSection { Title = "📋 §6 記憶維護狀態", Lines = aLines, Essential = true };
+        }
+
+        // ── §6.1 領薪差集 ─────────────────────────────────────────
+        // 區塊職責：昨天「有幾則訊息」對上「帳上有幾筆 work_post」，差多少（TASK-0273 ⑥）。
+        // 物理意義：⭐ **量結果，⛔ 不偵測成因** —— 2026-09-22 同一天量到三種成因、外觀完全相同
+        //          （發文回 `Posted`、錢沒動、只有 Editor Console 一行）。偵測成因的守衛明天會被第四種繞過去。
+        // 數值影響：純讀。⛔ 一毛錢不動、一個檔不寫。
+        //
+        // 🩸 為什麼掛在**這裡**（早安 brief 是必經路）：這隻的原形是
+        //   「整天 0 筆落帳、酒館 135 則訊息、**沒有任何一層喊**」——
+        //   抓到它的是同事自己去翻帳本數檔案。⇒ 一個要人記得去查的稽核，等於沒有稽核。
+        // ⚠ 量**昨天**不是今天：今天還在長，今天的差集一定偏高而那個紅燈不帶資訊。
+        // ⚠ 本節不判「該補多少」—— category 計不計酬的設定在 Unity 那側，本層讀不到。
+        //   要細節跑 `senate cmd payroll-audit`（它會按 category／persona／room 分組）。
+        static SCP_BriefSection PayrollSection(string iLettersRoot, string? iDataRoot, string iRegion)
+        {
+            var aLines = new List<string>();
+            if (string.IsNullOrEmpty(iDataRoot))
+            {
+                aLines.Add("- 💸 領薪差集：**未量**（本次沒給資料根 —— 未量 ≠ 沒缺口）");
+                return new SCP_BriefSection { Title = "💸 §6.1 領薪差集（昨天）", Lines = aLines, Essential = true };
+            }
+            try
+            {
+                string aDay = DateTime.UtcNow.Date.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                string aRegionArg = string.Equals(iRegion, "unstated", StringComparison.Ordinal) ? "" : iRegion;
+                SCP_PayrollAuditResult a = SCP_PayrollAudit.Audit(iDataRoot!, aDay, iLettersRoot, aRegionArg);
+                aLines.Add("- " + a.HeadLine());
+                aLines.Add("  · " + a.Why);
+                if (a.Missing > 0)
+                    aLines.Add("  · by category：" + JoinCounts(a.MissingByCategory)
+                               + "　→ 細節 `senate cmd payroll-audit --arg day=" + aDay + "`");
+            }
+            catch (Exception e)
+            {
+                // ⚠ 稽核自己炸掉**要說**，⛔ 不可以靜默不印 —— 那一節不見跟「沒有缺口」同形。
+                aLines.Add("- ⚠ 領薪差集**量不動**（" + e.GetType().Name + "：" + e.Message + "）⛔ 不是沒缺口");
+            }
+            return new SCP_BriefSection { Title = "💸 §6.1 領薪差集（昨天）", Lines = aLines, Essential = true };
+        }
+
+        static string JoinCounts(Dictionary<string, int> iMap)
+        {
+            if (iMap.Count == 0) return "（無）";
+            var aParts = new List<string>();
+            foreach (KeyValuePair<string, int> kv in iMap) aParts.Add(kv.Key + " " + kv.Value);
+            aParts.Sort(StringComparer.Ordinal);
+            return string.Join("／", aParts);
         }
 
         /// <summary>見林一單位幾個 wake（gap 到這個數就算 OVERDUE）。對齊 python BRIEF 那側的 10。</summary>
