@@ -400,7 +400,13 @@ namespace SCP.Core.Gui
                         + "清單以頁面為準（session 存的是它），但 Create('" + kv.Key + "') 仍然查得到，請把兩邊改成同一個字");
 
                 string? aGroup = (aProbe as SCP_GuiToolPage)?.MenuGroup;
-                if (aGroup == null) continue;   // opt-in：沒宣告分組就不列
+                // opt-in：null ＝ 不列（D16 拍板，取代 UCL 的 `ShowInPageMenu` bool）。
+                //   ⚠ 空字串**不是** null ⇒ 「列進去、沒有分組名」照樣會列。
+                // 🔴 這裡只把它從**清單**裡拿掉，⛔ **沒有**把它從目錄裡拿掉 ——
+                //   `Create(key)` 照樣造得出來，而那是彈窗／子頁能活過 CLI 每次新 process 的唯一原因
+                //   （`RestorePath` 對每一層 key 叫一次 `Create`，回 null 就停在那一層）。
+                //   ⇒ 「不列」與「不是頁」是兩件事，後者才走 `[SCP_PageIgnore]`。
+                if (aGroup == null) continue;
 
                 Type aType = aProbe.GetType();
                 aList.Add(new SCP_GuiPageEntry(aKey, aProbe.Title, aGroup, aType.Name, aType.FullName ?? aType.Name));

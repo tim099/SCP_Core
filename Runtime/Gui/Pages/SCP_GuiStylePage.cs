@@ -24,7 +24,12 @@ namespace SCP.Core.Gui
 
         public override string Title { get { return "介面尺寸"; } }
 
-        /// <summary>隱藏 主頁已經有設定</summary>
+        /// <summary>
+        /// null ＝ **不列進入口頁的清單**（見 <see cref="SCP_GuiToolPage.MenuGroup"/>）。
+        /// <para>理由：這一頁**從工具列進**（入口頁自己畫了那顆鈕），清單上再放一次是同一個入口兩個位置。</para>
+        /// <para>⚠ 不列**不等於**叫不到：它照樣被收錄，`Create("style")` 與 `--page style` 都進得去
+        /// —— 那也是 `senate ui --page style` 截圖驗收走的路。</para>
+        /// </summary>
         public override string? MenuGroup { get { return null; } }
 
         protected override void DrawContent(SCP_Ui g)
