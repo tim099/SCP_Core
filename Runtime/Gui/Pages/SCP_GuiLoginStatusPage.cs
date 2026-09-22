@@ -65,10 +65,13 @@ namespace SCP.Core.Gui
 
         /// <summary>信件庫根解出來了沒有（<c>Error</c> 有值或值是空的 ⇒ 沒有資料來源）。</summary>
         bool HasRoot { get { return m_Root.Error == null && m_Root.Value.Length > 0; } }
-
+        protected override void TopBarButtons(SCP_Ui iUi)
+        {
+            base.TopBarButtons(iUi);
+            DrawRootRow(iUi);
+        }
         protected override void DrawContent(SCP_Ui g)
         {
-            DrawRootRow(g);
             if (!HasRoot)
             {
                 // 三態不同形：「沒設定根」與「取不到」都不是「這裡沒有人」，而它們彼此也不同形。
@@ -97,10 +100,9 @@ namespace SCP.Core.Gui
         //   （2026-09-05 截圖實測）。純文字那側看起來正常 —— 兩側不同形，而只有截圖看得到。
         void DrawRootRow(SCP_Ui g)
         {
-            g.Note("· persona 信件庫根：`" + (m_Root.Value.Length > 0 ? m_Root.Value : "（解不出來）")
-                   + "`　來源：" + m_Root.Origin + "　—— 設定在「路徑管理」頁，本頁只讀");
 
-            using (g.Row())
+
+            //using (g.Row())
             {
                 if (g.Button("重新讀取", "login/reload"))
                 {
@@ -113,6 +115,8 @@ namespace SCP.Core.Gui
                     m_Message = "・已重新掃描（路徑沒有重讀 —— 要連路徑一起重讀請按「重新讀取」）";
                 }
             }
+            g.Note("· persona 信件庫根：`" + (m_Root.Value.Length > 0 ? m_Root.Value : "（解不出來）")
+                + "`　來源：" + m_Root.Origin + "　—— 設定在「路徑管理」頁，本頁只讀");
         }
 
         // ── 狀態 ──────────────────────────────────────────────────────
