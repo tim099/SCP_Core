@@ -76,14 +76,13 @@ namespace SCP.Core.Gui
         {
             using (g.Box("頁面"))
             {
-                foreach (string d in m_Catalog.Diagnostics) g.Note($"⚠ 頁面清單：{d}");
-
-                // ⭐ 反射發現：**掃到了、但沒登記**的頁要看得見（Tim 2026-08-30 拍板的形狀）。
-                //   log 一行然後跳過等於沒說 —— 清單上少一頁沒有人會發現。
-                //   ⚠ assembly 由宿主給（見 ISCP_GuiAppContext.PageAssemblies）：
-                //     .NET 是用到才載 assembly，本層自己抓「現在載了哪些」會隨執行路徑變，而那不報錯。
-                foreach (string d in m_Catalog.Discover(m_Ctx.PageAssemblies))
-                    g.Note($"🟥 未登記的頁：{d}");
+                // ⭐ 一個落點，兩種來源：**自動收頁的缺陷**（沒有 PageKey／key 撞名／ctor 形狀不符）
+                //   與**探測時的問題**（建不出來的頁、key 對不上）都在 `Diagnostics` 裡。
+                //   🩸 2026-09-22（TASK-0276）之前這裡有第二個迴圈叫 `m_Catalog.Discover(...)`，
+                //   拿「程式碼裡有、目錄裡沒有」的差集畫紅字。改成自動收頁之後**那個差集不存在了**
+                //   （目錄就是程式碼），⇒ 那支會永遠回 0 筆，而 0 筆現在的意思是「對得上」。
+                //   ⛔ 留一個永遠綠的燈比沒有燈危險 —— 它看起來像有人在看。所以 `Discover` 整支退場。
+                foreach (string d in m_Catalog.Diagnostics) g.Note($"🟥 頁面清單：{d}");
 
                 if (m_Catalog.Entries.Count == 0)
                 {

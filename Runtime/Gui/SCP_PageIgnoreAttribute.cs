@@ -11,7 +11,13 @@ using System;
 
 namespace SCP.Core.Gui
 {
-    /// <summary>這個型別不是真的頁（測試探針之類）—— 不列進「未登記的頁」警示。</summary>
+    /// <summary>
+    /// 這個型別不是真的頁（測試探針之類）—— **連收錄都不會發生**。
+    /// <para>⚠ 2026-09-22（TASK-0276）語意**變重了**：此前它只是「不列進『未登記的頁』警示」，
+    /// 而目錄改成自動收頁之後，它擋的是 <see cref="SCP_GuiPageCatalog.AutoRegister"/> 的收錄本身
+    /// ⇒ 貼了它的型別不會被建、不會進清單、也不會被 `--page` 叫到。</para>
+    /// <para>⇒ 所以貼它的門檻也跟著變高：以前貼錯只是少一行警示，現在貼錯是**那頁消失**。</para>
+    /// </summary>
     [AttributeUsage(AttributeTargets.Class, Inherited = false)]
     public sealed class SCP_PageIgnoreAttribute : Attribute
     {
