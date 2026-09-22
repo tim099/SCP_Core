@@ -75,9 +75,17 @@ namespace SCP.Core.Tavern
                 "✓ 已切換：" + (aBefore.Ok ? aBefore.Describe() : "(之前讀不出來)") + "　⇒　" + aAfter.Describe(),
                 "設定檔：" + aPath);
             if (aTarget == SCP_TavernWriteHost.Server)
-                aResult.Lines.Add("⚠ 從現在起發文由 Server 寫；**它沒跑的話發文會整筆失敗**（⛔ 不降級）"
-                                  + " —— 先確認：`senate server status`／啟動：`senate server start --id "
-                                  + "tavern`。");
+                // ⚠ 這句的前半在 2026-09-22（TASK-0267）之後**改過**：此前是
+                //   「它沒跑的話發文會整筆失敗」，而 `Cmd_TavernWrite : ServerDelegateCmd` 現在
+                //   會先走 `SCP_ServerAutoStart.Ensure` ⇒ **沒在跑會自己拉一顆**（實測 212 ms）。
+                //   ⛔ 而「不降級」那半**沒有翻**：拉不起來仍然整筆失敗，絕不本地寫
+                //   （本地寫＝第二個寫入端，那正是這個開關存在的理由）。
+                //   🩸 為什麼特別標：這句話是在 autostart 之前寫的，而它不會叫 ——
+                //   一句過期的警告讀起來跟一句對的警告一模一樣，而它會讓人先去手動開 Server。
+                aResult.Lines.Add("⚠ 從現在起發文由 Server 寫。**它沒在跑會自動拉起一顆**"
+                                  + "（TASK-0267）；⛔ 拉不起來仍然整筆失敗、**不降級**成本地寫。"
+                                  + " —— 看現況：`senate server status --id tavern`／"
+                                  + "要手動開：`senate server start --id tavern`。");
             aResult.AddValue("tavern_writer", aSet);
             return aResult;
         }
