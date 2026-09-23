@@ -54,7 +54,16 @@ namespace SCP.Core.Bank
         public bool ResolverAvailable;       // 拿不到 lettersRoot/region 時＝false ⇒ Unresolvable 未扣
         public int Candidates;               // 應該要領到的那些則
         public int Paid;                     // 帳上有對應 ref 的
-        public int Missing;                  // 差集
+
+        // 🔴 **走第二條路結清的**（請款補發，逐則 ref 記在 `payroll_settled.json`）。
+        //   ⛔ 刻意**不併進 `Paid`**：兩者的憑據強度不同 —— `Paid` 背後是一筆帶 ref 的分錄，
+        //     這一格背後只有一份清單。壓成同一個數字就是把「這筆錢是怎麼付的」丟掉，
+        //     而那正是下一次有人來查這一天時要問的第一件事。
+        public int Settled;
+        // ⚠ 清單讀不動時為 true —— **它不是 0**。讀不到就等於「不知道哪些已經結清過」，
+        //   而靜默當成空集合的樣子，跟「真的沒有人結清過」逐字相同。
+        public bool SettledUnreadable;
+        public int Missing;                  // 差集（⛔ 已扣掉 Settled）
         public int LedgerWorkPostEntries;    // 帳上當日 work_post 總筆數（含對不上任何訊息的）
         public int LedgerRefsUnmatched;      // 帳上有 ref 而找不到對應訊息的筆數（比對關係的體檢）
 
@@ -91,10 +100,18 @@ namespace SCP.Core.Bank
 
             string aComp = CompensationTokens > 0
                 ? "　（⚠ 當日另有請款撥款 **" + CompensationTokens + "** token／"
-                  + CompensationEntries + " 筆 —— ⛔ 那些不帶逐則 ref，本層**沖不掉**差集，只並排給你看）"
+                  + CompensationEntries + " 筆 —— ⚠ 金額只並排給你看；**逐則沖銷走 `"
+                  + SCP_PayrollAudit.SettledFileName + "`**，見「結清」那一欄）"
                 : "";
+            // ⛔ 結清 0 筆時不印那一欄（別讓每一天都多一個 0）——
+            //   ⚠ 而「讀不動」一定要印：它跟 0 在數字上同形，差別只在這一行字。
+            string aSettled = Settled > 0 ? " ／ 結清 " + Settled : "";
+            // ⚠ 措辭刻意中性：**「沒讀到」涵蓋「不存在」與「讀壞了」兩種**，而本行說不出是哪一種
+            //   ⇒ 斷定原因的那句話寫在 `Problems`（那裡才有讀數）。⛔ 這一行不准替它猜。
+            if (SettledUnreadable)
+                aSettled += " ／ ⚠ **已結清清單沒讀到 ⇒ 差集偏高**（原因見問題欄）";
             return aMark + "（" + DayKey + "）：訊息 " + Messages
-                 + " ／ 應計酬 " + Candidates + " ／ 帳上 " + Paid
+                 + " ／ 應計酬 " + Candidates + " ／ 帳上 " + Paid + aSettled
                  + " ／ **差 " + Missing + "**" + aComp;
         }
     }
@@ -120,6 +137,19 @@ namespace SCP.Core.Bank
         public const string TransitionDayKey = "2026-09-17";
         public const string RoomsRelPath = "ChatTavern/rooms";
         public const string BankDirName = "Bank";
+
+        /// <summary>
+        /// 🔴 **第二條合法的完成路徑**：走請款補發的那些則。請款分錄不帶逐則 `ref`
+        /// ⇒ 它們另外記在這份清單裡（`<Bank>/payroll_settled.json`，`settled[].refs`）。
+        /// ⚠ 檔名與結構**必須與 Unity 那側的 `UCL_TavernPostRewardBackfill.SettledFileName` 逐字相同** ——
+        ///   那支補款工具讀它是為了「不要再付一次」，本層讀它是為了「不要再報一次」。
+        /// 🩸 而這一格的由來要寫死：本檔原本**知道有這 114 則、也知道它們付過了**
+        ///   （`CompensationEntries` 那段註解逐字寫著「稽核會每天對那一天亮燈…人會在第三天學會忽略它」），
+        ///   而當時的判斷是「要逐則證明，而**證據不存在**」⇒ 選擇只把金額擺在旁邊。
+        ///   ⇒ 那句話**寫下時為真**：這份清單是後來才長出來的。而**沒有任何一層會回來更新它** ——
+        ///   於是一個寫對了的定語，變成了一盞每天對著已結清的帳尖叫的燈。
+        /// </summary>
+        public const string SettledFileName = "payroll_settled.json";
 
         /// <summary>
         /// 🔴 `ref` 的形狀 —— 與 Unity 那側的 `Cmd_Tavern.PostRewardSourceRef` **必須逐字相同**。
@@ -197,6 +227,55 @@ namespace SCP.Core.Bank
                 }
             }
 
+            // ①-bis 走**第二條路**結清的 refs（請款補發 ⇒ `payroll_settled.json`）。
+            // 🩸 少了這一段的代價是實測出來的：2026-09-22 那天 114 則全部在這份清單裡，
+            //   而本層每天把它們報成「⚠ 領薪有缺口」—— 每一個人的早安 brief 都會看到。
+            //   ⇒ 而在那一行上，**真缺口與已結清逐字同形**。
+            var aSettledRefs = new HashSet<string>(StringComparer.Ordinal);
+            string aSettledPath = Path.Combine(aBankRoot, SettledFileName);
+            if (File.Exists(aSettledPath))
+            {
+                try
+                {
+                    SCP_JsonData aSettledDoc = SCP_JsonParser.Parse(File.ReadAllText(aSettledPath));
+                    SCP_JsonData aBatches = aSettledDoc["settled"];
+                    if (!aBatches.IsArray)
+                    {
+                        // ⚠ 檔在、而形狀不是我以為的那個 ⇒ 那**不是**「沒有結清過」。
+                        r.SettledUnreadable = true;
+                        r.Problems.Add(SettledFileName + "：`settled` 不是陣列 ⇒ 本次讀不到任何已結清 ref");
+                    }
+                    else
+                    {
+                        for (int bi = 0; bi < aBatches.Count; bi++)
+                        {
+                            SCP_JsonData aRefs = aBatches[bi]["refs"];
+                            if (!aRefs.IsArray) continue;
+                            for (int ri = 0; ri < aRefs.Count; ri++)
+                            {
+                                string aOne = aRefs[ri].AsString();
+                                if (aOne.Length > 0) aSettledRefs.Add(aOne);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // ⛔ 讀不動**要出聲**：靜默當空集合＝退回本次要修的那個誤報，
+                    //   而誤報的樣子跟正常運作一模一樣。
+                    r.SettledUnreadable = true;
+                    r.Problems.Add(SettledFileName + "：" + ex.GetType().Name + ": " + ex.Message
+                                 + " ⇒ 已結清的那些則**沖不掉** ⇒ 差集偏高（⛔ 不是漏發）");
+                }
+            }
+
+            // 🔴 **檔不存在**：那在一棵從沒用過請款補發的樹上是合法的，所以預設不出聲。
+            //   ⚠ 而有一種情況它不合法：**當天有請款撥款，卻沒有那份逐則清單** ——
+            //     那正是「錢用第二條路付掉了，而我讀不到它付了哪幾則」。
+            //   ⇒ 這一格在差集算完之後判（要先知道 Missing），寫在 `Verdict` 前面那一步。
+            //   ⛔ 不在這裡直接判「檔不在＝出事」：那會讓每一棵乾淨的樹每天多一行假警告。
+            bool aSettledFileAbsent = !File.Exists(aSettledPath);
+
             // ② 那一天的訊息
             string aRooms = Path.Combine(iDataRoot, RoomsRelPath.Replace('/', Path.DirectorySeparatorChar));
             if (!Directory.Exists(aRooms))
@@ -257,6 +336,9 @@ namespace SCP.Core.Bank
 
                     r.Candidates++;
                     if (aPaidRefs.Contains(aRef)) { r.Paid++; continue; }
+                    // ⚠ 順序刻意：**帶 ref 的分錄優先** —— 一則若兩邊都有，那是「付過又被列進清單」，
+                    //   要算在憑據比較強的那一格，⛔ 不是兩邊各加一次（那會讓 Paid+Settled > Candidates）。
+                    if (aSettledRefs.Contains(aRef)) { r.Settled++; continue; }
 
                     r.Missing++;
                     Bump(r.MissingByPersona, aPersona);
@@ -267,6 +349,17 @@ namespace SCP.Core.Bank
 
             foreach (string aRef in aPaidRefs)
                 if (!aSeenRefs.Contains(aRef)) r.LedgerRefsUnmatched++;
+
+            // 🔴 「當天有請款撥款、有差集、而那份逐則清單不在」⇒ 錢走了第二條路而我讀不到它付了哪幾則。
+            //   ⛔ 這一格**不是**「檔不在就叫」（那會讓乾淨的樹每天多一行假警告），
+            //     三個條件同時成立才成立，而三個都是讀數。
+            if (aSettledFileAbsent && r.CompensationEntries > 0 && r.Missing > 0)
+            {
+                r.SettledUnreadable = true;
+                r.Problems.Add("當天有 " + r.CompensationEntries + " 筆請款撥款（" + r.CompensationTokens
+                             + " token）而 `" + SettledFileName + "` **不存在** ⇒ 那些錢補了哪幾則**無法逐則沖銷**"
+                             + " ⇒ 差集偏高，⛔ 別照這個數字補（補款工具在同一個狀態下會把它們當漏發）");
+            }
 
             Verdict(r);
             return r;
@@ -299,7 +392,13 @@ namespace SCP.Core.Bank
             if (r.Missing == 0)
             {
                 r.Verdict = SCP_PayrollVerdict.Clean;
-                r.Why = "應計酬 " + r.Candidates + " 則全部在帳上";
+                // ⛔ 綠燈要說出它是**怎麼**綠的：「帳上逐筆有分錄」與「其中一部分靠一份清單結清」
+                //   是兩種不同強度的綠，而它們在 `差 0` 這個數字上同形。
+                r.Why = r.Settled > 0
+                    ? "應計酬 " + r.Candidates + " 則全部有著落：帳上 " + r.Paid
+                      + " 則帶逐則分錄／**" + r.Settled + " 則走請款結清**（憑據是 `"
+                      + SettledFileName + "` 的 ref 清單，⛔ 不是分錄）"
+                    : "應計酬 " + r.Candidates + " 則全部在帳上";
                 return;
             }
             if (r.Paid == 0 && r.Candidates >= AlarmFloor)
@@ -309,8 +408,14 @@ namespace SCP.Core.Bank
                 return;
             }
             r.Verdict = SCP_PayrollVerdict.Warn;
-            r.Why = "應計酬 " + r.Candidates + " 則，帳上 " + r.Paid + " ⇒ 差 " + r.Missing
+            r.Why = "應計酬 " + r.Candidates + " 則，帳上 " + r.Paid
+                  + (r.Settled > 0 ? "（另有 " + r.Settled + " 則走請款結清，已扣掉）" : "")
+                  + " ⇒ 差 " + r.Missing
                   + "（⚠ 本層讀不到 category 計不計酬的設定 ⇒ 按 category 分組列在下面）"
+                  + (r.SettledUnreadable
+                     ? "　⚠ **`" + SettledFileName + "` 這次沒讀到**（不存在／讀壞了 —— 哪一種見問題欄）"
+                       + " ⇒ 走請款結清的那些則沖不掉，差集**偏高**，⛔ 別照這個數字補。"
+                     : "")
                   + (r.DayKey == TransitionDayKey
                      ? "　⚠ **這天是權威切換的過渡日**：當天有一部分錢寫在已刪除的舊帳本上 ⇒ 差集**偏高**，⛔ 別照數字補。"
                      : "");

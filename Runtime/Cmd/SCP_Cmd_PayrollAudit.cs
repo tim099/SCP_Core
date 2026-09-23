@@ -80,7 +80,11 @@ namespace SCP.Core.Cmd
                 aR.Lines.Add("  · 內訳：沒有 persona **" + a.WithoutPersona + "**（結構上不計酬）"
                              + "／解析不到帳號 **" + a.Unresolvable + "**"
                              + (a.ResolverAvailable ? "（刻意不計酬）" : " ⚠ **未扣**（沒給 letters_root/region）")
-                             + "／帳上 work_post **" + a.LedgerWorkPostEntries + "** 筆");
+                             + "／帳上 work_post **" + a.LedgerWorkPostEntries + "** 筆"
+                             + (a.Settled > 0
+                                ? "／**請款結清 " + a.Settled + " 則**（憑據＝`"
+                                  + SCP_PayrollAudit.SettledFileName + "` 的 ref 清單，⛔ 不是逐則分錄）"
+                                : ""));
 
                 if (a.Missing > 0)
                 {
