@@ -74,6 +74,21 @@ namespace SCP.Core.Bank
         //     而稽核會**每天對那一天亮燈** —— 一面永遠亮紅燈的儀表，人會在第三天學會忽略它。
         public int CompensationEntries;
         public int CompensationTokens;
+
+        // 🔴 上面那一格的**子集**：當天的撥款裡，單子自稱是「補發文領薪」的那幾筆
+        //   （請款單的 `source_kind = work_post_backfill`）。
+        //   ⚠ 為什麼要分出來（TASK-0290）：`payout_request` 是**通用**的撥款 kind ——
+        //     同一天可能有活體驗收、增發測試、補薪，三者在帳上長得一模一樣。
+        //   ⇒ 拿「當天有撥款」當警示條件，會對著一堆跟領薪無關的撥款亮燈；
+        //     而亮錯的燈跟不亮一樣沒有用（人第三天就學會忽略它）。
+        public int BackfillEntries;
+        public int BackfillTokens;
+        // ⚠ 當天有撥款、而**分類不出來**（單據夾不在／讀不動）。
+        //   ⛔ 它不是「都不是補薪」—— 那是把「不知道」寫成「零」，本層最不准做的那件事。
+        public bool BackfillUnclassified;
+        // 🔴 「有補薪撥款 ＋ 還有差集」⇒ 那幾則**可能已經被那批錢付掉了，而清單沒登記**。
+        //   ⛔ 本層**不替它沖銷**（逐則憑據只在 `payroll_settled.json`，而本層拿不到）⇒ 只出聲。
+        public bool BackfillUnsettled;
         public bool RoomsRootMissing;
         public SCP_PayrollVerdict Verdict = SCP_PayrollVerdict.NoSample;
         public string Why = "";
@@ -98,10 +113,18 @@ namespace SCP.Core.Bank
             if (Verdict == SCP_PayrollVerdict.Unmeasurable && Messages == 0 && Candidates == 0)
                 return "⚠ **量不動**（" + DayKey + "）：**沒有數字** —— ⛔ 不是 0";
 
+            // ⚠ 這一段的指路**要跟著「結清」那一欄的存在與否走**。
+            //   🩸 2026-09-23 量到的（TASK-0290 ⑥）：`Settled == 0` 時結清欄不印，
+            //     而這裡照樣寫「見『結清』那一欄」⇒ **它指向一個畫面上不存在的東西**。
+            //     活體：`--arg day=2026-09-21`（撥款 2 token／2 筆、結清 0）。
+            //   ⇒ 兩段的條件本來不同源（一個看 `CompensationTokens`、一個看 `Settled`），
+            //     而「指路」這件事的正確條件是**後者**。
             string aComp = CompensationTokens > 0
                 ? "　（⚠ 當日另有請款撥款 **" + CompensationTokens + "** token／"
-                  + CompensationEntries + " 筆 —— ⚠ 金額只並排給你看；**逐則沖銷走 `"
-                  + SCP_PayrollAudit.SettledFileName + "`**，見「結清」那一欄）"
+                  + CompensationEntries + " 筆 —— ⚠ 金額只並排給你看"
+                  + (Settled > 0
+                     ? "；**逐則沖銷走 `" + SCP_PayrollAudit.SettledFileName + "`**，見「結清」那一欄）"
+                     : "；本日**沒有任何一則走清單結清** ⇒ ⛔ 別把這筆金額讀成「那些則已經付過了」）")
                 : "";
             // ⛔ 結清 0 筆時不印那一欄（別讓每一天都多一個 0）——
             //   ⚠ 而「讀不動」一定要印：它跟 0 在數字上同形，差別只在這一行字。
@@ -200,6 +223,9 @@ namespace SCP.Core.Bank
             //   ⚠ 往後掃的代價是 O(今天 − 那一天)；量測用的日子通常很近，可接受。
             //   ⛔ 不掃「之前」的日子：那不會有答案，只會多讀一堆檔。
             var aPaidRefs = new HashSet<string>(StringComparer.Ordinal);
+            // 當天撥款的 `請款單號 → 金額`。⚠ 用 Dictionary 不是 HashSet：同一張單只會撥一次，
+            //   而金額要留著印在警示裡（「有一批 114 token 是在補這一天」比「有一批」有用得多）。
+            var aCompRequestIds = new Dictionary<string, int>(StringComparer.Ordinal);
             string aBankRoot = Path.Combine(iDataRoot, BankDirName);
             foreach (string aLedgerDay in SCP_BankClosing.LedgerDayKeys(aBankRoot))
             {
@@ -223,6 +249,10 @@ namespace SCP.Core.Bank
                 {
                     r.CompensationEntries++;
                     r.CompensationTokens += e.Amount;
+                    // ⚠ 撥款分錄的 `ref` 是**請款單號**（`payout/<id>` 的那個 id），
+                    //   ⛔ 不是逐則訊息的 `tavern#seq=N` —— 兩種 ref 今天在同一本帳裡並存而長得很像。
+                    //   ⇒ 留著它，等一下拿去單據那邊問「這筆錢在補什麼」。
+                    if (e.Ref.Length > 0) aCompRequestIds[e.Ref] = e.Amount;
                 }
                 }
             }
@@ -361,6 +391,38 @@ namespace SCP.Core.Bank
                              + " ⇒ 差集偏高，⛔ 別照這個數字補（補款工具在同一個狀態下會把它們當漏發）");
             }
 
+            // 🔴 **TASK-0290**：上面那一格只擋「檔不在」。而它擋不到更常見的那一種 ——
+            //   **檔在，只是那一批沒有被登記進去**。
+            //   🩸 成因是結構性的：`payroll_settled.json` 全庫**只有讀者、沒有寫入端**
+            //     （2026-09-23 逐檔量：LY 3 支 ＋ Senate 2 支，全是讀），那份清單是人手寫的。
+            //     ⇒ 所以「有人補了薪，而沒有人去寫那份清單」不是假想，那是預設會發生的事。
+            //   ⚠ 判準刻意用**單子自稱的 `source_kind`**，⛔ 不是「當天有沒有 payout_request」：
+            //     後者會對活體驗收、增發測試那些跟領薪無關的撥款亮燈。
+            //   ⛔ 而本層**只出聲、不沖銷** —— 逐則的憑據只在那份清單裡，`source_kind` 說不出是哪幾則。
+            if (aCompRequestIds.Count > 0)
+            {
+                Dictionary<string, string> aKinds = SCP_TreasuryRequests.LoadPayoutSourceKindsByDay(
+                    iDataRoot, iDayKey, out bool aReqDirMissing, r.Problems);
+                foreach (var aPair in aCompRequestIds)
+                {
+                    // ⚠ 單子找不到 ≠ 那筆不是補薪。兩種「查不到」都落進 Unclassified，⛔ 不當成 0。
+                    if (!aKinds.TryGetValue(aPair.Key, out string? aKind)) { r.BackfillUnclassified = true; continue; }
+                    if (!string.Equals(aKind, SCP_TreasuryRequests.SourceKindWorkPostBackfill, StringComparison.Ordinal))
+                        continue;
+                    r.BackfillEntries++;
+                    r.BackfillTokens += aPair.Value;
+                }
+                if (aReqDirMissing) r.BackfillUnclassified = true;
+
+                // ⚠ 旗標在這裡立，**話寫在 `Why`** —— 理由見 Verdict() 裡那一段註解
+                //   （問題欄的標題寫死是「有 N 個檔讀不動」，而本格不是檔讀不動）。
+                if (r.BackfillEntries > 0 && r.Missing > 0 && !aSettledFileAbsent)
+                    r.BackfillUnsettled = true;
+                // ⚠ 沒有差集的那天，「分類不出來」不影響任何判斷 ⇒ 不出聲。
+                //   ⛔ 這不是把它藏起來：一個每天都亮而且亮了也不用做事的燈，會把旁邊真的燈一起關掉。
+                r.BackfillUnclassified = r.BackfillUnclassified && r.Missing > 0;
+            }
+
             Verdict(r);
             return r;
         }
@@ -418,6 +480,21 @@ namespace SCP.Core.Bank
                      : "")
                   + (r.DayKey == TransitionDayKey
                      ? "　⚠ **這天是權威切換的過渡日**：當天有一部分錢寫在已刪除的舊帳本上 ⇒ 差集**偏高**，⛔ 別照數字補。"
+                     : "")
+                  // 🔴 TASK-0290：清單**在**、而那批補薪沒被登記進去。
+                  //   ⚠ 這一句刻意寫在 `Why` 不寫在 `Problems` —— 問題欄的標題寫死是
+                  //     「有 N 個檔讀不動」（`Runtime/Cmd`），而本格不是檔讀不動，是**帳對不起來**。
+                  //     ⛔ 塞進去會讓那個標題說謊，而說謊的標題比沒有標題更貴。
+                  //   📌 那行標題本身也該收（既有的「檔不存在」守衛同樣被它蓋著）——
+                  //     ⛔ 不在本單改：2026-09-23 量到 `Runtime/Cmd` 在別人的施工場裡。
+                  + (r.BackfillUnsettled
+                     ? "　🔴 **當天有 " + r.BackfillEntries + " 筆補薪撥款**（" + r.BackfillTokens
+                       + " token）而清單**在、卻沒登記到它們** ⇒ 這 " + r.Missing
+                       + " 則**可能已經付過了**。⛔ 別照這個數字補 —— 先去對那批撥款補了哪幾則。"
+                     : "")
+                  + (r.BackfillUnclassified
+                     ? "　⚠ **當天的撥款分類不出來**（讀不到對應請款單）⇒ 本層答不出其中有沒有補薪。"
+                       + "⛔ 這是「不知道」，不是「都不是補薪」。"
                      : "");
         }
 
