@@ -48,9 +48,12 @@ namespace SCP.Core.Tavern
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
-            new SCP_CmdArgSpec("kind", "read / members / listrooms / note_read / note_list / events_since",
+            new SCP_CmdArgSpec("kind",
+                "read / members / listrooms / note_read / note_list / events_since"
+                + " / task_list / task_state / task_next",
                                iRequired: true,
-                               iChoices: new[] { "read", "members", "listrooms", "note_read", "note_list", "events_since" }),
+                               iChoices: new[] { "read", "members", "listrooms", "note_read", "note_list",
+                                                 "events_since", "task_list", "task_state", "task_next" }),
             new SCP_CmdArgSpec("room",
                 "房間 id。⚠ `listrooms` 不吃它；其餘五支**必填**"
                 + "（⛔ 刻意沒有預設值 —— 預設成 `tavern` 會讓打錯房名的人拿到一個看起來正常的答案）",
@@ -65,6 +68,17 @@ namespace SCP.Core.Tavern
                 iDefault: "-1"),
             new SCP_CmdArgSpec("limit", "`read`／`events_since`：筆數上限", iDefault: "0"),
             new SCP_CmdArgSpec("filter_type", "`events_since`：只看這些 type（逗號分隔）", iDefault: ""),
+            // ── TASK-0287：TRPG 任務投影層的三支（⚠ 本側是**純讀版**，⛔ 不回收過期租約）──
+            new SCP_CmdArgSpec("task_id", "`task_state`：要看哪一個 task", iDefault: ""),
+            new SCP_CmdArgSpec("agent_id", "`task_next`：替誰挑任務（影響 suggested_owner 那一層排序）",
+                               iDefault: ""),
+            new SCP_CmdArgSpec("top", "`task_next`：回幾筆", iDefault: "1"),
+            new SCP_CmdArgSpec("owner", "`task_list`：只看這個 owner", iDefault: ""),
+            new SCP_CmdArgSpec("role", "`task_list`：只看這個 role", iDefault: ""),
+            new SCP_CmdArgSpec("status",
+                "`task_list`：只看這些狀態（逗號分隔）。⚠ `stale` 是**並行旗標**不是狀態 —— "
+                + "它跟底下的 claimed／in_progress 同時成立",
+                iDefault: ""),
         };
 
         // Editor 側 `UCL_ChatTavernSettings` 的三個預設值。⚠ 抄值不抄來源 ⇒ 那邊改了這邊不會知道，
@@ -130,11 +144,46 @@ namespace SCP.Core.Tavern
                     // aRoomMeta 在上面那道閘裡已經拿到（room 非空 ⇒ 一定不是 null）
                     aBody = Read(aDataRoot, aRoom, aRoomMeta!, iArgs, aStat);
                     break;
+                // ── TASK-0287：TRPG 任務投影（純讀版）──────────────────────
+                // 🔴 這三支在 **Editor 側不是純讀** —— 它們開頭跑 `AutoRecoverStaleLeases`，而它會
+                //   `AppendEvent`。本側**刻意不做那一步**（理由與後果見 `SCP_TavernQuestState` 檔頭）。
+                //   ⛔ 別為了「跟 Editor 一樣」把回收搬過來：那會讓本支成為第二個寫入端。
+                case "task_list":
+                    aBody = SCP_TavernQuestRender.TaskList(
+                        aRoom, SCP_TavernQuestState.Compute(aDataRoot, aRoom, aStat.Warnings),
+                        iArgs.Get("owner").Trim(), iArgs.Get("role").Trim(), iArgs.Get("status").Trim());
+                    break;
+                case "task_state":
+                {
+                    string aTaskId = iArgs.Get("task_id").Trim();
+                    if (aTaskId.Length == 0)
+                        return SCP_CmdResult.Fail(2, "✗ `kind=task_state` 缺少 task_id");
+                    var aAll = SCP_TavernQuestState.Compute(aDataRoot, aRoom, aStat.Warnings);
+                    if (!aAll.TryGetValue(aTaskId, out SCP_QuestTaskState? aOne))
+                        return SCP_CmdResult.Fail(1, "✗ task 不存在：" + aTaskId,
+                            "  判準是這一房的事件流裡有沒有它的 `task_create`。",
+                            "  ⛔ 這是「沒有這個 task」，不是「它沒有事件」。");
+                    aBody = SCP_TavernQuestRender.TaskState(aOne, aAll);
+                    break;
+                }
+                case "task_next":
+                {
+                    string aAgent = iArgs.Get("agent_id").Trim();
+                    if (aAgent.Length == 0)
+                        return SCP_CmdResult.Fail(2, "✗ `kind=task_next` 缺少 agent_id",
+                            "  ⛔ 本層不替你猜是誰要接：猜錯時 suggested_owner 那一層排序會靜默給出"
+                            + "一份**看起來很合理**的建議。");
+                    aBody = SCP_TavernQuestRender.TaskNext(
+                        aRoom, aAgent, ParseInt(iArgs, "top", 1),
+                        SCP_TavernQuestState.Compute(aDataRoot, aRoom, aStat.Warnings));
+                    break;
+                }
                 default:
                     return SCP_CmdResult.Fail(2, "✗ 不認得的 kind：" + aKind,
-                        "  合法值：read / members / listrooms / note_read / note_list / events_since",
-                        "  ⛔ `task_list` / `task_next` / `task_state` **不在本支**（它們會寫）；"
-                        + "查詢那 7 個 kind 走 `tavern-query`");
+                        "  合法值：read / members / listrooms / note_read / note_list / events_since"
+                        + " / task_list / task_state / task_next",
+                        "  ⚠ 那三支 task_* 是 **TASK-0287 的純讀投影**（⛔ 不回收過期租約 —— "
+                        + "Editor 側那三支會）；查詢那 7 個 kind 走 `tavern-query`");
             }
             aWatch.Stop();
 
