@@ -24,11 +24,18 @@ namespace SCP.Core.Tavern
 
         static string F1(double iV) => iV.ToString("F1", CultureInfo.InvariantCulture);
 
-        /// <summary>逐字同 Editor 側 `Truncate`：超過 max 就切到 max-3 再補三個點。</summary>
+        /// <summary>
+        /// 逐字同 <c>Cmd_Tavern.Truncate</c>（`Cmd_Tavern.cs:2404`）：超過 max 就切**到 max** 再補三個點。
+        /// <para>🩸 2026-09-23：這裡原本寫 <c>iMax - 3</c> —— 我照**名字**抄，抄到了隔壁那一份。
+        /// 同一個目錄裡有兩個同名 <c>Truncate</c>，語意不同：
+        /// <c>UCL_ChatTavernQuestIO.cs:696</c> 是 <c>max-3</c>，而 <c>Op_TaskList</c> 真正用的是
+        /// <c>Cmd_Tavern.cs:2404</c> 的 <c>max</c>。⇒ 差 3 個字元，而**兩邊的輸出都合理**。
+        /// ⭐ 抓到它的是驗收④那格反向對照（同一份資料兩端對拍），⛔ 不是我讀得更仔細。</para>
+        /// </summary>
         static string Truncate(string iS, int iMax)
         {
             if (string.IsNullOrEmpty(iS)) return "";
-            return iS.Length <= iMax ? iS : iS.Substring(0, iMax - 3) + "...";
+            return iS.Length <= iMax ? iS : iS.Substring(0, iMax) + "...";
         }
 
         // ===========================================================
