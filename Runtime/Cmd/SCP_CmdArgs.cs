@@ -72,7 +72,36 @@ namespace SCP.Core.Cmd
     {
         readonly Dictionary<string, string> m_Values;
 
-        SCP_CmdArgs(Dictionary<string, string> iValues) { m_Values = iValues; }
+        // ── TASK-0289：兜底偵測「使用者給了、而這一趟從來沒被讀」的參數 ──────────────
+        // 🩸 為什麼要它：ArgSpec 預檢的射程是「**這支 Cmd** 的參數集合」不是「**這個 op** 的」
+        //   ⇒ 跨 op 的參數名**靜默通過並被忽略**，而失效樣子是「它回了一個合理的東西」。
+        //   已量到兩個樣本：`canvas op=view --arg size=12x12` ⇒ exit 0 並回整張 2048（2026-09-20）／
+        //   `coding op=status --arg scope=<新路徑>` ⇒ exit 0 印「已更新」而範圍原封不動（2026-09-23）。
+        // ⭐ 判準：**作者什麼都不必宣告** —— 靠「有沒有被 Get 過」這個事實，
+        //   而不是靠有人記得去維護一張表。要靠記得的防護等於沒有防護。
+        readonly HashSet<string> m_Explicit;
+        readonly HashSet<string> m_Read = new HashSet<string>(StringComparer.Ordinal);
+
+        SCP_CmdArgs(Dictionary<string, string> iValues, HashSet<string> iExplicit)
+        {
+            m_Values = iValues;
+            m_Explicit = iExplicit;
+        }
+
+        /// <summary>
+        /// 使用者**顯式給了值**、而這一趟**從來沒有被讀取**的參數名（排序後）。
+        /// <para>⚠ 這是**寧可漏報不誤報**的保守判準：存取過 <see cref="All"/> 就視同全部讀過
+        /// （那條路繞過 <see cref="Get"/>，分不出誰真的被用到）。
+        /// ⛔ 理由：一盞會誤報的燈，第三天就會被所有人學會忽略 —— 那比沒有燈更糟。</para>
+        /// </summary>
+        public List<string> UnreadExplicitArgs()
+        {
+            var aOut = new List<string>();
+            foreach (string aKey in m_Explicit)
+                if (!m_Read.Contains(aKey)) aOut.Add(aKey);
+            aOut.Sort(StringComparer.Ordinal);
+            return aOut;
+        }
 
         /// <summary>
         /// 對照規格驗一疊原始參數。回 (參數包, 錯誤清單)；有錯時參數包是 null。
@@ -116,7 +145,13 @@ namespace SCP.Core.Cmd
                 aValues[aSpec.Name] = aResolved;
             }
 
-            return aErrors.Count > 0 ? (null, aErrors) : (new SCP_CmdArgs(aValues), aErrors);
+            // TASK-0289：記下「使用者**顯式**給的」是哪幾個（⛔ 不含吃預設值的那些 ——
+            //   預設值沒被讀是常態，把它們一起報會讓這盞燈每天亮一整排）。
+            var aExplicit = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string aKey in iRaw.Keys)
+                if (aBySpec.ContainsKey(aKey)) aExplicit.Add(aKey);
+
+            return aErrors.Count > 0 ? (null, aErrors) : (new SCP_CmdArgs(aValues, aExplicit), aErrors);
         }
 
         /// <summary>
@@ -124,10 +159,13 @@ namespace SCP.Core.Cmd
         /// 不是使用者輸入問題，所以不該回空字串讓它繼續跑。
         /// </summary>
         public string Get(string iName)
-            => m_Values.TryGetValue(iName, out string? v)
-               ? v
-               : throw new InvalidOperationException(
-                   "Cmd 取了一個自己沒宣告的參數 '" + iName + "' —— 規格與實作不同步（這是程式錯誤）");
+        {
+            if (!m_Values.TryGetValue(iName, out string? v))
+                throw new InvalidOperationException(
+                    "Cmd 取了一個自己沒宣告的參數 '" + iName + "' —— 規格與實作不同步（這是程式錯誤）");
+            m_Read.Add(iName);   // TASK-0289：記下「這一趟真的讀過它」
+            return v;
+        }
 
         /// <summary>取整數。轉不動就回 <paramref name="iFallback"/> 並把原因寫進 oWhy。</summary>
         public int GetInt(string iName, int iFallback, out string oWhy)
@@ -139,6 +177,17 @@ namespace SCP.Core.Cmd
             return iFallback;
         }
 
-        public IReadOnlyDictionary<string, string> All => m_Values;
+        /// <summary>
+        /// 全部參數值。⚠ 存取它會讓 <see cref="UnreadExplicitArgs"/> **視同全部讀過**（TASK-0289）——
+        /// 這條路繞過 <see cref="Get"/>，分不出誰真的被用到，⇒ 保守處理，⛔ 不製造假警告。
+        /// </summary>
+        public IReadOnlyDictionary<string, string> All
+        {
+            get
+            {
+                foreach (string aKey in m_Values.Keys) m_Read.Add(aKey);
+                return m_Values;
+            }
+        }
     }
 }

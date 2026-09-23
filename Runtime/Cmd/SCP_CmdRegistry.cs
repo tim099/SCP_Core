@@ -179,7 +179,12 @@ namespace SCP.Core.Cmd
                 return aResult;
             }
 
-            try { return aCmd.Execute(aArgs); }
+            try
+            {
+                SCP_CmdResult aOut = aCmd.Execute(aArgs);
+                WarnUnreadArgs(aCmd, aArgs, aOut);
+                return aOut;
+            }
             catch (Exception e)
             {
                 // Cmd 爆掉不是「用法錯」—— exit code 要分得出來，否則腳本會把程式 bug 當成自己打錯。
@@ -188,6 +193,52 @@ namespace SCP.Core.Cmd
                 aResult.Exception = e;   // 原始現場留給錯誤報告；這一行訊息留給使用者
                 return aResult;
             }
+        }
+
+        // ===========================================================
+        // 區塊職責：**兜底出聲** —— 使用者顯式給了、而這一趟從來沒被讀的參數（TASK-0289）。
+        // 物理意義：ArgSpec 預檢的射程是「這支 Cmd 的參數集合」不是「這個 op 的」
+        //           ⇒ 跨 op 的參數名靜默通過並被忽略。已量到兩個樣本（見 SCP_CmdArgs 的註解）。
+        // 數值影響：⛔ **不改 exit code、不改任何狀態** —— 只加訊息行與一格機器讀數。
+        //
+        // ⛔ 為什麼不擋（不把它變成失敗）：
+        //   ① 這是**執行後**才知道的事 —— 副作用已經發生，改 exit code 只會讓呼叫端
+        //      拿到一個跟事實不符的「失敗」（事情其實做了一半）。
+        //   ② 擋要在執行前，而那需要「這個參數屬於哪些 op」的**宣告**；本層刻意不要求那個宣告
+        //      —— 要靠作者記得去維護的防護等於沒有防護。⇒ 兩者是互補的兩層，⛔ 不是替代。
+        // ⚠ 所以這一層的承諾只有一個：**它不會安靜**。⛔ 別把它讀成「打錯參數會被擋下來」。
+        // ===========================================================
+        static void WarnUnreadArgs(SCP_Cmd iCmd, SCP_CmdArgs iArgs, SCP_CmdResult ioResult)
+        {
+            if (iArgs == null || ioResult == null) return;
+
+            // ── 射程閘：只對**有 op 語意**的 Cmd 檢查 ─────────────────────────
+            // 🩸 為什麼收窄（2026-09-23 實測，⛔ 不是為了少寫）：不收窄的話 `server-ping` 會亮
+            //   「persona 沒被讀」—— 而**那個 persona 不是使用者打的**（它進了 iRaw，而我沒給），
+            //   `server-ping` 又走固定 lane 所以真的不讀它。⇒ 一個**對使用者毫無意義的警告**。
+            // ⛔ 一盞會誤報的燈第三天就沒人看 —— 那比沒有燈更糟（本單驗收④ 自己寫的那條）。
+            // ⇒ 本單的症狀是「**跨 op** 的參數被靜默吃掉」⇒ 射程就收到有 op 語意的那些：
+            //   宣告了 `op` 或 `kind` 的 Cmd。兩個已知樣本（`canvas op=`／`coding op=`）都在內。
+            // ⚠ 代價要寫明：**沒有 op/kind 的 Cmd 不受本層保護** —— ⛔ 別把它讀成「全庫都擋住了」。
+            bool aHasOpSemantics = false;
+            foreach (SCP_CmdArgSpec aSpec in iCmd.ArgSpecs)
+            {
+                if (aSpec.Name != "op" && aSpec.Name != "kind") continue;
+                aHasOpSemantics = true;
+                break;
+            }
+            if (!aHasOpSemantics) return;
+
+            List<string> aUnread = iArgs.UnreadExplicitArgs();
+            if (aUnread.Count == 0) return;
+
+            ioResult.Lines.Add("⚠ 這一趟有 " + aUnread.Count + " 個參數**給了而從來沒被讀**："
+                               + string.Join(" , ", aUnread));
+            ioResult.Lines.Add("  ⛔ 它們是這支 Cmd 的合法參數（所以預檢放行），"
+                               + "而**這一條執行路徑沒有用到它們** —— 多半是它屬於另一個 op。");
+            ioResult.Lines.Add("  ⚠ 上面的結果**照常發生了** —— 這一行只是告訴你：你以為會生效的那一格，沒有。");
+            ioResult.Lines.Add("  合法參數與各自屬於哪個 op：" + Invoke("help " + iCmd.Name));
+            ioResult.AddValue("unread_args", string.Join(",", aUnread));
         }
 
         /// <summary>粗略的 did-you-mean：前綴或包含。刻意不做編輯距離 —— 那需要一顆調得動的門檻。</summary>
