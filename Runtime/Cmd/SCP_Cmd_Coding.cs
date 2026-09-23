@@ -98,12 +98,61 @@ namespace SCP.Core.Cmd
                                + "start 選填／bind 必填。**綁了才會自動收場**"),
         };
 
+        // ===========================================================
+        // 區塊職責：**per-op 參數閘** —— 這個 op 不吃的參數，給了就擋下整趟。
+        // 物理意義：TASK-0285。
+        // 數值影響：只擋，⛔ 不改任何狀態；未命中時零行為差異。
+        //
+        // 🩸 為什麼要它：`op=status --arg scope=<新路徑>` 會回 **exit 0**、印「✓ status 已更新」、
+        //   順手續期 —— 而**施工範圍原封不動**（2026-09-23 實測）。
+        //   成因：ArgSpec 預檢的射程是「**這支 Cmd** 的參數集合」不是「**這個 op** 的」
+        //   ⇒ `scope` 是 `start` 的合法參數，於是預檢放行，而 `status` 的處理路徑根本不讀它。
+        //   ⇒ 失效樣子是**「它回了一個合理的東西」**，⛔ 不是報錯 —— 而下一步通常是
+        //     去告訴等場的人「我縮好了」，而對方還是開不了場。
+        //
+        // ⛔ 為什麼不是「讓 `status` 也能改範圍」（Tim 2026-09-23 授權全包，本處置是 summit 判的）：
+        //   ① 範圍是**進場時的宣告** —— 中途改它，「誰擋到誰」的歷史就不可追了。
+        //   ② `end` ＋ `start` 已經是完整出口，而且它留下**兩筆 session 紀錄**（可追）。
+        //   ③ 允許改就得回答「**原本被我擋掉的人怎麼辦**」—— 那是一個新語意，
+        //      而本單的症狀只是「一個參數被靜默吃掉」。一張單的處置範圍 ≤ 它開單時的症狀。
+        // ===========================================================
+        static readonly (string Param, string[] Ops, string Alt)[] OpOnlyParams =
+        {
+            ("scope", new[] { "start" },
+             "範圍是**進場時**的宣告 ⇒ 要換範圍：`op=end` 之後重新 `op=start --arg scope=<新範圍>`"),
+            ("tasks", new[] { "start", "bind" },
+             "事後綁單走 `op=bind --arg tasks=<單號>`（先進場才認領是常態）"),
+            ("force", new[] { "end" }, "`force` 只有退場吃（編譯紅燈時顯式硬退）"),
+            ("force_reason", new[] { "end" }, "`force_reason` 只有退場吃"),
+        };
+
+        /// <summary>這個 op 不吃的參數給了值 ⇒ 回一個擋下來的結果；沒問題回 <c>null</c>。</summary>
+        static SCP_CmdResult? RejectParamsNotForThisOp(SCP_CmdArgs iArgs, string iOp)
+        {
+            foreach (var aRule in OpOnlyParams)
+            {
+                if (iArgs.Get(aRule.Param).Trim().Length == 0) continue;
+                if (Array.IndexOf(aRule.Ops, iOp) >= 0) continue;
+                return SCP_CmdResult.Fail(2,
+                    "✗ `" + aRule.Param + "` 不是 `op=" + iOp + "` 吃的參數 —— 這一趟**什麼都沒做**。",
+                    "  ⚠ 它是這支 Cmd 的合法參數（`op=" + string.Join("` / `op=", aRule.Ops)
+                    + "` 吃它）⇒ ArgSpec 預檢**放行**，而本 op 的處理路徑不讀它。",
+                    "  ⛔ 少了這道閘，它會**靜默被吃掉**並回 exit 0 —— 那跟「改好了」長得一模一樣。",
+                    "  ⇒ " + aRule.Alt);
+            }
+            return null;
+        }
+
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
         {
             var aRoot = new SCP_DataRoot(iArgs.Get("data_root"));
             string aOp = iArgs.Get("op").Trim();
             if (aOp.Length == 0) aOp = "show";
             string aPersona = iArgs.Get("persona").Trim();
+
+            // TASK-0285：這個 op 不吃的參數，給了就擋（⛔ 不靜默吃掉）。
+            SCP_CmdResult? aReject = RejectParamsNotForThisOp(iArgs, aOp);
+            if (aReject != null) return aReject;
 
             switch (aOp)
             {
