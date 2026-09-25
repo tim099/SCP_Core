@@ -102,6 +102,16 @@ namespace SCP.Core.Paths
         public static string ChatTavern(SCP_DataRoot iRoot)
             => iRoot.Value + "/" + ChatTavernDirName;
 
+        /// <summary>酒館路由判準檔名（TASK-0296：真相源從 Unity asset 搬到資料根）。</summary>
+        public const string TavernRoutingFileName = "tavern_routing.json";
+
+        /// <summary>
+        /// 酒館路由判準（哪個 category 走哪個 group、那個 group 計不計酬）的完整路徑。
+        /// <para>⚠ 只放路由語意，⛔ **不放 webhook URL**（秘密不擴散；URL 仍留在 Unity asset 給 Discord 鏡像用）。</para>
+        /// </summary>
+        public static string TavernRouting(SCP_DataRoot iRoot)
+            => ChatTavern(iRoot) + "/" + TavernRoutingFileName;
+
         public static string Baton(SCP_DataRoot iRoot)
             => ChatTavern(iRoot) + "/" + BatonDirName;
 
