@@ -2,7 +2,7 @@
 // 物理意義：persona 資料住在 `<資料根>/ChatTavern/baton/letters/<persona>/`；
 //           「在線」的真相源是同一個目錄底下的 `profile/_session.json`
 //           這顆 session lock（登入時寫、登出時刪；路徑唯一決定點 SCP_LettersPaths.SessionLockPath）。
-//           ⇒ 本檔只讀檔，不寫 lock、不動 registry。
+//           ⇒ 本檔只讀檔、不動 registry；**唯一的寫入是 <see cref="ForceLogout"/>**（手動登出刪 lock，TASK-0294）。
 //
 //           ⭐ 2026-08-30 從 Senate.Core/PersonaLetters.cs 搬進來（六步的第 2 步）。
 //           搬的是**掃描那一半**；「信件夾根設在哪」屬於宿主的設定政策，留在 Senate。
@@ -208,6 +208,53 @@ namespace SCP.Core.Letters
                 oStatus.Online = SCP_PersonaOnline.Unknown;
                 oStatus.LockError = $"{e.GetType().Name}: {e.Message}";
             }
+        }
+
+        // ── 手動登出（TASK-0294）──────────────────────────────────────
+
+        // 區塊職責：**手動登出** —— 忘記登出或流程故障時，由人刪掉那顆 lock（Tim 2026-09-25）。
+        // 物理意義：在線判準只看 lock 檔在不在（本檔 Scan、Editor 端 UCL_ActivePersonaLocks 都是）
+        //          ⇒ 刪 lock 就足以解除「同一 persona 不得同時登入兩次」的卡死；**不需要 Unity Editor**。
+        //          對照 Unity 端 UCL_LoginStatusPage 的 Force Remove（該頁之後廢棄，全面改用 Senate 端）。
+        // ⚠ 刪之前**重讀一次 lock**：畫面上看到的是上一次掃描，而那之後可能有人登出又登入了 ——
+        //   預期的 session_key 對不上就拒絕，⛔ 不刪到別人剛開的新一場。
+        //   iExpectedSessionKey 為 null ＝ 確認時 lock 是壞的（Unknown），那就要求它**現在仍然**是壞的。
+        // 數值影響：只刪 `profile/_session.json` 與 `cmd/now_status.json`。⛔ **不動** profile 的 status 欄
+        //          （它是快取，不當在線判準）、不讓 token 失效、不發酒館廣播、不寫信 —— 回傳訊息逐條講明。
+        public static (bool Done, string Message) ForceLogout(string iLettersRoot, string iPersona, string? iExpectedSessionKey)
+        {
+            string aRoot = CleanPath(iLettersRoot ?? "");
+            if (aRoot.Length == 0 || string.IsNullOrWhiteSpace(iPersona))
+                return (false, "✗ 沒有信件庫根或 persona —— 要登出誰不能用猜的");
+
+            SCP_PersonaStatus? aNow = ReadPersonaLock(aRoot, iPersona);
+            if (aNow == null)
+                return (false, $"・{iPersona} 的 lock 已經不在（可能已經登出）—— 沒有東西可刪");
+            if (iExpectedSessionKey != null)
+            {
+                if (aNow.Online != SCP_PersonaOnline.Online || !string.Equals(aNow.SessionKey, iExpectedSessionKey, StringComparison.Ordinal))
+                    return (false, $"✗ 拒絕：{iPersona} 的 lock 在確認之後變了（確認時 session_key=`{iExpectedSessionKey}`，"
+                                 + $"現在 {(aNow.Online == SCP_PersonaOnline.Online ? "`" + aNow.SessionKey + "`" : "讀不了")}）"
+                                 + " —— 可能有人重新登入了。請重新掃描後再確認一次");
+            }
+            else if (aNow.Online != SCP_PersonaOnline.Unknown)
+            {
+                return (false, $"✗ 拒絕：確認時 {iPersona} 的 lock 讀不了，現在讀得出來了（session_key=`{aNow.SessionKey}`）"
+                             + " —— 狀態變了，請重新掃描後再確認一次");
+            }
+
+            try { File.Delete(aNow.LockPath); }
+            catch (Exception e) { return (false, $"✗ 刪 lock 失敗：{e.GetType().Name}: {e.Message}（{aNow.LockPath}）"); }
+            if (File.Exists(aNow.LockPath))
+                return (false, $"✗ 刪完 lock 還在（{aNow.LockPath}）—— 可能被別的程式佔住，稍後再試");
+
+            string aStatusPath = SCP_LettersPaths.NowStatusPath(new SCP_LettersRoot(aRoot), iPersona);
+            string aStatusNote = "";
+            try { if (File.Exists(aStatusPath)) File.Delete(aStatusPath); }
+            catch (Exception e) { aStatusNote = $"（now_status 沒刪掉：{e.Message} —— 不影響登出，session_key 對不上會被讀取端丟棄）"; }
+
+            return (true, $"✓ {iPersona} 已手動登出：lock 已刪（{aNow.LockPath}）{aStatusNote}\n"
+                        + "  ⚠ 沒做的事：profile 的 status 欄沒改（快取，不當在線判準）／token 沒失效／沒發酒館廣播／沒寫信");
         }
 
         /// <summary>去掉包住整串的引號與尾斜線（檔案總管「複製路徑」帶雙引號 —— 專案關聯頁同一課）。</summary>

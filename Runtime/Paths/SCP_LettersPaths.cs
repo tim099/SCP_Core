@@ -181,5 +181,12 @@ namespace SCP.Core.Paths
         /// <summary>某個 persona 的 session lock（<c>&lt;persona&gt;/profile/_session.json</c>）—— 檔在＝在線。</summary>
         public static string SessionLockPath(SCP_LettersRoot iRoot, string iPersona)
             => ProfileDir(iRoot, iPersona) + "/" + SessionLockFileName;
+
+        /// <summary>now_status 檔名（TASK-0294：與 lock 分開讀寫；Editor 端 <c>UCL_LettersPath.NowStatusFileName</c> 同一個名字）。</summary>
+        public const string NowStatusFileName = "now_status.json";
+
+        /// <summary>某個 persona 的目前狀態（<c>&lt;persona&gt;/cmd/now_status.json</c>）—— 只供顯示，不閘任何行為。</summary>
+        public static string NowStatusPath(SCP_LettersRoot iRoot, string iPersona)
+            => CmdDir(iRoot, iPersona) + "/" + NowStatusFileName;
     }
 }
