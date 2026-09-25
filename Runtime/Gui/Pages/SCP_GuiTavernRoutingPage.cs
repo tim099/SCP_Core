@@ -78,17 +78,17 @@ namespace SCP.Core.Gui
             {
                 g.Note("⚠ 本頁**沒有資料來源** ⇒ 這不是「沒有任何 group」，是「量不到」。原因："
                        + (string.IsNullOrEmpty(m_Root.Error) ? "資料根是空的（沒有人填過）" : m_Root.Error));
-                g.Note("· 資料根設在「路徑管理」頁（`senate ui --page paths`），本頁不存路徑。");
+                g.Note("資料根設在「路徑管理」頁（`senate ui --page paths`），本頁不存路徑。");
                 if (m_Message != null) g.Note(m_Message);
                 return;
             }
-            g.Note("· 判準檔：`" + SCP_TavernRouting.PathOf(m_Root.Value) + "`（真相源；⛔ 不含 webhook URL）");
+            g.Note("判準檔：`" + SCP_TavernRouting.PathOf(m_Root.Value) + "`（真相源；⛔ 不含 webhook URL）");
             if (m_Disk != null && !m_Disk.Ok)
             {
                 g.Note("⚠ **判準檔讀不到** ⇒ 這不是「沒有任何 group」：" + m_Disk.Error);
                 if (m_Disk.Missing)
-                    g.Note("· 第一次要從 Unity asset 匯入：`senate cmd tavern-routing --arg data_root=<資料根> --arg op=import_unity --arg unity_dir=<asset 目錄> --arg confirm=1`");
-                g.Note("· 發薪判斷此刻讀不到判準 ⇒ **所有底薪都不會發**（它會在每則訊息印警告）。");
+                    g.Note("第一次要從 Unity asset 匯入：`senate cmd tavern-routing --arg data_root=<資料根> --arg op=import_unity --arg unity_dir=<asset 目錄> --arg confirm=1`");
+                g.Note("發薪判斷此刻讀不到判準 ⇒ **所有底薪都不會發**（它會在每則訊息印警告）。");
                 if (m_Message != null) g.Note(m_Message);
                 return;
             }
@@ -114,7 +114,7 @@ namespace SCP.Core.Gui
             {
                 SCP_TavernRouteGroup r = aDraft[i];
                 string k = $"routing/{m_Gen}/{i}";
-                using (g.Box($"{i + 1}. {r.Id}" + (r.IsPaidPost ? "　💰計酬" : "") + (r.IsDefault ? "　default" : ""), k + "/box"))
+                using (g.Box($"{i + 1}. {r.Id}" + (r.IsPaidPost ? "　【計酬】" : "") + (r.IsDefault ? "　default" : ""), k + "/box"))
                 {
                     using (g.Row())
                     {
@@ -126,7 +126,7 @@ namespace SCP.Core.Gui
                     string aCats = g.TextField("categories（逗號分隔）", string.Join(", ", r.Categories), k + "/cats");
                     r.Categories = aCats.Split(',').Select(c => c.Trim()).Where(c => c.Length > 0).ToList();
                     r.Description = g.TextField("說明", r.Description, k + "/desc");
-                    g.Note($"· webhook 來源：env `{(r.WebhookEnvVar.Length > 0 ? r.WebhookEnvVar : "—")}`／file `{(r.WebhookFile.Length > 0 ? r.WebhookFile : "—")}`（URL 本身不在這裡）");
+                    g.Note($"webhook 來源：env `{(r.WebhookEnvVar.Length > 0 ? r.WebhookEnvVar : "—")}`／file `{(r.WebhookFile.Length > 0 ? r.WebhookFile : "—")}`（URL 本身不在這裡）");
                     using (g.Row())
                     {
                         if (i > 0 && g.Button("上移", k + "/up")) { Swap(i, i - 1); return; }
@@ -221,8 +221,8 @@ namespace SCP.Core.Gui
                 g.TableRow("D commit", "tag=commit 且帶 meta.sha、非出資方", "+" + SCP_TavernPayroll.CommitPostReward, "發言者");
                 g.TableRow("E reading_note", "tag=reading-note、非出資方", "+" + SCP_TavernPayroll.ReadingNoteReward, "發言者");
             }
-            g.Note("· 發薪掛在**寫入端**：server 模式由 Senate Server 寫完就付，editor 模式由 Editor 寫完就付；入帳一律交銀行那顆 Server。");
-            g.Note("· 冪等鍵是這則訊息確定的鍵（`<kind>_<room>_<seq>`）⇒ 同一則不會付兩次。");
+            g.Note("發薪掛在**寫入端**：server 模式由 Senate Server 寫完就付，editor 模式由 Editor 寫完就付；入帳一律交銀行那顆 Server。");
+            g.Note("冪等鍵是這則訊息確定的鍵（`<kind>_<room>_<seq>`）⇒ 同一則不會付兩次。");
 
             g.Title("試算（⚠ 用的是**已存檔**的判準，不是畫面上的草稿）");
             string aSender = g.TextField("sender_id", "Zeta", "pay/try/sender");
@@ -243,9 +243,9 @@ namespace SCP.Core.Gui
                 });
                 var aLines = new List<string>();
                 if (p.Items.Count == 0) aLines.Add("⇒ **這則不會發任何錢**");
-                foreach (SCP_TavernPayItem i in p.Items) aLines.Add("💰 " + SCP_TavernPayroll.Describe(i));
+                foreach (SCP_TavernPayItem i in p.Items) aLines.Add("＋ " + SCP_TavernPayroll.Describe(i));
                 foreach (string w in p.Warnings) aLines.Add("⚠ " + w);
-                foreach (string n in p.Notes) aLines.Add("· " + n);
+                foreach (string n in p.Notes) aLines.Add(n);
                 aLines.Add("（試算零寫入 —— 沒有任何帳被動）");
                 m_TrialLines = aLines;
             }
