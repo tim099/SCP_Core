@@ -71,7 +71,8 @@ namespace SCP.Core.Gui
         {
             var aRoot = SCP_JsonData.NewObject();
             var aFields = SCP_JsonData.NewObject();
-            foreach (var kv in Fields) aFields.Set(kv.Key, kv.Value);
+            // 密碼欄（id 帶 SCP_Ui.MaskedIdSuffix）⛔ 不落盤 —— 這份 JSON 會寫進 repo 底下的 state 檔（TASK-0300）
+            foreach (var kv in Fields) if (!SCP_Ui.IsMaskedId(kv.Key)) aFields.Set(kv.Key, kv.Value);
             var aToggles = SCP_JsonData.NewObject();
             foreach (var kv in Toggles) aToggles.Set(kv.Key, kv.Value);
             var aFolds = SCP_JsonData.NewObject();
@@ -135,7 +136,7 @@ namespace SCP.Core.Gui
                     Id = iNode.Id,
                     Kind = iNode.Kind,
                     Label = iNode.Text,
-                    Value = iNode.Value,
+                    Value = iNode.Masked ? SCP_GuiTextRenderer.MaskedText(iNode.Value) : iNode.Value,
                     On = iNode.Kind == SCP_GuiNodeKind.Box ? iNode.Open : iNode.On,
                 });
             }

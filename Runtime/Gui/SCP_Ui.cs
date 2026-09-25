@@ -209,6 +209,28 @@ namespace SCP.Core.Gui
             return aVal;
         }
 
+        /// <summary>密碼欄 id 的固定後綴 —— 只有 <see cref="PasswordField"/> 產得出來。</summary>
+        public const string MaskedIdSuffix = "#secret";
+
+        /// <summary>
+        /// 這個欄位 id 是不是密碼欄（<see cref="SCP_GuiState.ToJson"/> 用它擋落盤）。
+        /// ⚠ 用 Contains 不用 EndsWith：id 撞名時 <c>Unique</c> 會在尾端補 `#2` ⇒ 後綴不再在最後。
+        /// </summary>
+        public static bool IsMaskedId(string iId) => iId.IndexOf(MaskedIdSuffix, StringComparison.Ordinal) >= 0;
+
+        /// <summary>
+        /// 密碼欄（TASK-0300）：畫面上遮罩、文字 renderer 不印值、**不進任何落盤的 state**。
+        /// ⚠ key 必填 —— 自動 id 會隨標籤變，而密碼欄的 id 還負責「不落盤」那道判準。
+        /// 用完請 <see cref="SetField"/> 清成空字串（視窗模式的值只活在記憶體，但別讓它比需要的活得久）。
+        /// </summary>
+        public string PasswordField(string iLabel, string iKey)
+        {
+            string aId = m_Ids.MakeExplicit(iKey + MaskedIdSuffix);
+            string aVal = m_Input.Fields.TryGetValue(aId, out string? v) ? v : "";
+            Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.TextField, Id = aId, Text = iLabel, Value = aVal, Masked = true });
+            return aVal;
+        }
+
         /// <summary>群組的 using scope。</summary>
         public readonly struct Scope : IDisposable
         {

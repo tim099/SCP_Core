@@ -47,6 +47,12 @@ namespace SCP.Core.Gui
         /// <summary>TextField 的當前值。</summary>
         public string Value { get; init; } = "";
 
+        /// <summary>
+        /// 密碼欄（<see cref="SCP_Ui.PasswordField"/>）：renderer 一律不印 <see cref="Value"/>、ImGui 用遮罩輸入。
+        /// ⚠ 這格只管**顯示**；「不落盤」由 id 後綴 <see cref="SCP_Ui.MaskedIdSuffix"/> 在 <see cref="SCP_GuiState.ToJson"/> 擋（TASK-0300）。
+        /// </summary>
+        public bool Masked { get; init; }
+
         /// <summary>Toggle 的當前狀態。</summary>
         public bool On { get; init; }
 

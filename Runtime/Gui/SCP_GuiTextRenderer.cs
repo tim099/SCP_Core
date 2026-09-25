@@ -138,11 +138,14 @@ namespace SCP.Core.Gui
             return true;
         }
 
+        /// <summary>密碼欄的顯示字：只說有沒有填，⛔ 不印內容也不印長度。</summary>
+        public static string MaskedText(string iValue) => string.IsNullOrEmpty(iValue) ? "（未輸入）" : "（已輸入，不顯示）";
+
         static string Inline(SCP_GuiNode iNode) => iNode.Kind switch
         {
             SCP_GuiNodeKind.Button => $"[ {iNode.Text} ]",
             SCP_GuiNodeKind.Toggle => $"[{(iNode.On ? "x" : " ")}] {iNode.Text}",
-            SCP_GuiNodeKind.TextField => $"{iNode.Text}: ⟨{iNode.Value}⟩",
+            SCP_GuiNodeKind.TextField => $"{iNode.Text}: ⟨{(iNode.Masked ? MaskedText(iNode.Value) : iNode.Value)}⟩",
             SCP_GuiNodeKind.Note => $"· {iNode.Text}",
             _ => iNode.Text,
         };
