@@ -223,6 +223,11 @@ namespace SCP.Core.Bank
             //   ⚠ 往後掃的代價是 O(今天 − 那一天)；量測用的日子通常很近，可接受。
             //   ⛔ 不掃「之前」的日子：那不會有答案，只會多讀一堆檔。
             var aPaidRefs = new HashSet<string>(StringComparer.Ordinal);
+            // ⚠ 只收**當天那一夾**的 ref，給下面「帳上有 ref 而找不到訊息」那格用。
+            // 🩸 2026-09-25 血證：那格原本拿 `aPaidRefs` 去比 ⇒ 往後掃把**之後每一天**的 ref 都算進來
+            //   ⇒ 09-18 報 264 筆找不到（＝09-20／09-22／09-25 三夾的總和），沒訊息的 09-19 也照印 264。
+            //   ⛔ 那不是體檢讀數，是「今天之後發過幾次薪」—— 而它長得跟孤兒分錄一模一樣。
+            var aSameDayRefs = new HashSet<string>(StringComparer.Ordinal);
             // 當天撥款的 `請款單號 → 金額`。⚠ 用 Dictionary 不是 HashSet：同一張單只會撥一次，
             //   而金額要留著印在警示裡（「有一批 114 token 是在補這一天」比「有一批」有用得多）。
             var aCompRequestIds = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -238,7 +243,11 @@ namespace SCP.Core.Bank
                     // ⚠ `LedgerWorkPostEntries` 仍只數**當天**那一夾 —— 它是「那天的帳長什麼樣」的讀數，
                     //   把後來補的算進去會讓它跟 `Paid` 混成同一個意思。
                     if (aIsSameDay) r.LedgerWorkPostEntries++;
-                    if (e.Ref.Length > 0) aPaidRefs.Add(e.Ref);
+                    if (e.Ref.Length > 0)
+                    {
+                        aPaidRefs.Add(e.Ref);
+                        if (aIsSameDay) aSameDayRefs.Add(e.Ref);
+                    }
                     continue;
                 }
                 if (!aIsSameDay) continue;   // 補償性入帳只看當天（它本來就是「那天被補了多少」）
@@ -377,7 +386,7 @@ namespace SCP.Core.Bank
                 }
             }
 
-            foreach (string aRef in aPaidRefs)
+            foreach (string aRef in aSameDayRefs)
                 if (!aSeenRefs.Contains(aRef)) r.LedgerRefsUnmatched++;
 
             // 🔴 「當天有請款撥款、有差集、而那份逐則清單不在」⇒ 錢走了第二條路而我讀不到它付了哪幾則。
