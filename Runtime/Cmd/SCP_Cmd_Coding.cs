@@ -89,6 +89,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("status", "正在改哪一部分，一句話（start 必填；status 用它更新）"),
             new SCP_CmdArgSpec("hours", "租期小時數（start 選填，預設 " + DefaultLeaseHours + "；status 會用它續期）"),
             new SCP_CmdArgSpec("scope", "這一場的**施工範圍**（絕對路徑，取施工的最大範圍）。start 選填。"
+                               + "多段用 `|` 分隔（`D:/A|D:/B`，任一段跟別人重疊就擋；TASK-0301）。"
                                + "範圍不重疊的人可以同時開場；⛔ **不給＝整個 kind 全域獨佔**（舊行為）"),
             new SCP_CmdArgSpec("force", "end 用：編譯紅燈時顯式硬退（要同時給 force_reason）"),
             new SCP_CmdArgSpec("force_reason", "force 退場的理由 —— 會寫進 session 檔，事後查得到"),
@@ -239,7 +240,7 @@ namespace SCP.Core.Cmd
                     return SCP_CmdResult.Fail(2,
                         "✗ --arg scope 解析不了：`" + iScope + "`"
                             + (aScopeErr.Length > 0 ? "（" + aScopeErr + "）" : ""),
-                        "  要的是**絕對路徑**，例：`D:/Unity/LY/Assets/Plugins/UCL_Core`");
+                        "  要的是**絕對路徑**，例：`D:/Unity/LY/Assets/Plugins/UCL_Core`；多段用 `|` 分隔（TASK-0301）");
             }
 
             DateTime aNow = DateTime.Now;

@@ -15,9 +15,15 @@
 // ⚠ 大小寫：本判定用 **OrdinalIgnoreCase** —— 宿主是 Windows，`D:\X` 與 `d:\x` 是同一個目錄。
 //   ⛔ 這個假設寫在這裡而不是散在呼叫端：改成跨平台時只有這一格要動。
 //
+// ⚠ **多路徑（TASK-0301，Tim 2026-09-25）**：一場可以宣告多段，以 `|` 分隔（`A|B`）。
+//   分隔符選 `|` 是因為 Windows 路徑不能含它（`,`／`;` 都是合法檔名字元，拿來切會把真路徑切斷）。
+//   正規化後仍是**一個字串**（各段正規化、去重、以 `|` 接回）⇒ session 檔的存法不變，舊的單段場照舊判。
+//   重疊＝兩場的段集合**任一對**重疊；擋下訊息講出**撞到的是哪一對**。
+//
 // ⚠ 方言限制：C# 9 / netstandard2.1 / 零第三方（Unity 那側也要編這份）。
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace SCP.Core.Session
@@ -25,6 +31,21 @@ namespace SCP.Core.Session
     /// <summary>施工範圍（絕對路徑）的正規化與重疊判定。純字串，零 IO。</summary>
     public static class SCP_SessionScope
     {
+        /// <summary>多段範圍的分隔符（TASK-0301）。Windows 路徑不能含它。</summary>
+        public const char Separator = '|';
+
+        /// <summary>把（已正規化或原始的）範圍切成各段；空字串 ⇒ 空清單。</summary>
+        public static List<string> Segments(string? iScope)
+        {
+            var aList = new List<string>();
+            foreach (string aSeg in (iScope ?? "").Split(Separator))
+            {
+                string t = aSeg.Trim();
+                if (t.Length > 0) aList.Add(t);
+            }
+            return aList;
+        }
+
         /// <summary>
         /// 正規化一段範圍路徑：解析 `.` / `..`、統一分隔符、去掉結尾分隔符。
         /// <para>三態，⛔ 不是 bool ——「沒宣告」與「宣告了但解不開」的**處置相反**：
@@ -39,6 +60,30 @@ namespace SCP.Core.Session
             oError = "";
             string aRaw = (iScope ?? "").Trim();
             if (aRaw.Length == 0) return false;                    // 未宣告 —— 不是錯
+            if (aRaw.IndexOf(Separator) < 0) return NormalizeOne(aRaw, out oNormalized, out oError);
+
+            // 多段：逐段正規化；**任一段**解不開或是空段 ⇒ 整筆擋（⛔ 不靜默丟掉那一段 ——
+            // 丟掉等於少宣告一塊，而那塊正是別人會撞上的地方，閘不會叫）
+            var aOut = new List<string>();
+            string[] aParts = aRaw.Split(Separator);
+            for (int i = 0; i < aParts.Length; i++)
+            {
+                string aPart = aParts[i].Trim();
+                if (aPart.Length == 0) { oError = $"第 {i + 1} 段是空的（`{aRaw}`）—— 多打了一個 `{Separator}`？"; return false; }
+                if (!NormalizeOne(aPart, out string aNorm, out string aErr)) { oError = $"第 {i + 1} 段 `{aPart}` 解不開：{aErr}"; return false; }
+                bool aDup = false;
+                foreach (string x in aOut) if (string.Equals(x, aNorm, StringComparison.OrdinalIgnoreCase)) { aDup = true; break; }
+                if (!aDup) aOut.Add(aNorm);
+            }
+            oNormalized = string.Join(Separator.ToString(), aOut);
+            return true;
+        }
+
+        /// <summary>單段正規化（多段拆開後逐段呼叫）。</summary>
+        static bool NormalizeOne(string aRaw, out string oNormalized, out string oError)
+        {
+            oNormalized = "";
+            oError = "";
 
             try
             {
@@ -68,7 +113,21 @@ namespace SCP.Core.Session
         /// <para>⚠ 只比字串前綴是不夠的：`…\Scripts` 是 `…\ScriptsOld` 的前綴，但它們是兩個目錄。
         /// ⇒ 前綴之後那一個字元必須是分隔符。</para>
         /// </summary>
-        public static bool Overlaps(string iA, string iB)
+        public static bool Overlaps(string iA, string iB) => FindOverlap(iA, iB) != null;
+
+        /// <summary>
+        /// 兩場（可多段）的範圍裡**第一對**重疊的段（mine, theirs）；不重疊 ⇒ null。
+        /// 都吃**已正規化**的範圍（<see cref="TryNormalize"/> 的輸出）。
+        /// </summary>
+        public static (string Mine, string Theirs)? FindOverlap(string iMine, string iTheirs)
+        {
+            foreach (string a in Segments(iMine))
+                foreach (string b in Segments(iTheirs))
+                    if (OverlapsOne(a, b)) return (a, b);
+            return null;
+        }
+
+        static bool OverlapsOne(string iA, string iB)
         {
             if (iA.Length == 0 || iB.Length == 0) return false;
             if (string.Equals(iA, iB, StringComparison.OrdinalIgnoreCase)) return true;
@@ -147,6 +206,15 @@ namespace SCP.Core.Session
 
         /// <summary>擋下時給人看的那一句 —— 說出**是哪兩段路徑撞到**，不要只說「衝突」。</summary>
         public static string Explain(string iMine, string iTheirs)
+        {
+            // 多段：講出撞到的那一對（⛔ 不把整串 `A|B|C` 丟給人自己找）
+            var aHit = FindOverlap(iMine, iTheirs);
+            if (aHit != null && (iMine.IndexOf(Separator) >= 0 || iTheirs.IndexOf(Separator) >= 0))
+                return ExplainOne(aHit.Value.Mine, aHit.Value.Theirs) + "（多段範圍裡撞到的是這一對）";
+            return ExplainOne(iMine, iTheirs);
+        }
+
+        static string ExplainOne(string iMine, string iTheirs)
         {
             if (string.Equals(iMine, iTheirs, StringComparison.OrdinalIgnoreCase))
                 return "兩邊宣告的是**同一段**：`" + iMine + "`";
