@@ -1,7 +1,7 @@
 // 區塊職責：**登入管理頁（最小版）** —— 設定 persona 信件夾根目錄、列出那底下的 persona 與上線狀態。
 // 物理意義：對照 Unity 端的 UCL_LoginStatusPage（該頁之後廢棄，全面改用 Senate 端）：顯示狀態＋**手動登出**。
 //           ⭐ 手動登出（TASK-0294，Tim 2026-09-25）：「真的發生忘記登出或故障，我可以手動排除」。
-//             兩段式確認；刪之前重讀 lock、session_key 對不上就拒絕（邏輯在 SCP_PersonaLetters.ForceLogout，本頁不直接碰檔）。
+//             兩段式確認；刪之前重讀 lock、session 身分（session_key＋locked_at）對不上就拒絕（邏輯在 SCP_PersonaLetters.ForceLogout，本頁不直接碰檔）。
 //           ⛔ 仍然**沒有**手動登入 —— 登入要發 token、寫 registry，那些 Senate 端還沒有寫入口。
 //
 //           ⭐ 2026-08-30 從 Senate.Cli/Pages/LoginStatusPage.cs 搬進 SCP_Core（六步的第 4 步）。
@@ -168,7 +168,7 @@ namespace SCP.Core.Gui
                 {
                     g.Note($"● {p.Name}　wake#{p.WakeExpected}　session_key={p.SessionKey}　pid={p.Pid}"
                            + $"　bank={p.BankAccount}　lock={p.LockPath}");
-                    if (g.Button($"手動登出 {p.Name}", $"login/logout/{p.Name}")) Arm(p.Name, p.SessionKey);
+                    if (g.Button($"手動登出 {p.Name}", $"login/logout/{p.Name}")) Arm(p.Name, SCP_PersonaLetters.SessionIdentity(p));
                 }
                 else if (p.LockError != null)
                 {
@@ -182,19 +182,20 @@ namespace SCP.Core.Gui
 
         // ── 手動登出（TASK-0294）──────────────────────────────────────
         // ⚠ 兩段式：第一顆鈕只「上膛」，第二顆才寫檔 —— 刪的是別人的 session，誤按的代價回不來。
-        // ⚠ 上膛時記下畫面上看到的 session_key；確認時 ForceLogout 會重讀 lock 比對，
+        // ⚠ 上膛時記下畫面上看到的 session 身分（session_key＋locked_at）；確認時 ForceLogout 會重讀 lock 比對，
         //   對不上（期間有人重新登入）就拒絕。null ＝ 上膛時 lock 就是壞的。
+        //   ⛔ 只記 session_key 不夠：同一個 agent 重新登入 key 不變（TASK-0294 QA @kotoko）。
 
         /// <summary>已上膛、等確認的 persona（null ＝ 沒有）。</summary>
         string? m_ArmedPersona;
 
-        /// <summary>上膛時畫面上的 session_key（null ＝ 當時 lock 讀不了）。</summary>
-        string? m_ArmedSessionKey;
+        /// <summary>上膛時畫面上的 session 身分（null ＝ 當時 lock 讀不了）。</summary>
+        string? m_ArmedIdentity;
 
-        void Arm(string iPersona, string? iSessionKey)
+        void Arm(string iPersona, string? iIdentity)
         {
             m_ArmedPersona = iPersona;
-            m_ArmedSessionKey = iSessionKey;
+            m_ArmedIdentity = iIdentity;
             m_Message = null;
         }
 
@@ -203,9 +204,9 @@ namespace SCP.Core.Gui
             string aPersona = m_ArmedPersona ?? "";
             using (g.Box($"確認手動登出 {aPersona}", "login/confirm"))
             {
-                g.Note(m_ArmedSessionKey != null
-                    ? $"· 會刪掉 {aPersona} 的 lock（session_key=`{m_ArmedSessionKey}`）與 now_status。"
-                      + "按下前會重讀一次 lock，session_key 變了就不刪。"
+                g.Note(m_ArmedIdentity != null
+                    ? $"· 會刪掉 {aPersona} 的 lock（`{m_ArmedIdentity}`）與 now_status。"
+                      + "按下前會重讀一次 lock，這一場變了（有人重新登入）就不刪。"
                     : $"· {aPersona} 的 lock 現在讀不了，會直接刪掉它（按下前會確認它仍然讀不了）。");
                 g.Note("· ⚠ 只解除「在線」：profile 的 status 欄不改、token 不失效、不發酒館廣播、不寫信。"
                        + "這個動作不會通知那個 session —— 若它其實還在跑，請另外跟它說。");
@@ -213,16 +214,16 @@ namespace SCP.Core.Gui
                 {
                     if (g.Button($"確認登出 {aPersona}", "login/confirm/yes"))
                     {
-                        var aResult = SCP_PersonaLetters.ForceLogout(m_Root.Value, aPersona, m_ArmedSessionKey);
+                        var aResult = SCP_PersonaLetters.ForceLogout(m_Root.Value, aPersona, m_ArmedIdentity);
                         m_Message = aResult.Message;
                         m_ArmedPersona = null;
-                        m_ArmedSessionKey = null;
+                        m_ArmedIdentity = null;
                         Rescan();
                     }
                     if (g.Button("取消", "login/confirm/no"))
                     {
                         m_ArmedPersona = null;
-                        m_ArmedSessionKey = null;
+                        m_ArmedIdentity = null;
                         m_Message = "・已取消手動登出（沒有動任何檔）";
                     }
                 }
