@@ -59,7 +59,7 @@ namespace SCP.Core.Gui
         {
             if (!HasRoot)
             {
-                g.Note("⚠ 本頁**沒有資料來源** ⇒ 這不是「沒有任何加密檔」，是「量不到」。原因："
+                g.Note("⚠ 本頁沒有資料來源 ⇒ 這不是「沒有任何加密檔」，是「量不到」。原因："
                        + (string.IsNullOrEmpty(m_Root.Error) ? "資料根是空的（沒有人填過）" : m_Root.Error));
                 g.Note("資料根設在「路徑管理」頁（`senate ui --page paths`）。");
                 return;
@@ -122,7 +122,7 @@ namespace SCP.Core.Gui
                    + $"／密碼不對 {C(SCP_SecretDecryptOutcome.WrongPassword)}／檔案壞了 {C(SCP_SecretDecryptOutcome.Broken)}"
                    + $"／寫不出去 {C(SCP_SecretDecryptOutcome.WriteFailed)}");
             if (C(SCP_SecretDecryptOutcome.WrongPassword) > 0)
-                g.Note("・「密碼不對」的那幾顆多半是用**另一組**密碼加的 ⇒ 換那組再按一次（已解開的會被跳過）");
+                g.Note("・「密碼不對」的那幾顆多半是用另一組密碼加的 ⇒ 換那組再按一次（已解開的會被跳過）");
             using (g.Table("名稱", "結果", "說明"))
                 foreach (SCP_SecretDecryptItem r in m_LastDecrypt)
                     g.TableRow(r.Name, OutcomeText(r.Outcome), r.Detail);
@@ -162,7 +162,7 @@ namespace SCP.Core.Gui
             bool aOverwrite = false;
             if (aExists)
             {
-                g.Note($"⚠ `{Path.GetFileName(aEncAbs)}` 已存在 —— 覆寫之後**舊密碼就解不開它**，而舊檔回不來");
+                g.Note($"⚠ `{Path.GetFileName(aEncAbs)}` 已存在 —— 覆寫之後舊密碼就解不開它，而舊檔回不來");
                 aOverwrite = g.Toggle("我要覆寫既有 .enc", false, $"secrets/{m_Gen}/encoverwrite");
             }
             if (!g.Button(aExists ? "加密並覆寫" : "加密", "secrets/encrypt")) return;
