@@ -177,7 +177,7 @@ namespace SCP.Core.Paths
         /// <c>queues/&lt;persona&gt;/queue-&lt;lane&gt;.json</c> ＋ <c>pending-&lt;lane&gt;.trigger</c>。
         /// 與 python <c>run_cmd.py</c> 的 <c>queue_path()</c> / <c>trigger_path()</c> **逐字同形**
         /// —— Editor 端的 watcher 掃的是 <c>queue*.json</c>，形狀差一個字就等於那筆永遠不被取走。</para>
-        /// <para>🩸 為什麼子分道不做成資料夾（2026-08-01 chess 的血證，寫在 <c>chess.py</c> 的註解裡）：
+        /// <para>🩸 為什麼子分道不做成資料夾（2026-08-01 chess 的血證，現在寫在 Senate 的 <c>SenateChessGateway</c> 判準①）：
         /// 舊寫法 <c>--agent-id chess-&lt;局號&gt;</c> 長出 <c>queues/chess-1/</c> <c>queues/chess-2/</c>
         /// —— **棋局不是人**，那是身分層污染。身分要回到真正下棋的那個人身上。</para>
         /// <para>⚠ 兩段各自過 <see cref="SafeQueueId"/> 的同一道防護；任一段不合法就**整筆**退回
