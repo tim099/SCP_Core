@@ -224,6 +224,50 @@ namespace SCP.Core.Voucher
             if (aWhen == null) return true;
             return aWhen.Value > iNow;
         }
+
+        // ===========================================================
+        // 區塊職責：死掉的批次（花完／過期）在檔上**再留多久**才清。
+        // 物理意義：`op=usage`（自由時間收工結算）答「本場那一批用了幾張」要讀批次自己的
+        //          Granted／Amount。🩸 TASK-0302：以前批次一死就在**同一次寫入**被清掉 ——
+        //          而「花完」本身就是一次寫入 ⇒ 最常見的「10 張全用完」那一場，
+        //          收工時永遠只答得出「查無」。
+        // 數值影響：**零**。死批次不進任何餘額算式（`ExpiringAlive`／`TryConsume` 都走 `IsAlive`），
+        //          只是檔上多躺一筆 amount 0（或已過期）的紀錄。
+        // ⚠ 這**不是**歷史（09-18「券不記歷史」不動）：留的是那一批自己的狀態，
+        //   一批一筆、不記事件，到期滿 retention 照樣清掉 —— 之後 `op=usage` 仍然只答得出查無。
+        // ⚠ 到期時刻解不出來的死批次（只可能是花完的）⇒ 沒有時間軸可以量「留多久」⇒ 照舊當場清。
+        // ===========================================================
+        public static readonly TimeSpan DeadBatchRetention = TimeSpan.FromHours(24);
+
+        /// <summary>
+        /// 某一批（按 <paramref name="iRef"/>）的用量：發了幾張／還剩幾張／其中還花得掉幾張。
+        /// <para>🩸 回 <c>false</c> ＝ **「我不知道」**，三個 out 一律 0 ——
+        /// 讓「發放量 − 0」這個減法在物理上拿不到數字（TASK-0195）。</para>
+        /// </summary>
+        public bool TryUsageByRef(string iRef, DateTime iNow, out int oGranted, out int oRemain, out int oAlive)
+        {
+            oGranted = 0; oRemain = 0; oAlive = 0;
+            bool aFound = false;
+            foreach (SCP_VoucherBatch aBatch in Expiring)
+            {
+                if (!string.Equals(aBatch.Ref, iRef, StringComparison.Ordinal)) continue;
+                aFound = true;
+                oGranted += aBatch.Granted > 0 ? aBatch.Granted : aBatch.Amount;
+                oRemain += aBatch.Amount;
+                if (IsAlive(aBatch, iNow)) oAlive += aBatch.Amount;
+            }
+            if (!aFound) { oGranted = 0; oRemain = 0; oAlive = 0; }
+            return aFound;
+        }
+
+        /// <summary>這一批已經死了（花完或過期），但還在保留期內 ⇒ 寫入時先不清。</summary>
+        public static bool IsRetainedDead(SCP_VoucherBatch iBatch, DateTime iNow)
+        {
+            if (IsAlive(iBatch, iNow)) return false;
+            DateTime? aWhen = iBatch.ExpiresAt();
+            if (aWhen == null) return false;
+            return aWhen.Value + DeadBatchRetention > iNow;
+        }
     }
 
     /// <summary>
@@ -259,7 +303,8 @@ namespace SCP.Core.Voucher
         }
 
         /// <summary>
-        /// 寫回（原子）。順手清掉**已經過期**的批次並回報清掉幾張。
+        /// 寫回（原子）。順手清掉**已經死掉且過了保留期**的批次並回報清掉幾張
+        /// （保留期見 <see cref="SCP_VoucherBook.DeadBatchRetention"/>，TASK-0302）。
         /// <para>⚠ 清理只在這裡發生 —— ⛔ 沒有另一支會刪東西的定時工。</para>
         /// </summary>
         public static bool Save(SCP_LettersRoot iRoot, SCP_VoucherBook iBook, DateTime iNow,
@@ -271,7 +316,8 @@ namespace SCP.Core.Voucher
             var aKeep = new List<SCP_VoucherBatch>(iBook.Expiring.Count);
             foreach (SCP_VoucherBatch aBatch in iBook.Expiring)
             {
-                if (SCP_VoucherBook.IsAlive(aBatch, iNow)) { aKeep.Add(aBatch); continue; }
+                if (SCP_VoucherBook.IsAlive(aBatch, iNow) || SCP_VoucherBook.IsRetainedDead(aBatch, iNow))
+                { aKeep.Add(aBatch); continue; }
                 if (aBatch.Amount > 0) oDroppedAmount += aBatch.Amount;   // 張數已歸零的不算「過期損失」
             }
             iBook.Expiring = aKeep;
