@@ -417,7 +417,7 @@ namespace SCP.Core.Letters
             catch (Exception e) { return $"餘額查詢失敗（{e.Message}）—— 不以 0 頂替"; }
         }
 
-        static string ResolvePersonaAccountId(SCP_MorningRoots iR, string iRegion, string iPersona, string iAgent, out string oSource)
+        public static string ResolvePersonaAccountId(SCP_MorningRoots iR, string iRegion, string iPersona, string iAgent, out string oSource)
         {
             try
             {
@@ -439,7 +439,7 @@ namespace SCP.Core.Letters
             return iAgent.Trim();   // 合一模式：agent id 就是帳號 id
         }
 
-        static SCP_JsonData LoadRegistryMeta(string iDataRoot)
+        public static SCP_JsonData LoadRegistryMeta(string iDataRoot)
         {
             try
             {
@@ -535,7 +535,7 @@ namespace SCP.Core.Letters
 
         // ── 雜項讀取 ─────────────────────────────────────────────
 
-        static bool LettersMigrationPending(SCP_MorningRoots iR, string iPersona)
+        public static bool LettersMigrationPending(SCP_MorningRoots iR, string iPersona)
         {
             string aTop = SCP_LettersPaths.PersonaDir(iR.Letters, iPersona);
             if (!Directory.Exists(aTop)) return false;
