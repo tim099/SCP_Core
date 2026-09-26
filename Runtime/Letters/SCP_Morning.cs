@@ -80,7 +80,7 @@ namespace SCP.Core.Letters
             string aActorTag = string.IsNullOrEmpty(iEnvMarker) ? "senate-cli" : iEnvMarker;
             aR.AppendLine($"# GoodMorning step=wake persona={iPersona}  ts=`{NowLocal()}`（本地時間）");
             aR.AppendLine();
-            aR.AppendLine("⤷ Senate 就地執行（TASK-0303：不經 Unity Editor）");
+            aR.AppendLine("⤷ SCP_Morning.Wake（SCP_Core；宿主由呼叫端標示）");
 
             // ① persona 必須已註冊 —— 打錯字不該變成「幫你建一個新人格」
             if (!SCP_PersonaProfile.Exists(iR.LettersRoot, iPersona))
@@ -322,7 +322,7 @@ namespace SCP.Core.Letters
                 int aWake = SCP_Consolidate.WakeLetterCount(iR.LettersRoot, iPersona) + 1;   // 本次 wake 編號（本次還沒寫信）
                 string aOutDir = Path.GetDirectoryName(aBriefPath)!;
                 var (aWrittenTo, aBrief) = SCP_WakeBrief.Write(iR.LettersRoot, iPersona, aWake, aOutDir, iR.DataRoot, iR.Region);
-                aSb.AppendLine($"⤷ SCP_WakeBrief（C#，Senate 就地執行）persona={iPersona} wake={aWake}");
+                aSb.AppendLine($"⤷ SCP_WakeBrief（C#，就地執行）persona={iPersona} wake={aWake}");
                 aSb.AppendLine($"· 主檔 {aBrief.MainLineCount} 行 / 上限 {SCP_WakeBrief.BriefLineCap}");
                 if (aBrief.MovedSections.Count > 0) aSb.AppendLine("· 移進續讀檔：" + string.Join(" / ", aBrief.MovedSections));
                 if (aBrief.LatestPointerHealed) aSb.AppendLine("🔧 `_latest.md` 落後，已校正為目錄內最新的自寫 letter");
