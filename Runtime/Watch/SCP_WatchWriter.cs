@@ -528,12 +528,19 @@ namespace SCP.Core.Watch
 
             // 台帳對齊 —— 章名的真相源是台帳，只改章檔會長出第二個真相源。
             //   場次 id 從**表頭**讀（它本來就寫在那裡）；讀不到就明說沒對齊，⛔ 不靜默。
-            SCP_WatchExport.TryParseChapterHeader(aBack, out _, out _, out _, out _,
-                                                  out string aWork, out string aSessions, out _);
+            //   🩸 TASK-0282：回傳值要接住 —— 解析失敗與「真的沒有場次欄」原本共用一句「表頭沒有場次欄」，
+            //   而前者的處置是去看表頭、後者沒什麼要修的。標題那一臂在這裡不可達（上面同一條式子已經過了），
+            //   可達的是缺「媒材」行：那一臂在讀「場次」之前就 return false ⇒ 場次永遠是空的。
+            //   ⚠「seq 區間」壞的那一臂場次已先解出來，照舊往下對齊台帳（既有決定，本單不動）。
+            bool aParsed = SCP_WatchExport.TryParseChapterHeader(aBack, out _, out _, out _, out _,
+                                                                 out string aWork, out string aSessions, out _);
             if (string.IsNullOrWhiteSpace(aSessions))
             {
-                oLines.Add("   ⚠ 表頭沒有「場次」欄 ⇒ **台帳未對齊**（台帳那側的 chapter_title 仍是舊值）。"
-                           + "　⛔ 這不是失敗，是這一章的台帳關聯查不到 —— 兩邊不一致時 `op=audit` 會看到。");
+                oLines.Add(aParsed
+                    ? "   ⚠ 表頭沒有「場次」欄 ⇒ **台帳未對齊**（台帳那側的 chapter_title 仍是舊值）。"
+                      + "　⛔ 這不是失敗，是這一章本來就沒有場次關聯 —— 兩邊不一致時 `op=audit` 會看到。"
+                    : "   ⚠ 表頭**解析不出來**（缺「媒材」行或格式不符）⇒ **台帳未對齊**（台帳那側的 chapter_title 仍是舊值）。"
+                      + "　⛔ 這不是「沒有場次欄」—— 場次讀不到是因為表頭壞了，要去看表頭。");
                 return aOut;
             }
             try
