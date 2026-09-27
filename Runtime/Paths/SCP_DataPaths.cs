@@ -87,7 +87,7 @@ namespace SCP.Core.Paths
         }
 
         /// <summary>
-        /// session token 表（<c>_tokens.json</c> / <c>_token_enforce.json</c>）住的地方。
+        /// session token 表（<c>_tokens.json</c>）住的地方。
         /// <para>⚠ persona lock **不在這裡**（TASK-0105，2026-09-03 起住 <c>letters/&lt;p&gt;/profile/_session.json</c>，
         /// 見 <see cref="SCP_LettersPaths.SessionLockPath"/>）。在這個目錄底下找 <c>_persona_*.json</c>
         /// 只會找到搬遷時因衝突留下的殘檔，不是在線名單。</para>

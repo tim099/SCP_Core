@@ -59,7 +59,7 @@ namespace SCP.Core.Letters
         public string SessionKey { get; set; } = "";
 
         /// <summary>
-        /// lock 上那顆 session token（酒館 enforce 開著時發文要附）。
+        /// lock 上那顆 session token（whoami 失憶救援的反查鍵；⛔ 酒館發言不驗它）。
         /// <para>⚠ 跟 <see cref="SessionKey"/> **不是同一格** —— key 是這場 session 的識別，
         /// token 是發文的憑證。名字像，用途不同，混用不會報錯只會被 reject。</para>
         /// </summary>

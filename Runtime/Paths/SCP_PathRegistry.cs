@@ -87,7 +87,7 @@ namespace SCP.Core.Paths
         BankRoot,
 
         [SCP_PathInfo("session token 表目錄",
-            "住 `_tokens.json` / `_token_enforce.json`。⚠ persona lock **不在這裡**："
+            "住 `_tokens.json`。⚠ persona lock **不在這裡**："
             + "2026-09-03（TASK-0105）起住 `letters/<p>/profile/_session.json`，位置由 persona 目錄唯一決定。")]
         [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, "_session", SCP_PathScope.Global)]
         SessionDir,

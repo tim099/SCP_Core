@@ -258,7 +258,7 @@ namespace SCP.Core.Letters
                             + "）" + (aFallback ? "　⚠ 非 persona 自訂 —— commit trailer 會掛這個位址" : ""));
             }
             catch (Exception e) { aR.AppendLine($"- mail: 解析失敗（{e.Message}）—— 不以空字串頂替"); }
-            aR.AppendLine($"- session_token: {aToken}（enforce 狀態見 Senate 登入狀態頁；失憶救援 awakening.py whoami --token {aToken}）");
+            aR.AppendLine($"- session_token: {aToken}（失憶救援 awakening.py whoami --token {aToken}）");
             aR.AppendLine("## verify（讀回的事實，不是 ✓）");
             aR.AppendLine($"- 資料源: `{SCP_LettersPaths.ProfileDir(iR.Letters, iPersona)}` → wake_count={aReadback.GetInt("wake_count", -1)} status={aReadback.GetString("status", "?")}");
             aR.AppendLine($"- lock: `{aLockPath}`（exists={File.Exists(aLockPath)}）");
