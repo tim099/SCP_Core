@@ -6,8 +6,9 @@
 //            ② sender_name ＝ `Treasury/accounts/<id>.json` 的 display_name（⚠ 不是 Bank/accounts —— 那裡是 id 本身）
 //            ③ 頭像        ＝ persona 卡 → identity 卡的 `AvatarSprite`
 //            ④ glossary 自動附註（演算法與輸出逐字對齊 `Cmd_Glossary.AppendRefsToText`）
-// ⚠ 刻意沒搬的（寫在這裡讓人查得到）：task-assign/commit 的 meta schema 檢查、alter pacing、
-//   CLI 指令偵測、creative 歸檔 —— 早安 intro 都碰不到；一般發文（`senate cmd tavern-post`，TASK-0308）遇到會擋下。
+//            ⑤ 酒保 CLI 指令判定（`SCP_TavernCli`，TASK-0312）⇒ 打 `tag=cli-cmd`／`cli_cmd=true`、跳過 ④
+// ⚠ 不在這裡的（各有自己的一支，呼叫端串）：meta schema（`SCP_TavernMetaSchema`，寫入前擋）、
+//   alter pacing（`SCP_TavernAlterPacing`，決定要不要延後）、creative 留念信（`SCP_TavernCreativeArchive`，寫入後寄）。
 // ⛔ 不驗 session token（Tim 2026-09-27，TASK-0308）：在線機制是擋同一 persona 重複登入，不是發言許可 ——
 //   下線後 commit 信件 repo 照樣要發公告。
 // 數值影響：純讀。拒絕時回 Error（不組訊息）。
@@ -59,9 +60,14 @@ namespace SCP.Core.Tavern
                 aName = aSenderId;
             }
 
-            // ④ glossary
-            string aBody = iMeta.TryGetValue("glossary-auto-attach", out string? aGa) && aGa == "false"
-                ? iBody : AppendGlossaryRefs(iProjectRoot, iBody);
+            // ⑤ 酒保 CLI 指令（TASK-0312，判準 SCP_TavernCli —— 與 Editor 同一支）：是指令 ⇒ 不附詞典、打分流標記。
+            //   🩸 2026-08-19：附註被當成指令的一部分，群發把整本詞典打進別人輸入框並按 Enter。
+            bool aIsCli = SCP_TavernCli.LooksLikeCliCommand(iDataRoot, iBody);
+
+            // ④ glossary（`glossary-auto-attach=false` 不分大小寫，同 Editor `ToLowerInvariant() == "false"`）
+            bool aOptOut = iMeta.TryGetValue("glossary-auto-attach", out string? aGa)
+                           && string.Equals((aGa ?? "").Trim(), "false", StringComparison.OrdinalIgnoreCase);
+            string aBody = aOptOut || aIsCli ? iBody : AppendGlossaryRefs(iProjectRoot, iBody);
 
             var aMsg = new SCP_TavernMessage
             {
@@ -74,6 +80,13 @@ namespace SCP.Core.Tavern
                 Body = aBody,
             };
             foreach (var kv in iMeta) aMsg.Meta[kv.Key] = kv.Value;
+            if (aIsCli)
+            {
+                // 已有 tag 不覆蓋（發話端顯式給的優先），改用獨立鍵保證分流訊號不丟 —— 逐字照 Editor `Op_Post`。
+                if (!aMsg.Meta.TryGetValue("tag", out string? aTag) || string.IsNullOrEmpty(aTag))
+                    aMsg.Meta["tag"] = SCP_TavernCli.Tag;
+                aMsg.Meta[SCP_TavernCli.MetaKey] = "true";
+            }
             aOut.Message = aMsg;
             return aOut;
         }
