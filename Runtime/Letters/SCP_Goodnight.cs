@@ -57,8 +57,6 @@ namespace SCP.Core.Letters
         public string Report = "";
         /// <summary>下線廣播本文；`{SUMMARY}` 待呼叫端填。</summary>
         public string BroadcastBody = "";
-        /// <summary>刪 lock 前讀到的 session_token（廣播要帶；null＝沒有 lock）。</summary>
-        public string? Token;
     }
 
     public static class SCP_Goodnight
@@ -550,7 +548,6 @@ namespace SCP.Core.Letters
             if (aLock == null)
                 aR.AppendLine($"⚠ persona '{iPersona}' 沒 active lock —— cleanup 場景，lock 步驟跳過");
             aR.AppendLine("📴 status → offline（由 lock 推導 —— 刪 lock 即下線）");
-            aOut.Token = aLock?.Online == SCP_PersonaOnline.Online ? aLock.SessionToken : null;
             if (aLock != null && File.Exists(aLockPath))
             {
                 File.Delete(aLockPath);

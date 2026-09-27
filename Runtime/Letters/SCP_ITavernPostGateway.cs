@@ -100,11 +100,9 @@ namespace SCP.Core.Letters
         /// 那是 UCL 端 BUG-23/24 的形狀：繞過推導不會報錯，只會署錯名字）。
         /// </summary>
         /// <param name="iMeta">tag／category 等；category 決定它會不會轉進 Discord。</param>
-        /// <param name="iSessionToken">token enforce 開著時必帶；空＝不附。</param>
         /// <param name="oLines">過程行（宿主定語、回傳檔路徑…）—— 直接接到 Cmd 的輸出上。</param>
         SCP_TavernPostVerdict Post(string iSenderPersona, string iBody,
-                                   IReadOnlyDictionary<string, string> iMeta,
-                                   string iSessionToken, List<string> oLines);
+                                   IReadOnlyDictionary<string, string> iMeta, List<string> oLines);
     }
 
     /// <summary>宿主注入發文閘的地方（同 <see cref="SCP.Core.Session.SCP_ActivitySessionGatewayHost"/> 的形狀）。</summary>

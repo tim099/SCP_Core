@@ -463,7 +463,7 @@ namespace SCP.Core.Cmd
                 ["sha"] = iSha,
                 ["category"] = "meta",
             };
-            try { return aGate.Post(iPersona, iBody, aMeta, "", ioResult.Lines); }
+            try { return aGate.Post(iPersona, iBody, aMeta, ioResult.Lines); }
             catch (Exception e) { return SCP_TavernPostVerdict.Bad("發文閘丟例外：" + e.Message); }
         }
 

@@ -245,7 +245,7 @@ namespace SCP.Core.Cmd
             SCP_TavernPostVerdict aVerdict;
             try
             {
-                aVerdict = aGate.Post(iPersona, aBody, aMeta, iLock?.SessionToken ?? "", ioResult.Lines);
+                aVerdict = aGate.Post(iPersona, aBody, aMeta, ioResult.Lines);
             }
             catch (Exception e)
             {

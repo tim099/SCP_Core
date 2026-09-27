@@ -5,10 +5,11 @@
 //            ① sender_id   ＝ persona 的 agent（profile 反推；沒有就用 persona 名）
 //            ② sender_name ＝ `Treasury/accounts/<id>.json` 的 display_name（⚠ 不是 Bank/accounts —— 那裡是 id 本身）
 //            ③ 頭像        ＝ persona 卡 → identity 卡的 `AvatarSprite`
-//            ④ session token 驗證（`_session/_token_enforce.json` enforce=true 才驗）
-//            ⑤ glossary 自動附註（演算法與輸出逐字對齊 `Cmd_Glossary.AppendRefsToText`）
+//            ④ glossary 自動附註（演算法與輸出逐字對齊 `Cmd_Glossary.AppendRefsToText`）
 // ⚠ 刻意沒搬的（寫在這裡讓人查得到）：task-assign/commit 的 meta schema 檢查、alter pacing、
-//   CLI 指令偵測、creative 歸檔 —— 早安 intro 都碰不到；要把**一般發文**搬過來的那一天（epic 0295 ③）再補。
+//   CLI 指令偵測、creative 歸檔 —— 早安 intro 都碰不到；一般發文（`senate cmd tavern-post`，TASK-0308）遇到會擋下。
+// ⛔ 不驗 session token（Tim 2026-09-27，TASK-0308）：在線機制是擋同一 persona 重複登入，不是發言許可 ——
+//   下線後 commit 信件 repo 照樣要發公告。
 // 數值影響：純讀。拒絕時回 Error（不組訊息）。
 #nullable enable
 using System;
@@ -24,7 +25,7 @@ namespace SCP.Core.Tavern
     {
         public SCP_TavernMessage? Message;
         public string? Error;
-        /// <summary>非致命的提醒（沒有顯示名、token 身分不符…）—— 呼叫端要印出來。</summary>
+        /// <summary>非致命的提醒（沒有顯示名…）—— 呼叫端要印出來。</summary>
         public List<string> Notes = new List<string>();
     }
 
@@ -35,7 +36,7 @@ namespace SCP.Core.Tavern
 
         public static SCP_TavernPostDraft Build(string iDataRoot, string iLettersRoot, string iProjectRoot, string iRegion,
                                                 string iRoom, string iPersona, string iBody,
-                                                IReadOnlyDictionary<string, string> iMeta, string iSessionToken)
+                                                IReadOnlyDictionary<string, string> iMeta)
         {
             var aOut = new SCP_TavernPostDraft();
             if (string.IsNullOrEmpty(iBody)) { aOut.Error = "body 是空的"; return aOut; }
@@ -50,17 +51,6 @@ namespace SCP.Core.Tavern
             }
             catch (Exception e) { aOut.Notes.Add($"persona 的 agent 讀不到（{e.Message}）—— sender 用 persona 名"); }
 
-            // ④ token（enforce 才驗；系統 sender `_` 開頭不驗）
-            string? aTokenWarning = null;
-            if (!aSenderId.StartsWith("_", StringComparison.Ordinal) && TokenEnforceEnabled(iDataRoot))
-            {
-                if (string.IsNullOrEmpty(iSessionToken)) { aOut.Error = "[T07] token enforce ON，但沒有 session_token"; return aOut; }
-                string? aErr = CheckToken(iDataRoot, iSessionToken, out string aRealBank, out string aRealPersona);
-                if (aErr != null) { aOut.Error = "[T07] token 校驗失敗: " + aErr; return aOut; }
-                if (aRealBank != aSenderId || aRealPersona != iPersona)
-                    aTokenWarning = $"⚠ [T07 identity mismatch] 真實身分 — bank: {aRealBank} / persona: {aRealPersona}";
-            }
-
             // ② sender_name
             string aName = ReadDisplayName(iDataRoot, aSenderId);
             if (aName.Length == 0)
@@ -69,10 +59,9 @@ namespace SCP.Core.Tavern
                 aName = aSenderId;
             }
 
-            // ⑤ glossary（在 token 警告之前 —— 確保警告在最尾端）
+            // ④ glossary
             string aBody = iMeta.TryGetValue("glossary-auto-attach", out string? aGa) && aGa == "false"
                 ? iBody : AppendGlossaryRefs(iProjectRoot, iBody);
-            if (aTokenWarning != null) aBody = aBody + "\n\n---\n" + aTokenWarning;
 
             var aMsg = new SCP_TavernMessage
             {
@@ -87,35 +76,6 @@ namespace SCP.Core.Tavern
             foreach (var kv in iMeta) aMsg.Meta[kv.Key] = kv.Value;
             aOut.Message = aMsg;
             return aOut;
-        }
-
-        static bool TokenEnforceEnabled(string iDataRoot)
-        {
-            try
-            {
-                string aPath = Path.Combine(iDataRoot, "_session", "_token_enforce.json");
-                if (!File.Exists(aPath)) return false;
-                return SCP_JsonData.Parse(File.ReadAllText(aPath, Encoding.UTF8)).GetBool("enforce", false);
-            }
-            catch (Exception) { return false; }   // 讀檔失敗 → 預設 OFF（Editor 版同一側）
-        }
-
-        static string? CheckToken(string iDataRoot, string iToken, out string oBank, out string oPersona)
-        {
-            oBank = ""; oPersona = "";
-            try
-            {
-                string aPath = Path.Combine(iDataRoot, "_session", "_tokens.json");
-                if (!File.Exists(aPath)) return "_tokens.json 不存在（跑 senate cmd morning-wake --arg persona=<P> 發 token）";
-                SCP_JsonData aRec = SCP_JsonData.Parse(File.ReadAllText(aPath, Encoding.UTF8))["tokens"][iToken];
-                if (!aRec.IsObject) return "token 不存在（可能 typo / 已失效 / 從未發過）";
-                string aStatus = aRec.GetString("status", "");
-                if (aStatus != "active") return $"token status={aStatus}（非 active）";
-                oBank = aRec.GetString("bank_account", "");
-                oPersona = aRec.GetString("persona", "");
-                return null;
-            }
-            catch (Exception e) { return "verify exception: " + e.Message; }
         }
 
         // 顯示名的唯一真相源是 `Treasury/accounts/<id>.json`（Tim 2026-08-20；Editor 版 GetDisplayName 同一份）。
