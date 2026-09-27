@@ -242,14 +242,14 @@ namespace SCP.Core.Proc
                     aRoot.Set("Commands", SCP_JsonData.NewArray());
                     return aRoot;
                 }
-                throw new IOException("queue.json 讀不了 ⇒ 拒絕寫回：" + SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(iPath));
+                throw new SCP_QueueUnreadableException(iPath, "讀不了（" + SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(iPath) + "）");
             }
             SCP_JsonData aNode;
             try { aNode = SCP_JsonParser.Parse(aText); }
             catch (Exception e)
-            { throw new InvalidDataException("queue.json 壞了 ⇒ 拒絕寫回，⛔ 一個位元組都不寫（先修它：" + iPath + "）：" + e.Message, e); }
+            { throw new SCP_QueueUnreadableException(iPath, "壞了：" + e.Message, e); }
             if (!aNode.Contains("Commands"))
-                throw new InvalidDataException("queue.json 沒有 `Commands` ⇒ 拒絕寫回（先修它：" + iPath + "）");
+                throw new SCP_QueueUnreadableException(iPath, "沒有 `Commands`");
             return aNode;
         }
 
@@ -275,6 +275,23 @@ namespace SCP.Core.Proc
             }
             try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch { }
             throw new IOException("queue.json 寫不進去（重試 5 次）：" + iPath, aLast);
+        }
+    }
+    /// <summary>
+    /// queue.json **在但讀不了／壞了** ⇒ 要寫回的路徑拒絕寫（TASK-0265）。
+    /// <para>⚠ 它的語意是「**沒有送出任何東西、那顆檔原封不動**」—— 呼叫端（CLI 頂層）要照這句話講，
+    /// ⛔ 不可以落進「設定檔有問題」那一格（那會把人送去翻一個沒有壞的設定檔）。</para>
+    /// <para>繼承 <see cref="IOException"/>：沒有專門接它的呼叫端，仍然會被既有的 IO 失敗路徑接住。</para>
+    /// </summary>
+    public sealed class SCP_QueueUnreadableException : IOException
+    {
+        /// <summary>那顆讀不了的 queue 檔。</summary>
+        public string QueuePath { get; }
+
+        public SCP_QueueUnreadableException(string iQueuePath, string iWhy, Exception? iInner = null)
+            : base("queue.json " + iWhy + " ⇒ 拒絕寫回，⛔ 一個位元組都不寫（寫回＝把整條 queue 換成這一筆）。先修它：" + iQueuePath, iInner)
+        {
+            QueuePath = iQueuePath;
         }
     }
 }
