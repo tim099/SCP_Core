@@ -355,13 +355,21 @@ namespace SCP.Core.Letters
 
         /// <summary>
         /// 收尾信落檔 —— 格式逐位元組對齊 Editor `WriteWakeLetter`（7 個機器欄、LF、作者 frontmatter 機器欄勝出並留痕）。
-        /// 回 (信路徑, 編號, 錯誤)。⚠ 目標檔已存在就擋（差異①），編號＝wakes/ 信數＋1 在鎖內算。
+        /// 回 (信路徑, 編號, 錯誤)。⚠ 目標檔已存在就擋（差異①），編號＝wakes/ 信數＋1 在鎖內算
+        /// （鎖檔在 <c>cmd/wake_letter_write.lock</c>）。
         /// </summary>
         public static (string Path, int Number, string? Error) WriteWakeLetter(SCP_MorningRoots iR, string iActor, string iPersona, string iBody)
         {
             string aWakes = SCP_LettersPaths.WakesDir(iR.Letters, iPersona);
             Directory.CreateDirectory(aWakes);
-            using (SCP_FileLock.Acquire(aWakes + "/.write"))
+            // 鎖檔放 cmd/ 不放 wakes/：SCP_FileLock 靠握把互斥、放開後**不刪鎖檔**（刪了會開一個兩人各握一顆的窗）
+            //   ⇒ 放在哪就永久留在哪。wakes/ 是信件 repo 的版控區，每寫一封信就多一顆 untracked 的 .write.lock；
+            //   cmd/ 是目錄層 gitignore（SCP_CmdPayload.CmdDirGitignore）。
+            string aCmdDir = SCP_LettersPaths.CmdDir(iR.Letters, iPersona);
+            Directory.CreateDirectory(aCmdDir);
+            string aIgnore = Path.Combine(aCmdDir, ".gitignore");
+            if (!File.Exists(aIgnore)) File.WriteAllText(aIgnore, SCP_CmdPayload.CmdDirGitignore, new UTF8Encoding(false));
+            using (SCP_FileLock.Acquire(aCmdDir + "/wake_letter_write"))
             {
                 int aNumber = SCP_Consolidate.WakeLetterCount(iR.LettersRoot, iPersona) + 1;
                 string aPrefix = aNumber.ToString("D6", CultureInfo.InvariantCulture) + "_";
