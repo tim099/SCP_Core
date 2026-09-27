@@ -228,20 +228,29 @@ namespace SCP.Core.Proc
         static string UtcStamp()
             => DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
 
+        // 🔴 TASK-0265：唯一呼叫端是 Submit（**要寫回**）。舊版壞檔 ⇒ 空骨架 ⇒ append 一筆寫回
+        //   ⇒ 整條 queue 被蓋成只剩這一筆、壞檔（證據）也一起沒了 —— 而註解寫的是「舊內容由 atomic replace 覆蓋」，
+        //   那句話描述的正是這個病。⇒ 只有真的不存在才從空骨架開始；讀不了／壞檔一律丟例外、不寫。
+        //   （呼叫時已握著 SCP_FileLock，而所有寫入端都在同一顆鎖下換檔 ⇒ 鎖裡的「不存在」就是真的不存在。）
         static SCP_JsonData LoadQueue(string iPath)
         {
-            if (File.Exists(iPath))
+            if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(iPath, out string aText, out var aState))
             {
-                try
+                if (aState == SCP.Core.Io.SCP_FileReadState.Missing)
                 {
-                    SCP_JsonData aNode = SCP_JsonParser.Parse(File.ReadAllText(iPath));
-                    if (aNode.Contains("Commands")) return aNode;
+                    SCP_JsonData aRoot = SCP_JsonData.NewObject();
+                    aRoot.Set("Commands", SCP_JsonData.NewArray());
+                    return aRoot;
                 }
-                catch (Exception) { /* 壞檔 ⇒ 用空骨架續行（舊內容由 atomic replace 覆蓋） */ }
+                throw new IOException("queue.json 讀不了 ⇒ 拒絕寫回：" + SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(iPath));
             }
-            SCP_JsonData aRoot = SCP_JsonData.NewObject();
-            aRoot.Set("Commands", SCP_JsonData.NewArray());
-            return aRoot;
+            SCP_JsonData aNode;
+            try { aNode = SCP_JsonParser.Parse(aText); }
+            catch (Exception e)
+            { throw new InvalidDataException("queue.json 壞了 ⇒ 拒絕寫回，⛔ 一個位元組都不寫（先修它：" + iPath + "）：" + e.Message, e); }
+            if (!aNode.Contains("Commands"))
+                throw new InvalidDataException("queue.json 沒有 `Commands` ⇒ 拒絕寫回（先修它：" + iPath + "）");
+            return aNode;
         }
 
         /// <summary>temp → move overwrite；撞檔鎖 backoff 重試（Editor 與 Server 可能同時碰同一個 queue）。</summary>

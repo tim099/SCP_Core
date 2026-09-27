@@ -159,9 +159,13 @@ namespace SCP.Core.Bank
             // ── ③ 權威：逐位 persona 讀 `bank/<region>.md` ──
             //    ⭐ 反向表（帳號 → personas）**在這裡由正向導出** ——
             //      而不是去讀 registry 的 `bank_personas`（那張表沒有寫入端，已退出解析）。
+            // ⚠ TASK-0265：有任何一位的綁定**這一瞬間讀不了**，本輪結果就是殘缺的 ⇒ 照樣拿來解析這一次，
+            //   ⛔ 但不落快取（s_Loaded 不設）—— 否則那一位會在整個進程壽命裡都被當成「沒有綁定」。
+            bool aIncomplete = false;
             foreach (string aName in SCP_PersonaProfile.PoolNames(iLettersRoot))
             {
-                string aAcc = SCP_PersonaProfile.GetBankAccount(iLettersRoot, aName, iRegion, out string _, out string _);
+                string aAcc = SCP_PersonaProfile.GetBankAccount(iLettersRoot, aName, iRegion, out string aSrc, out string _);
+                if (aSrc == SCP_PersonaProfile.BankSourceUnreadable) aIncomplete = true;
                 if (aAcc.Length == 0) continue;
                 s_PersonaToAccount[aName.ToLowerInvariant()] = aAcc;
                 AddCanonical(aAcc);   // 合一：綁定值本身就是正式帳號
@@ -171,7 +175,7 @@ namespace SCP.Core.Bank
             }
             foreach (KeyValuePair<string, List<string>> aKv in s_AccountToPersonas) aKv.Value.Sort(StringComparer.Ordinal);
 
-            s_Loaded = true;
+            s_Loaded = !aIncomplete;
             s_LoadedKey = aKey;
         }
 

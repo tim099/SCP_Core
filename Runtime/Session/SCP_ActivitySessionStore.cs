@@ -73,10 +73,15 @@ namespace SCP.Core.Session
             where T : SCP_ActivitySession, new()
         {
             string? aPath = PathOf(iRoot, iPersona);
-            if (aPath == null || !File.Exists(aPath)) return null;
+            if (aPath == null) return null;
+            // 🔴 TASK-0265：`Save` 是 Delete→Move（Editor 與 CLI 兩個進程都會寫）⇒ 舊版 `!File.Exists ⇒ null`
+            //   把換檔那一瞬間讀成「沒有進行中的 session」⇒ TryStart 守衛放行、覆寫一場正在跑的（TASK-0056 那個病）。
+            //   ⇒ 重試跨過窗口。⚠ 射程：重試用完仍 Busy 時照舊回 null（與壞檔同一條路，見 catch）；
+            //   而 LoadAll 走目錄列表 —— 換檔那一瞬間那顆檔**不在列表裡**，這一層救不到它。
+            if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aText, out _)) return null;
             try
             {
-                SCP_JsonData aData = SCP_JsonParser.Parse(File.ReadAllText(aPath, Encoding.UTF8));
+                SCP_JsonData aData = SCP_JsonParser.Parse(aText);
                 var aSession = new T();
                 SCP_JsonMapper.Populate(aSession, aData);
                 aSession.Raw = aData;   // 各 kind 的專屬欄位住在這 —— 寫回時以它為底（見 SCP_ActivitySession.Raw）

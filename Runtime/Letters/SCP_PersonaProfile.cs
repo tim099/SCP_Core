@@ -53,6 +53,12 @@ namespace SCP.Core.Letters
         public const string BankSourceAbsent = "absent";
         /// <summary>多個其他區域都有值 —— **不挑一個**，回空並由呼叫端處置。</summary>
         public const string BankSourceAmbiguous = "ambiguous";
+        /// <summary>
+        /// 綁定檔**這一瞬間讀不了**（換檔中／被鎖）—— ⛔ 不是 <see cref="BankSourceAbsent"/>（TASK-0265）。
+        /// <para>回傳值照樣是空字串（呼叫端的型別只有「有帳號／沒有」），但**不往下借別區**：
+        /// 本區讀不了時去借別區，錢就進了另一個帳戶。解析器看到這一態不落快取。</para>
+        /// </summary>
+        public const string BankSourceUnreadable = "unreadable";
 
         /// <summary>`_` / `.` 前綴的目錄名不是人（機械產物／隱藏目錄）。Exists 與 PoolNames 共用。</summary>
         static bool IsReservedName(string iName)
@@ -135,8 +141,17 @@ namespace SCP.Core.Letters
             string aBankDir = SCP_LettersPaths.PersonaDir(aRoot, iPersona) + "/bank";
 
             // ① 本區
-            string aOwn = ReadBankFile(aBankDir + "/" + iCurrencyId + ".md");
+            string aOwnPath = aBankDir + "/" + iCurrencyId + ".md";
+            string aOwn = ReadBankFile(aOwnPath, out bool aOwnBusy);
             if (aOwn.Length > 0) { oSource = iCurrencyId; return aOwn; }
+            if (aOwnBusy)
+            {
+                // ⛔ 不往下借別區 —— 讀不了本區不等於本區沒綁（TASK-0265）。
+                oSource = BankSourceUnreadable;
+                oNote = SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(aOwnPath);
+                iWarn?.Invoke("[PersonaProfile] " + iPersona + " 的本區綁定讀不了 ⇒ 不借別區：" + oNote);
+                return "";
+            }
 
             // ② 其他區域（跨區借用）
             if (!Directory.Exists(aBankDir)) return "";
@@ -154,7 +169,15 @@ namespace SCP.Core.Letters
             {
                 string aRegion = Path.GetFileNameWithoutExtension(aFile);
                 if (string.Equals(aRegion, iCurrencyId, StringComparison.Ordinal)) continue;
-                string v = ReadBankFile(aFile);
+                string v = ReadBankFile(aFile, out bool aBusy);
+                if (aBusy)
+                {
+                    // 一顆讀不了就判不出「唯一候選」—— 剩下那顆可能其實是兩顆之一（⇒ 本該是 ambiguous）。
+                    oSource = BankSourceUnreadable;
+                    oNote = SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(aFile);
+                    iWarn?.Invoke("[PersonaProfile] " + iPersona + " 的借用候選讀不了 ⇒ 不挑：" + oNote);
+                    return "";
+                }
                 if (v.Length > 0) aHits.Add(new KeyValuePair<string, string>(aRegion, v));
             }
             if (aHits.Count == 0) return "";
@@ -239,11 +262,18 @@ namespace SCP.Core.Letters
         }
 
         /// <summary>bank 檔的內文（去掉尾端換行）。讀不到 ⇒ 空字串。</summary>
-        static string ReadBankFile(string iPath)
+        static string ReadBankFile(string iPath) => ReadBankFile(iPath, out _);
+
+        /// <summary>同上，而 <paramref name="oBusy"/> 分得出「沒有這顆檔」與「這一瞬間讀不了」（TASK-0265）。
+        /// <para>🩸 舊版 `!File.Exists ⇒ ""`：綁定檔由 Unity 與 senate 各自 Delete→Move 換檔，
+        /// 撞上那一瞬間就讀成「沒有綁定」⇒ 借別區／落央行 ⇒ 錢進了另一個帳戶。</para></summary>
+        static string ReadBankFile(string iPath, out bool oBusy)
         {
-            if (!File.Exists(iPath)) return "";
-            try { return File.ReadAllText(iPath).Trim(); }
-            catch (Exception) { return ""; }
+            oBusy = false;
+            if (SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(iPath, out string aText, out var aState))
+                return aText.Trim();
+            oBusy = aState == SCP.Core.Io.SCP_FileReadState.Busy;
+            return "";
         }
 
         // ── 合併讀取 ────────────────────────────────────────────────
@@ -346,14 +376,13 @@ namespace SCP.Core.Letters
             oValue = null;
             string aPath = SCP_LettersPaths.ProfileDir(new SCP_LettersRoot(iLettersRoot), iPersona)
                            + "/" + iField + ".md";
-            if (!File.Exists(aPath)) return false;
-
-            string aText;
-            try { aText = File.ReadAllText(aPath, Encoding.UTF8); }
-            catch (Exception e)
+            // TASK-0265：`!File.Exists ⇒ 沒有這一欄` 會把 Unity 那側 Delete→Move 換檔的那一瞬間讀成「欄位不存在」
+            //   ⇒ 合併檔少一欄而沒有任何警告。重試跨過窗口；真的不在才回 false，讀不了照舊警告。
+            if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aText, out var aState))
             {
-                iWarn?.Invoke("[PersonaProfile] profile/" + iField + ".md 讀取失敗（"
-                              + iPersona + "）：" + e.Message);
+                if (aState == SCP.Core.Io.SCP_FileReadState.Busy)
+                    iWarn?.Invoke("[PersonaProfile] profile/" + iField + ".md 讀取失敗（"
+                                  + iPersona + "）：" + SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(aPath));
                 return false;
             }
             // ⚠ 寫檔一律補一個換行，讀回時 TrimEnd 掉 ⇒ **純量值尾端的換行不保留**。

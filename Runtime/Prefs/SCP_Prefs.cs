@@ -188,12 +188,9 @@ namespace SCP.Core.Prefs
         //          而把它讀成「沒設定」會讓人以為只要補上就好，實際上補上會被舊值蓋掉。
         SCP_PrefRead<T> ReadScalar<T>(SCP_PrefKey<T> iKey, Func<SCP_JsonData, T> iConvert)
         {
-            if (!File.Exists(m_Path)) return SCP_PrefRead<T>.Missing();
-
-            SCP_JsonData aRoot;
-            try { aRoot = SCP_JsonParser.Parse(File.ReadAllText(m_Path, Encoding.UTF8)); }
-            catch (Exception e)
-            { return SCP_PrefRead<T>.Failed($"{System.IO.Path.GetFileName(m_Path)} 讀不了（{iKey.Path}）：{e.Message}"); }
+            if (!TryReadRoot(out SCP_JsonData aRoot, out bool aMissing, out string aError))
+                return aMissing ? SCP_PrefRead<T>.Missing()
+                                : SCP_PrefRead<T>.Failed($"{System.IO.Path.GetFileName(m_Path)} 讀不了（{iKey.Path}）：{aError}");
 
             if (!aRoot.Contains(iKey.Section)) return SCP_PrefRead<T>.Missing();
             SCP_JsonData aSection = aRoot[iKey.Section];
@@ -207,13 +204,9 @@ namespace SCP.Core.Prefs
         public T? LoadSection<T>(string iSection, Action<string>? iWarn = null) where T : class
         {
             if (string.IsNullOrEmpty(iSection)) throw new ArgumentException("section 不可以是空字串", nameof(iSection));
-            if (!File.Exists(m_Path)) return null;
-
-            SCP_JsonData aRoot;
-            try { aRoot = SCP_JsonParser.Parse(File.ReadAllText(m_Path, Encoding.UTF8)); }
-            catch (Exception e)
+            if (!TryReadRoot(out SCP_JsonData aRoot, out bool aMissing, out string aError))
             {
-                if (iWarn != null) iWarn($"{System.IO.Path.GetFileName(m_Path)} 讀不了（沒有被覆寫）：{e.Message}");
+                if (!aMissing && iWarn != null) iWarn($"{System.IO.Path.GetFileName(m_Path)} 讀不了（沒有被覆寫）：{aError}");
                 return null;
             }
             if (!aRoot.Contains(iSection)) return null;
@@ -260,6 +253,27 @@ namespace SCP.Core.Prefs
             }, iSection);
         }
 
+        // 區塊職責：讀整份設定檔的唯一入口（TASK-0265）—— 讀取端四處（scalar／section／Sections／Mutate）共用。
+        // 物理意義：本檔由多個進程（Editor／每顆 senate CLI／Server）各自 Mutate，而換檔那一瞬間目標檔短暫不在。
+        //          舊版四處各自 `if (!File.Exists) ⇒ 沒設定`，會把那一瞬間讀成「這個設定還沒存過」
+        //          （實例：酒館寫入模式退回 Editor）。
+        // 數值影響：回 false 時 oMissing 分兩種 —— true ＝真的沒有這個檔（合法：還沒存過）；
+        //          false ＝讀不了或壞了，oError 是給人讀的原因。⛔ 呼叫端不可把後者當成「沒設定」。
+        bool TryReadRoot(out SCP_JsonData oRoot, out bool oMissing, out string oError)
+        {
+            oRoot = SCP_JsonData.NewObject();
+            oMissing = false;
+            oError = "";
+            if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(m_Path, out string aText, out var aState))
+            {
+                oMissing = aState == SCP.Core.Io.SCP_FileReadState.Missing;
+                if (!oMissing) oError = SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(m_Path);
+                return false;
+            }
+            try { oRoot = SCP_JsonParser.Parse(aText); return true; }
+            catch (Exception e) { oError = e.Message; return false; }
+        }
+
         // 區塊職責：所有寫入的唯一通道 —— 讀整份 → 交給呼叫端換一格 → atomic replace → 回讀。
         // 物理意義: 「整份壞掉時不硬寫」是刻意的：蓋掉會把**別人的 section** 一起帶走，
         //          而那不是本次要救的錯。⇒ 停手並說出來，讓人自己決定修還是刪。
@@ -267,12 +281,14 @@ namespace SCP.Core.Prefs
         //          netstandard2.1 沒有，Unity 那側會編不過。
         (bool Ok, string Message) Mutate(Func<SCP_JsonData, string> iMutate, string iWhatForMessage)
         {
-            SCP_JsonData aRoot = SCP_JsonData.NewObject();
-            if (File.Exists(m_Path))
+            // 🔴 TASK-0265：舊版是 `File.Exists ? 讀 : 空根` ⇒ 撞上別人換檔的那一瞬間，
+            //   會拿**空根**寫回 ⇒ 除了本次那一格，**其他 section 全部被刪掉**。
+            //   ⇒ 只有「真的不存在」才從空根開始；讀不了（Busy）跟壞檔一樣停手。
+            if (!TryReadRoot(out SCP_JsonData aRoot, out bool aMissing, out string aReadError))
             {
-                try { aRoot = SCP_JsonParser.Parse(File.ReadAllText(m_Path, Encoding.UTF8)); }
-                catch (Exception e)
-                { return (false, $"{System.IO.Path.GetFileName(m_Path)} 壞了，沒有覆寫（先修它或刪掉重存）：{e.Message}"); }
+                if (!aMissing)
+                    return (false, $"{System.IO.Path.GetFileName(m_Path)} 讀不了，沒有覆寫（壞檔先修它或刪掉重存；換檔中就再存一次）：{aReadError}");
+                aRoot = SCP_JsonData.NewObject();
             }
 
             string aSectionName;
@@ -315,13 +331,12 @@ namespace SCP.Core.Prefs
         public IReadOnlyList<string> Sections(Action<string>? iWarn = null)
         {
             var aList = new List<string>();
-            if (!File.Exists(m_Path)) return aList;
-            try
+            if (!TryReadRoot(out SCP_JsonData aRoot, out bool aMissing, out string aError))
             {
-                SCP_JsonData aRoot = SCP_JsonParser.Parse(File.ReadAllText(m_Path, Encoding.UTF8));
-                foreach (string aKey in aRoot.Keys) aList.Add(aKey);   // Keys 保留插入順序
+                if (!aMissing && iWarn != null) iWarn($"列 section 失敗：{aError}");
+                return aList;
             }
-            catch (Exception e) { if (iWarn != null) iWarn($"列 section 失敗：{e.Message}"); }
+            foreach (string aKey in aRoot.Keys) aList.Add(aKey);   // Keys 保留插入順序
             return aList;
         }
     }

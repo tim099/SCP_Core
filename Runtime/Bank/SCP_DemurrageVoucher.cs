@@ -119,10 +119,18 @@ namespace SCP.Core.Bank
         {
             var aOut = new HashSet<string>(StringComparer.Ordinal);
             string aPath = IssuedPath(iDataRoot, iDate);
-            if (!File.Exists(aPath)) return aOut;
+            // 🔴 TASK-0265：舊版 `!File.Exists ⇒ 空集合` 跟下面 catch 那句「⛔ 不當成沒發過」**正好矛盾** ——
+            //   AppendIssued 是 Delete→Move，撞上那一瞬間就把「今天發過的」讀成「一筆都沒發」⇒ 整天重發。
+            //   ⇒ 只有真的不存在才是空；讀不了跟壞檔同一個處置：丟例外，讓呼叫端停手。
+            if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aText, out var aState))
+            {
+                if (aState == SCP.Core.Io.SCP_FileReadState.Missing) return aOut;
+                throw new InvalidOperationException("轉券簿讀不了（⛔ 不當成沒發過）："
+                                                    + SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(aPath));
+            }
             try
             {
-                SCP_JsonData aJd = SCP_JsonParser.Parse(File.ReadAllText(aPath));
+                SCP_JsonData aJd = SCP_JsonParser.Parse(aText);
                 if (aJd.Contains("entries"))
                     foreach (string k in aJd["entries"].Keys) aOut.Add(k);
             }
@@ -320,9 +328,14 @@ namespace SCP.Core.Bank
             string aPath = IssuedPath(iDataRoot, iDate);
             try
             {
-                SCP_JsonData aJd = File.Exists(aPath)
-                    ? SCP_JsonParser.Parse(File.ReadAllText(aPath))
-                    : SCP_JsonData.Parse("{}");
+                // TASK-0265：舊版 `File.Exists ? 讀 : {}` ⇒ 撞上換檔那一瞬間會從 `{}` 開始寫回 ⇒ 當天**已記的那幾筆被洗掉**。
+                //   ⇒ 只有真的不存在才從 `{}` 開始；讀不了就不寫（回 false，呼叫端已經會大聲說「下次會重發」）。
+                SCP_JsonData aJd;
+                if (SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aExisting, out var aState))
+                    aJd = SCP_JsonParser.Parse(aExisting);
+                else if (aState == SCP.Core.Io.SCP_FileReadState.Missing)
+                    aJd = SCP_JsonData.Parse("{}");
+                else { oError = SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(aPath); return false; }
                 if (!aJd.Contains("entries")) aJd["entries"] = SCP_JsonData.NewObject();
                 string aStamp = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
                 foreach (string id in iEntryIds) aJd["entries"][id] = aStamp;
