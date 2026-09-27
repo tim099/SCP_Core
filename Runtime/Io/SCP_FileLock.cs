@@ -78,10 +78,7 @@ namespace SCP.Core.Io
 
                 ++aTries;
                 if (aSw.Elapsed.TotalSeconds >= iTimeoutSec)
-                    throw new IOException(
-                        "等不到檔案鎖（" + iTimeoutSec.ToString("0.#") + "s，試了 " + aTries + " 次）："
-                        + aLockPath + "　⇒ 有人握著它沒放，或那個路徑本身有問題（成因見 inner）。"
-                        + "　⛔ 本呼叫**沒有**寫入任何東西。", aLast);
+                    throw new SCP_FileLockTimeoutException(aLockPath, iTimeoutSec, aTries, aLast);
 
                 // 退讓：前幾次很短（常態是毫秒級臨界區），之後拉長避免空轉。
                 System.Threading.Thread.Sleep(aTries < 10 ? 2 : 20);
@@ -95,6 +92,28 @@ namespace SCP.Core.Io
             if (aStream == null) return;
             try { aStream.Dispose(); }
             catch (IOException) { /* 放鎖失敗不該蓋掉臨界區裡真正的結果 */ }
+        }
+    }
+
+    /// <summary>
+    /// <see cref="SCP_FileLock.Acquire"/> 等鎖逾時。仍是 <see cref="IOException"/>（既有 <c>catch (IOException)</c> 照接得到），
+    /// 但呼叫端**認得出這一格**：它的處置是「稍後重試／去找誰握著」，不是「路徑壞了」。
+    /// <para>🩸 2026-09-27：`senate ucmd` 等 queue 鎖 20 秒後丟出裸 IOException、沒人接 ⇒ 整顆 senate.exe 崩潰
+    /// （0xe0434352 對話框）。未處理例外**不跑 finally** ⇒ 對話框開著時那顆行程連同它手上的鎖都還活著，
+    /// 下一個呼叫者又等 20 秒、又崩一次。⇒ 型別要讓 CLI 能在 catch 裡分辨它，⛔ 不靠比對訊息字串。</para>
+    /// </summary>
+    public sealed class SCP_FileLockTimeoutException : IOException
+    {
+        public string LockPath { get; }
+        public double TimeoutSec { get; }
+
+        public SCP_FileLockTimeoutException(string iLockPath, double iTimeoutSec, int iTries, Exception? iInner)
+            : base("等不到檔案鎖（" + iTimeoutSec.ToString("0.#") + "s，試了 " + iTries + " 次）："
+                   + iLockPath + "　⇒ 有人握著它沒放，或那個路徑本身有問題（成因見 inner）。"
+                   + "　⛔ 本呼叫**沒有**寫入任何東西。", iInner)
+        {
+            LockPath = iLockPath;
+            TimeoutSec = iTimeoutSec;
         }
     }
 }
