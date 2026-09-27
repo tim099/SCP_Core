@@ -140,12 +140,15 @@ namespace SCP.Core.Cmd
             List<string> aPool = SCP_PersonaProfile.PoolNames(aLettersRoot, m => aWarn.Add(m));
             var aBinding = new Dictionary<string, string>(StringComparer.Ordinal);
             var aNoBinding = new List<string>();
+            var aUnreadable = new List<string>();
             var aBorrowed = new List<string>();
             var aBorrowedSet = new HashSet<string>(StringComparer.Ordinal);
             foreach (string aName in aPool)
             {
                 string aAcc = SCP_PersonaProfile.GetBankAccount(aLettersRoot, aName, aRegion,
                                                                 out string aSrc, out string _);
+                // TASK-0265：讀不了 ≠ 沒有綁定 —— 兩者的處置相反（前者重跑、後者去綁），⛔ 不可同格。
+                if (aSrc == SCP_PersonaProfile.BankSourceUnreadable) { aUnreadable.Add(aName); continue; }
                 if (aAcc.Length == 0) { aNoBinding.Add(aName); continue; }
                 if (!string.Equals(aSrc, aRegion, StringComparison.Ordinal))
                 { aBorrowed.Add(aName + "（宣告在 " + aSrc + "＝" + aAcc + "）"); aBorrowedSet.Add(aName); }
@@ -211,6 +214,7 @@ namespace SCP.Core.Cmd
             aR.Lines.Add("- pool **" + aPool.Count + "** 位：有綁定 **" + aBinding.Count
                          + "**（其中借用別區 " + aBorrowed.Count + "）／沒有綁定 " + aNoBinding.Count);
             aR.Lines.Add("");
+            Section(aR, "⓪ unreadable　綁定檔這一瞬間讀不了（換檔中／被鎖）⇒ **重跑一次**，⛔ 不是沒有綁定", aUnreadable);
             Section(aR, "① no_binding　連別區都沒有宣告　⇒ 這個人的錢無處可去", aNoBinding);
             Section(aR, "② borrowed　只有別區宣告　⇒ **不是錯**，只是要看得見", aBorrowed);
             Section(aR, "③ unmaterialized　只靠合一成立、後台還沒開過戶　⇒ **不是錯**，錢會正確入帳", aUnmaterialized);
@@ -221,6 +225,7 @@ namespace SCP.Core.Cmd
 
             aR.AddValue("pool_count", aPool.Count.ToString());
             aR.AddValue("bound", aBinding.Count.ToString());
+            aR.AddValue("unreadable", aUnreadable.Count.ToString());
             aR.AddValue("no_binding", aNoBinding.Count.ToString());
             aR.AddValue("borrowed", aBorrowed.Count.ToString());
             aR.AddValue("unmaterialized", aUnmaterialized.Count.ToString());
@@ -231,7 +236,8 @@ namespace SCP.Core.Cmd
             //   把它們算進去的話，每天都會紅一格，而天天紅的東西沒有人會再看。
             //   🩸 `unmaterialized` 正是這樣被抓到的：它以 `unknown_acct` 之名紅了很久，
             //      紅的內容是「錢會進一個沒有登記的地方」—— 而錢一直進對地方。
-            int aBad = aNoBinding.Count + aClosedHit.Count + aStale.Count;
+            // ⚠ `unreadable` 計入：讀不了的那幾位**沒被檢查到**，這一次不能宣稱「沒有問題」。
+            int aBad = aUnreadable.Count + aNoBinding.Count + aClosedHit.Count + aStale.Count;
             aR.Lines.Add("");
             if (aBad > 0)
             {
