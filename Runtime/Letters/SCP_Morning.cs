@@ -1,12 +1,12 @@
 // 區塊職責：早安流程（wake／brief／intro 前置與標頭）的**邏輯層** —— 不需要 Unity Editor。
 // 物理意義：移植自 UCL_Core `UCL_AwakeningService`（StepWake／RunBrief／PrecheckIntro／BuildIntroHeader）
 //          與 `Cmd_GoodMorning`（TASK-0303，Tim 2026-09-26：「Editor 卡住時早安也卡住，讓早安不再依賴 Editor」）。
-//          寫入的檔、欄位名、格式逐一對齊 Editor 版（lock／_tokens.json／memo／profile 兩欄／審計行），
+//          寫入的檔、欄位名、格式逐一對齊 Editor 版（lock／memo／profile 兩欄／審計行；`_tokens.json` 已退場 TASK-0307），
 //          ⇒ Editor 端、python 端、SCP_PersonaLetters 等既有讀者**不必改**就讀得懂。
 // 與 Editor 版刻意的差異（寫在這裡讓人查得到，不是漏移植）：
 //   ① lock 讀得到檔卻解析不了（Unknown）⇒ **擋**。Editor 版 ReadLock 回 null ⇒ 當成離線放行，
 //      然後覆寫那顆壞 lock ——「壞 lock」與「沒人在線」同形，放行的方向是製造分身。
-//   ② `_tokens.json` 的 read-modify-write 包在跨 process 鎖裡（Editor 版沒有）。
+//   ② （TASK-0307 起不再有 `_tokens.json`；token 只住 lock。）
 //   ③ 舊位置 lock（`_session/_persona_*.json`）**不搬**：有就擋並指路（搬遷是一次性維護，
 //      Bar 實測 NothingToDo；而搬錯方向的代價是放行第二次登入）。
 //   ④ 帳戶存在判準讀 `Bank/accounts/`（`SCP_BankAccounts.TryLoad`）—— Editor 版還在列舉遷移前的
@@ -14,7 +14,7 @@
 //   ⑤ `_persona_profile_snapshot.json` **不刷新**（Editor 版每次寫 profile 都整池重寫）——
 //      它是衍生快照，讀者是 Editor 頁與 python，而 python 端已明說不靠它（persona_profile.py:98）。
 //   ⑥ 見林書籤換算（RebaseBookmark）不做：Editor 版的換算結果**從不落盤**（WriteRaw 略過推導欄），只印一行。
-// 數值影響：wake 寫 lock／_tokens.json／memo／profile/{model,actual_agent}.md／審計 jsonl，刪 now_status。
+// 數值影響：wake 寫 lock（含 session_token）／memo／profile/{model,actual_agent}.md／審計 jsonl，刪 now_status。
 //          brief 寫 cmd/wake_brief.md。其餘純讀。
 #nullable enable
 using System;
@@ -62,7 +62,6 @@ namespace SCP.Core.Letters
         }
 
         public SCP_LettersRoot Letters => new SCP_LettersRoot(LettersRoot);
-        public string SessionDir => Path.Combine(DataRoot, "_session").Replace('\\', '/');
         public string MemosDir => Path.Combine(DataRoot, "ChatTavern", "baton", "memos").Replace('\\', '/');
         public string BankRoot => SCP_BankRegion.BankRootOfDataRoot(DataRoot);
         public string Region => SCP_BankRegion.Read(DataRoot, out _);
@@ -134,18 +133,9 @@ namespace SCP.Core.Letters
             string aSessionKey = $"{aActual}-{iPersona}";
             aR.AppendLine($"- Persona={iPersona} / Agent={aAgent}（顯示歸屬）/ ActualAgent={aActual} / 帳號={(string.IsNullOrEmpty(aBank) ? "(解析不到)" : aBank)}〔{aBankSource}〕");
 
-            // ②.5 舊位置 lock：本側不搬（差異③）—— 有就擋，否則舊位置那顆在線的 lock 會被當成沒人在線。
-            aR.AppendLine("## lock migrate（舊 `_session/_persona_*.json` → `profile/_session.json`，冪等）");
-            string[] aLegacy = Directory.Exists(iR.SessionDir)
-                ? Directory.GetFiles(iR.SessionDir, "_persona_*.json") : new string[0];
-            if (aLegacy.Length > 0)
-            {
-                aR.AppendLine($"- ⛔ 舊位置還有 {aLegacy.Length} 顆 lock：{string.Join(", ", aLegacy.Select(Path.GetFileName))}");
-                aR.AppendLine("## blocked\n- reason: 舊位置 lock 未遷移 —— 在它搬進 profile/ 之前，在線判定不可信");
-                aR.AppendLine("- exits: 開 Editor 跑一次 `senate ucmd run GoodMorning --arg step=wake`（Editor 版會搬），或人工確認後手動搬");
-                return Blocked(aRes, aR);
-            }
-            aR.AppendLine($"- NothingToDo — 舊位置 `{iR.SessionDir}` 沒有 `_persona_*.json`");
+            // ②.5（已退場，TASK-0307）：舊位置 `_session/_persona_*.json` 的 lock 檢查。
+            //   lock 自 TASK-0105（2026-09-03）起住 `profile/_session.json`，而 `_session/` 整個目錄已退場 ——
+            //   留著這一步等於每次早安都去讀一個不該存在的目錄。
 
             // ③ 唯一的中斷條件：該 persona 目前是否在線（lock 為真相源；有 lock ＝ 在線）
             SCP_PersonaStatus? aLock = SCP_PersonaLetters.ReadPersonaLock(iR.LettersRoot, iPersona);
@@ -190,40 +180,15 @@ namespace SCP.Core.Letters
             }
             if (aRawActual != aActual) WriteProfileField(iR, iPersona, "actual_agent", aActual, aActor, aReason);
 
-            // ⑥ token（同 persona 舊 active 標 expired）＋ lock ＋ memo
+            // ⑥ token ＋ lock ＋ memo
             string aToken = Guid.NewGuid().ToString("N");
             string aClaimOrigin = $"cmd-goodmorning:{aActorTag}";
-            string aTokensPath = Path.Combine(iR.SessionDir, "_tokens.json").Replace('\\', '/');
-            Directory.CreateDirectory(iR.SessionDir);
-            using (SCP_FileLock.Acquire(aTokensPath))
-            {
-                SCP_JsonData aTokens = File.Exists(aTokensPath)
-                    ? SCP_JsonData.Parse(File.ReadAllText(aTokensPath, Encoding.UTF8)) : SCP_JsonData.NewObject();
-                if (!aTokens.IsObject) aTokens = SCP_JsonData.NewObject();
-                if (!aTokens["tokens"].IsObject) aTokens["tokens"] = SCP_JsonData.NewObject();
-                SCP_JsonData aTokDic = aTokens["tokens"];
-                foreach (string aKey in aTokDic.Keys.ToList())
-                {
-                    SCP_JsonData aRec = aTokDic[aKey];
-                    if (aRec.GetString("persona", "") == iPersona && aRec.GetString("status", "") == "active")
-                    {
-                        aRec["status"] = "expired";
-                        aRec["expired_at"] = NowIso();
-                        aRec["expired_reason"] = "reissued";
-                    }
-                }
-                var aNewRec = SCP_JsonData.NewObject();
-                aNewRec["persona"] = iPersona;
-                aNewRec["agent"] = aAgent;
-                aNewRec["bank_account"] = aBank;
-                aNewRec["issued_at"] = NowIso();
-                aNewRec["claim_origin"] = aClaimOrigin;
-                aNewRec["session_key"] = aSessionKey;
-                aNewRec["status"] = "active";
-                aTokDic[aToken] = aNewRec;
-                SCP_CmdPayload.WriteAtomic(aTokensPath, SCP_JsonWriter.Write(aTokens, SCP_JsonStyle.UclLegacy));
-            }
-
+            // 🔴 TASK-0307：token **只住 lock**（`profile/_session.json` 的 `session_token` 欄）——
+            //   舊版另寫一份全員共用的 `AgentCommands/_session/_tokens.json`，而它只是 lock 的鏡像
+            //   （2026-09-27 量：7 筆 active 與 7 顆 lock 逐一相同）＋ 201 筆永遠不收的 expired。
+            //   ⇒ lock 上線建、下線刪，**它的生命週期就是 token 的生命週期**；而它已經被每個 letters repo 的
+            //     `.gitignore` 擋在版控外（含活憑證、remote 可能公開）—— 不另開一顆要記得擋的新檔。
+            //   ⚠ 同 persona 舊 token 不必另外標 expired：走到這裡代表沒有 lock（③ 已擋在線者），舊的那顆早就隨 lock 刪了。
             string aLockPath = SCP_LettersPaths.SessionLockPath(iR.Letters, iPersona);
             var aLockJson = SCP_JsonData.NewObject();
             aLockJson["persona"] = iPersona;

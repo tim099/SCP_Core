@@ -1,9 +1,9 @@
 // 區塊職責：晚安流程（check／portrait／letter／sleep／logout）的**邏輯層** —— 不需要 Unity Editor。
 // 物理意義：移植自 UCL_Core `UCL_AwakeningService`（StepCheck／StepPortrait／StepLetter／WriteWakeLetter／
-//          PrepareSleep／ExpireTokens）（TASK-0305，承接 TASK-0303 早安）。寫的檔、欄位、回傳檔文字逐一對齊 Editor 版。
+//          PrepareSleep）（TASK-0305，承接 TASK-0303 早安）。寫的檔、欄位、回傳檔文字逐一對齊 Editor 版。
 //          Senate 的 `senate cmd goodnight-*` 與 Editor 的 `senate ucmd run GoodNight` 呼叫**同一份**。
 // sleep 的形狀：Preflight（唯讀，全部守衛）→ Apply（刪 lock／now_status、組廣播）→ 呼叫端自己決定
-//          關場方式（Senate：CloseOwnSessionNative；Editor：UCL_SessionCloseFlow 帶結算）→ 廣播 → ExpireTokens。
+//          關場方式（Senate：CloseOwnSessionNative；Editor：UCL_SessionCloseFlow 帶結算）→ 廣播。token 隨 lock 刪除失效（TASK-0307）。
 //          ⇒ 任何 blocked 都發生在第一個寫入之前（半睡半醒的狀態不存在）。
 // 與 Editor 版刻意的差異（寫在這裡讓人查得到，不是漏移植）：
 //   ① 收尾信寫入加**防覆寫**（目標檔已在就擋）＋ 跨 process 鎖 —— Editor 版沒有；編號算錯時它會靜默蓋掉舊信。
@@ -17,7 +17,7 @@
 //      沒開就照走、觀影場留著不關（到期成殘留，殘留結算會補付）、skip 理由改印進回傳檔與下線廣播。
 //   ⑥ portrait 的 `about` 必須是現有 persona（見 SCP_PortraitWriter）。
 // 數值影響：letter 寫 wakes/<N>_<ts>.md＋_latest.md；portrait 寫兩幅畫像檔；sleep 刪 lock／now_status；
-//          ExpireTokens 改 _tokens.json；CloseOwnSessionNative 改 session 檔。check 純讀。
+//          （token 隨 lock 刪除失效，TASK-0307）；CloseOwnSessionNative 改 session 檔。check 純讀。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -598,35 +598,6 @@ namespace SCP.Core.Letters
             catch (Exception e) { return $"- 🎬 活動 session：⚠ 關場失敗（{e.Message}）—— 下線照走，場還開著"; }
             return $"- 🎬 活動 session：關掉 **{s.kind}**（`{s.session_id}`）　關場={aClosed}　結算=False　reason=`{aTag}`"
                 + $"\n  （{(string.IsNullOrEmpty(s.kind) ? "未登記種類" : s.kind)} 登記為不需要結算 —— 顯式，不是漏跑）";
-        }
-
-        /// <summary>同 persona 全部 active token 標 expired（不刪，留 audit）。回筆數；讀不了回 -1（⛔ 不是 0）。</summary>
-        public static int ExpireTokens(SCP_MorningRoots iR, string iPersona, string iReason)
-        {
-            string aPath = Path.Combine(iR.SessionDir, "_tokens.json").Replace('\\', '/');
-            if (!File.Exists(aPath)) return 0;
-            try
-            {
-                using (SCP_FileLock.Acquire(aPath))
-                {
-                    SCP_JsonData aTokens = SCP_JsonData.Parse(File.ReadAllText(aPath, Encoding.UTF8));
-                    SCP_JsonData aDic = aTokens["tokens"];
-                    if (!aDic.IsObject) return 0;
-                    int n = 0;
-                    foreach (string k in aDic.Keys.ToList())
-                    {
-                        SCP_JsonData r = aDic[k];
-                        if (r.GetString("persona", "") != iPersona || r.GetString("status", "") != "active") continue;
-                        r["status"] = "expired";
-                        r["expired_at"] = SCP_Morning.NowIso();
-                        r["expired_reason"] = iReason;
-                        n++;
-                    }
-                    if (n > 0) SCP_CmdPayload.WriteAtomic(aPath, SCP_JsonWriter.Write(aTokens, SCP_JsonStyle.UclLegacy));
-                    return n;
-                }
-            }
-            catch (Exception) { return -1; }
         }
     }
 }

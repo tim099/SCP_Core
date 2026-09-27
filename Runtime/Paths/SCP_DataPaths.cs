@@ -18,7 +18,6 @@ namespace SCP.Core.Paths
         public const string QueuesDirName = "queues";
         public const string QueueFileName = "queue.json";
         public const string TriggerFileName = "pending.trigger";
-        public const string SessionDirName = "_session";
         public const string ChatTavernDirName = "ChatTavern";
         public const string BatonDirName = "baton";
         public const string LettersDirName = "letters";
@@ -85,15 +84,6 @@ namespace SCP.Core.Paths
             return Queues(iRoot) + "/" + aFolder + "/"
                    + (aLane.Length == 0 ? TriggerFileName : "pending-" + aLane + ".trigger");
         }
-
-        /// <summary>
-        /// session token 表（<c>_tokens.json</c>）住的地方。
-        /// <para>⚠ persona lock **不在這裡**（TASK-0105，2026-09-03 起住 <c>letters/&lt;p&gt;/profile/_session.json</c>，
-        /// 見 <see cref="SCP_LettersPaths.SessionLockPath"/>）。在這個目錄底下找 <c>_persona_*.json</c>
-        /// 只會找到搬遷時因衝突留下的殘檔，不是在線名單。</para>
-        /// </summary>
-        public static string SessionDir(SCP_DataRoot iRoot)
-            => iRoot.Value + "/" + SessionDirName;
 
         /// <summary>資料根層設定檔的完整路徑。</summary>
         public static string Settings(SCP_DataRoot iRoot)
