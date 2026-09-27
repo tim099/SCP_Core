@@ -44,8 +44,22 @@ namespace SCP.Core.Letters
     {
         public string DataRoot = "";
         public string LettersRoot = "";
-        /// <summary>專案根（`Docs/Glossary` 住在這裡）。</summary>
+        /// <summary>專案根（頭像 asset 住這下面；詞典根沒給時也從它推導）。</summary>
         public string ProjectRoot = "";
+
+        string? m_GlossaryRoot;
+        /// <summary>
+        /// 詞典根（`SCP_PathId.GlossaryRoot`）。宿主有解析就設（Senate 走 PathsPage 那一格）；
+        /// 沒設 ⇒ `<ProjectRoot>/` ＋ 描述表的 auto 後綴（⛔ 不在這裡再寫死一份 `Docs/Glossary`）。
+        /// </summary>
+        public string GlossaryRoot
+        {
+            get => !string.IsNullOrEmpty(m_GlossaryRoot)
+                ? m_GlossaryRoot!
+                : Path.Combine(ProjectRoot, SCP.Core.Paths.SCP_PathRegistry.Get(SCP.Core.Paths.SCP_PathId.GlossaryRoot).AutoSuffix)
+                      .Replace('\\', '/');
+            set => m_GlossaryRoot = value;
+        }
 
         public SCP_LettersRoot Letters => new SCP_LettersRoot(LettersRoot);
         public string SessionDir => Path.Combine(DataRoot, "_session").Replace('\\', '/');
@@ -569,10 +583,10 @@ namespace SCP.Core.Letters
             return aList;
         }
 
-        /// <summary>出生證明：`Docs/Glossary/personas/&lt;P&gt;.md` → 根層 → 遞迴（Editor 版同搜尋規則）。</summary>
+        /// <summary>出生證明：`<詞典根>/personas/&lt;P&gt;.md` → 根層 → 遞迴（Editor 版同搜尋規則）。</summary>
         public static string? FindGlossaryPersonaEntry(SCP_MorningRoots iR, string iPersona)
         {
-            string aRoot = Path.Combine(iR.ProjectRoot, "Docs", "Glossary");
+            string aRoot = iR.GlossaryRoot;
             if (!Directory.Exists(aRoot)) return null;
             string aDirect = Path.Combine(aRoot, "personas", iPersona + ".md");
             if (File.Exists(aDirect)) return aDirect;

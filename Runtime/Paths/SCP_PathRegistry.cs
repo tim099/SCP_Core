@@ -56,6 +56,15 @@ namespace SCP.Core.Paths
         [SCP_PathStored("root", SCP_PathScope.Project)]
         ProjectRoot,
 
+        [SCP_PathInfo("詞典根（glossary）",
+            "新詞辭典的 .md 住這裡（酒館發文的詞典附註、早安的出生證明 `personas/<P>.md` 都從這裡讀）。"
+            + " `auto` ＝ `<專案根>/Docs/Glossary`（2026-09-27 之前寫死的位置）。"
+            + " ⚠ **只管 Senate 這側**（Tim 2026-09-27 拍板存 senate.local.json）：Unity Editor 的 `Cmd_Glossary`"
+            + "（登記新詞、Editor 路的附註）仍固定用 `<repo>/docs/Glossary` —— 改成非預設值時兩邊會讀不同的樹，而那不會報錯。")]
+        [SCP_PathStored("glossaryRoot", SCP_PathScope.Project)]
+        [SCP_PathAuto(SCP_PathId.ProjectRoot, "Docs/Glossary")]
+        GlossaryRoot,
+
         [SCP_PathInfo("AgentCommands 資料根",
             "**Global —— 只有一組**（Tim 2026-08-31）。酒館 seq／任務單號／session lock 全都假設只有一棵樹。"
             + " Stored 的理由：它可以不在專案裡（pointer 檔 `.agentcommands_root.local` 就是為此存在），"

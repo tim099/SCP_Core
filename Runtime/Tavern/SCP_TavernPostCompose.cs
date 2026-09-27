@@ -35,8 +35,9 @@ namespace SCP.Core.Tavern
         public const string AUTO_ATTACH_MARKER = "📖 **本回提到的新詞** (auto-attached by Cmd_Glossary):";
         const string AssetsRel = "Assets/.BuiltinModules/ModulesRoot/Modules/Core/UCL_Assets";
 
-        public static SCP_TavernPostDraft Build(string iDataRoot, string iLettersRoot, string iProjectRoot, string iRegion,
-                                                string iRoom, string iPersona, string iBody,
+        /// <param name="iGlossaryRoot">詞典根（`SCP_PathId.GlossaryRoot`；呼叫端傳 `SCP_MorningRoots.GlossaryRoot`）。</param>
+        public static SCP_TavernPostDraft Build(string iDataRoot, string iLettersRoot, string iProjectRoot, string iGlossaryRoot,
+                                                string iRegion, string iRoom, string iPersona, string iBody,
                                                 IReadOnlyDictionary<string, string> iMeta)
         {
             var aOut = new SCP_TavernPostDraft();
@@ -67,7 +68,7 @@ namespace SCP.Core.Tavern
             // ④ glossary（`glossary-auto-attach=false` 不分大小寫，同 Editor `ToLowerInvariant() == "false"`）
             bool aOptOut = iMeta.TryGetValue("glossary-auto-attach", out string? aGa)
                            && string.Equals((aGa ?? "").Trim(), "false", StringComparison.OrdinalIgnoreCase);
-            string aBody = aOptOut || aIsCli ? iBody : AppendGlossaryRefs(iProjectRoot, iBody);
+            string aBody = aOptOut || aIsCli ? iBody : AppendGlossaryRefs(iProjectRoot, iGlossaryRoot, iBody);
 
             var aMsg = new SCP_TavernMessage
             {
@@ -136,12 +137,33 @@ namespace SCP.Core.Tavern
             public int Start, Length;
         }
 
-        public static string AppendGlossaryRefs(string iProjectRoot, string iText, int iCap = 5)
+        /// <summary>
+        /// 詞典附註裡印的路徑前綴（讀的人拿它去 Read 那個 .md）。
+        /// <para>預設詞典根 ⇒ 逐字 `docs/Glossary`（Editor `Cmd_Glossary` 印的就是這個 —— 欄位同形對拍靠它）；
+        /// 自訂在專案底下 ⇒ 相對專案根；在專案外 ⇒ 絕對路徑（⛔ 不印一個指不到檔的相對路徑）。</para>
+        /// </summary>
+        public static string GlossaryDisplayPrefix(string iProjectRoot, string iGlossaryRoot)
+        {
+            const string EditorPrefix = "docs/Glossary";
+            try
+            {
+                string aProj = Path.GetFullPath(iProjectRoot).Replace('\\', '/').TrimEnd('/');
+                string aGlo = Path.GetFullPath(iGlossaryRoot).Replace('\\', '/').TrimEnd('/');
+                string aDefault = Path.GetFullPath(Path.Combine(iProjectRoot, EditorPrefix)).Replace('\\', '/').TrimEnd('/');
+                if (string.Equals(aGlo, aDefault, StringComparison.OrdinalIgnoreCase)) return EditorPrefix;
+                if (aGlo.StartsWith(aProj + "/", StringComparison.OrdinalIgnoreCase)) return aGlo.Substring(aProj.Length + 1);
+                return aGlo;
+            }
+            catch (Exception) { return EditorPrefix; }
+        }
+
+        public static string AppendGlossaryRefs(string iProjectRoot, string iGlossaryRoot, string iText, int iCap = 5)
         {
             if (string.IsNullOrEmpty(iText) || iText.Contains(AUTO_ATTACH_MARKER)) return iText;
             try
             {
-                string aDir = Path.Combine(iProjectRoot, "docs", "Glossary");
+                string aDir = iGlossaryRoot;
+                string aPrefix = GlossaryDisplayPrefix(iProjectRoot, iGlossaryRoot);
                 var aEntries = LoadEntries(aDir);
                 if (aEntries.Count == 0) return iText;
                 var aHits = DetectHits(iText, aEntries, Math.Max(1, iCap));
@@ -157,7 +179,7 @@ namespace SCP.Core.Tavern
                 foreach (var h in aHits)
                 {
                     sb.AppendLine($"- **{h.E.Term}**: {h.E.OneLine}");
-                    sb.AppendLine($"(docs/Glossary/{h.E.Rel})");
+                    sb.AppendLine($"({aPrefix}/{h.E.Rel})");
                 }
                 return sb.ToString();
             }
