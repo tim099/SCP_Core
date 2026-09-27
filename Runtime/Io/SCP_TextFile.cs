@@ -33,7 +33,21 @@ namespace SCP.Core.Io
             // 它只影響 temp 檔名、不落在產物裡 ⇒ 不破壞逐位元組對拍。
             string aTmp = iPath + ".tmp" + Guid.NewGuid().ToString("N").Substring(0, 8);
             File.WriteAllText(aTmp, aNormalized, new UTF8Encoding(false));
+            ReplaceOrMove(aTmp, iPath);
+        }
 
+        /// <summary>
+        /// 把已寫好的 temp 落成 <paramref name="iPath"/>：目標不存在走 Move，存在走 Replace，
+        /// Replace 被 Windows 拒絕時退到 Copy 覆寫（⛔ 絕不先 Delete）。
+        /// </summary>
+        /// <remarks>
+        /// 🩸 Replace 被拒不只是防毒／同步的暫時鎖：Codex 沙箱身分對**同一個檔**跑 Replace 會穩定回
+        ///   「無法移除要被取代的檔案」，而同一刻非沙箱身分跑同一支 ReplaceFile 成功（2026-09-27 實測）。
+        ///   09-21 那次只修了 <see cref="WriteCrLf"/> 這一處，回傳檔與游標的寫入端仍直呼 Replace
+        ///   ⇒ Sirius 早安在回傳檔那一步 exit 70。⇒ 所有 temp→目標 的落檔都走這一支。
+        /// </remarks>
+        public static void ReplaceOrMove(string iTmp, string iPath)
+        {
             // ⛔ **不做「先 Delete 再 Move」** —— 被提取的那兩份私有複本原本是那樣寫的，
             //   而 `Docs~/Coding_Standards.md §1.1` 明文點名它是「更貴的錯誤選項」：
             //   Delete 與 Move 之間有一格**檔案不存在**，而那一格長得跟
@@ -43,25 +57,25 @@ namespace SCP.Core.Io
             //   netstandard2.1 編不過 ⇒ 目標存在時走 `File.Replace`，不存在才 `File.Move`。
             if (!File.Exists(iPath))
             {
-                File.Move(aTmp, iPath);
+                File.Move(iTmp, iPath);
                 return;
             }
 
             try
             {
-                File.Replace(aTmp, iPath, null);
+                File.Replace(iTmp, iPath, null);
             }
             catch (IOException aReplaceError)
             {
                 // 區塊職責：在 Windows 拒絕 `File.Replace` 時，安全地完成同一份 temp 的覆寫。
-                // 物理意義：Library 的章節索引已經落檔後，防毒、同步或檔案監看器可短暫讓
-                //           Replace 無法移除目的檔；此時先 Delete 會把「尚未同步」偽裝成「從未閱讀」。
-                // 數值影響：成功時內容仍是同一份 UTF-8/CRLF temp；Copy 失敗會保留原檔，並帶著
+                // 物理意義：防毒、同步、檔案監看器或沙箱身分都可讓 Replace 無法移除目的檔；
+                //           此時先 Delete 會把「尚未同步」偽裝成「從未寫過」。
+                // 數值影響：成功時內容仍是同一份 temp（位元組不變）；Copy 失敗會保留原檔，並帶著
                 //           Replace 的根因拋出，絕不以刪除目的檔換取成功。
                 try
                 {
-                    File.Copy(aTmp, iPath, true);
-                    File.Delete(aTmp);
+                    File.Copy(iTmp, iPath, true);
+                    File.Delete(iTmp);
                 }
                 catch (IOException aCopyError)
                 {

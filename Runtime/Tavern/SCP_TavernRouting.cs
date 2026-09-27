@@ -216,8 +216,7 @@ namespace SCP.Core.Tavern
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(aPath) ?? ".");
                 string aTmp = aPath + ".tmp";
                 File.WriteAllText(aTmp, ToJson(iGroups).ToJson(true), new UTF8Encoding(false));
-                if (File.Exists(aPath)) File.Replace(aTmp, aPath, null);
-                else File.Move(aTmp, aPath);
+                SCP.Core.Io.SCP_TextFile.ReplaceOrMove(aTmp, aPath);
             }
             catch (Exception e) { return (false, "✗ 寫不進去：" + e.GetType().Name + ": " + e.Message + "（" + aPath + "）"); }
 

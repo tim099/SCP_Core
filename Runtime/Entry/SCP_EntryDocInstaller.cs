@@ -121,8 +121,7 @@ namespace SCP.Core.Entry
                 string? aDir = Path.GetDirectoryName(iPath);
                 if (!string.IsNullOrEmpty(aDir)) Directory.CreateDirectory(aDir!);
                 File.WriteAllText(aTmp, aNext, new UTF8Encoding(false));
-                if (File.Exists(iPath)) File.Replace(aTmp, iPath, null);
-                else File.Move(aTmp, iPath);
+                SCP.Core.Io.SCP_TextFile.ReplaceOrMove(aTmp, iPath);
             }
             catch (Exception e)
             {
@@ -176,7 +175,7 @@ namespace SCP.Core.Entry
             try
             {
                 File.WriteAllText(aTmp, aNext, new UTF8Encoding(false));
-                File.Replace(aTmp, iPath, null);
+                SCP.Core.Io.SCP_TextFile.ReplaceOrMove(aTmp, iPath);
             }
             catch (Exception e)
             {

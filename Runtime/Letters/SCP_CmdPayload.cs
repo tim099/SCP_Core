@@ -6,6 +6,7 @@
 #nullable enable
 using System.IO;
 using System.Text;
+using SCP.Core.Io;
 
 namespace SCP.Core.Letters
 {
@@ -36,8 +37,7 @@ namespace SCP.Core.Letters
             if (!string.IsNullOrEmpty(aDir)) Directory.CreateDirectory(aDir);
             string aTmp = iPath + ".tmp";
             File.WriteAllText(aTmp, iText, new UTF8Encoding(false));
-            if (File.Exists(iPath)) File.Replace(aTmp, iPath, null);
-            else File.Move(aTmp, iPath);
+            SCP_TextFile.ReplaceOrMove(aTmp, iPath);
         }
     }
 }

@@ -65,8 +65,7 @@ namespace SCP.Core.Tavern
                     File.WriteAllText(aTmp, SCP_JsonWriter.Write(aJd, SCP_JsonStyle.UclLegacy), new UTF8Encoding(false));
                     // File.Replace 而不是 Delete＋Move：後者之間檔案不存在，不拿鎖的讀取端會讀成「從未設過」
                     // ⇒ 整部歷史重新變未讀（TASK-0264 同一族）。
-                    if (File.Exists(aPath)) File.Replace(aTmp, aPath, null);
-                    else File.Move(aTmp, aPath);
+                    SCP_TextFile.ReplaceOrMove(aTmp, aPath);
                 }
                 return null;
             }

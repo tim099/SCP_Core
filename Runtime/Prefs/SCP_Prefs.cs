@@ -291,8 +291,7 @@ namespace SCP.Core.Prefs
                 //   ⇒ 目標存在走 File.Replace（同目錄、原子替換）；不存在才走兩參數 Move。
                 //   ⛔ 不可以退化成「先 Delete 再 Move」—— 那中間有一格「檔案不存在」，
                 //     而那一格長得跟「這個設定還沒存過」一模一樣。
-                if (File.Exists(m_Path)) File.Replace(aTmp, m_Path, null);
-                else File.Move(aTmp, m_Path);
+                SCP.Core.Io.SCP_TextFile.ReplaceOrMove(aTmp, m_Path);
             }
             catch (Exception e)
             {

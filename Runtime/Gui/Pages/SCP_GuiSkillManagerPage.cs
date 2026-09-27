@@ -294,7 +294,7 @@ namespace SCP.Core.Gui
                 if (!string.IsNullOrEmpty(aDir)) Directory.CreateDirectory(aDir!);
                 string aTmp = iPath + ".tmp" + Guid.NewGuid().ToString("N").Substring(0, 8);
                 File.WriteAllText(aTmp, iContent, new UTF8Encoding(false));
-                if (File.Exists(iPath)) File.Replace(aTmp, iPath, null); else File.Move(aTmp, iPath);
+                SCP.Core.Io.SCP_TextFile.ReplaceOrMove(aTmp, iPath);
                 // 回讀 —— 寫入端會替自己說謊
                 return SCP_EntryDoc.Normalize(SafeRead(iPath)) == SCP_EntryDoc.Normalize(iContent)
                     ? $"✓ 已寫入 {Path.GetFileName(iPath)}（回讀確認）"
