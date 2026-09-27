@@ -423,7 +423,9 @@ namespace SCP.Core.Letters
             try
             {
                 string aPath = Path.Combine(iDataRoot, "AwakenInit", "_registry_meta.json");
-                return File.Exists(aPath) ? SCP_JsonData.Parse(File.ReadAllText(aPath, Encoding.UTF8)) : SCP_JsonData.NewObject();
+                // TASK-0265：重試跨過別的進程換檔的那一瞬間（只影響 agent 別名的顯示；讀不了照舊回空物件）
+                return SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aText, out _)
+                    ? SCP_JsonData.Parse(aText) : SCP_JsonData.NewObject();
             }
             catch (Exception) { return SCP_JsonData.NewObject(); }
         }

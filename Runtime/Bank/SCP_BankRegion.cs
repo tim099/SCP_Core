@@ -38,10 +38,19 @@ namespace SCP.Core.Bank
             SCP_BankMigration.EnsureOnce(iDataRoot);
             oWhy = null;
             string aPath = SettingsPath(iDataRoot);
-            if (!File.Exists(aPath)) { oWhy = $"設定檔不在（{aPath}）⇒ 用預設"; return DefaultRegion; }
+            // 🔴 TASK-0265：BankAdminPage（senate）以 Delete→Move 換這顆檔 ⇒ 舊版 `!File.Exists` 撞上那一瞬間
+            //   ⇒ 回 `Ducat`（合法字串）⇒ 全員帳號解析不到、沒有人領得到薪，而畫面跟「這棵樹就是 Ducat」同形。
+            //   ⇒ 重試跨過窗口；只有**真的不存在**才走「設定檔不在」。
+            if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aText, out var aState))
+            {
+                oWhy = aState == SCP.Core.Io.SCP_FileReadState.Missing
+                    ? $"設定檔不在（{aPath}）⇒ 用預設"
+                    : $"設定檔這一瞬間讀不了 ⇒ 用預設，⚠ **這不是本區的值**（{SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(aPath)}）";
+                return DefaultRegion;
+            }
 
             SCP_JsonData? aJd;
-            try { aJd = SCP_JsonData.Parse(File.ReadAllText(aPath)); }
+            try { aJd = SCP_JsonData.Parse(aText); }
             catch (Exception e) { oWhy = $"設定檔讀不了（{e.GetType().Name}）⇒ 用預設"; return DefaultRegion; }
             if (aJd == null || !aJd.IsObject) { oWhy = "設定檔不是物件 ⇒ 用預設"; return DefaultRegion; }
             if (!aJd.Contains("currency_id")) { oWhy = "設定檔沒有 `currency_id` 這一格 ⇒ 用預設"; return DefaultRegion; }

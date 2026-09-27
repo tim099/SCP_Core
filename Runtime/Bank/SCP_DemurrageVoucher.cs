@@ -54,6 +54,12 @@ namespace SCP.Core.Bank
         public bool PolicyEnabled;
         public List<SCP_DemurragePlanRow> Rows = new List<SCP_DemurragePlanRow>();
         public List<string> Problems = new List<string>();
+        /// <summary>
+        /// 算計畫時有人的綁定**讀不了** ⇒ 各行的 persona 名單可能少人（TASK-0265）。
+        /// <para>⛔ 為真時 <see cref="SCP_DemurrageVoucher.Issue"/> 一張都不發、也不記成已發 —— 重跑一次就補得回來；
+        /// 照殘缺名單均分則會讓在場的人多拿、缺席的人永遠補不回來。</para>
+        /// </summary>
+        public List<string> UnreadableBindings = new List<string>();
     }
 
     public static class SCP_DemurrageVoucher
@@ -183,6 +189,13 @@ namespace SCP.Core.Bank
                 //   ⛔ 不讀 registry 的 `bank_personas`：那張表 2026-09-07 就退出解析，
                 //     而它今天還有兩筆是舊值 ⇒ 照它算，有人會拿到「0 個 persona」而沒有任何一層會叫。
                 aRow.Personas = SCP_BankAccountResolver.GetBoundPersonas(iLettersRoot, iDataRoot, iRegion, e.AccountId);
+                if (aPlan.UnreadableBindings.Count == 0)
+                {
+                    aPlan.UnreadableBindings = SCP_BankAccountResolver.GetUnreadablePersonas(iLettersRoot, iDataRoot, iRegion);
+                    if (aPlan.UnreadableBindings.Count > 0)
+                        aPlan.Problems.Add("⚠ 綁定這一瞬間讀不了：" + string.Join(", ", aPlan.UnreadableBindings)
+                                           + " ⇒ 名單可能少人，**本次不發**（重跑即可；⛔ 不是沒有綁定）");
+                }
                 if (aRow.Personas.Count > 0 && aRow.TotalVouchers > 0)
                 {
                     // 🩸 這裡**不 floor 丟掉零頭**（那是 2026-09-22 的佔位做法，Tim 當天就否掉了）：
@@ -211,6 +224,11 @@ namespace SCP.Core.Bank
                                 SCP_DemurragePlan iPlan, List<string> oLog, List<string> oProblems)
         {
             if (!iPlan.PolicyEnabled) { oLog.Add("· 政策沒開（券種空白或比例 0）⇒ **一張都沒發**"); return 0; }
+            if (iPlan.UnreadableBindings.Count > 0)
+            {
+                oProblems.Add("⚠ 綁定名單殘缺（讀不了：" + string.Join(", ", iPlan.UnreadableBindings) + "）⇒ **一張都沒發、也沒有記成已發** —— 重跑即可");
+                return 0;
+            }
 
             var aRoot = new SCP_LettersRoot(iLettersRoot.Replace('\\', '/').TrimEnd('/'));
             DateTime aNow = DateTime.UtcNow;
@@ -260,8 +278,15 @@ namespace SCP.Core.Bank
             }
 
             if (aDone.Count > 0 && !AppendIssued(iDataRoot, iPlan.Date, aDone, out string? aSaveErr))
-                oProblems.Add("🔴 **券已經發出去了，而轉券簿沒寫成功** ⇒ 下次會重發："
-                              + aSaveErr + "　⛔ 補跑前先把這本簿子修好。");
+            {
+                if (aSaveErr != null && aSaveErr.StartsWith(UnconfirmedPrefix, StringComparison.Ordinal))
+                    oProblems.Add("⚠ **券已經發出去了，轉券簿也寫進去了，但回讀確認不了**："
+                                  + aSaveErr.Substring(UnconfirmedPrefix.Length)
+                                  + "　⛔ 補跑前先看一眼簿子 —— 多半是已記，重跑會被它擋下（已記的不會再發）。");
+                else
+                    oProblems.Add("🔴 **券已經發出去了，而轉券簿沒寫成功** ⇒ 下次會重發："
+                                  + aSaveErr + "　⛔ 補跑前先把這本簿子修好。");
+            }
             return aIssuedRows;
         }
 
@@ -322,6 +347,9 @@ namespace SCP.Core.Bank
             return "比例顯式為 0（`ratio_per_token: 0`）";
         }
 
+        /// <summary>AppendIssued 的 oError 以此開頭 ⇒ 寫進去了、只是回讀確認不了（⛔ 不是寫失敗）。</summary>
+        const string UnconfirmedPrefix = "UNCONFIRMED:";
+
         static bool AppendIssued(string iDataRoot, string iDate, List<string> iEntryIds, out string? oError)
         {
             oError = null;
@@ -349,7 +377,12 @@ namespace SCP.Core.Bank
                 File.Move(aTmp, aPath);
 
                 // 回讀複驗 —— 寫入成功不等於讀得回來。
-                HashSet<string> aBack = LoadIssued(iDataRoot, iDate);
+                // ⚠ TASK-0265 QA：回讀撞到 Busy 時 LoadIssued 會丟例外 ⇒ 舊版落進外層 catch ⇒ 呼叫端報「簿子沒寫成功、下次會重發」
+                //   —— 而簿子**已經換進去了**。「寫失敗」與「確認不了」處置相反（前者要修、後者要先看），⛔ 不可同句。
+                HashSet<string> aBack;
+                try { aBack = LoadIssued(iDataRoot, iDate); }
+                catch (InvalidOperationException e)
+                { oError = UnconfirmedPrefix + "換檔已完成，回讀確認不了：" + e.Message; return false; }
                 foreach (string id in iEntryIds)
                     if (!aBack.Contains(id)) { oError = "寫入後回讀不到 " + id; return false; }
                 return true;

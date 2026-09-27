@@ -313,6 +313,10 @@ namespace SCP.Core.Letters
                     iWarn?.Invoke("[PersonaProfile] " + iPersona + " 的 agent 借用了別區的綁定"
                                   + "（本區 " + iCurrencyId + " 沒有宣告，來源 " + aBankSrc + "）：" + aBankNote);
             }
+            else if (aBankSrc == BankSourceUnreadable)
+            {
+                // TASK-0265 QA：讀不了已經由 GetBankAccount 出過聲 ⇒ ⛔ 不再接一句「不存在」（那是錯的說法）。
+            }
             else
             {
                 // 不填空字串頂替：下游拿到空 agent 會落央行，而那是一個看起來合理的處置

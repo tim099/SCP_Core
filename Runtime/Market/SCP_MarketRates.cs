@@ -203,7 +203,17 @@ namespace SCP.Core.Market
         {
             oError = null;
             string aPath = RatesCachePath(iDataRoot);
-            if (!File.Exists(aPath))
+            // 🔴 TASK-0265：Save 是 Delete→Move，而寫入端有兩個進程（Cmd MarketRate／RateAdminPage）。
+            //   舊版 `!File.Exists` 撞上那一瞬間 ⇒ 回「只有 USD 的預設」⇒ 呼叫端改一格再 Save ⇒ **其他報價全被洗掉**。
+            //   ⇒ 真的不存在才給預設；這一瞬間讀不了走 oError（呼叫端遇 oError 會停手，⛔ 不寫回）。
+            if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aCacheText, out var aCacheState)
+                && aCacheState == SCP.Core.Io.SCP_FileReadState.Busy)
+            {
+                oError = $"匯率快取這一瞬間讀不了（{aPath}）⇒ ⛔ 不拿預設值頂替（寫回會洗掉其他報價），稍後重試："
+                         + SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(aPath);
+                return new SCP_MarketRateConfig();
+            }
+            if (aCacheState == SCP.Core.Io.SCP_FileReadState.Missing)
             {
                 var aDefault = new SCP_MarketRateConfig();
                 // 預設給予 USD 1:1 基準報價
@@ -222,8 +232,7 @@ namespace SCP.Core.Market
 
             try
             {
-                string aText = File.ReadAllText(aPath);
-                var aJd = SCP_JsonParser.Parse(aText);
+                var aJd = SCP_JsonParser.Parse(aCacheText);
                 var aCfg = SCP_MarketRateConfig.FromJson(aJd);
                 if (!aCfg.Quotes.ContainsKey("USD"))
                 {

@@ -152,9 +152,16 @@ namespace SCP.Core.Bank
             //     而那是一個完全合法、看不出是壞掉的狀態（判準②：夾值兩側都做，同一族）。
             ApplyVoucherDefaults(iDataRoot, aOut, "設定檔沒讀到");
             string aPath = SCP_BankRegion.SettingsPath(iDataRoot);
-            if (!File.Exists(aPath)) { oWhy = $"設定檔不在（{aPath}）⇒ 全部用預設"; return aOut; }
+            // TASK-0265：同 SCP_BankRegion.Read —— 換檔那一瞬間不再被讀成「設定檔不在 ⇒ 門檻／費率全用預設」。
+            if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aText, out var aState))
+            {
+                oWhy = aState == SCP.Core.Io.SCP_FileReadState.Missing
+                    ? $"設定檔不在（{aPath}）⇒ 全部用預設"
+                    : $"設定檔這一瞬間讀不了 ⇒ 全部用預設，⚠ **這不是本區的設定**（{SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(aPath)}）";
+                return aOut;
+            }
             SCP_JsonData? aJd;
-            try { aJd = SCP_JsonData.Parse(File.ReadAllText(aPath)); }
+            try { aJd = SCP_JsonData.Parse(aText); }
             catch (Exception e) { oWhy = $"設定檔讀不了（{e.GetType().Name}）⇒ 全部用預設"; return aOut; }
             if (aJd == null || !aJd.IsObject) { oWhy = "設定檔不是物件 ⇒ 全部用預設"; return aOut; }
 

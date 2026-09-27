@@ -104,9 +104,16 @@ namespace SCP.Core.Cmd
             var aKnown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var aClosed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             SCP_JsonData? aMeta = null;
-            if (File.Exists(aRegistry))
+            // TASK-0265：registry 會被別的進程換檔 ⇒ 舊版 `File.Exists` 撞上那一瞬間 ⇒ 帳號宇宙與銷戶名單整段變空
+            //   ⇒ 報一份每一欄都合法的假覆蓋率。健檢工具拿殘缺的輸入算出來的是「形狀正確的錯答案」⇒ 讀不了就停。
+            if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aRegistry, out string aRegistryText, out var aRegistryState))
             {
-                try { aMeta = SCP_JsonParser.Parse(File.ReadAllText(aRegistry)); }
+                if (aRegistryState == SCP.Core.Io.SCP_FileReadState.Busy)
+                    return SCP_CmdResult.Fail(1, "✗ registry 這一瞬間讀不了 ⇒ 本次不判（重跑即可）：" + SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(aRegistry));
+            }
+            else
+            {
+                try { aMeta = SCP_JsonParser.Parse(aRegistryText); }
                 catch (Exception e)
                 { return SCP_CmdResult.Fail(1, "✗ registry 不是合法 JSON：" + e.Message, "  " + aRegistry); }
                 if (aMeta.Contains("system_accounts"))

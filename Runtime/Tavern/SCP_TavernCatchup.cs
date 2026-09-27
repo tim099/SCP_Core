@@ -175,8 +175,9 @@ namespace SCP.Core.Tavern
             try
             {
                 string aPath = Path.Combine(iDataRoot, "ChatTavern", "render_settings.json");
-                if (!File.Exists(aPath)) return;
-                var aJd = SCP_JsonData.Parse(File.ReadAllText(aPath, Encoding.UTF8));
+                // TASK-0265：Editor 後台頁以 Delete→Move 換這顆檔 ⇒ 重試跨過那一瞬間（只影響顯示長度）。
+                if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aText, out _)) return;
+                var aJd = SCP_JsonData.Parse(aText);
                 oNormal = Clip(aJd.GetInt("message_body_clip", 600));
                 oMention = Clip(aJd.GetInt("message_body_clip_mentioned", 1500));
             }

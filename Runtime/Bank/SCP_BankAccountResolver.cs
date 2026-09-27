@@ -67,6 +67,9 @@ namespace SCP.Core.Bank
         static bool s_Loaded;
         static string s_LoadedKey = "";
 
+        // TASK-0265：這一輪**綁定讀不了**的 persona（小寫）—— Resolve 碰到它們一律 Unresolved，
+        //   ⛔ 不往下掉到 agent_banks／大小寫歸一（那幾層會給出一個「看起來對」的別的帳號）。
+        static readonly HashSet<string> s_UnreadablePersonas = new HashSet<string>(StringComparer.Ordinal);
         // 權威：persona（小寫）→ 帳號
         static readonly Dictionary<string, string> s_PersonaToAccount = new Dictionary<string, string>(StringComparer.Ordinal);
         // 反向：帳號 → 綁在它底下的 persona（**由正向導出，不是另一張表**）
@@ -106,16 +109,22 @@ namespace SCP.Core.Bank
             string aKey = iLettersRoot + "|" + iDataRoot + "|" + iRegion;
             if (s_Loaded && string.Equals(s_LoadedKey, aKey, StringComparison.Ordinal)) return;
 
-            s_PersonaToAccount.Clear(); s_AccountToPersonas.Clear();
+            s_PersonaToAccount.Clear(); s_AccountToPersonas.Clear(); s_UnreadablePersonas.Clear();
             s_AgentToAccount.Clear(); s_AliasToAgent.Clear();
             s_Canonical.Clear(); s_CanonicalByLower.Clear(); s_Closed.Clear();
 
             // ── ① registry：system_accounts / agent_banks（legacy） / agent_aliases / closed_accounts ──
             string aRegistry = RegistryPath(iDataRoot);
-            if (File.Exists(aRegistry))
+            // 🔴 TASK-0265：registry 由 Editor（PersonaAgentAdminPage）與 senate（CloseAccount）各自 Delete→Move 換檔；
+            //   舊版 `File.Exists` 撞上那一瞬間 ⇒ 整段跳過 ⇒ closed_accounts 空 ⇒ **已銷戶帳戶解析成開著**，而且被快取。
+            //   ⇒ 重試跨過窗口；重試用完仍讀不了 ⇒ 本輪照答但**不落快取**（同綁定那一格）。
+            bool aRegistryBusy = false;
+            if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aRegistry, out string aRegistryText, out var aRegistryState))
+                aRegistryBusy = aRegistryState == SCP.Core.Io.SCP_FileReadState.Busy;
+            else
             {
                 SCP_JsonData? aMeta = null;
-                try { aMeta = SCP_JsonParser.Parse(File.ReadAllText(aRegistry)); }
+                try { aMeta = SCP_JsonParser.Parse(aRegistryText); }
                 catch (Exception) { aMeta = null; }   // 壞 JSON ⇒ 當成沒有 registry，權威那層照樣成立
                 if (aMeta != null)
                 {
@@ -161,11 +170,12 @@ namespace SCP.Core.Bank
             //      而不是去讀 registry 的 `bank_personas`（那張表沒有寫入端，已退出解析）。
             // ⚠ TASK-0265：有任何一位的綁定**這一瞬間讀不了**，本輪結果就是殘缺的 ⇒ 照樣拿來解析這一次，
             //   ⛔ 但不落快取（s_Loaded 不設）—— 否則那一位會在整個進程壽命裡都被當成「沒有綁定」。
-            bool aIncomplete = false;
+            bool aIncomplete = aRegistryBusy;
             foreach (string aName in SCP_PersonaProfile.PoolNames(iLettersRoot))
             {
                 string aAcc = SCP_PersonaProfile.GetBankAccount(iLettersRoot, aName, iRegion, out string aSrc, out string _);
-                if (aSrc == SCP_PersonaProfile.BankSourceUnreadable) aIncomplete = true;
+                if (aSrc == SCP_PersonaProfile.BankSourceUnreadable)
+                { aIncomplete = true; s_UnreadablePersonas.Add(aName.ToLowerInvariant()); continue; }
                 if (aAcc.Length == 0) continue;
                 s_PersonaToAccount[aName.ToLowerInvariant()] = aAcc;
                 AddCanonical(aAcc);   // 合一：綁定值本身就是正式帳號
@@ -211,6 +221,16 @@ namespace SCP.Core.Bank
                     aR.AccountId = aByPersona;
                     aR.Kind = aR.Changed ? SCP_BankResolveKind.ViaPersona : SCP_BankResolveKind.AlreadyCanonical;
                     aR.Trace = "【合一模式】persona `" + iInput + "` → 帳號 `" + aByPersona + "`（一跳；agent_banks 未參與）";
+                    return aR;
+                }
+
+                // ⓪' 綁定這一瞬間讀不了（TASK-0265）—— ⛔ 不往下猜。
+                //   🩸 QA 碼審：舊版只「不落快取」，而本次照答 ⇒ `sirius` 掉到 ③ 大小寫歸一成 `Sirius`，
+                //     而他真正綁的是 `Spectre` —— 錢進了別人的帳戶，每一層都回成功。
+                if (s_UnreadablePersonas.Contains(aLower))
+                {
+                    aR.Kind = SCP_BankResolveKind.Unresolved;
+                    aR.Trace = "⚠ persona `" + iInput + "` 的綁定檔這一瞬間讀不了（換檔中／被鎖）⇒ **不解析**，稍後重試；⛔ 不是「沒有綁定」";
                     return aR;
                 }
 
@@ -313,6 +333,21 @@ namespace SCP.Core.Bank
         /// ⛔ **不要**先拿它去跑 <see cref="Resolve"/> 歸一：那是 persona → 帳號的表，
         /// 撞名時會把一個帳戶的錢算到另一個帳戶的人頭上。</para>
         /// </summary>
+        /// <summary>
+        /// 這一輪**綁定讀不了**的 persona（TASK-0265）。非空 ⇒ <see cref="GetBoundPersonas"/> 的名單可能**少人**。
+        /// <para>⚠ 要照名單做事（均分、發券）的呼叫端必須先問這一格 —— 少一個人的名單，在輸出上跟完整的長得一樣。</para>
+        /// </summary>
+        public static List<string> GetUnreadablePersonas(string iLettersRoot, string iDataRoot, string iRegion)
+        {
+            lock (s_Lock)
+            {
+                EnsureLoaded_NoLock(iLettersRoot, iDataRoot, iRegion);
+                var aList = new List<string>(s_UnreadablePersonas);
+                aList.Sort(StringComparer.Ordinal);
+                return aList;
+            }
+        }
+
         public static List<string> GetBoundPersonas(string iLettersRoot, string iDataRoot, string iRegion, string iAccountId)
         {
             lock (s_Lock)

@@ -242,7 +242,7 @@ namespace SCP.Core.Proc
                     aRoot.Set("Commands", SCP_JsonData.NewArray());
                     return aRoot;
                 }
-                throw new SCP_QueueUnreadableException(iPath, "讀不了（" + SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(iPath) + "）");
+                throw new SCP_QueueUnreadableException(iPath, "讀不了（" + SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(iPath) + "）", iBusy: true);
             }
             SCP_JsonData aNode;
             try { aNode = SCP_JsonParser.Parse(aText); }
@@ -279,6 +279,9 @@ namespace SCP.Core.Proc
     }
     /// <summary>
     /// queue.json **在但讀不了／壞了** ⇒ 要寫回的路徑拒絕寫（TASK-0265）。
+    /// <para>⚠ <see cref="IsBusy"/> 分兩種，**處置相反**：Busy（這一瞬間開不了 —— 防毒、索引器、別的程序握著）⇒ 稍後重跑、⛔ 別動那顆檔；
+    /// 壞檔 ⇒ 先備份、看內容再修。🩸 第一版兩種都印「先修它」，而 CLI 還加一句「確認內容後刪掉」
+    /// ⇒ Busy 那種會叫人去刪一條**健康的** queue，而刪掉就丟光待跑的指令（QA 碼審抓到）。</para>
     /// <para>⚠ 它的語意是「**沒有送出任何東西、那顆檔原封不動**」—— 呼叫端（CLI 頂層）要照這句話講，
     /// ⛔ 不可以落進「設定檔有問題」那一格（那會把人送去翻一個沒有壞的設定檔）。</para>
     /// <para>繼承 <see cref="IOException"/>：沒有專門接它的呼叫端，仍然會被既有的 IO 失敗路徑接住。</para>
@@ -287,11 +290,16 @@ namespace SCP.Core.Proc
     {
         /// <summary>那顆讀不了的 queue 檔。</summary>
         public string QueuePath { get; }
+        /// <summary>true ＝ 這一瞬間開不了（重跑即可）；false ＝ 檔在而內容壞了（要人修）。</summary>
+        public bool IsBusy { get; }
 
-        public SCP_QueueUnreadableException(string iQueuePath, string iWhy, Exception? iInner = null)
-            : base("queue.json " + iWhy + " ⇒ 拒絕寫回，⛔ 一個位元組都不寫（寫回＝把整條 queue 換成這一筆）。先修它：" + iQueuePath, iInner)
+        public SCP_QueueUnreadableException(string iQueuePath, string iWhy, Exception? iInner = null, bool iBusy = false)
+            : base("queue.json " + iWhy + " ⇒ 拒絕寫回，⛔ 一個位元組都不寫（寫回＝把整條 queue 換成這一筆）"
+                   + (iBusy ? "。⇒ **稍後重跑即可**，⛔ 不要動那顆檔：" : "。⇒ 先備份再修（⛔ 別直接刪 —— 裡面可能還有待跑的指令）：")
+                   + iQueuePath, iInner)
         {
             QueuePath = iQueuePath;
+            IsBusy = iBusy;
         }
     }
 }
