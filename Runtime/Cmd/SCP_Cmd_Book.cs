@@ -106,7 +106,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("author", "作者（人類作者名，字串）"),
             new SCP_CmdArgSpec("reader_persona", "讀者 persona（省略＝author_persona，再省略＝basecamp）"),
             new SCP_CmdArgSpec("origin", "authored（原創寫書）｜imported（調入別人的書）；省略＝沿用現況"),
-            new SCP_CmdArgSpec("author_persona", "原創書作者 persona（origin=authored 時；預設＝reader_persona）"),
+            new SCP_CmdArgSpec("author_persona", "原創書作者 persona（origin=authored 時；預設＝reader_persona；**兩個都沒給就擋下**，不代猜）"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -298,6 +298,15 @@ namespace SCP.Core.Cmd
             if (aOrigin.Length > 0 && aOrigin != "authored" && aOrigin != "imported")
                 return SCP_CmdResult.Fail(2,
                     $"✗ `origin` 只吃 authored｜imported（收到 `{aOrigin}`）。");
+
+            // 🔴 原創書的作者**不代猜**：兩個 persona 都沒給時，下面那行會落回寫死的 `basecamp`
+            //   ⇒ 任何人開的原創書都被靜默署名成 basecamp（`author_persona`／`reader_persona` 皆是），而 Cmd 照樣 ✅。
+            //   🩸 2026-09-28 summit 開《寫下時為真》實測中招（回讀 book.json 才看到）。
+            //   ⛔ 只擋 authored：署名錯的是「誰寫的」，那是發表、書架、稿費一路往下的身分；imported 的讀者預設照舊。
+            if (aOrigin == "authored" && aAuthorPersona.Length == 0 && aReaderPersona.Length == 0)
+                return SCP_CmdResult.Fail(2,
+                    "✗ 原創書要給 `author_persona`（作者是誰）—— 本支**不代猜**。",
+                    "  ⚠ 不給的話會落回寫死的預設 `basecamp`，書就被署成別人的名，而且不會報錯。");
 
             string aSlug = iArgs.Get("id").Trim();
             if (aSlug.Length == 0) aSlug = Slugify(aTitle);

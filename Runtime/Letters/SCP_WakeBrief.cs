@@ -1271,8 +1271,9 @@ namespace SCP.Core.Letters
             if (aMine.Count == 0)
             {
                 aLines.Add("- 目前**沒有**寫到一半的書（`origin: authored` 且未發布：0 本）。");
-                aLines.Add("  開一本：`senate cmd book --arg op=add --arg origin=authored"
-                           + " --arg title=<書名> --arg aliases=<書名>`");
+                // ⚠ 範例要帶 `author_persona` 與 `id`：少了前者書會被署成預設 persona，少了後者 slug 由中文書名生（2026-09-28 實測）。
+                aLines.Add("  開一本：`senate cmd book --arg op=add --arg origin=authored --arg id=" + iPersona + "-<topic>"
+                           + " --arg author_persona=" + iPersona + " --arg title=<書名> --arg aliases=<書名>`");
             }
             else
             {
