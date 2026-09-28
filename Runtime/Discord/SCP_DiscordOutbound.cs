@@ -153,6 +153,47 @@ namespace SCP.Core.Discord
         }
 
         /// <summary>
+        /// **常駐 Outbound 的一輪**（TASK-0316 ③）：把一個頻道「游標之後」的新訊息送到它的分類綁的每一條 webhook。
+        /// · 游標與補發共用（`discord_backfill_state.json`）⇒ 補發送過的不會再送。
+        /// · 某條 webhook 在這個房**還沒有游標** ⇒ 設成目前最新 seq、⛔ 不回放歷史（tavern 有兩萬多則）。
+        /// · 積壓超過 <paramref name="iMaxBacklog"/> 則 ⇒ 跳到最新並回報（爆量保護：⛔ 不一口氣洗版）。
+        /// · 只讀游標之後的訊息（⛔ 不每輪從 seq 1 掃起）。
+        /// </summary>
+        public static SCP_DiscordBackfillReport SendNew(string iDataRoot, string iLettersRoot, string iRoom, int iMaxBacklog, Action<string>? iProgress = null)
+        {
+            var r = new SCP_DiscordBackfillReport();
+            SCP_ChannelSettings aSet = SCP_TavernChannels.LoadSettings(iDataRoot, iRoom);
+            if (aSet.Archived || aSet.Category.Length == 0) return r;   // 未分類／封存 ⇒ 不送（安靜：這是常態，不是錯）
+            SCP_DiscordConfig c = SCP_DiscordConfigStore.Load(iDataRoot);
+            if (c.Error.Length > 0) { r.Problems.Add(c.Error); return r; }
+            List<string> aIds = c.CategoryWebhooks.TryGetValue(aSet.Category, out List<string>? l) ? l : new List<string>();
+            List<SCP_DiscordWebhookInfo> aHooks = c.Webhooks.Where(w => aIds.Contains(w.Id) && w.Enabled).ToList();
+            if (aHooks.Count == 0) return r;
+            List<SCP_TavernMessage> aTail = SCP_TavernRead.Tail(iDataRoot, iRoom, 1);
+            int aLast = aTail.Count > 0 ? aTail[0].Seq : 0;
+            if (aLast == 0) return r;
+
+            SCP_JsonData aState = LoadState(iDataRoot);
+            if (!aState[iRoom].IsObject) aState.Set(iRoom, SCP_JsonData.NewObject());
+            bool aDirty = false;
+            int aMin = int.MaxValue;
+            foreach (SCP_DiscordWebhookInfo w in aHooks)
+            {
+                if (!aState[iRoom].Contains(w.Id)) { aState[iRoom].Set(w.Id, aLast); aDirty = true; iProgress?.Invoke($"{iRoom} → {w.Describe()}：第一次接上，從 seq {aLast} 之後開始（不回放歷史）"); }
+                int aDone = (int)aState[iRoom].GetLong(w.Id, aLast);
+                if (aLast - aDone > iMaxBacklog)
+                {
+                    r.Problems.Add($"{iRoom} → {w.Describe()}：積壓 {aLast - aDone} 則（上限 {iMaxBacklog}）⇒ 跳到 seq {aLast}，seq {aDone + 1}～{aLast} 沒送（要補用 op=backfill）");
+                    aState[iRoom].Set(w.Id, aLast); aDirty = true; aDone = aLast;
+                }
+                aMin = Math.Min(aMin, aDone);
+            }
+            if (aDirty) SaveState(iDataRoot, aState);
+            if (aMin >= aLast) return r;
+            return Backfill(iDataRoot, iLettersRoot, iRoom, aMin + 1, aLast, false, iProgress);
+        }
+
+        /// <summary>
         /// 把一個頻道 seq 範圍內的舊訊息補送到「它的分類」綁的每一條啟用中的 webhook。
         /// <paramref name="iDryRun"/>=true ⇒ 只算要送幾則，⛔ 不發。游標見檔頭。
         /// </summary>
@@ -177,6 +218,10 @@ namespace SCP.Core.Discord
             List<SCP_TavernMessage> aTail = SCP_TavernRead.Tail(iDataRoot, iRoom, 1);
             int aLast = aTail.Count > 0 ? aTail[0].Seq : 0;
             int aFrom = Math.Max(1, iFromSeq), aTo = iToSeq > 0 ? Math.Min(iToSeq, aLast) : aLast;
+            // 範圍從「最落後的那條 webhook 的游標」之後開始讀就夠了 —— ⛔ 不為了跳過已送的去讀整個房
+            SCP_JsonData aPeek = LoadState(iDataRoot);
+            int aMinDone = aHooks.Select(w => (int)aPeek[iRoom].GetLong(w.Id, 0)).DefaultIfEmpty(0).Min();
+            aFrom = Math.Max(aFrom, aMinDone + 1);
             List<SCP_TavernMessage> aMsgs = aTo >= aFrom ? SCP_TavernRead.Range(iDataRoot, iRoom, aFrom, aTo) : new List<SCP_TavernMessage>();
             r.Messages = aMsgs.Count;
             List<SCP_TavernMessage> aEligible = aMsgs.Where(IsEligible).OrderBy(m => m.Seq).ToList();
