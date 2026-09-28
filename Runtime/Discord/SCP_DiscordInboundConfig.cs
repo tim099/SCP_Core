@@ -173,6 +173,23 @@ namespace SCP.Core.Discord
             return true;
         }
 
+        /// <summary>
+        /// 這個頻道**實際**在哪個 Server：先查 Bot 的 Server 快取，查不到才用對應表上寫的 `guild_id`。
+        /// 🩸 2026-09-28 Bar 實測：對應表 5 條的 guild_id 全寫同一個 Server，實際分在 4 個 —— 只看表的話，關掉一個 Server 會關錯頻道。
+        /// </summary>
+        public static string ActualGuildOf(SCP_DiscordGuildCache iCache, SCP_DiscordRoute iRoute)
+            => iCache.Guilds.FirstOrDefault(g => g.Channels.Any(c => c.Id == iRoute.ChannelId))?.Id ?? iRoute.GuildId;
+
+        /// <summary>要輪的對應：啟用中、而且所在的 Server 沒被關掉 Inbound。</summary>
+        public static List<SCP_DiscordRoute> ActiveRoutes(string iDataRoot, out string? oError)
+        {
+            List<SCP_DiscordRoute> aRoutes = LoadRoutes(iDataRoot, out oError).Where(r => r.Enabled).ToList();
+            List<string> aOff = SCP_DiscordConfigStore.Load(iDataRoot).InboundDisabledGuilds;
+            if (aOff.Count == 0) return aRoutes;
+            SCP_DiscordGuildCache aCache = SCP_DiscordBot.LoadCache(iDataRoot);
+            return aRoutes.Where(r => !aOff.Contains(ActualGuildOf(aCache, r))).ToList();
+        }
+
         // ── 白名單 ───────────────────────────────────────────────────
 
         public static SCP_DiscordWhitelist LoadWhitelist(string iDataRoot)

@@ -55,6 +55,8 @@ namespace SCP.Core.Discord
     public sealed class SCP_DiscordConfig
     {
         public bool InboundEnabled;
+        /// <summary>關掉 Inbound 的 Discord Server id（預設空 ＝ 全部都收；Tim 2026-09-28）。</summary>
+        public List<string> InboundDisabledGuilds = new List<string>();
         public bool OutboundEnabled;
         public string AvatarUrlTemplate = SCP_DiscordConfigStore.DefaultAvatarUrlTemplate;
         public List<SCP_DiscordWebhookInfo> Webhooks = new List<SCP_DiscordWebhookInfo>();
@@ -100,6 +102,7 @@ namespace SCP.Core.Discord
             {
                 SCP_JsonData j = SCP_JsonParser.Parse(File.ReadAllText(aPath, Encoding.UTF8));
                 c.InboundEnabled = j["inbound"].GetBool("enabled", false);
+                foreach (SCP_JsonData g in j["inbound"]["disabled_guilds"]) if (g.IsString) c.InboundDisabledGuilds.Add(g.AsString());
                 SCP_JsonData o = j["outbound"];
                 c.OutboundEnabled = o.GetBool("enabled", false);
                 c.AvatarUrlTemplate = o.GetString("avatar_url_template", DefaultAvatarUrlTemplate);
@@ -131,7 +134,10 @@ namespace SCP.Core.Discord
             var j = SCP_JsonData.NewObject();
             j.Set("schema_version", SchemaVersion);
             j.Set("note", "Discord 收發設定（TASK-0320）。webhook URL 不在這裡 —— 密文在同資料夾的 " + SCP_DiscordPaths.WebhookSecretFileName + "。後台：senate ui --page discord-relay／discord-webhooks");
-            var aIn = SCP_JsonData.NewObject(); aIn.Set("enabled", c.InboundEnabled); j.Set("inbound", aIn);
+            var aIn = SCP_JsonData.NewObject(); aIn.Set("enabled", c.InboundEnabled);
+            var aDis = SCP_JsonData.NewArray(); foreach (string g in c.InboundDisabledGuilds.Distinct(StringComparer.Ordinal)) aDis.Add(g);
+            aIn.Set("disabled_guilds", aDis);
+            j.Set("inbound", aIn);
             var aOut = SCP_JsonData.NewObject();
             aOut.Set("enabled", c.OutboundEnabled);
             aOut.Set("avatar_url_template", c.AvatarUrlTemplate);
@@ -172,6 +178,19 @@ namespace SCP.Core.Discord
             if (!Save(iDataRoot, c, out oError)) return false;
             SCP_DiscordConfig b = Load(iDataRoot);
             if ((iInbound ? b.InboundEnabled : b.OutboundEnabled) != iEnabled) { oError = "寫完回讀對不上"; return false; }
+            return true;
+        }
+
+        /// <summary>開關某個 Discord Server 的 Inbound（預設開）。</summary>
+        public static bool TrySetGuildInbound(string iDataRoot, string iGuildId, bool iEnabled, out string? oError)
+        {
+            string aId = (iGuildId ?? "").Trim();
+            if (!SCP_DiscordInboundConfig.IsSnowflake(aId)) { oError = $"Server id 要是 Discord 的數字 id（收到 '{aId}'）"; return false; }
+            SCP_DiscordConfig c = Load(iDataRoot);
+            c.InboundDisabledGuilds.RemoveAll(x => x == aId);
+            if (!iEnabled) c.InboundDisabledGuilds.Add(aId);
+            if (!Save(iDataRoot, c, out oError)) return false;
+            if (Load(iDataRoot).InboundDisabledGuilds.Contains(aId) == iEnabled) { oError = "寫完回讀對不上"; return false; }
             return true;
         }
 

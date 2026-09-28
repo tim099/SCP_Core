@@ -33,7 +33,8 @@ namespace SCP.Core.Cmd
             + "· `op=backfill --arg room=<房> [--arg from_seq=1] [--arg to_seq=0] [--arg confirm=1]`：把舊訊息補送到這個房的分類綁的 webhook。\n"
             + "  預設只試算；`confirm=1` 才發。只送 chat、不回送 Discord 轉進來的、⛔ 不 @ 任何人；游標在 `discord/discord_backfill_state.json`，重跑從斷點接。\n"
             + "· `op=inbound-peek`：每個接了的 Discord 頻道實打一次 API，列出「現在開 Inbound 會收進哪幾則／略過哪幾則」——⛔ 不寫酒館、不動游標。\n"
-            + "· `op=inbound-status`：每個頻道的游標、最後輪詢時間、錯誤、累計收進幾則（Inbound 真的在跑時看這個）。";
+            + "· `op=inbound-status`：每個頻道的游標、最後輪詢時間、錯誤、累計收進幾則（Inbound 真的在跑時看這個）。\n"
+            + "· `op=guild-inbound --arg guild=<Server id> --arg enabled=0|1`：逐個 Server 開關 Inbound 來源（預設開）。";
 
         public override string Example => SCP_CmdRegistry.Invoke("discord-relay --arg op=status");
 
@@ -44,7 +45,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("op", "做什麼", iDefault: "status", iChoices: new[]
             {
                 "status", "switch", "webhooks", "webhook-add", "webhook-verify", "webhook-enable", "webhook-remove",
-                "bind", "import-main", "avatar-template", "avatars", "backfill", "inbound-peek", "inbound-status",
+                "bind", "import-main", "avatar-template", "avatars", "backfill", "inbound-peek", "inbound-status", "guild-inbound",
             }),
             new SCP_CmdArgSpec("side", "op=switch：inbound／outbound", iDefault: "", iChoices: new[] { "", "inbound", "outbound" }),
             new SCP_CmdArgSpec("enabled", "op=switch／webhook-enable：1＝開", iDefault: "1", iChoices: new[] { "0", "1" }),
@@ -56,6 +57,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("template", "op=avatar-template：頭像網址範本", iDefault: ""),
             new SCP_CmdArgSpec("check", "op=avatars：1＝逐一 GET 看網址在不在", iDefault: "0", iChoices: new[] { "0", "1" }),
             new SCP_CmdArgSpec("room", "op=backfill：要補發的酒館頻道", iDefault: ""),
+            new SCP_CmdArgSpec("guild", "op=guild-inbound：Discord Server id", iDefault: ""),
             new SCP_CmdArgSpec("from_seq", "op=backfill：從哪個 seq 起（含）", iDefault: "1"),
             new SCP_CmdArgSpec("to_seq", "op=backfill：到哪個 seq（含；0＝到最新）", iDefault: "0"),
             new SCP_CmdArgSpec("confirm", "op=backfill：1＝真的發（預設只試算）", iDefault: "0", iChoices: new[] { "0", "1" }),
@@ -128,6 +130,12 @@ namespace SCP.Core.Cmd
                 case "avatars": return Avatars(aRoot, aLetters, iArgs.Get("check").Trim() == "1");
                 case "inbound-peek": return InboundPeek(aRoot);
                 case "inbound-status": return InboundStatus(aRoot);
+                case "guild-inbound":
+                {
+                    bool aOn = iArgs.Get("enabled").Trim() == "1";
+                    if (!SCP_DiscordConfigStore.TrySetGuildInbound(aRoot, iArgs.Get("guild"), aOn, out string? aErr)) return SCP_CmdResult.Fail(2, "✗ 沒有寫入：" + aErr);
+                    return SCP_CmdResult.Success($"✅ Server {iArgs.Get("guild").Trim()} 的 Inbound ＝ {(aOn ? "收" : "不收")}（回讀）");
+                }
                 case "backfill":
                 {
                     string aRoom = iArgs.Get("room").Trim();
@@ -178,10 +186,21 @@ namespace SCP.Core.Cmd
             SCP.Core.Json.SCP_JsonData s = SCP_DiscordInbound.ReadState(iRoot);
             SCP_DiscordConfig c = SCP_DiscordConfigStore.Load(iRoot);
             var aR = SCP_CmdResult.Success($"# Inbound 狀態（開關：{(c.InboundEnabled ? "開" : "關")}）");
+            SCP_DiscordGuildCache aCache = SCP_DiscordBot.LoadCache(iRoot);
+            var aActive = new HashSet<string>(SCP_DiscordInboundConfig.ActiveRoutes(iRoot, out _).Select(x => x.ChannelId));
+            string aGw = SCP_DiscordPaths.Dir(iRoot) + "/discord_gateway_status.json";
+            if (File.Exists(aGw))
+            {
+                SCP.Core.Json.SCP_JsonData gw = SCP.Core.Json.SCP_JsonParser.Parse(File.ReadAllText(aGw, Encoding.UTF8));
+                aR.Lines.Add($"- Gateway：{(gw.GetBool("connected", false) ? "上線" : "離線")}　Bot {gw.GetString("bot_name", "?")}　狀態欄「{gw.GetString("presence", "")}」"
+                             + (gw.GetString("last_error", "").Length > 0 ? "　⚠ " + gw.GetString("last_error", "") : "") + $"（{gw.GetString("updated_at", "")}）");
+            }
             foreach (SCP_DiscordRoute rt in SCP_DiscordInboundConfig.LoadRoutes(iRoot, out _))
             {
                 SCP.Core.Json.SCP_JsonData ch = s["channels"][rt.ChannelId];
-                aR.Lines.Add($"- {rt.Label}（{rt.ChannelId}）→ {rt.TavernRoom}{(rt.Enabled ? "" : "（關）")}：游標 {ch.GetString("last_message_id", "（沒有）")}"
+                string aG = SCP_DiscordInboundConfig.ActualGuildOf(aCache, rt);
+                string aGName = aCache.Guilds.FirstOrDefault(x => x.Id == aG)?.Name ?? aG;
+                aR.Lines.Add($"- {(aActive.Contains(rt.ChannelId) ? "▶" : "⏸")} [{aGName}{(c.InboundDisabledGuilds.Contains(aG) ? "（Server 關）" : "")}] {rt.Label}（{rt.ChannelId}）→ {rt.TavernRoom}{(rt.Enabled ? "" : "（關）")}：游標 {ch.GetString("last_message_id", "（沒有）")}"
                              + $"　最後輪詢 {ch.GetString("last_poll_at", "-")}　累計 {ch.GetLong("relayed_total", 0)} 則"
                              + (ch.GetString("last_error", "").Length > 0 ? "　⚠ " + ch.GetString("last_error", "") : "")
                              + (ch.GetString("note", "").Length > 0 ? "　（" + ch.GetString("note", "") + "）" : ""));
