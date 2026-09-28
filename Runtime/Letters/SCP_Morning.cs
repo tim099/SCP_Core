@@ -581,7 +581,8 @@ namespace SCP.Core.Letters
             {
                 $"補**自我介紹**（出生證明）：`Docs/Glossary/personas/{iPersona}.md` 不存在 —— 沒有它 morning-intro 會被擋。",
                 $"   內容＝初始風格自畫像（我是誰／擅長什麼／說話方式），**親筆**；參考同目錄其他人的寫法（最完整：`{aRefHint}`）。",
-                $"   寫法：senate ucmd run Glossary --arg op=register --arg slug={iPersona} --arg category=persona --arg-file body=<檔>",
+                // TASK-0313：入口改 `senate cmd glossary`（不需要 Editor）。⚠ term／one_line 是必填 —— 舊提示漏了這兩格，照著打一定被擋。
+                $"   寫法：senate cmd glossary --arg op=register --arg slug={iPersona} --arg term=\"{iPersona} 大小姐\" --arg category=persona --arg one_line=<一句話> --arg-file body=<檔>",
                 "   ⚠ 工具新建預設寫 Docs/Glossary/ 根層，persona 條目慣例放 personas/，寫完手動搬。",
             };
         }

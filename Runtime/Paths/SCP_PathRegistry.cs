@@ -59,8 +59,8 @@ namespace SCP.Core.Paths
         [SCP_PathInfo("詞典根（glossary）",
             "新詞辭典的 .md 住這裡（酒館發文的詞典附註、早安的出生證明 `personas/<P>.md` 都從這裡讀）。"
             + " `auto` ＝ `<專案根>/Docs/Glossary`（2026-09-27 之前寫死的位置）。"
-            + " ⚠ **只管 Senate 這側**（Tim 2026-09-27 拍板存 senate.local.json）：Unity Editor 的 `Cmd_Glossary`"
-            + "（登記新詞、Editor 路的附註）仍固定用 `<repo>/docs/Glossary` —— 改成非預設值時兩邊會讀不同的樹，而那不會報錯。")]
+            + " 存 senate.local.json（Tim 2026-09-27）；**只有 Senate 讀它** —— 詞典的操作全在 `senate cmd glossary`，"
+            + "Editor 發的文由寫入端 `tavern-write` 補附註（TASK-0313，Tim 2026-09-28：Unity 端不碰詞典）。")]
         [SCP_PathStored("glossaryRoot", SCP_PathScope.Project)]
         [SCP_PathAuto(SCP_PathId.ProjectRoot, "Docs/Glossary")]
         GlossaryRoot,
