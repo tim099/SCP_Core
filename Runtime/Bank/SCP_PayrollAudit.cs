@@ -185,13 +185,13 @@ namespace SCP.Core.Bank
         public const string SettledFileName = "payroll_settled.json";
 
         /// <summary>
-        /// 🔴 `ref` 的形狀 —— 與 Unity 那側的 `Cmd_Tavern.PostRewardSourceRef` **必須逐字相同**。
-        /// ⛔ 這是本層唯一一個「第二份真相源」，而它守不住（那支在另一棵樹上，本層碰不到）。
-        /// ⇒ 所以底下有一道體檢：**帳上有 work_post 卻沒有一筆 ref 對得上任何訊息** ⇒ 判 `Unmeasurable`，
-        ///   ⛔ 不報「全部漏發」。🩸 少了那道，一次格式變更會讓本稽核每天尖叫，
-        ///   而人會在第三天學會忽略它 —— 那比沒有稽核更糟。
+        /// 🔴 `ref` 的形狀 —— **直接問發薪那一支**（`SCP_TavernPayroll.PostRewardSourceRef`）。
+        /// 🩸 2026-09-28（TASK-0295 ②）：這裡原本抄了一份字面，註解說本尊在「Unity 那側的 `Cmd_Tavern`、本層碰不到」——
+        ///   TASK-0296 之後本尊搬進同一個組件，那句話就假了，而副本還在。⇒ 改成呼叫本尊，第二份真相源歸零。
+        /// ⚠ 底下那道體檢照留：**帳上有 work_post 卻沒有一筆 ref 對得上任何訊息** ⇒ 判 `Unmeasurable`，⛔ 不報「全部漏發」
+        ///   —— 歷史分錄是舊寫入端寫的，格式若曾變過，它仍是唯一會出聲的那一層。
         /// </summary>
-        public static string SourceRef(string iRoomId, int iSeq) => iRoomId + "#seq=" + iSeq;
+        public static string SourceRef(string iRoomId, int iSeq) => SCP_TavernPayroll.PostRewardSourceRef(iRoomId, iSeq);
 
         /// <summary>
         /// 系統性斷掉的門檻：**有這麼多則應計酬而帳上一筆都沒有** ⇒ 🔴。
@@ -469,7 +469,7 @@ namespace SCP.Core.Bank
                 r.Verdict = SCP_PayrollVerdict.Unmeasurable;
                 r.Why = "帳上有 " + r.LedgerWorkPostEntries + " 筆 work_post，而**沒有一筆 ref 對得上任何訊息**"
                       + " ⇒ 這是 `ref` 形狀對不上（比對關係壞了），⛔ 不是漏發。"
-                      + " 去對 `SCP_PayrollAudit.SourceRef` 與 Unity 那側的 `Cmd_Tavern.PostRewardSourceRef`。";
+                      + " 去對帳上分錄的 `ref` 與 `SCP_TavernPayroll.PostRewardSourceRef`（歷史分錄可能是舊格式）。";
                 return;
             }
             if (r.Messages == 0)
