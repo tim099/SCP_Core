@@ -49,6 +49,17 @@ namespace SCP.Core.Market
     }
 
     /// <summary>
+    /// **POST JSON**（TASK-0316／0320：Discord webhook 發文）。可選介面，同 <see cref="ISCP_HttpHeaderFetcher"/>。
+    /// <paramref name="oRetryAfterSec"/>＝429 時對方要求等幾秒（`Retry-After` 標頭或回應的 `retry_after`；沒有 ⇒ 0）。
+    /// ⚠ URL 可能含憑證（webhook token）⇒ 實作端 ⛔ 不得把 URL 寫進錯誤訊息或 log。
+    /// </summary>
+    public interface ISCP_HttpPoster
+    {
+        bool TryPostJson(string iUrl, string iJson, int iTimeoutSec,
+                         out string oBody, out int oStatus, out double oRetryAfterSec, out string? oError);
+    }
+
+    /// <summary>
     /// 全域抓取器插座。宿主（Senate CLI／Server）啟動時塞一個進來；
     /// Unity 那側**刻意不塞** ⇒ `op=sync` 會明說「本宿主沒有抓取器」而不是靜默沒事。
     /// </summary>

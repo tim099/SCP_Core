@@ -29,7 +29,9 @@ namespace SCP.Core.Cmd
             + "· `op=webhooks`｜`op=webhook-add --arg url_path=<放 URL 的檔> [--arg label=]`（⛔ 不收 URL 本身）｜`op=webhook-verify --arg id=`\n"
             + "  `op=webhook-enable --arg id= --arg enabled=0|1`｜`op=webhook-remove --arg id=`（還有分類綁著就擋）\n"
             + "· `op=bind --arg category=<分類> --arg ids=<id1,id2…>`（整份取代；空＝不送）｜`op=import-main`（notify_config 的 main ⇒ 綁 Main）\n"
-            + "· `op=avatar-template --arg template=<含 {persona} 的 https 網址>`（空＝預設）｜`op=avatars [--arg check=1]`（各 persona 的頭像網址；check=1 逐一 GET）";
+            + "· `op=avatar-template --arg template=<含 {persona} 的 https 網址>`（空＝預設）｜`op=avatars [--arg check=1]`（各 persona 的頭像網址；check=1 逐一 GET）\n"
+            + "· `op=backfill --arg room=<房> [--arg from_seq=1] [--arg to_seq=0] [--arg confirm=1]`：把舊訊息補送到這個房的分類綁的 webhook。\n"
+            + "  預設只試算；`confirm=1` 才發。只送 chat、不回送 Discord 轉進來的、⛔ 不 @ 任何人；游標在 `discord/discord_backfill_state.json`，重跑從斷點接。";
 
         public override string Example => SCP_CmdRegistry.Invoke("discord-relay --arg op=status");
 
@@ -40,7 +42,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("op", "做什麼", iDefault: "status", iChoices: new[]
             {
                 "status", "switch", "webhooks", "webhook-add", "webhook-verify", "webhook-enable", "webhook-remove",
-                "bind", "import-main", "avatar-template", "avatars",
+                "bind", "import-main", "avatar-template", "avatars", "backfill",
             }),
             new SCP_CmdArgSpec("side", "op=switch：inbound／outbound", iDefault: "", iChoices: new[] { "", "inbound", "outbound" }),
             new SCP_CmdArgSpec("enabled", "op=switch／webhook-enable：1＝開", iDefault: "1", iChoices: new[] { "0", "1" }),
@@ -51,6 +53,10 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("ids", "op=bind：webhook id，逗號分隔（空＝這個分類不送）", iDefault: ""),
             new SCP_CmdArgSpec("template", "op=avatar-template：頭像網址範本", iDefault: ""),
             new SCP_CmdArgSpec("check", "op=avatars：1＝逐一 GET 看網址在不在", iDefault: "0", iChoices: new[] { "0", "1" }),
+            new SCP_CmdArgSpec("room", "op=backfill：要補發的酒館頻道", iDefault: ""),
+            new SCP_CmdArgSpec("from_seq", "op=backfill：從哪個 seq 起（含）", iDefault: "1"),
+            new SCP_CmdArgSpec("to_seq", "op=backfill：到哪個 seq（含；0＝到最新）", iDefault: "0"),
+            new SCP_CmdArgSpec("confirm", "op=backfill：1＝真的發（預設只試算）", iDefault: "0", iChoices: new[] { "0", "1" }),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -118,6 +124,24 @@ namespace SCP.Core.Cmd
                     return SCP_CmdResult.Success("✅ 頭像網址範本 ＝ " + SCP_DiscordConfigStore.Load(aRoot).AvatarUrlTemplate);
                 }
                 case "avatars": return Avatars(aRoot, aLetters, iArgs.Get("check").Trim() == "1");
+                case "backfill":
+                {
+                    string aRoom = iArgs.Get("room").Trim();
+                    if (aRoom.Length == 0) return SCP_CmdResult.Fail(2, "✗ 要 `--arg room=<酒館頻道>`");
+                    bool aSend = iArgs.Get("confirm").Trim() == "1";
+                    int.TryParse(iArgs.Get("from_seq"), out int aFrom);
+                    int.TryParse(iArgs.Get("to_seq"), out int aTo);
+                    SCP_DiscordBackfillReport r = SCP_DiscordOutbound.Backfill(aRoot, aLetters, aRoom, aFrom, aTo, !aSend,
+                        s => Console.Error.WriteLine("· " + s));
+                    var aR = r.Problems.Count > 0 && r.Sent == 0 ? SCP_CmdResult.Fail(1, $"✗ {aRoom}：沒有送出") : SCP_CmdResult.Success(aSend ? $"✅ {aRoom} 補發" : $"（試算）{aRoom} 補發 —— 加 `--arg confirm=1` 才會真的發");
+                    aR.Lines.Add($"- 目標：{(r.Targets.Count > 0 ? string.Join("、", r.Targets) : "（沒有）")}");
+                    aR.Lines.Add($"- 範圍內 {r.Messages} 則，要送 {r.Eligible} 則；已送過跳過 {r.SkippedAlready}；{(aSend ? "送出" : "將送")} {r.Sent} 則（{r.Posts} 次 POST，含拆段）");
+                    foreach (string p in r.Problems) aR.Lines.Add("- ⚠ " + p);
+                    aR.AddValue("sent", r.Sent.ToString(CultureInfo.InvariantCulture));
+                    aR.AddValue("posts", r.Posts.ToString(CultureInfo.InvariantCulture));
+                    aR.AddValue("problems", r.Problems.Count.ToString(CultureInfo.InvariantCulture));
+                    return aR;
+                }
                 default: return Status(aRoot);
             }
         }
