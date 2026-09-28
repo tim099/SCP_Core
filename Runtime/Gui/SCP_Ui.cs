@@ -90,6 +90,8 @@ namespace SCP.Core.Gui
         // ── 純顯示 ────────────────────────────────────────────────
         public void Title(string iText) => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Title, Text = iText });
         public void Label(string iText) => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Label, Text = iText });
+        /// <summary>會換行的一段文字（長文用；見 <see cref="SCP_GuiNode.Wrap"/>）。</summary>
+        public void Paragraph(string iText) => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Label, Text = iText, Wrap = true });
         public void Note(string iText) => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Note, Text = iText });
         public void Separator() => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Separator });
         public void Space() => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Space });
@@ -186,6 +188,10 @@ namespace SCP.Core.Gui
         /// <summary>折線圖（非互動）。<paramref name="iSeries"/> 由舊到新。</summary>
         public void Plot(string iLabel, IReadOnlyList<double> iSeries)
             => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Plot, Text = iLabel, Series = iSeries });
+
+        /// <summary>圖片（非互動）。<paramref name="iPath"/> 空 ＝ 沒有圖（佔位）；<paramref name="iAlt"/> 是文字模式印的那一句。</summary>
+        public void Image(string iPath, float iSize, string iAlt)
+            => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Image, Value = iPath ?? "", ImageSize = iSize, Text = iAlt ?? "" });
 
         // ── 互動 ──────────────────────────────────────────────────
         /// <summary>按鈕。**這一輪被按下就回 true**（GUILayout 語意）。</summary>

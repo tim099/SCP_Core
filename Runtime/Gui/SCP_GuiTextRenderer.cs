@@ -67,6 +67,7 @@ namespace SCP.Core.Gui
                     break;
 
                 case SCP_GuiNodeKind.Button:
+                case SCP_GuiNodeKind.Image:
                     oSb.Append(pad).Append(Inline(iNode)).Append('\n');
                     break;
 
@@ -153,6 +154,7 @@ namespace SCP.Core.Gui
             SCP_GuiNodeKind.Toggle => $"[{(iNode.On ? "x" : " ")}] {iNode.Text}",
             SCP_GuiNodeKind.TextField => $"{iNode.Text}: ⟨{(iNode.Masked ? MaskedText(iNode.Value) : iNode.Value)}⟩",
             SCP_GuiNodeKind.Note => $"· {iNode.Text}",
+            SCP_GuiNodeKind.Image => iNode.Value.Length > 0 ? $"[圖：{iNode.Text}]" : $"[無圖：{iNode.Text}]",
             _ => iNode.Text,
         };
 

@@ -29,6 +29,7 @@ namespace SCP.Core.Gui
         TableRow,     // 子節點必為 TableCell
         TableCell,
         Plot,         // 折線圖（資料在 Series；非互動）—— TASK-0272 歷史匯率波動圖
+        Image,        // 圖片（路徑在 Value、邊長在 ImageSize、替代文字在 Text；非互動）—— TASK-0317 頭像
     }
 
     /// <summary>
@@ -102,6 +103,19 @@ namespace SCP.Core.Gui
         /// </summary>
         public IReadOnlyList<double> Series { get; init; } = Array.Empty<double>();
 
+        /// <summary>
+        /// Image 的邊長（邏輯像素，renderer 自己乘 scale）；其他 Kind 不使用。
+        /// <para>⚠ 路徑空 ＝ **這裡沒有圖** ⇒ 視窗畫灰色佔位框、文字印替代文字 —— 兩邊都要看得出「沒有圖」，⛔ 不畫空白。</para>
+        /// </summary>
+        public float ImageSize { get; init; }
+
+        /// <summary>
+        /// Label 要不要**在視窗寬度換行**（<see cref="SCP_Ui.Paragraph"/>）。
+        /// <para>🩸 ImGui 的 Text 預設不換行，超出去的字直接被裁掉而**不會有任何一層喊** —— 訊息本文這種長文一定要開。</para>
+        /// <para>⚠ 一般 Label 維持不換行：它常跟按鈕排在同一列，換行會讓一列長成好幾行。</para>
+        /// </summary>
+        public bool Wrap { get; init; }
+
         public List<SCP_GuiNode> Children { get; } = new();
 
         public SCP_GuiNode Add(SCP_GuiNode iChild) { Children.Add(iChild); return iChild; }
@@ -124,6 +138,7 @@ namespace SCP.Core.Gui
                 case SCP_GuiNodeKind.Button:
                 case SCP_GuiNodeKind.Toggle:
                 case SCP_GuiNodeKind.TextField:
+                case SCP_GuiNodeKind.Image:
                     return true;
                 default:
                     return false;
