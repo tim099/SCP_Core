@@ -3,6 +3,8 @@
 //             · `avatar.png` —— 頭像。⚠ **內容可以是 PNG 或 JPEG**（檔名固定，讀取端只找這一個名字）：
 //               🩸 2026-09-28 實測：從舊 sprite 搬來的 22 張裡 16 張其實是 JPEG（原始素材副檔名就寫 .png）。
 //             · `color.md`   —— 一行 `#RRGGBB`（＋LF，無 BOM，同 `actual_agent.md`）
+//             · `avatar_url.md` —— 一行**公開**頭像網址（https；TASK-0320，給 Discord 用 —— Discord 只收公開網址，讀不到本機檔）。
+//               沒填 ⇒ Discord 那側用預設範本（`SCP_DiscordAvatar`），⛔ 本檔不知道範本。
 //           **顯示名一律是 persona id**（Tim 2026-09-28：不另存顯示名）。
 //           Tim 2026-09-28：「不使用之前的 UCL_Asset」「之後不做 agent fallback」
 //           ⇒ 本檔**只看 persona 自己的資料夾**：缺圖就是缺圖（顯示端畫預設圖），⛔ 不借 agent 或別人的。
@@ -13,6 +15,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -35,6 +38,9 @@ namespace SCP.Core.Letters
         /// <summary>color.md 在但內容不是 `#RRGGBB` ⇒ 這裡放原文（顯示端要出聲，⛔ 不當成沒設）。</summary>
         public string ColorInvalidRaw = "";
 
+        /// <summary>`avatar_url.md` 填的公開網址；空 ＝ 沒填（顯示端自己決定預設）。</summary>
+        public string AvatarUrl = "";
+
         /// <summary>信件夾存在嗎（false ＝ 不是 pool 裡的 persona，只是一個寄件人 id）。</summary>
         public bool HasLettersDir;
 
@@ -45,6 +51,7 @@ namespace SCP.Core.Letters
     {
         public const string AvatarFileName = "avatar.png";
         public const string ColorFileName = "color.md";
+        public const string AvatarUrlFileName = "avatar_url.md";
 
         /// <summary>酒保（系統廣播：保管費／時間提醒…）。</summary>
         public const string TavernKeeperPersona = "tavern-keeper";
@@ -80,7 +87,38 @@ namespace SCP.Core.Letters
                 if (IsValidColor(aRaw)) aInfo.ColorHex = aRaw.ToUpperInvariant();
                 else aInfo.ColorInvalidRaw = aRaw;
             }
+            string aUrlPath = aDir + "/" + AvatarUrlFileName;
+            if (File.Exists(aUrlPath))
+            {
+                try { aInfo.AvatarUrl = File.ReadAllText(aUrlPath, Encoding.UTF8).Trim().TrimStart('﻿'); }
+                catch (Exception) { /* 讀不了 ⇒ 當作沒填 */ }
+            }
             return aInfo;
+        }
+
+        /// <summary>設頭像公開網址。空字串 ⇒ 刪掉 avatar_url.md（回到預設）。只收 https ⇒ 其他一律拒絕、零寫入。</summary>
+        public static bool TrySetAvatarUrl(string iLettersRoot, string iPersona, string iUrl, out string? oError)
+        {
+            oError = null;
+            if (!IsSafeName(iPersona)) { oError = $"persona 名不合法：'{iPersona}'"; return false; }
+            if (!Directory.Exists(Path.Combine(iLettersRoot, iPersona)))
+            { oError = $"信件夾不存在：{Path.Combine(iLettersRoot, iPersona)}（⛔ 不代建 persona）"; return false; }
+            string aDir = ProfileDir(iLettersRoot, iPersona);
+            string aPath = aDir + "/" + AvatarUrlFileName;
+            string aUrl = (iUrl ?? "").Trim();
+            try
+            {
+                if (aUrl.Length == 0) { if (File.Exists(aPath)) File.Delete(aPath); return true; }
+                if (!aUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || aUrl.Any(char.IsWhiteSpace))
+                { oError = $"頭像網址要是 https 開頭、中間沒有空白（收到 '{aUrl}'）"; return false; }
+                Directory.CreateDirectory(aDir);
+                string aTmp = aPath + ".tmp";
+                File.WriteAllText(aTmp, aUrl + "\n", new UTF8Encoding(false));
+                if (File.Exists(aPath)) File.Delete(aPath);
+                File.Move(aTmp, aPath);
+                return true;
+            }
+            catch (Exception e) { oError = $"寫不進去（{aPath}）：{e.Message}"; return false; }
         }
 
         /// <summary>信件夾裡有 `profile/` 的那些名字（排序）。⚠ 包含 system／tavern-keeper 這類系統身分。</summary>

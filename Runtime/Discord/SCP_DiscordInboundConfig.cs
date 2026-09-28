@@ -1,11 +1,11 @@
 // 區塊職責：**Discord Inbound 的設定** —— 「Discord 頻道 → 酒館頻道」對應表與使用者白名單（TASK-0319）。唯一讀寫層。
 // 物理意義：
-//   · 對應表：`ChatTavern/discord_channel_routing.json` 的 `mappings`（沿用既有檔與格式，⇒ Senate 版 Inbound 直接讀它）。
+//   · 對應表：`ChatTavern/discord/discord_channel_routing.json` 的 `mappings`（沿用既有檔與格式，⇒ Senate 版 Inbound 直接讀它）。
 //     寫回時**每一列的其他欄位原樣保留**（priority／tags／_note…），頂層的 `_description` 之類也保留；
 //     後台只露出 酒館頻道／開關／source_class 三格（Tim 2026-09-28：照建議）。
 //     酒館頻道只收**沒封存**的（`SCP_TavernChannels`）；新接的 Discord 頻道預設接主頻道 `tavern`（Tim 2026-09-28）。
 //   · 白名單：從 `PromptQueue/notify_config.json` 的 `tavern_inbound.user_whitelist` **搬到**
-//     `ChatTavern/discord_inbound_whitelist.json`（Tim 2026-09-28：「白名單一起搬」）。
+//     `ChatTavern/discord/discord_inbound_whitelist.json`（Tim 2026-09-28：「白名單一起搬」）。
 //     新檔不在 ⇒ 照舊讀 notify_config（`Source` 會說）；第一次寫入就寫新檔，⛔ 不回寫 notify_config
 //     （那個檔裡有明文 webhook，不為了白名單整份重寫它）。
 //   · Unity 端 Inbound 已廢棄（Tim 2026-09-28）⇒ 本檔只顧 Senate 這一側。
@@ -56,11 +56,9 @@ namespace SCP.Core.Discord
         /// <summary>source_class 的慣用值（Tim 2026-05-15：freeform，這三個是慣例）。</summary>
         public static readonly string[] KnownSourceClasses = { "external", "internal", "work" };
 
-        static string TavernDir(string iDataRoot)
-            => (Path.GetDirectoryName(SCP_TavernMsgIndex.RoomsRoot(iDataRoot)) ?? iDataRoot).Replace('\\', '/');
-
-        public static string RoutingPath(string iDataRoot) => TavernDir(iDataRoot) + "/" + RoutingFileName;
-        public static string WhitelistPath(string iDataRoot) => TavernDir(iDataRoot) + "/" + WhitelistFileName;
+        // 落點：`ChatTavern/discord/`（TASK-0320 從 `ChatTavern/` 根搬進去；搬家在 SCP_DiscordPaths.EnsureMigrated）
+        public static string RoutingPath(string iDataRoot) => SCP_DiscordPaths.RoutingPath(iDataRoot);
+        public static string WhitelistPath(string iDataRoot) => SCP_DiscordPaths.WhitelistPath(iDataRoot);
         public static string NotifyConfigPath(string iDataRoot) => Path.Combine(iDataRoot, "PromptQueue", "notify_config.json").Replace('\\', '/');
 
         // ── 對應表 ───────────────────────────────────────────────────

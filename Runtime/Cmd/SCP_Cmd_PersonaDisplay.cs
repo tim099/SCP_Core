@@ -21,7 +21,8 @@ namespace SCP.Core.Cmd
             + "· `op=list`（預設）：全部 persona 的頭像有無與顏色。\n"
             + "· `op=show --arg persona=<p>`：單一 persona。\n"
             + "· `op=color --arg persona=<p> --arg color=#RRGGBB`：設顏色；`color` 留空 ＝ **刪掉**（回到沒設）。\n"
-            + "· `op=avatar --arg persona=<p> --arg src=<PNG 路徑>`：換頭像。已有頭像時要 `--arg confirm=1`（蓋掉之後舊圖回不來，除非在 git 裡）。";
+            + "· `op=avatar --arg persona=<p> --arg src=<PNG 路徑>`：換頭像。已有頭像時要 `--arg confirm=1`（蓋掉之後舊圖回不來，除非在 git 裡）。\n"
+            + "· `op=avatar-url --arg persona=<p> --arg url=<https>`：Discord 用的公開頭像網址（寫 `profile/avatar_url.md`）；`url` 留空 ＝ 刪掉、回到範本。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("persona-display --arg op=show --arg persona=gura");
@@ -29,11 +30,12 @@ namespace SCP.Core.Cmd
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根（絕對路徑）", iRequired: true),
-            new SCP_CmdArgSpec("op", "做什麼", iDefault: "list", iChoices: new[] { "list", "show", "color", "avatar" }),
+            new SCP_CmdArgSpec("op", "做什麼", iDefault: "list", iChoices: new[] { "list", "show", "color", "avatar", "avatar-url" }),
             new SCP_CmdArgSpec("persona", "誰（show／color／avatar 必填）", iDefault: ""),
             new SCP_CmdArgSpec("color", "op=color：`#RRGGBB`；留空＝刪掉", iDefault: ""),
             new SCP_CmdArgSpec("src", "op=avatar：來源圖檔（PNG／JPEG，看檔頭）的完整路徑", iDefault: ""),
             new SCP_CmdArgSpec("confirm", "op=avatar：1＝允許覆寫既有頭像", iDefault: "0"),
+            new SCP_CmdArgSpec("url", "op=avatar-url：公開頭像網址（https；給 Discord 用）；留空＝刪掉、回到預設範本", iDefault: ""),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -87,6 +89,16 @@ namespace SCP.Core.Cmd
                     : $"✅ `{aPersona}` 的顏色 ＝ **{i.ColorHex}**（回讀）");
                 aR.AddValue("color", i.ColorHex);
                 return aR;
+            }
+
+            if (aOp == "avatar-url")
+            {
+                string aUrl = iArgs.Get("url").Trim();
+                if (!SCP_PersonaDisplay.TrySetAvatarUrl(aRoot, aPersona, aUrl, out string? aUErr))
+                    return SCP_CmdResult.Fail(2, "✗ 沒有寫入：" + aUErr);
+                string aBack = SCP_PersonaDisplay.Get(aRoot, aPersona).AvatarUrl;   // 回讀
+                return SCP_CmdResult.Success(aBack.Length == 0 ? $"✅ `{aPersona}` 的頭像網址已刪掉（回到預設範本）" : $"✅ `{aPersona}` 的頭像網址 ＝ {aBack}（回讀）")
+                    .AddValue("avatar_url", aBack);
             }
 
             // op=avatar

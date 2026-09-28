@@ -5,7 +5,7 @@
 //     Tim 2026-09-28：「本機設定的話直接輸出一份解密後檔案（不用跑兩遍）」⇒ `TrySetToken` 一次寫兩份。
 //   · 讀 token 的順序：環境變數 `DISCORD_INBOUND_BOT_TOKEN` ＞ 明文檔（同舊 Unity daemon，⇒ 同一台機器行為不變）。
 //   · API 呼叫走宿主注入的 `ISCP_HttpHeaderFetcher`（SCP_Core 不引入網路，見 `SCP_RateSource.cs` 守衛①）。
-//   · Server／頻道清單存 `ChatTavern/discord_guilds_cache.json`：**按了重新整理才打 API**，頁面平常只讀快取。
+//   · Server／頻道清單存 `ChatTavern/discord/discord_guilds_cache.json`：**按了重新整理才打 API**，頁面平常只讀快取。
 // 數值影響：
 //   · ⛔ token **不離開本檔**：沒有任何公開成員回傳它；錯誤訊息與快取檔都不含它。
 //   · 寫 token：先加密、**自己回解驗證**、再寫 .enc 與 .txt（暫存檔再換檔）；驗證不過 ⇒ 一個 byte 都不寫。
@@ -256,8 +256,7 @@ namespace SCP.Core.Discord
             return true;
         }
 
-        public static string CachePath(string iDataRoot)
-            => (Path.GetDirectoryName(SCP_TavernMsgIndex.RoomsRoot(iDataRoot)) ?? iDataRoot).Replace('\\', '/') + "/" + CacheFileName;
+        public static string CachePath(string iDataRoot) => SCP_DiscordPaths.CachePath(iDataRoot);
 
         public static SCP_DiscordGuildCache LoadCache(string iDataRoot)
         {

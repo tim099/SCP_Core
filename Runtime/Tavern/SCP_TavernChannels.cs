@@ -72,10 +72,39 @@ namespace SCP.Core.Tavern
         public const string MainChannelName = "酒館主廳 (Tavern)";
 
         /// <summary>
+        /// **保留分類**（Tim 2026-09-28，TASK-0320）：必須存在（沒有就建）、⛔ 不能刪；主頻道沒有分類時預設綁它。
+        /// Outbound 的 webhook 綁在分類上 ⇒ 至少要有一個分類，主頻道才有地方去。
+        /// </summary>
+        public const string MainCategory = "Main";
+
+        /// <summary>確保分類清單裡有 <see cref="MainCategory"/>。清單讀不了（壞檔）⇒ 不動它、回 false。</summary>
+        public static bool EnsureMainCategory(string iDataRoot, out bool oCreated)
+        {
+            oCreated = false;
+            List<SCP_ChannelCategory> aCats = LoadCategories(iDataRoot, out string? aErr);
+            if (aErr != null) return false;
+            if (aCats.Any(c => string.Equals(c.Name, MainCategory, StringComparison.OrdinalIgnoreCase))) return true;
+            aCats.Insert(0, new SCP_ChannelCategory { Name = MainCategory, Description = "主分類（保留，不能刪）" });
+            if (!WriteCategories(iDataRoot, aCats, out _)) return false;
+            oCreated = true;
+            return true;
+        }
+
+        /// <summary>
         /// 確保主頻道存在：使用中 ⇒ 什麼都不做；被人搬進封存區 ⇒ 搬回來；都沒有 ⇒ 建 `rooms/tavern/meta.json`。
         /// <paramref name="oCreated"/>＝這一次有沒有動到磁碟。
         /// </summary>
         public static bool EnsureMainChannel(string iDataRoot, out bool oCreated)
+        {
+            bool aOk = EnsureMainChannelDir(iDataRoot, out oCreated);
+            // 保留分類＋主頻道預設綁 Main（TASK-0320）—— 只在主頻道「沒有分類」時補，⛔ 不蓋掉人選過的分類
+            if (EnsureMainCategory(iDataRoot, out bool aCatCreated) && aCatCreated) oCreated = true;
+            if (aOk && LoadSettings(iDataRoot, MainChannelId).Category.Length == 0
+                && TrySetCategory(iDataRoot, MainChannelId, MainCategory, out _)) oCreated = true;
+            return aOk;
+        }
+
+        static bool EnsureMainChannelDir(string iDataRoot, out bool oCreated)
         {
             oCreated = false;
             string aActive = ActiveDir(iDataRoot, MainChannelId);
@@ -184,6 +213,8 @@ namespace SCP.Core.Tavern
             if (aReadErr != null) { oError = "分類清單讀不了，⛔ 不覆寫：" + aReadErr; return false; }
             int aIdx = aCats.FindIndex(c => string.Equals(c.Name, aName, StringComparison.OrdinalIgnoreCase));
             if (aIdx < 0) { oError = $"沒有這個分類：'{aName}'"; return false; }
+            if (string.Equals(aCats[aIdx].Name, MainCategory, StringComparison.OrdinalIgnoreCase))
+            { oError = $"'{MainCategory}' 是保留分類 ⇒ ⛔ 不能刪"; return false; }
             List<string> aUsers = RoomsUsingCategory(iDataRoot, aCats[aIdx].Name);
             if (aUsers.Count > 0)
             {
