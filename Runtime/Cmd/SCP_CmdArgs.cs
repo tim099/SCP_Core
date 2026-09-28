@@ -82,6 +82,20 @@ namespace SCP.Core.Cmd
         readonly HashSet<string> m_Explicit;
         readonly HashSet<string> m_Read = new HashSet<string>(StringComparer.Ordinal);
 
+        /// <summary>
+        /// 轉發端附上的保留鍵（TASK-0310）：值是逗號分隔的「**呼叫端真的給了**的參數名」。
+        /// <para>🩸 為什麼要它：委派給 Server 的 Cmd，轉發端把**宣告過的每一個參數**（含吃預設值的）
+        /// 都打包送過去 ⇒ 在執行端每一個都變成「顯式給的」⇒ 沒被讀的那些全部被報成使用者給錯了
+        /// （`voucher op=usage` 一趟亮 10 個，而使用者一個都沒給）。</para>
+        /// <para>⛔ 修法**不是**少送：payload 的值可能是呼叫端那側才解得出來的，砍掉就改了執行行為。
+        /// ⇒ 值照送，另附這份名單，讓執行端分得出「使用者打的」與「轉發端補的」。</para>
+        /// <para>⚠ 它不進值表、不算未知參數；有它時顯式集合**只取名單與規格的交集**。</para>
+        /// </summary>
+        public const string ForwardedExplicitKey = "_forwarded_explicit";
+
+        /// <summary>這個參數是不是呼叫端顯式給的（⛔ 吃預設值的不算）。轉發端用它組 <see cref="ForwardedExplicitKey"/>。</summary>
+        public bool IsExplicit(string iName) => m_Explicit.Contains(iName);
+
         SCP_CmdArgs(Dictionary<string, string> iValues, HashSet<string> iExplicit)
         {
             m_Values = iValues;
@@ -119,6 +133,7 @@ namespace SCP.Core.Cmd
             foreach (string aKey in iRaw.Keys)
             {
                 if (aBySpec.ContainsKey(aKey)) continue;
+                if (aKey == ForwardedExplicitKey) continue;   // TASK-0310：轉發端的保留鍵，⛔ 不是使用者打錯
                 var aKnown = new List<string>();
                 foreach (SCP_CmdArgSpec aSpec in iSpecs) aKnown.Add(aSpec.Name);
                 aErrors.Add("不認得的參數 '" + aKey + "'　（這支 Cmd 吃的是："
@@ -148,8 +163,20 @@ namespace SCP.Core.Cmd
             // TASK-0289：記下「使用者**顯式**給的」是哪幾個（⛔ 不含吃預設值的那些 ——
             //   預設值沒被讀是常態，把它們一起報會讓這盞燈每天亮一整排）。
             var aExplicit = new HashSet<string>(StringComparer.Ordinal);
-            foreach (string aKey in iRaw.Keys)
-                if (aBySpec.ContainsKey(aKey)) aExplicit.Add(aKey);
+            if (iRaw.TryGetValue(ForwardedExplicitKey, out string? aForwarded))
+            {
+                // TASK-0310：轉發過來的 payload ⇒ 顯式集合以呼叫端的名單為準（⛔ 不是 payload 裡有什麼鍵）
+                foreach (string aName in (aForwarded ?? "").Split(','))
+                {
+                    string aTrim = aName.Trim();
+                    if (aBySpec.ContainsKey(aTrim)) aExplicit.Add(aTrim);
+                }
+            }
+            else
+            {
+                foreach (string aKey in iRaw.Keys)
+                    if (aBySpec.ContainsKey(aKey)) aExplicit.Add(aKey);
+            }
 
             return aErrors.Count > 0 ? (null, aErrors) : (new SCP_CmdArgs(aValues, aExplicit), aErrors);
         }
