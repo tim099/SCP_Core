@@ -280,43 +280,9 @@ namespace SCP.Core.Bank
             // 🩸 少了這一段的代價是實測出來的：2026-09-22 那天 114 則全部在這份清單裡，
             //   而本層每天把它們報成「⚠ 領薪有缺口」—— 每一個人的早安 brief 都會看到。
             //   ⇒ 而在那一行上，**真缺口與已結清逐字同形**。
-            var aSettledRefs = new HashSet<string>(StringComparer.Ordinal);
+            HashSet<string> aSettledRefs = ReadSettledRefs(aBankRoot, r.Problems, out bool aSettledUnreadable);
+            if (aSettledUnreadable) r.SettledUnreadable = true;
             string aSettledPath = Path.Combine(aBankRoot, SettledFileName);
-            if (File.Exists(aSettledPath))
-            {
-                try
-                {
-                    SCP_JsonData aSettledDoc = SCP_JsonParser.Parse(File.ReadAllText(aSettledPath));
-                    SCP_JsonData aBatches = aSettledDoc["settled"];
-                    if (!aBatches.IsArray)
-                    {
-                        // ⚠ 檔在、而形狀不是我以為的那個 ⇒ 那**不是**「沒有結清過」。
-                        r.SettledUnreadable = true;
-                        r.Problems.Add(SettledFileName + "：`settled` 不是陣列 ⇒ 本次讀不到任何已結清 ref");
-                    }
-                    else
-                    {
-                        for (int bi = 0; bi < aBatches.Count; bi++)
-                        {
-                            SCP_JsonData aRefs = aBatches[bi]["refs"];
-                            if (!aRefs.IsArray) continue;
-                            for (int ri = 0; ri < aRefs.Count; ri++)
-                            {
-                                string aOne = aRefs[ri].AsString();
-                                if (aOne.Length > 0) aSettledRefs.Add(aOne);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // ⛔ 讀不動**要出聲**：靜默當空集合＝退回本次要修的那個誤報，
-                    //   而誤報的樣子跟正常運作一模一樣。
-                    r.SettledUnreadable = true;
-                    r.Problems.Add(SettledFileName + "：" + ex.GetType().Name + ": " + ex.Message
-                                 + " ⇒ 已結清的那些則**沖不掉** ⇒ 差集偏高（⛔ 不是漏發）");
-                }
-            }
 
             // 🔴 **檔不存在**：那在一棵從沒用過請款補發的樹上是合法的，所以預設不出聲。
             //   ⚠ 而有一種情況它不合法：**當天有請款撥款，卻沒有那份逐則清單** ——
@@ -530,6 +496,49 @@ namespace SCP.Core.Bank
                      ? "　⚠ **當天的撥款分類不出來**（讀不到對應請款單）⇒ 本層答不出其中有沒有補薪。"
                        + "⛔ 這是「不知道」，不是「都不是補薪」。"
                      : "");
+        }
+
+        /// <summary>
+        /// 讀 `<Bank>/payroll_settled.json` 的逐則 ref（走請款補發結清的那些則）。檔不存在 ⇒ 空集合、不出聲（合法）。
+        /// <para>⚠ 檔在而讀不動／形狀不對 ⇒ <paramref name="oUnreadable"/>=true 並寫進 <paramref name="ioProblems"/> ——
+        /// ⛔ 靜默當空集合＝把「不知道哪些已經結清」寫成「沒有人結清過」，那正是差集誤報的樣子。</para>
+        /// <para>共用者：本稽核、`SCP_BankReconcile`（TASK-0245）—— ⛔ 別在別處再讀一次這份檔。</para>
+        /// </summary>
+        public static HashSet<string> ReadSettledRefs(string iBankRoot, List<string> ioProblems, out bool oUnreadable)
+        {
+            oUnreadable = false;
+            var aSettledRefs = new HashSet<string>(StringComparer.Ordinal);
+            string aSettledPath = Path.Combine(iBankRoot, SettledFileName);
+            if (!File.Exists(aSettledPath)) return aSettledRefs;
+            try
+            {
+                SCP_JsonData aSettledDoc = SCP_JsonParser.Parse(File.ReadAllText(aSettledPath));
+                SCP_JsonData aBatches = aSettledDoc["settled"];
+                if (!aBatches.IsArray)
+                {
+                    // ⚠ 檔在、而形狀不是我以為的那個 ⇒ 那**不是**「沒有結清過」。
+                    oUnreadable = true;
+                    ioProblems.Add(SettledFileName + "：`settled` 不是陣列 ⇒ 本次讀不到任何已結清 ref");
+                    return aSettledRefs;
+                }
+                for (int bi = 0; bi < aBatches.Count; bi++)
+                {
+                    SCP_JsonData aRefs = aBatches[bi]["refs"];
+                    if (!aRefs.IsArray) continue;
+                    for (int ri = 0; ri < aRefs.Count; ri++)
+                    {
+                        string aOne = aRefs[ri].AsString();
+                        if (aOne.Length > 0) aSettledRefs.Add(aOne);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                oUnreadable = true;
+                ioProblems.Add(SettledFileName + "：" + ex.GetType().Name + ": " + ex.Message
+                             + " ⇒ 已結清的那些則**沖不掉** ⇒ 差集偏高（⛔ 不是漏發）");
+            }
+            return aSettledRefs;
         }
 
         static bool HasWorkPost(SCP_TavernPayPlan iPlan)

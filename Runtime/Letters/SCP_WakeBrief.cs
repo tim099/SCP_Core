@@ -23,6 +23,7 @@ using System.Globalization;
 using System.IO;
 using SCP.Core.Bank;
 using SCP.Core.Books;
+using SCP.Core.Json;
 using SCP.Core.Paths;
 using SCP.Core.Tasks;
 
@@ -568,8 +569,10 @@ namespace SCP.Core.Letters
         //   「整天 0 筆落帳、酒館 135 則訊息、**沒有任何一層喊**」——
         //   抓到它的是同事自己去翻帳本數檔案。⇒ 一個要人記得去查的稽核，等於沒有稽核。
         // ⚠ 量**昨天**不是今天：今天還在長，今天的差集一定偏高而那個紅燈不帶資訊。
-        // ⚠ 本節不判「該補多少」—— category 計不計酬的設定在 Unity 那側，本層讀不到。
-        //   要細節跑 `senate cmd payroll-audit`（它會按 category／persona／room 分組）。
+        // ⚠ 本節不判「該補多少」—— 稽核已逐則問發薪規則（規則本來就不付的先扣掉），剩下的按 category 分組；
+        //   要細節跑 `senate cmd payroll-audit`。
+        // ⭐ 本節底下另掛一行**動錢對帳**（TASK-0245）：今天第一個醒來的人跑一次唯讀差集（涵蓋帳上每一種 kind）
+        //   並落執行紀錄，其餘人讀那份紀錄 ⇒ 「沒人跑」的樣子是「上次停在很久以前」，⛔ 不是「沒有缺口」。
         static SCP_BriefSection PayrollSection(string iLettersRoot, string? iDataRoot, string iRegion)
         {
             var aLines = new List<string>();
@@ -593,6 +596,19 @@ namespace SCP.Core.Letters
             {
                 // ⚠ 稽核自己炸掉**要說**，⛔ 不可以靜默不印 —— 那一節不見跟「沒有缺口」同形。
                 aLines.Add("- ⚠ 領薪差集**量不動**（" + e.GetType().Name + "：" + e.Message + "）⛔ 不是沒缺口");
+            }
+            try
+            {
+                SCP_JsonData? aRun = SCP_BankReconcile.EnsureDaily(iDataRoot!, "wake-brief", 7, out bool aRanNow, out string? aErr);
+                if (aErr != null) aLines.Add("- ⚠ 🧾 對帳紀錄讀不動（" + aErr + "）⛔ 不是沒缺口");
+                else if (aRun != null)
+                    aLines.Add("- 🧾 " + SCP.Core.Cmd.SCP_Cmd_BankReconcile.LastRunLine(aRun)
+                               + (aRanNow ? "　（本次早安剛跑）" : "")
+                               + (aRun.GetInt("missing", 0) > 0 ? "　→ 細節 `senate cmd bank-reconcile --arg data_root=<root>`" : ""));
+            }
+            catch (Exception e)
+            {
+                aLines.Add("- ⚠ 🧾 動錢對帳**量不動**（" + e.GetType().Name + "：" + e.Message + "）⛔ 不是沒缺口");
             }
             return new SCP_BriefSection { Title = "💸 §6.1 領薪差集（昨天）", Lines = aLines, Essential = true };
         }
