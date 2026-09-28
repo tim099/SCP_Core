@@ -28,6 +28,7 @@ namespace SCP.Core.Gui
         Table,        // 子節點必為 TableRow
         TableRow,     // 子節點必為 TableCell
         TableCell,
+        Plot,         // 折線圖（資料在 Series；非互動）—— TASK-0272 歷史匯率波動圖
     }
 
     /// <summary>
@@ -93,6 +94,13 @@ namespace SCP.Core.Gui
 
         /// <summary>Table 的表頭；其他 Kind 不使用。</summary>
         public IReadOnlyList<string> Headers { get; init; } = Array.Empty<string>();
+
+        /// <summary>
+        /// Plot 的資料點（由舊到新）；其他 Kind 不使用。
+        /// <para>⚠ 標籤在 <see cref="Text"/>。兩個 renderer 各畫各的（視窗＝折線、文字＝▁▂▃ 迷你走勢），
+        /// 但**最小值／最大值／點數**兩邊都要印 —— 一條線沒有刻度的話，「平」與「量尺太粗」同形。</para>
+        /// </summary>
+        public IReadOnlyList<double> Series { get; init; } = Array.Empty<double>();
 
         public List<SCP_GuiNode> Children { get; } = new();
 

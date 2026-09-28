@@ -182,6 +182,11 @@ namespace SCP.Core.Gui
             Current.Add(aRow);
         }
 
+        // ── 圖表 ──────────────────────────────────────────────────
+        /// <summary>折線圖（非互動）。<paramref name="iSeries"/> 由舊到新。</summary>
+        public void Plot(string iLabel, IReadOnlyList<double> iSeries)
+            => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Plot, Text = iLabel, Series = iSeries });
+
         // ── 互動 ──────────────────────────────────────────────────
         /// <summary>按鈕。**這一輪被按下就回 true**（GUILayout 語意）。</summary>
         public bool Button(string iLabel, string? iKey = null)

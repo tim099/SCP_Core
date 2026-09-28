@@ -121,6 +121,12 @@ namespace SCP.Core.Gui
                     RenderTable(iNode, oSb, iIndent, iStyle);
                     break;
 
+                case SCP_GuiNodeKind.Plot:
+                    oSb.Append(pad).Append(iNode.Text).Append("：")
+                       .Append(SCP_GuiSparkline.Render(iNode.Series, Math.Max(8, inner - Width(iNode.Text) - 40)))
+                       .Append("　").Append(SCP_GuiSparkline.Describe(iNode.Series)).Append('\n');
+                    break;
+
                 default:
                     foreach (var c in iNode.Children) RenderNode(c, oSb, iIndent, iStyle);
                     break;
@@ -200,5 +206,49 @@ namespace SCP.Core.Gui
             (c >= 0xFE30 && c <= 0xFE6F) ||    // CJK compatibility forms
             (c >= 0xFF00 && c <= 0xFF60) ||    // 全角 ASCII
             (c >= 0xFFE0 && c <= 0xFFE6);
+    }
+    /// <summary>
+    /// 迷你走勢（▁▂▃▄▅▆▇█）。文字 renderer 的 Plot 與 `rate op=history` 的 CLI 輸出**共用這一支**——
+    /// 各寫一份的話，兩邊對同一串數字會畫出不同的形狀，而那不會報錯。
+    /// </summary>
+    public static class SCP_GuiSparkline
+    {
+        const string Levels = "▁▂▃▄▅▆▇█";
+
+        /// <summary>
+        /// 畫成最多 <paramref name="iMaxWidth"/> 格。點數多於格數時**等距取樣**（保留首尾）。
+        /// ⚠ 全部相同的值畫成一整排中間高度 —— 畫成一排最低格的話，「沒有變動」會長得像「跌到谷底」。
+        /// </summary>
+        public static string Render(IReadOnlyList<double> iValues, int iMaxWidth)
+        {
+            if (iValues == null || iValues.Count == 0) return "（無資料）";
+            int n = iValues.Count;
+            int w = Math.Max(1, Math.Min(n, iMaxWidth));
+            var aPick = new double[w];
+            for (int i = 0; i < w; i++)
+            {
+                int aIdx = w == 1 ? n - 1 : (int)Math.Round((double)i * (n - 1) / (w - 1));
+                aPick[i] = iValues[aIdx];
+            }
+            double aMin = double.MaxValue, aMax = double.MinValue;
+            foreach (double v in aPick) { if (v < aMin) aMin = v; if (v > aMax) aMax = v; }
+            var sb = new StringBuilder(w);
+            foreach (double v in aPick)
+            {
+                int aLv = aMax > aMin ? (int)Math.Round((v - aMin) / (aMax - aMin) * (Levels.Length - 1)) : Levels.Length / 2;
+                sb.Append(Levels[Math.Max(0, Math.Min(Levels.Length - 1, aLv))]);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>刻度說明（最低／最高／點數）—— 一條線沒有刻度的話，「平」與「量尺太粗」同形。</summary>
+        public static string Describe(IReadOnlyList<double> iValues)
+        {
+            if (iValues == null || iValues.Count == 0) return "";
+            double aMin = double.MaxValue, aMax = double.MinValue;
+            foreach (double v in iValues) { if (v < aMin) aMin = v; if (v > aMax) aMax = v; }
+            return string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "（低 {0:0.########}／高 {1:0.########}，{2} 點）", aMin, aMax, iValues.Count);
+        }
     }
 }

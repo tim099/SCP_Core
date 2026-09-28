@@ -33,12 +33,20 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("to", "目標券種代號（如 btc, gold）", iRequired: true),
             new SCP_CmdArgSpec("amount", "欲兌換之整數張數（正整數）", iRequired: true),
             new SCP_CmdArgSpec("confirm", "=1 ⇒ 才會真的執行扣換與落盤；預設為純試算", iDefault: "0"),
+            // ⚠ 只有一個值。存在的理由：自由時間 `cmd_steps`（`swap=voucher-swap:swap`）派工時**一律**塞 `op=<子命令>`，
+            //   而本 Cmd 沒有子命令 —— 不宣告的話那一格會被未知參數預檢擋下，交易所活動的 swap 步驟就走不通。
+            new SCP_CmdArgSpec("op", "子命令（只有 swap；給自由時間 cmd_steps 路由用，直接呼叫不必帶）", iDefault: "swap",
+                iChoices: new[] { "swap" }),
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根（絕對路徑）。省略時自動嘗試推導", iDefault: ""),
             new SCP_CmdArgSpec("data_root", "資料根目錄（絕對路徑）。省略時自動嘗試推導", iDefault: ""),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
         {
+            string aOp = iArgs.Get("op").Trim().ToLowerInvariant();
+            if (aOp.Length > 0 && aOp != "swap")
+                return SCP_CmdResult.Fail(2, $"✗ 認不得的 op='{aOp}'（本 Cmd 只有 swap）");
+
             string aPersona = iArgs.Get("persona").Trim();
             if (string.IsNullOrEmpty(aPersona))
                 return SCP_CmdResult.Fail(2, "✗ 缺 `persona`");

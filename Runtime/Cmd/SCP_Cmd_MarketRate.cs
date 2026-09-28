@@ -36,6 +36,10 @@ namespace SCP.Core.Cmd
             + "· `op=source`：設定某券的抓取端點（`--arg symbol=<券> --arg url=<端點> --arg kind=<解析器>`）。\n"
             + "· `op=sync`：從已設定的端點刷新報價並落盤（`--arg symbol=<單一券>` 可只刷一個；`--arg force=1` 無視 TTL）。\n"
             + "  ⛔ 抓取由**宿主注入**（Senate CLI 有；Unity 端沒有 ⇒ 會明說「本宿主未註冊抓取器」而不是靜默沒事）。\n"
+            + "  ⭐ **平常不手動跑**（Tim 2026-09-28）：每天由 Senate 端的 `demurrage op=run` 發完券之後觸發（`--arg day=<UTC 日>`，一天一版）。\n"
+            + "  ⭐ 有更新才寫**一個歷史版本**（`Market/history/rates_<抓取時間>.json`，一版一檔、先於快取落盤）；沒更新不寫。\n"
+            + "· `op=history`：歷史匯率。`--arg symbol=<券>` 查走勢（中間價序列＋變動幅度＋波動度，`since`／`until` 限區間）；\n"
+            + "  `--arg version=<版本代號>` 讀回單一版本的完整報價表；兩者都不給 ⇒ 列出全部版本。\n"
             + "⚠ 無緩存資訊之券種一律視為無法兌換（並非所有券都能互相兌換，Tim 2026-09-22 拍板）。\n"
             + "⚠ 成本在**手續費**不在人造價差（Tim 2026-09-23）：真實盤口極薄（實測往返 2.42 ppm ≒ 免費），\n"
             + "  而現實的成本是每筆成交的手續費。⇒ **按腿計**：A→USD→B 兩筆成交收兩次；一端是 USD 只收一次。";
@@ -46,8 +50,8 @@ namespace SCP.Core.Cmd
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
             new SCP_CmdArgSpec("data_root", "資料根目錄（絕對路徑）。省略時自動嘗試推導", iDefault: ""),
-            new SCP_CmdArgSpec("op", "做什麼（list|get|set|toggle|fee|source|sync，預設 list）", iDefault: "list",
-                iChoices: new[] { "list", "get", "set", "toggle", "fee", "source", "sync" }),
+            new SCP_CmdArgSpec("op", "做什麼（list|get|set|toggle|fee|source|sync|history，預設 list）", iDefault: "list",
+                iChoices: new[] { "list", "get", "set", "toggle", "fee", "source", "sync", "history" }),
             new SCP_CmdArgSpec("symbol", "券種代號（如 BTC, GOLD, USD）", iDefault: ""),
             new SCP_CmdArgSpec("from", "來源券種代號（op=get 查匯率對時使用）", iDefault: ""),
             new SCP_CmdArgSpec("to", "目標券種代號（op=get 查匯率對時使用）", iDefault: ""),
@@ -60,6 +64,10 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("kind", "op=source：回應解析器（binance_bookticker｜mid_price_json）", iDefault: ""),
             new SCP_CmdArgSpec("force", "op=sync：1＝無視 TTL 一律重抓（預設只抓過期的）", iDefault: "0"),
             new SCP_CmdArgSpec("timeout_sec", "op=sync：單一端點逾時秒數", iDefault: "12"),
+            new SCP_CmdArgSpec("day", "op=sync：**每日一版**模式（`yyyy-MM-dd`，UTC 日）—— 那天已有刷新版本就不抓，沒有就無視 TTL 抓一次。`demurrage op=run` 發完券後用的就是這個", iDefault: ""),
+            new SCP_CmdArgSpec("version", "op=history：讀回單一版本（版本代號＝檔名 `rates_<代號>.json` 的中段）", iDefault: ""),
+            new SCP_CmdArgSpec("since", "op=history：區間起點（`yyyy-MM-dd` 當地整天起，或 ISO 8601）；留空＝不限", iDefault: ""),
+            new SCP_CmdArgSpec("until", "op=history：區間終點（`yyyy-MM-dd` 當地整天止，或 ISO 8601）；留空＝不限", iDefault: ""),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -84,7 +92,8 @@ namespace SCP.Core.Cmd
                 "fee" => OpFee(aDataRoot, aConfig, iArgs),
                 "source" => OpSource(aDataRoot, aConfig, iArgs),
                 "sync" => OpSync(aDataRoot, aConfig, iArgs),
-                _ => SCP_CmdResult.Fail(2, $"✗ 認不得的 op='{aOp}'（list|get|set|toggle|fee|source|sync）"),
+                "history" => OpHistory(aDataRoot, iArgs),
+                _ => SCP_CmdResult.Fail(2, $"✗ 認不得的 op='{aOp}'（list|get|set|toggle|fee|source|sync|history）"),
             };
         }
 
@@ -359,11 +368,39 @@ namespace SCP.Core.Cmd
 
             var aFetcher = SCP_HttpFetch.Current!;
             bool aForce = iArgs.Get("force").Trim() == "1";
+
+            // `day=` ⇒ **每日一版**模式（TASK-0272 ②；呼叫端是 `demurrage op=run` 發完券之後那一步）。
+            //   那一天已經有 `origin=sync` 的版本 ⇒ 不抓、明說；沒有 ⇒ 無視 TTL 抓一次。
+            //   ⛔ 不靠 TTL 判：每天扣繳的時刻會漂，早 2 分鐘跑就差 2 分鐘才過期 ⇒ **整天沒有版本**，而那不會叫。
+            string aDayStr = iArgs.Get("day").Trim();
+            if (aDayStr.Length > 0)
+            {
+                if (!DateTime.TryParseExact(aDayStr, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                        DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime aDay))
+                    return SCP_CmdResult.Fail(2, $"✗ day 要 `yyyy-MM-dd`（UTC 日），收到 '{aDayStr}'");
+                // 🩸 實測 2026-09-28：給明天的日期 ⇒ 今天抓的版本永遠落不到「明天或之後」⇒ **每跑一次就多抓一版**，
+                //   而每一次都回「已更新」。⇒ 還沒到的日子沒有「那天的版本」可言，直接拒絕。
+                if (aDay.Date > DateTime.UtcNow.Date)
+                    return SCP_CmdResult.Fail(2, $"✗ day={aDayStr} 還沒到（現在 UTC 是 {DateTime.UtcNow:yyyy-MM-dd}）—— 那一天的版本要等那一天才抓得到");
+                if (SCP_RateHistory.HasSyncVersionOnOrAfter(iDataRoot, aDay, out string? aHave, out string? aDayErr))
+                {
+                    var aAlready = SCP_CmdResult.Success($"✅ `{aDayStr}`（UTC）已經有匯率版本 `{aHave}` ⇒ **不再刷新**（一天一版）");
+                    aAlready.AddValue("day_state", "already");
+                    aAlready.AddValue("history_version", aHave ?? "");
+                    aAlready.AddValue("updated", "0");
+                    return aAlready;
+                }
+                if (aDayErr != null)
+                    return SCP_CmdResult.Fail(1, $"✗ 判不出 `{aDayStr}` 有沒有版本（{aDayErr}）⇒ **不刷新**（判不出來 ≠ 沒有）");
+                aForce = true;
+            }
             string aOnly = iArgs.Get("symbol").Trim().ToUpperInvariant();
             if (!int.TryParse(iArgs.Get("timeout_sec").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int aTimeout) || aTimeout <= 0)
                 aTimeout = 12;
 
             DateTime aNow = DateTime.UtcNow;
+            // 刷新前的快取原樣留一份 —— 下面的迴圈會就地改 iConfig，而歸檔要的是「改之前」那份。
+            SCP_MarketRateConfig aBefore = SCP_MarketRateConfig.FromJson(iConfig.ToJson());
             var aUpdated = new List<string>();
             var aFailed = new List<string>();
             var aSkipped = new List<string>();
@@ -412,8 +449,36 @@ namespace SCP.Core.Cmd
                 aUpdated.Add($"`{q.Symbol}`：{aOldBid:0.########}/{aOldAsk:0.########} ➔ **{q.Bid:0.########}/{q.Ask:0.########}**{aTwo}");
             }
 
-            if (aUpdated.Count > 0 && !SCP_MarketRateCache.Save(iDataRoot, iConfig, out string? aSaveErr))
-                return SCP_CmdResult.Fail(1, $"✗ 抓到了但落盤失敗（磁碟未變更）：{aSaveErr}");
+            // 區塊職責：歷史版本（驗收⑨⑫）—— **歷史先寫、快取後寫**，任何一格失敗就整趟不寫快取。
+            // ⚠ 沒有任何一筆更新 ⇒ 這整段不跑 ⇒ 歷史資料夾一個新檔都不出現（抓不到／TTL 跳過都走這條）。
+            string? aPreArchivedId = null;
+            string aNewVersionId = "";
+            if (aUpdated.Count > 0)
+            {
+                // ③ 刷新前的快取若跟最新一版歷史不同（中間有人手填過）⇒ 先把它原樣歸成一版。
+                if (SCP_RateHistory.NeedsPreSyncArchive(iDataRoot, aBefore, out DateTime aPreStamp, out string? aPreErr))
+                {
+                    if (!SCP_RateHistory.TryWriteVersion(iDataRoot, aBefore, aPreStamp, "pre_sync", out _, out string? aPreWriteErr))
+                        return SCP_CmdResult.Fail(1, $"✗ 刷新前歸檔失敗 ⇒ **整趟不寫**（快取與歷史都未變更）：{aPreWriteErr}");
+                    aPreArchivedId = SCP_RateHistory.VersionIdOf(aPreStamp);
+                }
+                else if (aPreErr != null)
+                {
+                    return SCP_CmdResult.Fail(1, $"✗ {aPreErr} ⇒ **整趟不寫**（快取與歷史都未變更）");
+                }
+
+                if (!SCP_RateHistory.TryWriteVersion(iDataRoot, iConfig, aNow, "sync", out string aNewPath, out string? aHistErr))
+                    return SCP_CmdResult.Fail(1, $"✗ 新版本寫進歷史失敗 ⇒ **整趟不寫快取**（⛔ 不接受「歷史沒存到但新價寫進去了」）：{aHistErr}");
+                aNewVersionId = SCP_RateHistory.VersionIdOf(aNow);
+
+                if (!SCP_MarketRateCache.Save(iDataRoot, iConfig, aNow, out string? aSaveErr))
+                {
+                    // 快取沒存進去 ⇒ 撤回剛寫的那一版，讓「最新一版歷史」與「現在的快取」保持同一份。
+                    bool aRetracted = SCP_RateHistory.TryRetractVersion(aNewPath, out string? aRetractErr);
+                    return SCP_CmdResult.Fail(1, $"✗ 抓到了但快取落盤失敗（快取未變更）：{aSaveErr}"
+                        + (aRetracted ? "；剛寫的歷史版本已撤回" : $"；⚠ 剛寫的歷史版本**撤不回**（{aRetractErr}）⇒ 歷史比快取多一版：{aNewPath}"));
+                }
+            }
 
             var aR = aFailed.Count > 0
                 ? SCP_CmdResult.Success($"⚠ 匯率同步完成 —— 更新 {aUpdated.Count} 筆，**失敗 {aFailed.Count} 筆**，跳過 {aSkipped.Count} 筆")
@@ -424,10 +489,148 @@ namespace SCP.Core.Cmd
             if (aFailed.Count > 0) { aR.Lines.Add(""); aR.Lines.Add("**失敗（舊值原封保留，⛔ 沒有被 0 或殘值蓋掉）**"); foreach (string s in aFailed) aR.Lines.Add("- " + s); }
             if (aSkipped.Count > 0) { aR.Lines.Add(""); aR.Lines.Add("**跳過**"); foreach (string s in aSkipped) aR.Lines.Add("- " + s); }
 
+            aR.Lines.Add("");
+            if (aNewVersionId.Length > 0)
+            {
+                aR.Lines.Add($"**歷史**：新版本 `{aNewVersionId}` 已寫入 `Market/history/`（先於快取落盤）");
+                if (aPreArchivedId != null)
+                    aR.Lines.Add($"- 刷新前的快取跟最新一版歷史不同（中間有手填）⇒ 先歸成一版 `{aPreArchivedId}`（origin=pre_sync）");
+            }
+            else
+            {
+                aR.Lines.Add("**歷史**：沒有任何一筆更新 ⇒ **不寫新版本**（「沒有新報價」不會在歷史上長得像「有新報價但沒變」）");
+            }
+
+            aR.AddValue("day_state", aDayStr.Length == 0 ? "" : aNewVersionId.Length > 0 ? "synced" : "failed");
+            aR.AddValue("history_version", aNewVersionId);
+            aR.AddValue("history_pre_sync_version", aPreArchivedId ?? "");
             aR.AddValue("updated", aUpdated.Count.ToString(CultureInfo.InvariantCulture));
             aR.AddValue("failed", aFailed.Count.ToString(CultureInfo.InvariantCulture));
             aR.AddValue("skipped", aSkipped.Count.ToString(CultureInfo.InvariantCulture));
             aR.AddValue("fetcher", aFetcher.FetcherName);
+            return aR;
+        }
+
+        /// <summary>
+        /// 歷史匯率（驗收⑩⑪）。三種用法：
+        /// `version=` 讀回單一版本的完整報價表／`symbol=` 查走勢／都不給 ⇒ 列出全部版本。
+        /// 🩸 區間內沒有資料 ⇒ **明說無歷史資料並 exit 1**，⛔ 不回 0、空表或最近一筆 ——
+        ///   那三種都長得像「查到了」。
+        /// </summary>
+        static SCP_CmdResult OpHistory(string iDataRoot, SCP_CmdArgs iArgs)
+        {
+            string aVersion = iArgs.Get("version").Trim();
+            string aSymbol = iArgs.Get("symbol").Trim().ToUpperInvariant();
+
+            if (aVersion.Length > 0)
+            {
+                string aPath = SCP_RateHistory.VersionPath(iDataRoot, aVersion);
+                if (!File.Exists(aPath))
+                    return SCP_CmdResult.Fail(1, $"✗ 找不到歷史版本 `{aVersion}`（{aPath}）—— 不給 version 可列出全部版本");
+                if (!SCP_RateHistory.TryReadVersion(aPath, out var v, out string? aErr))
+                    return SCP_CmdResult.Fail(1, $"✗ 歷史版本 `{aVersion}` 讀不了：{aErr}");
+
+                var aV = SCP_CmdResult.Success($"# 歷史版本 `{v.VersionId}`（完整報價表）");
+                aV.Lines.Add($"- 抓取時間：`{v.FetchedAtUtc:o}`　歸檔時間：`{v.ArchivedAtUtc}`　來由：`{v.Origin}`");
+                aV.Lines.Add($"- 當時全域手續費：**{v.Config.TakerFeePct * 100m:0.####}%**／筆　互換系統：{(v.Config.FxSystemEnabled ? "啟用" : "停用")}");
+                aV.Lines.Add("");
+                aV.Lines.Add("| 券種 | Bid (USD) | Ask (USD) | 手續費 | 雙向盤口 | 來源 | 端點 | 該券更新時間 |");
+                aV.Lines.Add("|---|---:|---:|---:|---|---|---|---|");
+                foreach (var q in v.Config.Quotes.Values)
+                {
+                    decimal aFee = SCP_MarketRateCache.FeePctOf(v.Config, q.Symbol);
+                    aV.Lines.Add($"| `{q.Symbol}` | {q.Bid:0.########} | {q.Ask:0.########} | {aFee * 100m:0.####}%{(q.FeePct.HasValue ? "（覆寫）" : "")} | {(q.TwoSided ? "是" : "否（中間價）")} | {q.Source} | {(q.SourceUrl.Length > 0 ? q.SourceUrl : "—")} | {q.UpdatedAtUtc} |");
+                }
+                aV.AddValue("version", v.VersionId);
+                aV.AddValue("quotes_count", v.Config.Quotes.Count.ToString(CultureInfo.InvariantCulture));
+                return aV;
+            }
+
+            if (aSymbol.Length == 0)
+            {
+                List<string> aFiles = SCP_RateHistory.ListVersionFiles(iDataRoot);
+                if (aFiles.Count == 0)
+                    return SCP_CmdResult.Fail(1, "✗ **無歷史資料**：歷史資料夾是空的（還沒有任何一次成功的刷新）。");
+
+                var aL = SCP_CmdResult.Success($"# 歷史匯率版本（共 {aFiles.Count} 版，一版一檔）");
+                aL.Lines.Add("| 版本代號 | 抓取時間 (UTC) | 來由 | 券種數 | 全域手續費 |");
+                aL.Lines.Add("|---|---|---|---:|---:|");
+                int aBad = 0;
+                foreach (string f in aFiles)
+                {
+                    if (!SCP_RateHistory.TryReadVersion(f, out var v, out string? aErr))
+                    {
+                        aBad++;
+                        aL.Lines.Add($"| `{Path.GetFileName(f)}` | ⚠ **讀不了**：{aErr} | | | |");
+                        continue;
+                    }
+                    aL.Lines.Add($"| `{v.VersionId}` | {v.FetchedAtUtc:yyyy-MM-dd HH:mm:ss} | {v.Origin} | {v.Config.Quotes.Count} | {v.Config.TakerFeePct * 100m:0.####}% |");
+                }
+                aL.Lines.Add("");
+                aL.Lines.Add("・走勢：`op=history --arg symbol=<券>`；單一版本全表：`op=history --arg version=<版本代號>`");
+                aL.AddValue("versions", aFiles.Count.ToString(CultureInfo.InvariantCulture));
+                aL.AddValue("unreadable", aBad.ToString(CultureInfo.InvariantCulture));
+                return aL;
+            }
+
+            if (!SCP_RateHistory.TryParseBound(iArgs.Get("since"), false, out DateTime? aSince, out string? aSinceErr))
+                return SCP_CmdResult.Fail(2, "✗ since " + aSinceErr);
+            if (!SCP_RateHistory.TryParseBound(iArgs.Get("until"), true, out DateTime? aUntil, out string? aUntilErr))
+                return SCP_CmdResult.Fail(2, "✗ until " + aUntilErr);
+            if (aSince.HasValue && aUntil.HasValue && aSince.Value > aUntil.Value)
+                return SCP_CmdResult.Fail(2, $"✗ since 晚於 until（{aSince.Value:o} > {aUntil.Value:o}）");
+
+            if (aSymbol == "USD")
+                return SCP_CmdResult.Fail(2, "✗ USD 是基準幣本身（永遠 1:1），沒有走勢 —— 請查其他券");
+
+            SCP_RateHistorySeries aS = SCP_RateHistory.BuildSeries(iDataRoot, aSymbol, aSince, aUntil);
+            string? aEmpty = SCP_RateHistory.DescribeEmpty(aS);
+            if (aEmpty != null)
+            {
+                var aE = SCP_CmdResult.Fail(1, "✗ " + aEmpty);
+                foreach (string u in aS.Unreadable) aE.Lines.Add("  · ⚠ 讀不了的歷史檔：" + u);
+                return aE;
+            }
+
+            string aRange = (aSince.HasValue ? aSince.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) : "最早")
+                          + " ～ " + (aUntil.HasValue ? aUntil.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) : "最新");
+            var aR = SCP_CmdResult.Success($"# `{aSymbol}` 歷史走勢（USD 計價，{aRange}，{aS.Points.Count} 版）");
+
+            var aMids = new List<double>(aS.Points.Count);
+            foreach (var p in aS.Points) aMids.Add((double)p.Mid);
+            aR.Lines.Add($"走勢　`{SCP.Core.Gui.SCP_GuiSparkline.Render(aMids, 48)}`");
+            aR.Lines.Add("");
+            aR.Lines.Add($"- 首版中間價：**{aS.FirstMid:0.########}**　末版：**{aS.LastMid:0.########}**");
+            aR.Lines.Add(aS.ChangePct.HasValue
+                ? $"- 區間變動：**{aS.ChangePct.Value:+0.####;-0.####;0}%**"
+                : "- 區間變動：—（只有 1 版，沒有「變動」可言）");
+            aR.Lines.Add($"- 區間最低／最高：{aS.MinMid:0.########} ／ {aS.MaxMid:0.########}");
+            double? aVol = aS.VolatilityPct;
+            aR.Lines.Add(aVol.HasValue
+                ? $"- 波動度：**{aVol.Value:0.####}%**（相鄰兩版對數報酬的標準差，**每版**，未年化）"
+                : "- 波動度：—（少於 3 版，算不出報酬的標準差）");
+            if (aS.GapDays > 0)
+                aR.Lines.Add($"- ⚠ 期間有 **{aS.GapDays} 天沒有版本**（那幾天沒抓，不是「沒有變」）");
+            aR.Lines.Add("");
+            aR.Lines.Add("| 版本代號 | 抓取時間（當地） | Bid | Ask | 中間價 | 較上一版 | 手續費 | 來源 | 來由 |");
+            aR.Lines.Add("|---|---|---:|---:|---:|---:|---:|---|---|");
+            decimal? aPrev = null;
+            foreach (var p in aS.Points)
+            {
+                string aChg = aPrev.HasValue && aPrev.Value > 0m ? $"{(p.Mid - aPrev.Value) / aPrev.Value * 100m:+0.####;-0.####;0}%" : "—";
+                aR.Lines.Add($"| `{p.VersionId}` | {p.FetchedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm} | {p.Bid:0.########} | {p.Ask:0.########} | {p.Mid:0.########} | {aChg} | {p.FeePct * 100m:0.####}% | {p.Source} | {p.Origin} |");
+                aPrev = p.Mid;
+            }
+            foreach (string u in aS.Unreadable) aR.Lines.Add("⚠ 讀不了的歷史檔（未列入走勢）：" + u);
+
+            aR.AddValue("symbol", aSymbol);
+            aR.AddValue("points", aS.Points.Count.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("first_mid", aS.FirstMid.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("last_mid", aS.LastMid.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("change_pct", aS.ChangePct.HasValue ? aS.ChangePct.Value.ToString("0.########", CultureInfo.InvariantCulture) : "");
+            aR.AddValue("volatility_pct", aVol.HasValue ? aVol.Value.ToString("0.########", CultureInfo.InvariantCulture) : "");
+            aR.AddValue("gap_days", aS.GapDays.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("unreadable", aS.Unreadable.Count.ToString(CultureInfo.InvariantCulture));
             return aR;
         }
 

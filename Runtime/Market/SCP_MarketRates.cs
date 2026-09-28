@@ -258,6 +258,13 @@ namespace SCP.Core.Market
 
         /// <summary>儲存匯率快取檔（原子寫入：tmp → replace）。</summary>
         public static bool Save(string iDataRoot, SCP_MarketRateConfig iConfig, out string? oError)
+            => Save(iDataRoot, iConfig, DateTime.UtcNow, out oError);
+
+        /// <summary>
+        /// 同上，但更新時間戳由呼叫端指定 —— `op=sync` 用它讓快取與同一趟寫出的歷史版本**同一個時間**
+        /// （各取一次 `UtcNow` 的話兩邊差幾毫秒，而「這份快取是哪一版」就對不上了）。
+        /// </summary>
+        public static bool Save(string iDataRoot, SCP_MarketRateConfig iConfig, DateTime iStampUtc, out string? oError)
         {
             oError = null;
             string aPath = RatesCachePath(iDataRoot);
@@ -265,7 +272,7 @@ namespace SCP.Core.Market
             try
             {
                 if (!Directory.Exists(aDir)) Directory.CreateDirectory(aDir);
-                iConfig.UpdatedAtUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+                iConfig.UpdatedAtUtc = iStampUtc.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
 
                 string aTmp = aPath + ".tmp";
                 File.WriteAllText(aTmp, SCP_JsonWriter.Write(iConfig.ToJson()) + "\n");
