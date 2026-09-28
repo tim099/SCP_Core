@@ -3,7 +3,9 @@
 //           訊息讀取在 `SCP_TavernRead`、其餘資料在 `SCP_TavernRooms`、quest 事件在 `SCP_TavernQuestRead`。
 // 數值影響：**純讀**。⛔ 一個位元組都不寫進 `ChatTavern/`（TASK-0247 驗收⑤）。
 //
-// 射程：Editor 側那 6 支**純讀** op —— `read`／`members`／`listrooms`／`note_read`／`note_list`／`events_since`。
+// 射程：Editor 側那幾支**純讀** op —— `read`／`members`／`listrooms`／`events_since`。
+//   ⛔ 留言本（note_read／note_list）已於 2026-09-28 整組移除（Tim：「留言本目前其實好像廢棄了，應該也可以移除」；TASK-0328）
+//      —— skill 沒有任何一處提到它，全樹 7 本、最後一次寫入是 5 月。檔案留在 `rooms/<room>/notes/` 當紀錄，⛔ 沒有刪資料。
 //   🔴 ⛔ **不含 `task_list`／`task_next`／`task_state`**：量過（2026-09-20），
 //      它們呼叫 `UCL_ChatTavernQuestIO.AutoRecoverStaleLeases`，而那支會 `AppendEvent`
 //      ⇒ 它們是「讀為主、寫一格」，與 `catchup`／`inbox_read` 同一類，歸 TASK-0106 那一側。
@@ -28,12 +30,12 @@ namespace SCP.Core.Tavern
         public override string Name => "tavern-read";
 
         public override string Summary =>
-            "酒館純讀（6 支：read／members／listrooms／note_read／note_list／events_since）"
+            "酒館純讀（read／members／listrooms／events_since ＋ TRPG 任務投影 task_*）"
             + "—— **本地跑，不需要 Editor、不需要 Server**";
 
         public override string Details =>
             "· `kind=read`：一房的訊息（`search` > `since_seq` > `from`/`to` > 尾讀，四選一，順序同 Editor 側）。\n"
-            + "· `kind=members`／`listrooms`／`note_read`／`note_list`／`events_since`：同名 op 的等價入口。\n"
+            + "· `kind=members`／`listrooms`／`events_since`：同名 op 的等價入口。⛔ 留言本（note_*）已移除（TASK-0328）。\n"
             + "⭐ 輸出格式**逐字對齊** Editor 側 `run Tavern --arg op=<那支>`。\n"
             + "🔴 ⛔ **沒有 `task_list`／`task_next`／`task_state`** —— 它們會 `AppendEvent`"
             + "（回收過期租約）⇒ 不是純讀，歸 TASK-0106 那一側。\n"
@@ -49,16 +51,15 @@ namespace SCP.Core.Tavern
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("kind",
-                "read / members / listrooms / note_read / note_list / events_since"
+                "read / members / listrooms / events_since"
                 + " / task_list / task_state / task_next",
                                iRequired: true,
-                               iChoices: new[] { "read", "members", "listrooms", "note_read", "note_list",
+                               iChoices: new[] { "read", "members", "listrooms",
                                                  "events_since", "task_list", "task_state", "task_next" }),
             new SCP_CmdArgSpec("room",
                 "房間 id。⚠ `listrooms` 不吃它；其餘五支**必填**"
                 + "（⛔ 刻意沒有預設值 —— 預設成 `tavern` 會讓打錯房名的人拿到一個看起來正常的答案）",
                 iDefault: ""),
-            new SCP_CmdArgSpec("key", "`note_read`：note 的 key（不含 `.md`）", iDefault: ""),
             new SCP_CmdArgSpec("search", "`read`：正文子字串（給了就走搜尋分支）", iDefault: ""),
             new SCP_CmdArgSpec("tail", "`read`：尾讀幾則", iDefault: "0"),
             new SCP_CmdArgSpec("from", "`read`：seq 區間起（含）", iDefault: "0"),
@@ -123,18 +124,6 @@ namespace SCP.Core.Tavern
             {
                 case "listrooms": aBody = ListRooms(aDataRoot); break;
                 case "members": aBody = Members(aDataRoot, aRoom); break;
-                case "note_list": aBody = NoteList(aDataRoot, aRoom); break;
-                case "note_read":
-                {
-                    string aKey = iArgs.Get("key").Trim();
-                    if (aKey.Length == 0) return SCP_CmdResult.Fail(2, "✗ `kind=note_read` 缺少 key");
-                    string? aNote = NoteRead(aDataRoot, aRoom, aKey);
-                    if (aNote == null)
-                        return SCP_CmdResult.Fail(1, "✗ note 不存在：" + aRoom + "/" + aKey,
-                            "  ⛔ 這是「這個 note 不在」，不是「它是空的」");
-                    aBody = aNote;
-                    break;
-                }
                 case "events_since":
                     aBody = EventsSince(aDataRoot, aRoom, ParseInt(iArgs, "since_seq", 0),
                                         iArgs.Get("filter_type").Trim(), ParseInt(iArgs, "limit", 50),
@@ -180,7 +169,7 @@ namespace SCP.Core.Tavern
                 }
                 default:
                     return SCP_CmdResult.Fail(2, "✗ 不認得的 kind：" + aKind,
-                        "  合法值：read / members / listrooms / note_read / note_list / events_since"
+                        "  合法值：read / members / listrooms / events_since"
                         + " / task_list / task_state / task_next",
                         "  ⚠ 那三支 task_* 是 **TASK-0287 的純讀投影**（⛔ 不回收過期租約 —— "
                         + "Editor 側那三支會）；查詢那 7 個 kind 走 `tavern-query`");
@@ -238,35 +227,6 @@ namespace SCP.Core.Tavern
                 else
                     aSb.Append("- `").Append(aId).Append("` _(no identity record)_\n");
             }
-            return aSb.ToString();
-        }
-
-        // ── note_list / note_read ─────────────────────────────────────
-        static string NoteList(string iDataRoot, string iRoom)
-        {
-            List<string> aKeys = SCP_TavernRooms.ListNoteKeys(iDataRoot, iRoom);
-            var aSb = new StringBuilder();
-            aSb.Append("# 📚 Notes of `").Append(iRoom).Append("` (").Append(aKeys.Count).Append(")\n\n");
-            if (aKeys.Count == 0) aSb.Append("_(此房間尚無 note)_\n");
-            else
-                foreach (string aKey in aKeys)
-                    aSb.Append("- `").Append(aKey).Append("` — `")
-                       .Append(RepoRelative(iDataRoot, SCP_TavernRooms.NotePath(iDataRoot, iRoom, aKey)))
-                       .Append("`\n");
-            return aSb.ToString();
-        }
-
-        static string? NoteRead(string iDataRoot, string iRoom, string iKey)
-        {
-            string? aContent = SCP_TavernRooms.ReadNote(iDataRoot, iRoom, iKey);
-            if (aContent == null) return null;
-            var aSb = new StringBuilder();
-            aSb.Append("# 📖 Note: `").Append(iRoom).Append('/').Append(iKey).Append("`\n\n");
-            aSb.Append("- path: `")
-               .Append(RepoRelative(iDataRoot, SCP_TavernRooms.NotePath(iDataRoot, iRoom, iKey)))
-               .Append("`\n\n");
-            aSb.Append("---\n\n");
-            aSb.Append(aContent);
             return aSb.ToString();
         }
 
@@ -386,26 +346,6 @@ namespace SCP.Core.Tavern
             string aBase = iMsg.SenderName.Length > 0 ? iMsg.SenderName : iMsg.SenderId;
             if (aBase.Length == 0) aBase = "?";
             return iMsg.SenderPersona.Length > 0 ? aBase + "@" + iMsg.SenderPersona : aBase;
-        }
-
-        /// <summary>
-        /// 絕對路徑 → repo 相對（同 Editor 側 `UCL_ChatTavernIO.ToRepoRelative`）。
-        /// <para>⚠ 本側沒有 `UCL_RepoPath.RepoRoot` ⇒ **repo 根取 `data_root` 的上一層**
-        /// （版面是 `&lt;repo&gt;/AgentCommands/`）。⛔ 那是一個假設不是讀數：
-        /// 資料根若不掛在 repo 底下，本函式**回絕對路徑** —— 而那正是它該回的（對不上就別裁）。</para>
-        /// </summary>
-        static string RepoRelative(string iDataRoot, string iAbs)
-        {
-            try
-            {
-                string aParent = Path.GetDirectoryName(Path.GetFullPath(iDataRoot)) ?? "";
-                if (aParent.Length == 0) return iAbs.Replace('\\', '/');
-                string aRoot = aParent.Replace('\\', '/').TrimEnd('/') + "/";
-                string aFull = Path.GetFullPath(iAbs).Replace('\\', '/');
-                return aFull.StartsWith(aRoot, StringComparison.OrdinalIgnoreCase)
-                       ? aFull.Substring(aRoot.Length) : aFull;
-            }
-            catch (Exception) { return iAbs.Replace('\\', '/'); }
         }
 
         /// <summary>

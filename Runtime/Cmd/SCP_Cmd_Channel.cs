@@ -25,7 +25,9 @@ namespace SCP.Core.Cmd
             + "· `op=add-category --arg name=<分類> [--arg description=...]`：新增分類（同名不分大小寫會被擋）。\n"
             + "· `op=remove-category --arg name=<分類>`：刪除分類 —— 還有頻道在用就擋下並列出是哪些。\n"
             + "· `op=set-category --arg room=<房> --arg category=<分類>`：設頻道分類；`category` 留空 ＝ 未分類。分類要已在清單裡。\n"
-            + "· `op=archive`／`op=unarchive --arg room=<房>`：封存／取消封存 ＝ 把房間資料夾搬到 `rooms_archive/`／搬回 `rooms/`（目的地有同名資料夾就擋下）。";
+            + "· `op=archive`／`op=unarchive --arg room=<房>`：封存／取消封存 ＝ 把房間資料夾搬到 `rooms_archive/`／搬回 `rooms/`（目的地有同名資料夾就擋下）。\n"
+            + "· `op=create --arg room=<房間 id> [--arg name=<顯示名>] [--arg description=...] [--arg category=<分類>]`：建新頻道（TASK-0328，取代 Unity `Tavern op=createroom`）。\n"
+            + "    已存在 ⇒ 冪等（不動名稱與說明，只在給了分類時設分類）；在封存區 ⇒ 擋下。⚠ 沒給分類 ⇒ 未分類 ⇒ **不會轉發到 Discord**。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("channel --arg op=set-category --arg room=tavern --arg category=Main");
@@ -34,11 +36,11 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("op", "做什麼", iDefault: "list",
-                iChoices: new[] { "list", "categories", "add-category", "remove-category", "set-category", "archive", "unarchive" }),
+                iChoices: new[] { "list", "categories", "add-category", "remove-category", "set-category", "archive", "unarchive", "create" }),
             new SCP_CmdArgSpec("room", "頻道（房間 id）：set-category／archive／unarchive 必填", iDefault: ""),
             new SCP_CmdArgSpec("category", "op=set-category：分類名（要已在分類清單裡）；留空＝未分類", iDefault: ""),
-            new SCP_CmdArgSpec("name", "op=add-category／remove-category：分類名", iDefault: ""),
-            new SCP_CmdArgSpec("description", "op=add-category：分類說明", iDefault: ""),
+            new SCP_CmdArgSpec("name", "op=add-category／remove-category：分類名；op=create：頻道顯示名（預設＝房間 id）", iDefault: ""),
+            new SCP_CmdArgSpec("description", "op=add-category：分類說明；op=create：頻道說明", iDefault: ""),
             new SCP_CmdArgSpec("include_archived", "op=list：1＝也列封存的", iDefault: "1", iChoices: new[] { "0", "1" }),
         };
 
@@ -75,6 +77,20 @@ namespace SCP.Core.Cmd
             }
 
             if (aRoom.Length == 0) return SCP_CmdResult.Fail(2, $"✗ op={aOp} 要 `--arg room=<房間 id>`");
+
+            if (aOp == "create")
+            {
+                if (!SCP_TavernChannels.TryCreateChannel(aRoot, aRoom, iArgs.Get("name"), iArgs.Get("description"), iArgs.Get("category"),
+                        out bool aCreated, out string? aErr))
+                    return SCP_CmdResult.Fail(2, "✗ 沒有建立：" + aErr);
+                string aCatNow = SCP_TavernChannels.LoadSettings(aRoot, aRoom).Category;   // 回讀
+                var aR = SCP_CmdResult.Success(
+                    aCreated ? $"✅ 已建立頻道 `{aRoom}`（回讀）" : $"· 頻道 `{aRoom}` 本來就在 ⇒ 沒有改名稱與說明",
+                    aCatNow.Length == 0 ? "⚠ 未分類 ⇒ 不會轉發到 Discord（要轉發：`--arg op=set-category`）" : $"分類 ＝ **{aCatNow}**");
+                aR.AddValue("created", aCreated ? "1" : "0");
+                aR.AddValue("category", aCatNow);
+                return aR;
+            }
 
             if (aOp == "set-category")
             {

@@ -104,6 +104,49 @@ namespace SCP.Core.Tavern
             return aOk;
         }
 
+        static readonly System.Text.RegularExpressions.Regex s_RoomId =
+            new System.Text.RegularExpressions.Regex("^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// **建新頻道**（TASK-0328：從 Unity `Tavern op=createroom` 搬來）：建 `rooms/<id>/` ＋ `meta.json`，可同時設分類。
+        /// · 已經存在 ⇒ **冪等**：不動 meta（⛔ 不蓋掉別人寫的名稱與說明），只在給了分類時設分類；<paramref name="oCreated"/>=false。
+        /// · 在封存區 ⇒ 擋下（要用先取消封存 —— 同名新房會跟封存那份撞）。
+        /// · id 只收英數開頭、`[A-Za-z0-9_-]`、最長 64（⛔ 路徑穿越）；分類要已在清單裡（同 set-category）。
+        /// 📌 Unity 版附帶的「註冊到 Discord mirror」不搬：Discord 轉發改看頻道分類（TASK-0320）。
+        /// </summary>
+        public static bool TryCreateChannel(string iDataRoot, string iRoom, string iName, string iDescription, string iCategory,
+                                            out bool oCreated, out string? oError)
+        {
+            oCreated = false;
+            oError = null;
+            string aRoom = (iRoom ?? "").Trim();
+            if (!s_RoomId.IsMatch(aRoom)) { oError = $"房間 id '{aRoom}' 不合法 —— 英數開頭，只收 [A-Za-z0-9_-]，最長 64"; return false; }
+            string aCat = (iCategory ?? "").Trim();
+            if (aCat.Length > 0 && !LoadCategories(iDataRoot).Any(c => string.Equals(c.Name, aCat, StringComparison.OrdinalIgnoreCase)))
+            { oError = $"分類 `{aCat}` 不在分類清單裡 —— 先 `channel --arg op=add-category --arg name={aCat}`"; return false; }
+            if (IsArchived(iDataRoot, aRoom)) { oError = $"`{aRoom}` 在封存區 ⇒ 要用先取消封存（`channel --arg op=unarchive --arg room={aRoom}`）"; return false; }
+            if (!ChannelExists(iDataRoot, aRoom))
+            {
+                try
+                {
+                    string aDir = ActiveDir(iDataRoot, aRoom);
+                    Directory.CreateDirectory(aDir);
+                    var j = SCP_JsonData.NewObject();
+                    j.Set("id", aRoom);
+                    j.Set("name", string.IsNullOrWhiteSpace(iName) ? aRoom : iName.Trim());
+                    j.Set("description", (iDescription ?? "").Trim());
+                    j.Set("created_at", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
+                    j.Set("disable_quest_mirror", false);
+                    if (!WriteJson(aDir + "/meta.json", j, out oError)) return false;
+                    oCreated = true;
+                }
+                catch (Exception e) { oError = "建不起來：" + e.Message; return false; }
+                if (!ChannelExists(iDataRoot, aRoom)) { oError = "建完回讀找不到這個房"; return false; }
+            }
+            if (aCat.Length > 0 && !TrySetCategory(iDataRoot, aRoom, aCat, out oError)) return false;
+            return true;
+        }
+
         static bool EnsureMainChannelDir(string iDataRoot, out bool oCreated)
         {
             oCreated = false;

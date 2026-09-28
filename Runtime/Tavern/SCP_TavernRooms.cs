@@ -8,6 +8,7 @@
 //   逐支量過 Editor 側那 6 個 op 真正呼叫的方法（大括號配對切範圍，⛔ 不是固定行數視窗）：
 //   `GetRoom`／`LoadRooms`／`ReadCurrentSeq`／`LoadMembers`／`LoadIdentities`／
 //   `ReadNote`／`ListNoteKeys`／`GetNotePath`／`QuestIO.LoadAllEvents` —— 就這 9 支，全部純讀。
+//   ⛔ note 那三支已於 2026-09-28 移除（留言本整組退場，TASK-0328）。
 //
 // 🔴 `task_list`／`task_next`／`task_state` **不在本檔射程**：它們呼叫 `AutoRecoverStaleLeases`，
 //   而那支會 `AppendEvent` ⇒ 它們是「讀為主、寫一格」，與 `catchup`／`inbox_read` 同一類，
@@ -61,12 +62,6 @@ namespace SCP.Core.Tavern
 
         public static string SeqPath(string iDataRoot, string iRoom)
             => Path.Combine(RoomDir(iDataRoot, iRoom), "_seq.txt").Replace('\\', '/');
-
-        public static string NotesDir(string iDataRoot, string iRoom)
-            => Path.Combine(RoomDir(iDataRoot, iRoom), "notes").Replace('\\', '/');
-
-        public static string NotePath(string iDataRoot, string iRoom, string iKey)
-            => Path.Combine(NotesDir(iDataRoot, iRoom), iKey + ".md").Replace('\\', '/');
 
         /// <summary>
         /// 一房的 meta；**房間不存在回 null**。
@@ -174,26 +169,6 @@ namespace SCP.Core.Tavern
             }
             catch (Exception) { /* 同上 */ }
             return aOut;
-        }
-
-        /// <summary>note 的 key 清單（`*.md` 的檔名，不分大小寫排序 —— 與 Editor 側同一個比較器）。</summary>
-        public static List<string> ListNoteKeys(string iDataRoot, string iRoom)
-        {
-            var aOut = new List<string>();
-            string aDir = NotesDir(iDataRoot, iRoom);
-            if (!Directory.Exists(aDir)) return aOut;
-            foreach (string aFile in Directory.GetFiles(aDir, "*.md"))
-                aOut.Add(Path.GetFileNameWithoutExtension(aFile));
-            aOut.Sort(StringComparer.OrdinalIgnoreCase);
-            return aOut;
-        }
-
-        /// <summary>note 內容；**不存在回 null**（⛔ 不回空字串 —— 空的 note 是合法的）。</summary>
-        public static string? ReadNote(string iDataRoot, string iRoom, string iKey)
-        {
-            string aPath = NotePath(iDataRoot, iRoom, iKey);
-            if (!File.Exists(aPath)) return null;
-            return File.ReadAllText(aPath);
         }
     }
 }
