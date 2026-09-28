@@ -147,10 +147,11 @@ namespace SCP.Core.Cmd
                         s => Console.Error.WriteLine("· " + s));
                     var aR = r.Problems.Count > 0 && r.Sent == 0 ? SCP_CmdResult.Fail(1, $"✗ {aRoom}：沒有送出") : SCP_CmdResult.Success(aSend ? $"✅ {aRoom} 補發" : $"（試算）{aRoom} 補發 —— 加 `--arg confirm=1` 才會真的發");
                     aR.Lines.Add($"- 目標：{(r.Targets.Count > 0 ? string.Join("、", r.Targets) : "（沒有）")}");
-                    aR.Lines.Add($"- 範圍內 {r.Messages} 則，要送 {r.Eligible} 則；已送過跳過 {r.SkippedAlready}；{(aSend ? "送出" : "將送")} {r.Sent} 則（{r.Posts} 次 POST，含拆段）");
+                    aR.Lines.Add($"- 範圍內 {r.Messages} 則，要送 {r.Eligible} 則；已送過跳過 {r.SkippedAlready}；{(aSend ? "送出" : "將送")} {r.Sent} 則（{r.Posts} 次 POST，含拆段；圖 {r.Images} 張）");
                     foreach (string p in r.Problems) aR.Lines.Add("- ⚠ " + p);
                     aR.AddValue("sent", r.Sent.ToString(CultureInfo.InvariantCulture));
                     aR.AddValue("posts", r.Posts.ToString(CultureInfo.InvariantCulture));
+                    aR.AddValue("images", r.Images.ToString(CultureInfo.InvariantCulture));
                     aR.AddValue("problems", r.Problems.Count.ToString(CultureInfo.InvariantCulture));
                     return aR;
                 }

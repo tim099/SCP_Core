@@ -7,8 +7,9 @@
 //     source_class／priority／channel_label、`relay=senate`（區分 Unity 的 `native`）。
 //   · 過濾：bot 發的、webhook 發的（⛔ 否則 Outbound 送出去的會被收回來，無限迴圈）、白名單外的、空內容沒附件的 —— 逐筆記原因。
 //   · 顯示名：白名單填的 display_name ＞ 伺服器暱稱 ＞ global_name ＞ username ＞ uid。
-//   · 附件：**這一版不下載**（Tim 2026-09-28：Inbound／Outbound 的圖片另開單處理，TASK-0323）——
-//     只把檔名列進本文（`[Discord 附件 N 個] …`，純附件訊息才用它當本文）並在 meta 記 `attachments` 數量。
+//   · 附件（TASK-0323）：**下載落地**到 `ChatTavern/media/discord/<日期>/`（`SCP_DiscordMedia`），訊息 `refs` 帶 repo 相對路徑
+//     ⇒ agent 讀完訊息可以直接開圖。本文末尾照舊列一行 `[Discord 附件 N 個] …`（沒落地的那幾個標明原因：過大／下載失敗）；
+//     meta 記 `attachments`（總數）與 `attachments_saved`（落地數）。⛔ 附件失敗不擋文字（fail-soft）。偷看模式不下載。
 //   · 游標：`ChatTavern/discord/discord_inbound_state.json`。第一次接手時讀 Unity 的 `PromptQueue/_tavern_state.json`
 //     —— 那份 **24 小時內更新過才沿用**（接得上 Unity 停掉後的空窗）；更舊的 ⇒ baseline（🩸 Bar 有一條停在 08-01，沿用會灌兩個月）。
 // 數值影響：本檔**不寫酒館** —— 回傳要寫的訊息，由宿主交給 `tavern-write`（單一寫入端；@ 通知／詞典／封存閘都在那裡）。
@@ -178,7 +179,7 @@ namespace SCP.Core.Discord
             for (int i = aArr.Count - 1; i >= 0; i--)   // 舊 → 新
             {
                 SCP_JsonData m = aArr[i];
-                string aWhy = Convert(iDataRoot, iRepoRoot, iRoute, iWhitelist, m, out SCP_DiscordInboundItem? aItem);
+                string aWhy = Convert(iDataRoot, iRepoRoot, iRoute, iWhitelist, m, out SCP_DiscordInboundItem? aItem, !iPeek);
                 if (aItem != null) r.Items.Add(aItem);
                 else r.Skipped.Add(m.GetString("id", "") + ":" + aWhy);
             }
@@ -187,7 +188,7 @@ namespace SCP.Core.Discord
 
         /// <summary>一則 Discord 訊息 ⇒ 酒館訊息；不收的回原因（<paramref name="oItem"/>＝null）。</summary>
         public static string Convert(string iDataRoot, string iRepoRoot, SCP_DiscordRoute iRoute, SCP_DiscordWhitelist iWhitelist,
-                                     SCP_JsonData iMsg, out SCP_DiscordInboundItem? oItem)
+                                     SCP_JsonData iMsg, out SCP_DiscordInboundItem? oItem, bool iDownload = true)
         {
             oItem = null;
             if (!iMsg.IsObject) return "malformed";
@@ -202,13 +203,19 @@ namespace SCP.Core.Discord
 
             string aMsgId = iMsg.GetString("id", "");
             string aContent = iMsg.GetString("content", "").Trim();
-            var aNames = new List<string>();
-            if (iMsg["attachments"].IsArray)
-                foreach (SCP_JsonData a in iMsg["attachments"]) aNames.Add(a.GetString("filename", "（無檔名）"));
-            if (aContent.Length == 0 && aNames.Count == 0)
+            int aAttCount = iMsg["attachments"].IsArray ? iMsg["attachments"].Count : 0;
+            if (aContent.Length == 0 && aAttCount == 0)
                 return iMsg.Contains("content") ? "empty-content(檢查 MESSAGE_CONTENT intent)" : "no-content-field";
-            if (aContent.Length == 0) aContent = $"[Discord 附件 {aNames.Count} 個] " + string.Join(", ", aNames);
-            else if (aNames.Count > 0) aContent += $"\n[Discord 附件 {aNames.Count} 個] " + string.Join(", ", aNames);
+            // ⚠ 過濾全部通過之後才下載 ⇒ 被略過的訊息（bot／白名單外）⛔ 不會落任何檔
+            List<SCP_DiscordMedia.InboundAttachment> aAtts = aAttCount > 0
+                ? SCP_DiscordMedia.DownloadAttachments(iDataRoot, iRepoRoot, aMsgId, iMsg["attachments"], iDownload)
+                : new List<SCP_DiscordMedia.InboundAttachment>();
+            if (aAtts.Count > 0)
+            {
+                string aLine = SCP_DiscordMedia.DescribeLine(aAtts);
+                aContent = aContent.Length == 0 ? aLine : aContent + "\n" + aLine;
+            }
+            int aSaved = aAtts.Count(a => a.Ref != null);
 
             string aDisplay = iMsg["member"].GetString("nick", "");
             if (aDisplay.Length == 0) aDisplay = aAuthor.GetString("global_name", "");
@@ -226,7 +233,11 @@ namespace SCP.Core.Discord
             aMeta.Set("priority", iRoute.Priority.ToString(CultureInfo.InvariantCulture));
             aMeta.Set("relay", "senate");
             if (aWl != null && aWl.Profile.Length > 0) aMeta.Set("discord_user_profile", aWl.Profile);
-            if (aNames.Count > 0) aMeta.Set("attachments", aNames.Count.ToString(CultureInfo.InvariantCulture));
+            if (aAtts.Count > 0)
+            {
+                aMeta.Set("attachments", aAtts.Count.ToString(CultureInfo.InvariantCulture));
+                aMeta.Set("attachments_saved", aSaved.ToString(CultureInfo.InvariantCulture));
+            }
             if (SCP_TavernCli.LooksLikeCliCommand(iDataRoot, aContent)) { aMeta.Set("tag", "cli-cmd"); aMeta.Set("cli_cmd", "true"); }
 
             var j = SCP_JsonData.NewObject();
@@ -235,6 +246,19 @@ namespace SCP.Core.Discord
             j.Set("kind", "chat");
             j.Set("body", aContent);
             j.Set("meta", aMeta);
+            if (aSaved > 0)
+            {
+                var aRefs = SCP_JsonData.NewArray();
+                foreach (SCP_DiscordMedia.InboundAttachment a in aAtts)
+                {
+                    if (a.Ref == null) continue;
+                    var r = SCP_JsonData.NewObject();
+                    r.Set("path", a.Ref.Path);
+                    if (a.Ref.Label.Length > 0) r.Set("label", a.Ref.Label);
+                    aRefs.Add(r);
+                }
+                j.Set("refs", aRefs);
+            }
             oItem = new SCP_DiscordInboundItem
             {
                 DiscordMsgId = aMsgId, Room = iRoute.TavernRoom, MsgJson = j,

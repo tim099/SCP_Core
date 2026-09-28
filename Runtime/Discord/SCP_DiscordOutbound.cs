@@ -5,6 +5,10 @@
 //           · ⛔ 不 @ 任何人：`allowed_mentions.parse = []` —— 補發舊訊息不該把人叫起來，而 Discord 預設會解析 @everyone。
 //           · ⛔ 不回送：從 Discord 轉進來的訊息（`SCP_TavernMentions.IsExternalRelay`）一律跳過。
 //           · 只送 `kind=chat`（同 Unity 版預設）。
+//           · 圖（TASK-0323）：訊息 refs 裡的本地圖檔 ⇒ **第一段**改走 multipart 一起上傳（`SCP_DiscordMedia.CollectUploads`；
+//             上限見那支）。沒帶上的圖在本文末尾列「未上傳：檔名（原因）」。
+//             Discord 明確拒收（400／413）⇒ **退回純文字重送一次**並標明「圖片上傳失敗」—— ⛔ 不因圖讓整則卡住；
+//             其他失敗（連不上／逾時／5xx）照舊停在這則、下輪重送（同文字訊息的語意）。
 // 數值影響：
 //   · 補發（`Backfill`）記游標：`ChatTavern/discord/discord_backfill_state.json` → `<room>.<webhook id> = 最後送成功的 seq`
 //     ⇒ 中途斷掉重跑會從斷點接著送，⛔ 不重發。一則拆成多段時，**全部段都成功**才推游標。
@@ -32,6 +36,7 @@ namespace SCP.Core.Discord
         public int Sent;           // 這一趟送成功的訊息數（每條 webhook 分開算）
         public int Posts;          // 實際 POST 次數（含拆段）
         public int SkippedAlready; // 游標說已經送過的
+        public int Images;         // 上傳成功的圖片張數（每條 webhook 分開算）
         public List<string> Problems = new List<string>();
         public List<string> Targets = new List<string>();
     }
@@ -61,13 +66,16 @@ namespace SCP.Core.Discord
         }
 
         /// <summary>一則訊息 ⇒ 依序要送的 payload（JSON 字串）。長文照換行切，切不開才硬切。</summary>
-        public static List<string> BuildPayloads(string iLettersRoot, string iAvatarTemplate, string iRoom, SCP_TavernMessage iMsg)
+        public static List<string> BuildPayloads(string iLettersRoot, string iAvatarTemplate, string iRoom, SCP_TavernMessage iMsg,
+                                                 string iFooter = "")
         {
             SCP_TavernDisplayRow aRow = SCP_TavernDisplay.Resolve(iLettersRoot, iMsg);
             string aName = SanitizeUsername(aRow.Name);
             string aAvatar = aRow.Persona.Length > 0 ? SCP_DiscordConfigStore.ResolveAvatarUrl(iLettersRoot, aRow.Persona, iAvatarTemplate, out _) : "";
             string aHeader = $"**`{iRoom}`** · seq {iMsg.Seq} · {aRow.TimeLocal}";
-            List<string> aParts = Split(iMsg.Body ?? "", MaxContent - aHeader.Length - 16);
+            string aBody = iMsg.Body ?? "";
+            if (iFooter.Length > 0) aBody = aBody.TrimEnd() + "\n" + iFooter;
+            List<string> aParts = Split(aBody, MaxContent - aHeader.Length - 16);
             var aOut = new List<string>();
             for (int i = 0; i < aParts.Count; i++)
             {
@@ -102,13 +110,26 @@ namespace SCP.Core.Discord
 
         /// <summary>POST 一個 payload；429 照 Retry-After 等完重試（最多 5 次）。⛔ 錯誤訊息不含 URL。</summary>
         public static bool TryPost(string iUrl, string iPayload, out string? oError)
+            => TryPost(iUrl, iPayload, null, out oError, out _);
+
+        /// <summary>同上；<paramref name="iFiles"/> 非空 ⇒ multipart（payload_json ＋ files[N]）。<paramref name="oStatus"/>＝最後一次的 HTTP 狀態碼。</summary>
+        public static bool TryPost(string iUrl, string iPayload, IReadOnlyList<SCP_HttpFilePart>? iFiles, out string? oError, out int oStatus)
         {
             oError = null;
+            oStatus = 0;
+            bool aMultipart = iFiles != null && iFiles.Count > 0;
             if (!(SCP_HttpFetch.Current is ISCP_HttpPoster aPost)) { oError = "本宿主沒有能 POST 的抓取器（要在 Senate 跑）"; return false; }
+            ISCP_HttpMultipartPoster? aMp = SCP_HttpFetch.Current as ISCP_HttpMultipartPoster;
+            if (aMultipart && aMp == null) { oError = "本宿主不能上傳檔案（multipart）"; return false; }
+            string aUrl = iUrl + (iUrl.Contains("?") ? "&" : "?") + "wait=true";
             for (int aTry = 0; aTry < 5; aTry++)
             {
-                if (aPost.TryPostJson(iUrl + (iUrl.Contains("?") ? "&" : "?") + "wait=true", iPayload, 20, out string aBody, out int aStatus, out double aRetry, out string? aErr))
-                    return true;
+                string aBody; int aStatus; double aRetry; string? aErr;
+                bool aOk = aMultipart
+                    ? aMp!.TryPostMultipart(aUrl, iPayload, iFiles!, 60, out aBody, out aStatus, out aRetry, out aErr)
+                    : aPost.TryPostJson(aUrl, iPayload, 20, out aBody, out aStatus, out aRetry, out aErr);
+                oStatus = aStatus;
+                if (aOk) return true;
                 if (aStatus == 429)
                 {
                     double aSec = aRetry > 0 ? aRetry : ReadRetryAfter(aBody);
@@ -212,6 +233,7 @@ namespace SCP.Core.Discord
             List<SCP_DiscordWebhookInfo> aHooks = c.Webhooks.Where(w => aIds.Contains(w.Id) && w.Enabled).ToList();
             if (aHooks.Count == 0) { r.Problems.Add($"分類 {aSet.Category} 沒有綁任何啟用中的 webhook ⇒ 不送"); return r; }
             r.Targets.AddRange(aHooks.Select(w => w.Describe()));
+            string aRepoRoot = SCP_DiscordMedia.RepoRootOf(iDataRoot, "");
             Dictionary<string, string> aUrls = SCP_DiscordConfigStore.LoadWebhookUrls(iDataRoot, out string? aUrlErr);
             if (aUrlErr != null) { r.Problems.Add(aUrlErr); return r; }
 
@@ -237,14 +259,32 @@ namespace SCP.Core.Discord
                 foreach (SCP_TavernMessage m in aEligible)
                 {
                     if (m.Seq <= aDone) { r.SkippedAlready++; continue; }
-                    List<string> aPayloads = BuildPayloads(iLettersRoot, c.AvatarUrlTemplate, iRoom, m);
-                    if (iDryRun) { r.Posts += aPayloads.Count; r.Sent++; continue; }
+                    List<SCP_HttpFilePart> aFiles = SCP_DiscordMedia.CollectUploads(iDataRoot, aRepoRoot, m, out List<string> aSkippedImgs);
+                    string aFooter = aSkippedImgs.Count > 0 ? "-# 📎 未上傳：" + string.Join("、", aSkippedImgs) : "";
+                    List<string> aPayloads = BuildPayloads(iLettersRoot, c.AvatarUrlTemplate, iRoom, m, aFooter);
+                    if (iDryRun) { r.Posts += aPayloads.Count; r.Sent++; r.Images += aFiles.Count; continue; }
                     bool aAllOk = true;
-                    foreach (string p in aPayloads)
+                    int aImgBefore = r.Images;
+                    for (int pi = 0; pi < aPayloads.Count; pi++)
                     {
+                        string p = aPayloads[pi];
                         if (!aFirstPost) Thread.Sleep(PaceMs);
                         aFirstPost = false;
-                        if (!TryPost(aUrl, p, out string? aErr))
+                        IReadOnlyList<SCP_HttpFilePart>? aThese = pi == 0 && aFiles.Count > 0 ? aFiles : null;
+                        bool aOk = TryPost(aUrl, p, aThese, out string? aErr, out int aStatus);
+                        if (!aOk && aThese != null && (aStatus == 400 || aStatus == 413))
+                        {
+                            // Discord 明確拒收這包圖 ⇒ 退回純文字重送這一段（⛔ 不因圖讓整則卡住；400／413 ＝ 對方沒收 ⇒ 不會重複）
+                            string aNames = string.Join("、", aFiles.Select(f => f.FileName));
+                            string aFb = BuildPayloads(iLettersRoot, c.AvatarUrlTemplate, iRoom, m,
+                                (aFooter.Length > 0 ? aFooter + "\n" : "") + $"-# 📎 圖片上傳失敗（HTTP {aStatus}）：{aNames}")[0];
+                            r.Problems.Add($"{w.Describe()} seq {m.Seq}：圖片被拒（HTTP {aStatus}）⇒ 改送純文字");
+                            Thread.Sleep(PaceMs);
+                            aOk = TryPost(aUrl, aFb, null, out aErr, out aStatus);
+                            aThese = null;
+                        }
+                        if (aOk && aThese != null) r.Images += aThese.Count;
+                        if (!aOk)
                         {
                             r.Problems.Add($"{w.Describe()} seq {m.Seq}：{aErr}");
                             aAllOk = false;
@@ -263,7 +303,9 @@ namespace SCP.Core.Discord
                     r.Sent++;
                     aState[iRoom].Set(w.Id, m.Seq);
                     SaveState(iDataRoot, aState);   // 每一則都落盤 ⇒ 中途被砍也接得回來
-                    iProgress?.Invoke($"{iRoom} seq {m.Seq} → {w.Describe()}（{r.Sent}/{aEligible.Count}）");
+                    int aImgs = r.Images - aImgBefore;
+                    iProgress?.Invoke($"{iRoom} seq {m.Seq} → {w.Describe()}（{r.Sent}/{aEligible.Count}）"
+                                      + (aImgs > 0 ? $"　🖼 {aImgs} 張" : "") + (aSkippedImgs.Count > 0 ? $"　未上傳 {aSkippedImgs.Count} 張" : ""));
                 }
             }
             return r;

@@ -60,6 +60,35 @@ namespace SCP.Core.Market
     }
 
     /// <summary>
+    /// **抓位元組**（TASK-0323：Discord 附件下載）。可選介面，同 <see cref="ISCP_HttpHeaderFetcher"/>。
+    /// <paramref name="iMaxBytes"/>＝上限：回應超過就中止並回 false（⛔ 不先整包讀進記憶體再判）。
+    /// ⚠ 附件 URL 帶簽章 ⇒ 實作端 ⛔ 不得把 URL 寫進錯誤訊息。
+    /// </summary>
+    public interface ISCP_HttpBytesFetcher
+    {
+        bool TryGetBytes(string iUrl, long iMaxBytes, int iTimeoutSec, out byte[] oData, out int oStatus, out string? oError);
+    }
+
+    /// <summary>multipart 的一個檔案段。</summary>
+    public sealed class SCP_HttpFilePart
+    {
+        public string FieldName = "";
+        public string FileName = "";
+        public string ContentType = "application/octet-stream";
+        public byte[] Data = new byte[0];
+    }
+
+    /// <summary>
+    /// **multipart/form-data POST**（TASK-0323：Discord webhook 帶圖）：一段 `payload_json` ＋ N 個檔案段。
+    /// 回傳語意同 <see cref="ISCP_HttpPoster.TryPostJson"/>（含 429 的 Retry-After）。⛔ URL 不進錯誤訊息。
+    /// </summary>
+    public interface ISCP_HttpMultipartPoster
+    {
+        bool TryPostMultipart(string iUrl, string iPayloadJson, IReadOnlyList<SCP_HttpFilePart> iFiles, int iTimeoutSec,
+                              out string oBody, out int oStatus, out double oRetryAfterSec, out string? oError);
+    }
+
+    /// <summary>
     /// 全域抓取器插座。宿主（Senate CLI／Server）啟動時塞一個進來；
     /// Unity 那側**刻意不塞** ⇒ `op=sync` 會明說「本宿主沒有抓取器」而不是靜默沒事。
     /// </summary>
