@@ -19,6 +19,9 @@
 //        Unity 端的 `Approve` 全樹**零呼叫端**（唯一會按它的那一頁已退場，只剩兩處註解提到它）。
 //        ⛔ 而那兩個資料夾**不是只有本層在寫**：Unity 端仍會 `Create`（開單）與 `Close`（取消）
 //        ⇒ 「單一裁決者」成立，「單一寫入端」不成立，兩者別混。
+//      ⭐ 2026-09-28（TASK-0325 第一批）：開單／撤單也搬進本層（`CreatePayout`／`CreateTransfer`／`Cancel`，出口 `cmd bank-request`），
+//        Unity 的 `Treasury op=request|transfer_request|request_cancel|request_list` 改成指路 ⇒ **單一寫入端也成立了**。
+//        檔名、欄位順序、JSON 樣式逐項對齊 Unity 版（`UclLegacy`：tab 縮排），新舊單混放同一個資料夾。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -274,6 +277,175 @@ namespace SCP.Core.Bank
             }
             catch (Exception e) { oError = $"單子寫不回去（{iPath}）：{e.Message}"; return false; }
             return true;
+        }
+
+        // ── 開單／撤單（TASK-0325：從 Unity `Cmd_Treasury` 搬來）──────────────
+
+        public const string StatusCancelled = "cancelled";
+
+        /// <summary>
+        /// 開一張**請款單**（agent 主張「該付 N 到帳戶 X，理由 Y」）。⛔ 不動任何錢 —— 錢只在審批（`bank op=approve`）時動。
+        /// 擋下（零寫入）：缺收款帳戶／金額不是正整數／缺理由／funding 不是 central|mint。
+        /// ⚠ `target_bank` 要的是**帳號 id 不是 persona 名**（2026-07-31 血證：帶 persona 名 ⇒ 錢進影子帳戶）—— 不推斷，後台人眼確認。
+        /// </summary>
+        public static bool CreatePayout(string iDataRoot, string iTargetBank, int iAmount, string iReason,
+                                        string iSourceKind, string iSourceRef, string iRequesterAgent, string iRequesterPersona,
+                                        string iCurrency, string iFunding, out SCP_PayoutRequest oReq, out string oError)
+        {
+            oReq = new SCP_PayoutRequest();
+            oError = "";
+            string aTarget = (iTargetBank ?? "").Trim(), aReason = (iReason ?? "").Trim(), aFunding = (iFunding ?? "").Trim().ToLowerInvariant();
+            string aKind = string.IsNullOrWhiteSpace(iSourceKind) ? "manual_request" : iSourceKind.Trim();
+            if (aTarget.Length == 0) { oError = "缺收款帳戶 target_bank（帳號 id，例 cc / zeta / Myth —— ⛔ 不是 persona 名）"; return false; }
+            if (iAmount <= 0) { oError = $"amount 要正整數（收到 {iAmount}）"; return false; }
+            if (aReason.Length == 0) { oError = "缺 reason —— 審批者要有東西可判，不接受無理由請款"; return false; }
+            // 補薪沒宣告 ⇒ 增發（Tim 2026-09-22：勞動新產生的價值，不是從公庫搬）；其餘沒宣告 ⇒ 留空（審批端用央行撥款）
+            if (aFunding.Length == 0 && aKind == SourceKindWorkPostBackfill) aFunding = SCP_PayoutFunding.Mint;
+            if (aFunding.Length > 0 && !SCP_PayoutFunding.IsValid(aFunding))
+            { oError = $"funding 只能是 central（央行撥款）或 mint（增發），收到 '{aFunding}'"; return false; }
+
+            DateTime aNow = DateTime.UtcNow;
+            string aId = Guid.NewGuid().ToString("N").Substring(0, 6);
+            var j = SCP_JsonData.NewObject();
+            j.Set("request_id", aId);
+            j.Set("requested_at", aNow.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture) + "Z");
+            j.Set("status", StatusPending);
+            j.Set("target_bank", aTarget);
+            j.Set("amount", iAmount);
+            j.Set("currency", string.IsNullOrWhiteSpace(iCurrency) ? "tavern_token" : iCurrency.Trim());
+            j.Set("reason", aReason);
+            j.Set("source_kind", aKind);
+            j.Set("source_ref", (iSourceRef ?? "").Trim());
+            j.Set("funding", aFunding);
+            j.Set("requester_agent", (iRequesterAgent ?? "").Trim());
+            j.Set("requester_persona", (iRequesterPersona ?? "").Trim());
+            string aPath = Path.Combine(PayoutDir(iDataRoot), aNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                                        $"{aNow.ToString("HHmmss_fff", CultureInfo.InvariantCulture)}_{aId}__request.json");
+            if (!TryWriteNew(aPath, j, out oError)) return false;
+            oReq = ReadPayout(aPath) ?? oReq;   // 回讀
+            if (oReq.RequestId != aId) { oError = $"寫完回讀對不上（{aPath}）"; return false; }
+            return true;
+        }
+
+        /// <summary>
+        /// 開一張**轉帳單**（A → B，守恆）。⛔ 不動任何錢。擋下：缺任一方／A＝B／金額不是正整數／缺理由。
+        /// ⚠ **不檢查出款方是不是合法帳戶** —— 歸戶的出款方本來就常是孤兒帳戶（同 Unity 版）。
+        /// </summary>
+        public static bool CreateTransfer(string iDataRoot, string iFromBank, string iToBank, int iAmount, string iReason,
+                                          string iKind, string iRequesterAgent, string iRequesterPersona, string iCurrency,
+                                          out SCP_TransferRequest oReq, out string oError)
+        {
+            oReq = new SCP_TransferRequest();
+            oError = "";
+            string aFrom = (iFromBank ?? "").Trim(), aTo = (iToBank ?? "").Trim(), aReason = (iReason ?? "").Trim();
+            if (aFrom.Length == 0) { oError = "缺出款帳戶 from_bank（帳號 id，⛔ 不是 persona 名）"; return false; }
+            if (aTo.Length == 0) { oError = "缺收款帳戶 to_bank（帳號 id）"; return false; }
+            if (string.Equals(aFrom, aTo, StringComparison.OrdinalIgnoreCase)) { oError = $"出款＝收款（{aFrom}）—— 自轉沒有意義"; return false; }
+            if (iAmount <= 0) { oError = $"amount 要正整數（收到 {iAmount}）"; return false; }
+            if (aReason.Length == 0) { oError = "缺 reason —— 審批者要有東西可判"; return false; }
+
+            DateTime aNow = DateTime.UtcNow;
+            string aId = Guid.NewGuid().ToString("N").Substring(0, 6);
+            var j = SCP_JsonData.NewObject();
+            j.Set("request_id", aId);
+            j.Set("requested_at", aNow.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture) + "Z");
+            j.Set("status", StatusPending);
+            j.Set("from_bank", aFrom);
+            j.Set("to_bank", aTo);
+            j.Set("amount", iAmount);
+            j.Set("currency", string.IsNullOrWhiteSpace(iCurrency) ? "tavern_token" : iCurrency.Trim());
+            j.Set("reason", aReason);
+            j.Set("kind", string.IsNullOrWhiteSpace(iKind) ? "manual_transfer" : iKind.Trim());
+            j.Set("requester_agent", (iRequesterAgent ?? "").Trim());
+            j.Set("requester_persona", (iRequesterPersona ?? "").Trim());
+            string aPath = Path.Combine(TransferDir(iDataRoot), aNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                                        $"{aNow.ToString("HHmmss_fff", CultureInfo.InvariantCulture)}_{aId}__transfer.json");
+            if (!TryWriteNew(aPath, j, out oError)) return false;
+            List<SCP_TransferRequest> aBack = LoadPendingTransfers(iDataRoot);
+            SCP_TransferRequest? aMine = aBack.Find(r => r.RequestId == aId);
+            if (aMine == null) { oError = $"寫完回讀找不到這張單（{aPath}）"; return false; }
+            oReq = aMine;
+            return true;
+        }
+
+        /// <summary>
+        /// 撤回一張 **pending** 的請款或轉帳單（開單人自己撤）。走 <see cref="Decide"/> ⇒ 不是 pending 就擋下（已經批了就撤不了）。
+        /// <paramref name="oKind"/>＝`payout`／`transfer`。兩種都找不到 ⇒ 明說兩種都找過。
+        /// </summary>
+        public static bool Cancel(string iDataRoot, string iRequestId, string iBy, string iNote, out string oKind, out string oError)
+        {
+            oKind = "";
+            string aId = (iRequestId ?? "").Trim();
+            if (aId.Length == 0) { oError = "缺 request_id"; return false; }
+            string? aPath = FindFile(PayoutDir(iDataRoot), aId, "__request.json");
+            if (aPath != null) oKind = "payout";
+            else { aPath = FindFile(TransferDir(iDataRoot), aId, "__transfer.json"); if (aPath != null) oKind = "transfer"; }
+            if (aPath == null) { oError = $"找不到 `{aId}` —— 請款單與轉帳單兩個資料夾都找過了"; return false; }
+            return Decide(aPath, StatusCancelled, iBy, iNote, null, out oError);
+        }
+
+        /// <summary>列請款單（新到舊，最多 <paramref name="iMax"/> 張）；<paramref name="iPendingOnly"/>=false ⇒ 全部狀態。</summary>
+        public static List<SCP_PayoutRequest> ListPayouts(string iDataRoot, bool iPendingOnly, int iMax, List<string>? oProblems = null)
+        {
+            SCP_BankMigration.EnsureOnce(iDataRoot);
+            var aOut = new List<SCP_PayoutRequest>();
+            List<string> aFiles = ScanJson(PayoutDir(iDataRoot), oProblems);
+            aFiles.Reverse();   // 路徑＝日期夾／時間檔名 ⇒ 字典序倒過來就是新到舊
+            foreach (string f in aFiles)
+            {
+                SCP_PayoutRequest? r = ReadPayout(f, oProblems);
+                if (r == null) continue;
+                if (iPendingOnly && r.Status != StatusPending) continue;
+                aOut.Add(r);
+                if (aOut.Count >= iMax) break;
+            }
+            return aOut;
+        }
+
+        static SCP_PayoutRequest? ReadPayout(string iFile, List<string>? oProblems = null)
+        {
+            SCP_JsonData? aJd = TryParse(iFile, oProblems);
+            if (aJd == null) return null;
+            return new SCP_PayoutRequest
+            {
+                Path = iFile,
+                RequestId = aJd.GetString("request_id", ""),
+                RequestedAt = aJd.GetString("requested_at", ""),
+                Status = aJd.GetString("status", ""),
+                TargetBank = aJd.GetString("target_bank", ""),
+                Amount = aJd.GetInt("amount", 0),
+                Currency = aJd.GetString("currency", "tavern_token"),
+                Reason = aJd.GetString("reason", ""),
+                RequesterPersona = aJd.GetString("requester_persona", ""),
+                RequesterAgent = aJd.GetString("requester_agent", ""),
+                DecidedBy = aJd.GetString("decided_by", ""),
+                DecisionNote = aJd.GetString("decision_note", ""),
+                Funding = aJd.GetString("funding", ""),
+                SourceKind = aJd.GetString("source_kind", ""),
+            };
+        }
+
+        static string? FindFile(string iDir, string iId, string iSuffix)
+        {
+            if (!Directory.Exists(iDir)) return null;
+            foreach (string f in Directory.GetFiles(iDir, "*_" + iId + iSuffix, SearchOption.AllDirectories)) return f;
+            return null;
+        }
+
+        /// <summary>建新檔（tmp → 改名）。⛔ 已存在就不覆寫（uuid6 撞號時寧可失敗，也不蓋掉別人的單）。</summary>
+        static bool TryWriteNew(string iPath, SCP_JsonData iJson, out string oError)
+        {
+            oError = "";
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(iPath) ?? ".");
+                if (File.Exists(iPath)) { oError = $"檔案已存在（單號撞了？）：{iPath}"; return false; }
+                string aTmp = iPath + ".tmp";
+                File.WriteAllText(aTmp, SCP_JsonWriter.Write(iJson, SCP_JsonStyle.UclLegacy) + "\n");
+                File.Move(aTmp, iPath);
+                return true;
+            }
+            catch (Exception e) { oError = $"寫不進去（{iPath}）：{e.Message}"; return false; }
         }
 
         // ── 共用 ──────────────────────────────────────────────────
