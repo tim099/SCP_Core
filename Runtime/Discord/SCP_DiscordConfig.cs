@@ -352,6 +352,21 @@ namespace SCP.Core.Discord
             return Save(iDataRoot, c, out oError);
         }
 
+        /// <summary>
+        /// 送出時碰到 401／403／404 ⇒ **自動停用**這條 webhook 並把原因寫進驗證狀態（同 Unity 版「標成失效、等人處理」）。
+        /// 🩸 不停用的話：一條已經被刪掉的 webhook 每 2 秒被重打一次、永遠不停（2026-09-28 scratch 實測）。
+        /// </summary>
+        public static void MarkDead(string iDataRoot, string iId, string iStatus)
+        {
+            SCP_DiscordConfig c = Load(iDataRoot);
+            SCP_DiscordWebhookInfo? w = c.Webhooks.FirstOrDefault(x => x.Id == iId);
+            if (w == null || c.Error.Length > 0) return;
+            w.Enabled = false;
+            w.VerifyStatus = iStatus + "（送出失敗 ⇒ 自動停用）";
+            w.VerifiedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+            Save(iDataRoot, c, out _);
+        }
+
         /// <summary>刪除 webhook。還有分類綁著它 ⇒ 擋下並列出是哪些分類、零寫入。</summary>
         public static bool TryRemoveWebhook(string iDataRoot, string iId, out string? oError)
         {

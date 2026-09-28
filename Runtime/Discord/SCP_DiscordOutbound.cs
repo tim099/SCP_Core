@@ -244,7 +244,19 @@ namespace SCP.Core.Discord
                     {
                         if (!aFirstPost) Thread.Sleep(PaceMs);
                         aFirstPost = false;
-                        if (!TryPost(aUrl, p, out string? aErr)) { r.Problems.Add($"{w.Describe()} seq {m.Seq}：{aErr}"); aAllOk = false; break; }
+                        if (!TryPost(aUrl, p, out string? aErr))
+                        {
+                            r.Problems.Add($"{w.Describe()} seq {m.Seq}：{aErr}");
+                            aAllOk = false;
+                            // 401／403／404 ＝ webhook 被刪了或權限沒了 ⇒ 重試不會好 ⇒ 停用它（⛔ 否則每 2 秒重打一次）
+                            string aE = aErr ?? "";
+                            if (aE.StartsWith("HTTP 401") || aE.StartsWith("HTTP 403") || aE.StartsWith("HTTP 404"))
+                            {
+                                SCP_DiscordConfigStore.MarkDead(iDataRoot, w.Id, aE.Substring(0, 8));
+                                r.Problems.Add($"{w.Describe()}：{aE.Substring(0, 8)} ⇒ 已自動停用這條 webhook（到「Discord Webhook」頁確認後再啟用）");
+                            }
+                            break;
+                        }
                         r.Posts++;
                     }
                     if (!aAllOk) break;   // ⛔ 失敗就停在這一則：游標不前進，下次從這則重送（寧可重送半則，也不跳過）
