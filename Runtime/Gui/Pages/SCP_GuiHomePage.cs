@@ -1,5 +1,5 @@
 // 區塊職責：**入口頁**（stack 的最底層）—— 調介面尺寸 ＋ 進到其他頁。
-// 物理意義：概念取自 Unity 端的 UCL_EditorMenuPage（一排功能鈕 ＋ 一個「Page 選擇器」下拉）。
+// 物理意義：概念取自 Unity 端的 UCL_EditorMenuPage（「Page 選擇器」下拉）＋ UCL_ToolBoxPage（分組摺疊的入口鈕）。
 //           取得清單的方式問**頁面目錄**（SCP_GuiPageCatalog），不自己掃 assembly。
 //
 //           ⭐ 2026-08-30 從 Senate.Cli/Pages/HomePage.cs 搬進 SCP_Core（六步的第 3 步）——
@@ -132,14 +132,27 @@ namespace SCP.Core.Gui
                 }
                 if (m_Message != null) g.Note(m_Message);
 
-                // ③ 直達鈕：現在頁面還少，一顆一顆列比「點開下拉再選」快
-                //    （id 用 page key 不用序號 —— 清單順序會隨分組／標題改變）
-                g.Space();
-                g.Label("直接進入：");
-                using (g.Row())
+            }
+            g.Space();
+            DrawGroupFolds(g);
+        }
+
+        // ── ③ 分組摺疊入口（Tim 2026-09-28：參考 Unity UCL_ToolBoxPage）─────────────
+        // 物理意義：取代原本那一排「直接進入」鈕 —— 頁面一多，一排鈕會長到看不完。
+        //           每個分組一個摺疊框（**預設收合**，同 ToolBox：收著也看得到組名與頁數），展開後一頁一顆鈕。
+        // 數值影響：純導覽。id 用 page key 不用序號（清單順序會隨分組／標題改變）；摺疊 id 用分組名。
+        void DrawGroupFolds(SCP_Ui g)
+        {
+            foreach (string aGroup in m_Catalog.Groups)
+            {
+                IReadOnlyList<SCP_GuiPageEntry> aInGroup = m_Catalog.InGroup(aGroup);
+                if (aInGroup.Count == 0) continue;
+                string aTitle = (aGroup.Length == 0 ? "(未分組)" : aGroup) + "　(" + aInGroup.Count + ")";
+                using (var aFold = g.Fold(aTitle, "home/fold/" + aGroup, false))
                 {
-                    foreach (SCP_GuiPageEntry e in aEntries)
-                        if (g.Button(e.Title.Length > 0 ? e.Title : e.Key, "home/open/" + e.Key)) Open(e.Key);
+                    if (!aFold.Open) continue;   // 收合 ⇒ 不建子節點（建了就等於沒摺，只是看不見）
+                    foreach (SCP_GuiPageEntry e in aInGroup)
+                        if (g.Button(e.Label, "home/open/" + e.Key)) Open(e.Key);
                 }
             }
         }

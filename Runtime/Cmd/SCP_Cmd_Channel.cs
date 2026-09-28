@@ -2,7 +2,7 @@
 // 物理意義：讀寫全走 `SCP_TavernChannels`（與 Senate 後台「頻道管理」頁同一份）；本 Cmd 只是薄殼。
 //           **分類要先新增，頻道才能選它**（Tim 2026-09-28）。完全不需要 Unity。
 // 數值影響：`op=list`／`op=categories` 零寫入；其餘 op 寫 `channel_categories.json` 或 `rooms/<room>/channel.json`，
-//           驗證不過一律零寫入。封存**只是旗標**，⛔ 不刪、不搬任何訊息。
+//           驗證不過一律零寫入。封存 ＝ 把整個房間資料夾搬到 `ChatTavern/rooms_archive/`（取消封存搬回來），⛔ 不刪任何訊息。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -25,7 +25,7 @@ namespace SCP.Core.Cmd
             + "· `op=add-category --arg name=<分類> [--arg description=...]`：新增分類（同名不分大小寫會被擋）。\n"
             + "· `op=remove-category --arg name=<分類>`：刪除分類 —— 還有頻道在用就擋下並列出是哪些。\n"
             + "· `op=set-category --arg room=<房> --arg category=<分類>`：設頻道分類；`category` 留空 ＝ 未分類。分類要已在清單裡。\n"
-            + "· `op=archive`／`op=unarchive --arg room=<房>`：封存／取消封存（只動旗標，訊息原封不動）。";
+            + "· `op=archive`／`op=unarchive --arg room=<房>`：封存／取消封存 ＝ 把房間資料夾搬到 `rooms_archive/`／搬回 `rooms/`（目的地有同名資料夾就擋下）。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("channel --arg op=set-category --arg room=tavern --arg category=Main");
@@ -90,7 +90,7 @@ namespace SCP.Core.Cmd
             if (!SCP_TavernChannels.TrySetArchived(aRoot, aRoom, aWant, out string? aArcErr))
                 return SCP_CmdResult.Fail(2, "✗ 沒有寫入：" + aArcErr);
             bool aIs = SCP_TavernChannels.IsArchived(aRoot, aRoom);
-            var aOk = SCP_CmdResult.Success(aIs ? $"✅ `{aRoom}` 已封存（訊息原封不動；回讀）" : $"✅ `{aRoom}` 已取消封存（回讀）");
+            var aOk = SCP_CmdResult.Success(aIs ? $"✅ `{aRoom}` 已封存（資料夾已搬到 rooms_archive/；回讀）" : $"✅ `{aRoom}` 已取消封存（回讀）");
             aOk.AddValue("archived", aIs ? "1" : "0");
             return aOk;
         }
@@ -105,7 +105,7 @@ namespace SCP.Core.Cmd
             {
                 string aCat = c.Settings.Category.Length == 0 ? "（未分類）"
                     : c.CategoryMissing ? $"**{c.Settings.Category}**（⚠ 不在分類清單）" : c.Settings.Category;
-                aR.Lines.Add($"| `{c.Room}` | {aCat} | {(c.Settings.Archived ? "封存" : "")} | {c.LastSeq} | {(c.LastTs.Length > 0 ? c.LastTs : "—")} |");
+                aR.Lines.Add($"| `{c.Room}` | {aCat} | {(c.ArchiveConflict ? "**撞名**（rooms/ 與 rooms_archive/ 都有）" : c.Settings.Archived ? "封存" : "")} | {c.LastSeq} | {(c.LastTs.Length > 0 ? c.LastTs : "—")} |");
             }
             aR.AddValue("channels", aAll.Count.ToString(CultureInfo.InvariantCulture));
             aR.AddValue("archived", aAll.Count(c => c.Settings.Archived).ToString(CultureInfo.InvariantCulture));

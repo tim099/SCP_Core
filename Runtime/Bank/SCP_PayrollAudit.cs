@@ -302,7 +302,12 @@ namespace SCP.Core.Bank
             }
 
             var aSeenRefs = new HashSet<string>(StringComparer.Ordinal);
-            foreach (string aRoomDir in Directory.GetDirectories(aRooms))
+            // ⚠ 封存區（TASK-0318 `rooms_archive/`）也要掃：封存是把整個房搬過去，那一天的公告還是那一天的公告 ——
+            //   不掃的話，重稽核一個舊日子會把封存房裡的每則公告都判成「沒付錢」。
+            var aRoomDirs = new List<string>(Directory.GetDirectories(aRooms));
+            string aArchive = SCP.Core.Tavern.SCP_TavernChannels.ArchiveRoot(iDataRoot);
+            if (Directory.Exists(aArchive)) aRoomDirs.AddRange(Directory.GetDirectories(aArchive));
+            foreach (string aRoomDir in aRoomDirs)
             {
                 string aRoom = Path.GetFileName(aRoomDir);
                 string aDayDir = Path.Combine(aRoomDir, "messages", iDayKey);

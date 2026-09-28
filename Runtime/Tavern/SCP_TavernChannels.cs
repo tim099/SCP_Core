@@ -1,12 +1,15 @@
 // 區塊職責：**頻道（酒館房間）的管理資料** —— 頻道分類清單、每個頻道的分類與封存狀態（TASK-0318）。唯一讀寫層。
 // 物理意義：
 //   · 分類清單：`ChatTavern/channel_categories.json`（全域一份，例如 Main／TRPG）。**要先新增分類，頻道才能選它。**
-//   · 頻道設定：`ChatTavern/rooms/<room>/channel.json`（category／archived／archived_at）。
+//   · 頻道設定：`<房間資料夾>/channel.json`（category／archived_at）。
 //     ⛔ **不寫進房間的 `meta.json`**：Unity `UCL_ChatTavernIO.SaveRoomMeta` 用 JsonUtility 整份重寫那個檔，
 //       不認得的欄位會被靜默丟掉（createroom 補 owner_agent／mirror_kinds 時就會觸發）。
 //   · 頻道分類 ≠ 訊息分類：`tavern_routing.json` 看的是**每則訊息**的 category；這裡是**頻道本身**的分類，
 //     給 TASK-0316 Outbound 依頻道路由用（Tim 2026-09-28）。
-//   · 封存只是一個旗標：**不刪、不搬**任何訊息；顯示端預設不列出封存的頻道。
+//   · 封存 ＝ 把整個房間資料夾搬到 `ChatTavern/rooms_archive/<room>/`（Tim 2026-09-28）；**不刪**任何訊息，
+//     取消封存就搬回 `rooms/`。封存狀態＝**資料夾在哪一邊**（⛔ 不另存旗標：兩份真相會漂）。
+//     搬走之後 Unity 與 `SCP_TavernRead` 都看不到它（兩者都只列 `rooms/`）；寫入端（`tavern-write`）會擋下對封存房的發文
+//     —— 否則寫入端會在 `rooms/` 自己建一個同名新房、seq 還接著舊號。
 //   · 完全不依賴 Unity（Tim 2026-09-28：酒館之後全面遷移到 Senate）。
 // 數值影響：讀取零寫入。寫入走暫存檔再換檔，寫完回讀；驗證不過一律零寫入。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
@@ -28,11 +31,12 @@ namespace SCP.Core.Tavern
         public string Description = "";
     }
 
-    /// <summary>一個頻道的管理設定（`channel.json`）。沒有檔 ＝ 未分類、未封存。</summary>
+    /// <summary>一個頻道的管理設定（`channel.json`）。沒有檔 ＝ 未分類。</summary>
     public sealed class SCP_ChannelSettings
     {
         /// <summary>頻道分類名；空 ＝ 未分類。</summary>
         public string Category = "";
+        /// <summary>封存了嗎 ＝ 資料夾在 `rooms_archive/`（讀取時由位置決定，⛔ 不存進檔）。</summary>
         public bool Archived;
         /// <summary>封存時間（UTC ISO）；沒封存 ⇒ 空。</summary>
         public string ArchivedAt = "";
@@ -50,12 +54,15 @@ namespace SCP.Core.Tavern
         public SCP_ChannelSettings Settings = new SCP_ChannelSettings();
         /// <summary>分類有填、但不在分類清單裡（手改過檔或分類被改名）⇒ 顯示端要出聲。</summary>
         public bool CategoryMissing;
+        /// <summary>使用中與封存區都有同名房（取消封存會撞名）。</summary>
+        public bool ArchiveConflict;
     }
 
     public static class SCP_TavernChannels
     {
         public const string CategoriesFileName = "channel_categories.json";
         public const string SettingsFileName = "channel.json";
+        public const string ArchiveDirName = "rooms_archive";
         public const int SchemaVersion = 1;
         public const int MaxCategoryNameLength = 32;
 
@@ -63,8 +70,20 @@ namespace SCP.Core.Tavern
             => (Path.GetDirectoryName(SCP_TavernMsgIndex.RoomsRoot(iDataRoot)) ?? iDataRoot).Replace('\\', '/')
                + "/" + CategoriesFileName;
 
+        /// <summary>`ChatTavern/rooms_archive/`（與 `rooms/` 同層 —— ⛔ 不放進 `rooms/` 底下：Unity 會把它當成一個房）。</summary>
+        public static string ArchiveRoot(string iDataRoot)
+            => (Path.GetDirectoryName(SCP_TavernMsgIndex.RoomsRoot(iDataRoot)) ?? iDataRoot).Replace('\\', '/')
+               + "/" + ArchiveDirName;
+
+        static string ActiveDir(string iDataRoot, string iRoom) => SCP_TavernRooms.RoomDir(iDataRoot, iRoom);
+        static string ArchivedDir(string iDataRoot, string iRoom) => ArchiveRoot(iDataRoot) + "/" + iRoom;
+
+        /// <summary>這個頻道現在住的資料夾：使用中優先，否則封存區。</summary>
+        public static string ChannelDir(string iDataRoot, string iRoom)
+            => IsArchived(iDataRoot, iRoom) ? ArchivedDir(iDataRoot, iRoom) : ActiveDir(iDataRoot, iRoom);
+
         public static string SettingsPath(string iDataRoot, string iRoom)
-            => SCP_TavernRooms.RoomDir(iDataRoot, iRoom) + "/" + SettingsFileName;
+            => ChannelDir(iDataRoot, iRoom) + "/" + SettingsFileName;
 
         // ── 分類清單 ─────────────────────────────────────────────────
 
@@ -169,48 +188,64 @@ namespace SCP.Core.Tavern
 
         // ── 頻道設定 ─────────────────────────────────────────────────
 
+        static bool IsChannelDir(string iDir)
+            => File.Exists(Path.Combine(iDir, "meta.json")) || Directory.Exists(Path.Combine(iDir, "messages"));
+
+        static IEnumerable<string> ChannelDirsUnder(string iRoot)
+        {
+            if (!Directory.Exists(iRoot)) yield break;
+            foreach (string aDir in Directory.GetDirectories(iRoot))
+            {
+                string aId = Path.GetFileName(aDir);
+                if (aId.StartsWith("_", StringComparison.Ordinal) || aId.StartsWith(".", StringComparison.Ordinal)) continue;
+                if (IsChannelDir(aDir)) yield return aId;
+            }
+        }
+
         /// <summary>
-        /// 所有頻道（房間）id，照名稱排序。判準：`rooms/` 底下有 `meta.json` **或** `messages/` 的資料夾
+        /// 所有頻道 id（使用中＋封存），照名稱排序。判準：資料夾裡有 `meta.json` **或** `messages/`
         /// （兩種房間都存在：只有訊息沒有 meta 的舊房，也要能被管理）。
         /// </summary>
         public static List<string> EnumerateChannelIds(string iDataRoot)
         {
-            var aOut = new List<string>();
-            string aRoot = SCP_TavernMsgIndex.RoomsRoot(iDataRoot);
-            if (!Directory.Exists(aRoot)) return aOut;
-            foreach (string aDir in Directory.GetDirectories(aRoot))
-            {
-                string aId = Path.GetFileName(aDir);
-                if (aId.StartsWith("_", StringComparison.Ordinal) || aId.StartsWith(".", StringComparison.Ordinal)) continue;
-                if (File.Exists(Path.Combine(aDir, "meta.json")) || Directory.Exists(Path.Combine(aDir, "messages")))
-                    aOut.Add(aId);
-            }
+            var aSet = new HashSet<string>(ChannelDirsUnder(SCP_TavernMsgIndex.RoomsRoot(iDataRoot)), StringComparer.Ordinal);
+            foreach (string a in ChannelDirsUnder(ArchiveRoot(iDataRoot))) aSet.Add(a);
+            var aOut = aSet.ToList();
             aOut.Sort(StringComparer.OrdinalIgnoreCase);
             return aOut;
         }
 
         public static bool ChannelExists(string iDataRoot, string iRoom)
-            => IsSafeRoomId(iRoom) && EnumerateChannelIds(iDataRoot).Contains(iRoom);
+            => IsSafeRoomId(iRoom) && (IsChannelDir(ActiveDir(iDataRoot, iRoom)) || IsChannelDir(ArchivedDir(iDataRoot, iRoom)));
 
-        /// <summary>一個頻道的設定。檔不在或讀不了 ⇒ 預設（未分類、未封存）。</summary>
+        /// <summary>
+        /// 封存了嗎 ＝ **它住在 `rooms_archive/`、而 `rooms/` 底下沒有同名房**。
+        /// ⚠ 兩邊都有（封存後又有人在 rooms/ 長出同名房）⇒ 算使用中，並由 <see cref="HasArchiveConflict"/> 出聲。
+        /// </summary>
+        public static bool IsArchived(string iDataRoot, string iRoom)
+            => IsSafeRoomId(iRoom) && !IsChannelDir(ActiveDir(iDataRoot, iRoom)) && IsChannelDir(ArchivedDir(iDataRoot, iRoom));
+
+        /// <summary>使用中與封存區都有同名房 ⇒ 取消封存會撞名，顯示端要出聲。</summary>
+        public static bool HasArchiveConflict(string iDataRoot, string iRoom)
+            => IsSafeRoomId(iRoom) && IsChannelDir(ActiveDir(iDataRoot, iRoom)) && IsChannelDir(ArchivedDir(iDataRoot, iRoom));
+
+        /// <summary>一個頻道的設定。檔不在或讀不了 ⇒ 預設（未分類）。`Archived` 看資料夾位置，⛔ 不看檔內欄位。</summary>
         public static SCP_ChannelSettings LoadSettings(string iDataRoot, string iRoom)
         {
             var aOut = new SCP_ChannelSettings();
             if (!IsSafeRoomId(iRoom)) return aOut;
+            aOut.Archived = IsArchived(iDataRoot, iRoom);
             string aPath = SettingsPath(iDataRoot, iRoom);
             if (!File.Exists(aPath)) return aOut;
             try
             {
                 SCP_JsonData aJson = SCP_JsonParser.Parse(File.ReadAllText(aPath, Encoding.UTF8));
                 aOut.Category = aJson.GetString("category", "").Trim();
-                aOut.Archived = aJson.GetBool("archived", false);
-                aOut.ArchivedAt = aJson.GetString("archived_at", "");
+                aOut.ArchivedAt = aOut.Archived ? aJson.GetString("archived_at", "") : "";
             }
             catch (Exception) { /* 壞檔 ⇒ 當作沒設；下一次寫入會蓋回合法內容 */ }
             return aOut;
         }
-
-        public static bool IsArchived(string iDataRoot, string iRoom) => LoadSettings(iDataRoot, iRoom).Archived;
 
         /// <summary>設頻道分類。空字串 ⇒ 未分類。分類不在清單裡、或頻道不存在 ⇒ 拒絕、零寫入。</summary>
         public static bool TrySetCategory(string iDataRoot, string iRoom, string iCategory, out string? oError)
@@ -230,16 +265,37 @@ namespace SCP.Core.Tavern
             return WriteSettings(iDataRoot, iRoom, aSet, out oError);
         }
 
-        /// <summary>封存／取消封存。只動旗標，⛔ 不碰任何訊息。</summary>
+        /// <summary>
+        /// 封存 ＝ 把整個房間資料夾 `rooms/&lt;room&gt;/` **搬到** `rooms_archive/&lt;room&gt;/`（Tim 2026-09-28）；取消封存搬回來。
+        /// ⚠ 目的地已有同名資料夾 ⇒ 拒絕、零搬動（⛔ 不合併兩份訊息）。搬動是同一顆磁碟上的 rename，失敗就是原封不動。
+        /// ⚠ 有檔案被別的行程開著時 Windows 會拒絕搬 ⇒ 回報、零搬動。
+        /// </summary>
         public static bool TrySetArchived(string iDataRoot, string iRoom, bool iArchived, out string? oError)
         {
             oError = null;
             if (!ChannelExists(iDataRoot, iRoom)) { oError = $"沒有這個頻道：'{iRoom}'"; return false; }
+            string aActive = ActiveDir(iDataRoot, iRoom);
+            string aArchived = ArchivedDir(iDataRoot, iRoom);
+            string aFrom = iArchived ? aActive : aArchived;
+            string aTo = iArchived ? aArchived : aActive;
+            if (!IsChannelDir(aFrom))
+            { oError = iArchived ? $"'{iRoom}' 已經是封存的" : $"'{iRoom}' 本來就沒有封存"; return false; }
+            if (Directory.Exists(aTo))
+            { oError = $"目的地已經有同名資料夾（{aTo}）⇒ ⛔ 不合併，請先人工處理"; return false; }
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(aTo) ?? ".");
+                Directory.Move(aFrom, aTo);
+            }
+            catch (Exception e) { oError = $"搬不動（{aFrom} → {aTo}）：{e.Message}（原封不動）"; return false; }
+
+            if (IsArchived(iDataRoot, iRoom) != iArchived) { oError = $"搬完回讀對不上：'{iRoom}' 的位置不是預期的那一邊"; return false; }
+            // 記封存時間（寫在搬過去的那份 channel.json；寫不進去不回捲搬動 —— 位置才是真相，時間只是附註）
             SCP_ChannelSettings aSet = LoadSettings(iDataRoot, iRoom);
-            if (aSet.Archived == iArchived) { oError = iArchived ? $"'{iRoom}' 已經是封存的" : $"'{iRoom}' 本來就沒有封存"; return false; }
-            aSet.Archived = iArchived;
             aSet.ArchivedAt = iArchived ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture) : "";
-            return WriteSettings(iDataRoot, iRoom, aSet, out oError);
+            if (!WriteSettings(iDataRoot, iRoom, aSet, out string? aNoteErr))
+                oError = "已搬動，但封存時間沒記上：" + aNoteErr;
+            return true;
         }
 
         static bool WriteSettings(string iDataRoot, string iRoom, SCP_ChannelSettings iSet, out string? oError)
@@ -247,12 +303,11 @@ namespace SCP.Core.Tavern
             var aRoot = SCP_JsonData.NewObject();
             aRoot.Set("schema_version", SchemaVersion);
             aRoot.Set("category", iSet.Category);
-            aRoot.Set("archived", iSet.Archived);
             aRoot.Set("archived_at", iSet.ArchivedAt);
             string aPath = SettingsPath(iDataRoot, iRoom);
             if (!WriteJson(aPath, aRoot, out oError)) return false;
             SCP_ChannelSettings aBack = LoadSettings(iDataRoot, iRoom);
-            if (aBack.Category != iSet.Category || aBack.Archived != iSet.Archived)
+            if (aBack.Category != iSet.Category)
             { oError = $"寫完回讀對不上（{aPath}）"; return false; }
             return true;
         }
@@ -268,24 +323,53 @@ namespace SCP.Core.Tavern
             {
                 SCP_ChannelSettings aSet = LoadSettings(iDataRoot, aRoom);
                 if (aSet.Archived && !iIncludeArchived) continue;
+                string aDir = ChannelDir(iDataRoot, aRoom);
                 var aInfo = new SCP_ChannelInfo
                 {
                     Room = aRoom,
-                    Name = SCP_TavernRooms.LoadRoomMeta(iDataRoot, aRoom)?.Name ?? "",
+                    Name = ReadMetaName(aDir),
                     Settings = aSet,
                     CategoryMissing = aSet.Category.Length > 0 && !aCatNames.Contains(aSet.Category),
+                    ArchiveConflict = HasArchiveConflict(iDataRoot, aRoom),
                 };
-                // ⚠ 最新 seq 取**最後一則訊息本身**，⛔ 不讀 `_seq.txt` —— 2026-09-28 實測 59 房只有 5 房有那個檔
-                //   （其餘由索引／訊息檔決定），讀它的話 54 房全印 0，跟「沒有訊息」同形。
-                try
-                {
-                    List<SCP_TavernMessage> aLast = SCP_TavernRead.Tail(iDataRoot, aRoom, 1);
-                    if (aLast.Count > 0) { aInfo.LastSeq = aLast[aLast.Count - 1].Seq; aInfo.LastTs = aLast[aLast.Count - 1].Ts; }
-                }
-                catch (Exception) { /* 讀不到最後一則 ⇒ seq 0、時間留空（顯示端印「—」），不擋整張清單 */ }
+                ReadLast(aDir, out aInfo.LastSeq, out aInfo.LastTs);
                 aOut.Add(aInfo);
             }
             return aOut;
+        }
+
+        /// <summary>
+        /// 最後一則的 seq 與 ts：`messages/` 下最新日期夾裡最大的 `&lt;seq&gt;.json`。
+        /// ⚠ 取訊息檔本身，⛔ 不讀 `_seq.txt` —— 2026-09-28 實測 59 房只有 5 房有那個檔，
+        ///   讀它的話 54 房全印 0，跟「沒有訊息」同形。
+        /// ⚠ 自己掃目錄而不走 `SCP_TavernRead`：那一層只認 `rooms/`，封存區的房它讀不到。
+        /// </summary>
+        static void ReadLast(string iRoomDir, out int oSeq, out string oTs)
+        {
+            oSeq = 0; oTs = "";
+            string aMsgs = Path.Combine(iRoomDir, "messages");
+            if (!Directory.Exists(aMsgs)) return;
+            try
+            {
+                foreach (string aDay in Directory.GetDirectories(aMsgs).OrderByDescending(d => Path.GetFileName(d), StringComparer.Ordinal))
+                {
+                    string? aFile = Directory.GetFiles(aDay, "*.json")
+                        .OrderByDescending(f => Path.GetFileNameWithoutExtension(f), StringComparer.Ordinal).FirstOrDefault();
+                    if (aFile == null) continue;
+                    int.TryParse(Path.GetFileNameWithoutExtension(aFile), NumberStyles.Integer, CultureInfo.InvariantCulture, out oSeq);
+                    oTs = SCP_JsonParser.Parse(File.ReadAllText(aFile, Encoding.UTF8)).GetString("ts", "");
+                    return;
+                }
+            }
+            catch (Exception) { /* 讀不到最後一則 ⇒ 時間留空（顯示端印「—」），不擋整張清單 */ }
+        }
+
+        static string ReadMetaName(string iRoomDir)
+        {
+            string aPath = Path.Combine(iRoomDir, "meta.json");
+            if (!File.Exists(aPath)) return "";
+            try { return SCP_JsonParser.Parse(File.ReadAllText(aPath, Encoding.UTF8)).GetString("name", ""); }
+            catch (Exception) { return ""; }
         }
 
         // ── 小工具 ───────────────────────────────────────────────────

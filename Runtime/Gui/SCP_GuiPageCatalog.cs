@@ -56,8 +56,11 @@ namespace SCP.Core.Gui
         public string TypeFullName { get; }
 
         /// <summary>
-        /// 下拉要顯示的字 ＝ **`Key(TypeName)`**（Tim 2026-09-22 拍板）；
-        /// `Key` 與 `TypeName` 相等時只印 `TypeName`。
+        /// 下拉要顯示的字 ＝ **`Key(Title)`**（Tim 2026-09-28：「參考按鈕，顯示 bank(銀行後台(新銀行))」）；
+        /// 頁面沒有標題（或標題就是 key）時退回舊規則 **`Key(TypeName)`**（Tim 2026-09-22），
+        /// `Key` 與 `TypeName` 也相等時只印 `TypeName`。
+        /// <para>⚠ 2026-09-28 改版：下面「標題不在標籤裡」那段是 09-22 的取捨，已被推翻 ——
+        /// key 仍然排在最前面（看到的第一個字仍然打得進指令），括號裡換成人讀得懂的標題。</para>
         /// <para>⭐ 判準是「**看到的字就是能打進指令的字**」—— key 才是 `--page` 與 session `nav` 吃的那個，
         /// 所以它排在前面；型別名跟在後面，因為那是「去哪個檔案找它」。</para>
         /// <para>⚠ 標題（`Title`）因此**不在標籤裡** —— 那是刻意的取捨：標題好讀，
@@ -70,6 +73,8 @@ namespace SCP.Core.Gui
         {
             get
             {
+                if (Title.Length > 0 && !string.Equals(Title, Key, StringComparison.Ordinal))
+                    return Key + "(" + Title + ")";
                 if (TypeName.Length == 0) return Key;                      // 探測不到型別（理論上不會）
                 return string.Equals(Key, TypeName, StringComparison.Ordinal) ? TypeName
                                                                               : Key + "(" + TypeName + ")";
