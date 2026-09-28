@@ -93,7 +93,10 @@ namespace SCP.Core.Discord
         {
             var aOut = new List<InboundAttachment>();
             if (!iAttachments.IsArray) return aOut;
-            string aRepo = RepoRootOf(iDataRoot, iRepoRoot);
+            // ⛔ 不用呼叫端給的 repo 根：Server 那條路給的是 **Senate 自己的 repo**（`D:/Unity/Senate`），不是資料所在的專案
+            //   ⇒ refs 會變成絕對路徑（2026-09-28 實測 seq 22520）。refs 慣例是「擁有這棵 AgentCommands 的專案」的相對路徑
+            //   ⇒ 一律從資料根往上推（同 `tavern-write` 推 @ 通知用的 repo 根）。
+            string aRepo = RepoRootOf(iDataRoot, "");
             string aDir = Path.Combine(MediaDir(iDataRoot), DateOfSnowflake(iMsgId));
             for (int i = 0; i < iAttachments.Count; i++)
             {
@@ -107,7 +110,6 @@ namespace SCP.Core.Discord
                 aOut.Add(r);
                 string aUrl = a.GetString("url", "");
                 string aAttId = a.GetString("id", i.ToString(CultureInfo.InvariantCulture));
-                string aType = a.GetString("content_type", "");
                 if (aUrl.Length == 0) { r.Note = "沒有下載網址"; continue; }
                 if (r.Size > MaxDownloadBytes) { r.Note = $"過大未下載（{FormatSize(r.Size)}，上限 {FormatSize(MaxDownloadBytes)}）"; continue; }
                 if (!iDownload) { r.Note = "偷看模式不下載"; continue; }
@@ -124,11 +126,8 @@ namespace SCP.Core.Discord
                         File.WriteAllBytes(aLocal + ".tmp", aData);
                         SCP.Core.Io.SCP_TextFile.ReplaceOrMove(aLocal + ".tmp", aLocal);
                     }
-                    r.Ref = new SCP_TavernRef
-                    {
-                        Path = MakeRepoRelative(aRepo, aLocal),
-                        Label = aType.Length == 0 ? r.FileName : $"{r.FileName} ({aType})",
-                    };
+                    // 標籤只放檔名：Discord 回報的 content_type 不可信（實測 22520：標 image/webp、位元組是 PNG）
+                    r.Ref = new SCP_TavernRef { Path = MakeRepoRelative(aRepo, aLocal), Label = r.FileName };
                 }
                 catch (Exception e) { r.Note = "落地失敗：" + e.GetType().Name + "：" + e.Message; }
             }
