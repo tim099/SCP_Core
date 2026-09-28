@@ -7,6 +7,9 @@
 //             ④ kind=system，或 sender_id 是 system／以 `_` 開頭 ⇒ persona `system`
 //             ⑤ `sender_id` 剛好是一個信件夾名            ⇒ 那個 persona
 //             ⑥ 其餘                                        ⇒ **不明**：名字用 sender_name（沒有就 sender_id），沒有頭像
+//           顯示名（Tim 2026-09-28）：persona 的訊息印 **`Agent@persona`** —— Agent 取自訊息自己的 `sender_id`
+//             （寫入端填的是銀行帳號 id：Myth／Zeta／claude-code…）；sender_id 空、等於 persona 本身、
+//             或是系統身分（tavern-keeper／system）⇒ 只印 persona。⛔ 不去別處查 agent（訊息沒寫就是沒有）。
 //           頭像與顏色**只看那個 persona 自己的資料夾**（`SCP_PersonaDisplay`）—— ⛔ 不借 agent 的、不讀 UCL_Asset。
 // 數值影響：純讀。頭像路徑由顯示端自己載（本檔不碰圖檔內容）。
 // ⚠ 方言限制：C# 9 / netstandard2.1。
@@ -36,6 +39,9 @@ namespace SCP.Core.Tavern
         public SCP_TavernSenderKind SenderKind;
         /// <summary>判成的 persona（External／Unknown 時是空字串）。</summary>
         public string Persona = "";
+        /// <summary>發文的 Agent（取自訊息的 `sender_id`）；系統身分或訊息沒寫 ⇒ 空。</summary>
+        public string Agent = "";
+        /// <summary>顯示名：persona 訊息是 `Agent@persona`（沒有 Agent 時就是 persona）；外部／不明見檔頭。</summary>
         public string Name = "";
         /// <summary>頭像絕對路徑；空 ＝ 畫預設圖。</summary>
         public string AvatarPath = "";
@@ -74,7 +80,8 @@ namespace SCP.Core.Tavern
                 SCP_PersonaDisplayInfo aInfo = SCP_PersonaDisplay.Get(iLettersRoot ?? "", aPersona);
                 aRow.SenderKind = SCP_TavernSenderKind.Persona;
                 aRow.Persona = aPersona;
-                aRow.Name = aInfo.DisplayName;
+                aRow.Agent = AgentOf(aId, aPersona);
+                aRow.Name = aRow.Agent.Length > 0 ? aRow.Agent + "@" + aInfo.DisplayName : aInfo.DisplayName;
                 aRow.AvatarPath = aInfo.AvatarPath;
                 aRow.ColorHex = aInfo.ColorHex;
             }
@@ -95,6 +102,17 @@ namespace SCP.Core.Tavern
 
         public static List<SCP_TavernDisplayRow> ResolveAll(string iLettersRoot, IEnumerable<SCP_TavernMessage> iMsgs)
             => iMsgs.Select(m => Resolve(iLettersRoot, m)).ToList();
+
+        /// <summary>sender_id 能不能當 Agent 印：空、跟 persona 同名、系統身分、內部 id ⇒ 不印。</summary>
+        static string AgentOf(string iSenderId, string iPersona)
+        {
+            if (iSenderId.Length == 0) return "";
+            if (string.Equals(iSenderId, iPersona, StringComparison.OrdinalIgnoreCase)) return "";
+            if (iPersona == SCP_PersonaDisplay.TavernKeeperPersona || iPersona == SCP_PersonaDisplay.SystemPersona) return "";
+            if (iSenderId == SCP_PersonaDisplay.TavernKeeperPersona || iSenderId == SCP_PersonaDisplay.SystemPersona
+                || iSenderId.StartsWith("_", StringComparison.Ordinal)) return "";
+            return iSenderId;
+        }
 
         static string FormatLocal(string iTs)
         {
