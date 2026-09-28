@@ -78,6 +78,7 @@ namespace SCP.Core.Cmd
                 aR.Lines.Add("- " + a.HeadLine());
                 aR.Lines.Add("  · " + a.Why);
                 aR.Lines.Add("  · 內訳：沒有 persona **" + a.WithoutPersona + "**（結構上不計酬）"
+                             + "／非真實 agent **" + a.NotRealAgent + "**（alter／bot／system，同發薪那側的判準）"
                              + "／解析不到帳號 **" + a.Unresolvable + "**"
                              + (a.ResolverAvailable ? "（刻意不計酬）" : " ⚠ **未扣**（沒給 letters_root/region）")
                              + "／帳上 work_post **" + a.LedgerWorkPostEntries + "** 筆"

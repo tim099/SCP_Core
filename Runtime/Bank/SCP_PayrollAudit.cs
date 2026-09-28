@@ -50,6 +50,11 @@ namespace SCP.Core.Bank
         public string DayKey = "";
         public int Messages;                 // 該日全部訊息
         public int WithoutPersona;           // 沒有 sender_persona ⇒ 結構上不計酬
+        // 有 persona、而 `sender_id` 不是真實 agent（alter／bot／system／discord 中繼）⇒ 結構上不計酬。
+        // 🩸 2026-09-27 差 2 就是這一格：demo#213／215 的 sender_id＝`Template-alter`，發薪那側照規則沒付，
+        //   而本層只看 persona ⇒ 報成缺口。⚠ 判準**直接呼叫** `SCP_TavernPayroll.IsRealAgentSender` ——
+        //   ⛔ 抄一份到這裡就是第二份規則，而兩份漂開時差集會安靜地錯。
+        public int NotRealAgent;
         public int Unresolvable;             // 有 persona 但解析不到帳號 ⇒ 成因② 合法跳過
         public bool ResolverAvailable;       // 拿不到 lettersRoot/region 時＝false ⇒ Unresolvable 未扣
         public int Candidates;               // 應該要領到的那些則
@@ -344,11 +349,12 @@ namespace SCP.Core.Bank
                     string aRef = SourceRef(aRoom, aSeq);
                     aSeenRefs.Add(aRef);
 
-                    string aPersona = "", aCategory = "(unset)";
+                    string aPersona = "", aSenderId = "", aCategory = "(unset)";
                     try
                     {
                         SCP_JsonData d = SCP_JsonParser.Parse(File.ReadAllText(aFile));
                         aPersona = d.GetString("sender_persona", "").Trim();
+                        aSenderId = d.GetString("sender_id", "").Trim();
                         SCP_JsonData aMeta = d["meta"];
                         if (aMeta.Exists && !aMeta.IsNull)
                         {
@@ -364,6 +370,10 @@ namespace SCP.Core.Bank
                     }
 
                     if (aPersona.Length == 0) { r.WithoutPersona++; continue; }
+                    // ⚠ 只在 `sender_id` **有值**時判：沒有那個欄位的訊息本層沒量過它長什麼樣，
+                    //   ⛔ 不把「欄位不在」當成「不是真實 agent」（那會把一整類靜默扣掉）。
+                    if (aSenderId.Length > 0 && !SCP.Core.Tavern.SCP_TavernPayroll.IsRealAgentSender(aSenderId))
+                    { r.NotRealAgent++; continue; }
 
                     if (r.ResolverAvailable)
                     {
