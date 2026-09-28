@@ -31,7 +31,9 @@ namespace SCP.Core.Cmd
             + "· `op=bind --arg category=<分類> --arg ids=<id1,id2…>`（整份取代；空＝不送）｜`op=import-main`（notify_config 的 main ⇒ 綁 Main）\n"
             + "· `op=avatar-template --arg template=<含 {persona} 的 https 網址>`（空＝預設）｜`op=avatars [--arg check=1]`（各 persona 的頭像網址；check=1 逐一 GET）\n"
             + "· `op=backfill --arg room=<房> [--arg from_seq=1] [--arg to_seq=0] [--arg confirm=1]`：把舊訊息補送到這個房的分類綁的 webhook。\n"
-            + "  預設只試算；`confirm=1` 才發。只送 chat、不回送 Discord 轉進來的、⛔ 不 @ 任何人；游標在 `discord/discord_backfill_state.json`，重跑從斷點接。";
+            + "  預設只試算；`confirm=1` 才發。只送 chat、不回送 Discord 轉進來的、⛔ 不 @ 任何人；游標在 `discord/discord_backfill_state.json`，重跑從斷點接。\n"
+            + "· `op=inbound-peek`：每個接了的 Discord 頻道實打一次 API，列出「現在開 Inbound 會收進哪幾則／略過哪幾則」——⛔ 不寫酒館、不動游標。\n"
+            + "· `op=inbound-status`：每個頻道的游標、最後輪詢時間、錯誤、累計收進幾則（Inbound 真的在跑時看這個）。";
 
         public override string Example => SCP_CmdRegistry.Invoke("discord-relay --arg op=status");
 
@@ -42,7 +44,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("op", "做什麼", iDefault: "status", iChoices: new[]
             {
                 "status", "switch", "webhooks", "webhook-add", "webhook-verify", "webhook-enable", "webhook-remove",
-                "bind", "import-main", "avatar-template", "avatars", "backfill",
+                "bind", "import-main", "avatar-template", "avatars", "backfill", "inbound-peek", "inbound-status",
             }),
             new SCP_CmdArgSpec("side", "op=switch：inbound／outbound", iDefault: "", iChoices: new[] { "", "inbound", "outbound" }),
             new SCP_CmdArgSpec("enabled", "op=switch／webhook-enable：1＝開", iDefault: "1", iChoices: new[] { "0", "1" }),
@@ -124,6 +126,8 @@ namespace SCP.Core.Cmd
                     return SCP_CmdResult.Success("✅ 頭像網址範本 ＝ " + SCP_DiscordConfigStore.Load(aRoot).AvatarUrlTemplate);
                 }
                 case "avatars": return Avatars(aRoot, aLetters, iArgs.Get("check").Trim() == "1");
+                case "inbound-peek": return InboundPeek(aRoot);
+                case "inbound-status": return InboundStatus(aRoot);
                 case "backfill":
                 {
                     string aRoom = iArgs.Get("room").Trim();
@@ -144,6 +148,45 @@ namespace SCP.Core.Cmd
                 }
                 default: return Status(aRoot);
             }
+        }
+
+        static SCP_CmdResult InboundPeek(string iRoot)
+        {
+            List<SCP_DiscordRoute> aRoutes = SCP_DiscordInboundConfig.LoadRoutes(iRoot, out string? aErr).Where(r => r.Enabled).ToList();
+            if (aErr != null) return SCP_CmdResult.Fail(1, "✗ 對應表讀不了：" + aErr);
+            SCP_DiscordWhitelist aWl = SCP_DiscordInboundConfig.LoadWhitelist(iRoot);
+            var aR = SCP_CmdResult.Success($"# Inbound 偷看（{aRoutes.Count} 個頻道；白名單{(aWl.Enabled ? "啟用 " + aWl.Users.Count + " 人" : "停用")}）—— ⛔ 不寫、不動游標");
+            int aTotal = 0;
+            foreach (SCP_DiscordRoute rt in aRoutes)
+            {
+                SCP_DiscordPollResult p = SCP_DiscordInbound.PollOnce(iRoot, "", rt, aWl, iPeek: true);
+                aR.Lines.Add($"## {rt.Label}（{rt.ChannelId}）→ {rt.TavernRoom}");
+                if (!p.Ok) { aR.Lines.Add("- ✗ " + p.Error); continue; }
+                if (p.CursorNote.Length > 0) aR.Lines.Add("- 游標：" + p.CursorNote);
+                if (p.Baseline) { aR.Lines.Add("- 沒有游標 ⇒ 開了之後從現在開始（歷史不回放）"); continue; }
+                aR.Lines.Add($"- 會收進 {p.Items.Count} 則、略過 {p.Skipped.Count} 則");
+                foreach (SCP_DiscordInboundItem it in p.Items) aR.Lines.Add("  - 收：" + it.Preview);
+                foreach (var g in p.Skipped.GroupBy(s => s.Substring(s.IndexOf(':') + 1))) aR.Lines.Add($"  - 略過：{g.Key} ×{g.Count()}");
+                aTotal += p.Items.Count;
+            }
+            aR.AddValue("would_relay", aTotal.ToString(CultureInfo.InvariantCulture));
+            return aR;
+        }
+
+        static SCP_CmdResult InboundStatus(string iRoot)
+        {
+            SCP.Core.Json.SCP_JsonData s = SCP_DiscordInbound.ReadState(iRoot);
+            SCP_DiscordConfig c = SCP_DiscordConfigStore.Load(iRoot);
+            var aR = SCP_CmdResult.Success($"# Inbound 狀態（開關：{(c.InboundEnabled ? "開" : "關")}）");
+            foreach (SCP_DiscordRoute rt in SCP_DiscordInboundConfig.LoadRoutes(iRoot, out _))
+            {
+                SCP.Core.Json.SCP_JsonData ch = s["channels"][rt.ChannelId];
+                aR.Lines.Add($"- {rt.Label}（{rt.ChannelId}）→ {rt.TavernRoom}{(rt.Enabled ? "" : "（關）")}：游標 {ch.GetString("last_message_id", "（沒有）")}"
+                             + $"　最後輪詢 {ch.GetString("last_poll_at", "-")}　累計 {ch.GetLong("relayed_total", 0)} 則"
+                             + (ch.GetString("last_error", "").Length > 0 ? "　⚠ " + ch.GetString("last_error", "") : "")
+                             + (ch.GetString("note", "").Length > 0 ? "　（" + ch.GetString("note", "") + "）" : ""));
+            }
+            return aR;
         }
 
         static SCP_CmdResult Status(string iRoot)

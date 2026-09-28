@@ -197,6 +197,10 @@ namespace SCP.Core.Discord
             return true;
         }
 
+        /// <summary>給同一層（Inbound 輪詢）用的 Bot API GET。⛔ token 不離開本檔。</summary>
+        public static bool TryGetJson(string iDataRoot, string iPath, out SCP_JsonData oJson, out int oStatus, out string? oError)
+            => TryApi(iDataRoot, iPath, out oJson, out oStatus, out oError);
+
         /// <summary>保險：萬一宿主把回應原文帶進錯誤訊息，也把 token 塗掉。</summary>
         static string Scrub(string iText, string iToken)
             => iToken.Length > 0 ? iText.Replace(iToken, "***") : iText;
