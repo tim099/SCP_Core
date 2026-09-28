@@ -151,6 +151,12 @@ namespace SCP.Core.Discord
             return File.Exists(s.PlainPath) ? ReadPlain(s.PlainPath) : "";
         }
 
+        /// <summary>
+        /// ⚠ **唯一會把 token 交出本檔的口**：只給宿主的 Gateway 連線（IDENTIFY 要帶 token 本身；TASK-0316 ④）。
+        /// ⛔ 呼叫端不得把回傳值寫進 log、狀態檔、錯誤訊息。其他需求一律走 `TryGetJson`。
+        /// </summary>
+        public static string ResolveTokenForHost(string iDataRoot) => ResolveToken(iDataRoot);
+
         static string ReadPlain(string iPath)
         {
             try { return File.ReadAllText(iPath, Encoding.UTF8).Trim().TrimStart('﻿'); }
