@@ -46,6 +46,7 @@ namespace SCP.Core.Cmd
         {
             string aRoot = iArgs.Get("data_root").Trim();
             if (!System.IO.Directory.Exists(aRoot)) return SCP_CmdResult.Fail(1, $"✗ 資料根不存在：{aRoot}");
+            SCP_TavernChannels.EnsureMainChannel(aRoot, out _);   // 主頻道不存在就建（Tim 2026-09-28）
             string aOp = iArgs.Get("op").Trim();
             string aRoom = iArgs.Get("room").Trim();
 

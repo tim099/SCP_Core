@@ -63,6 +63,45 @@ namespace SCP.Core.Tavern
         public const string CategoriesFileName = "channel_categories.json";
         public const string SettingsFileName = "channel.json";
         public const string ArchiveDirName = "rooms_archive";
+
+        /// <summary>
+        /// **主頻道**（Tim 2026-09-28）：程式裡有特殊地位 —— 不存在就自動建立（<see cref="EnsureMainChannel"/>）、
+        /// ⛔ 不能被封存；新接的 Discord 頻道預設接到它。
+        /// </summary>
+        public const string MainChannelId = "tavern";
+        public const string MainChannelName = "酒館主廳 (Tavern)";
+
+        /// <summary>
+        /// 確保主頻道存在：使用中 ⇒ 什麼都不做；被人搬進封存區 ⇒ 搬回來；都沒有 ⇒ 建 `rooms/tavern/meta.json`。
+        /// <paramref name="oCreated"/>＝這一次有沒有動到磁碟。
+        /// </summary>
+        public static bool EnsureMainChannel(string iDataRoot, out bool oCreated)
+        {
+            oCreated = false;
+            string aActive = ActiveDir(iDataRoot, MainChannelId);
+            if (IsChannelDir(aActive)) return true;
+            try
+            {
+                if (IsChannelDir(ArchivedDir(iDataRoot, MainChannelId)) && !Directory.Exists(aActive))
+                {
+                    Directory.Move(ArchivedDir(iDataRoot, MainChannelId), aActive);   // 主頻道不該在封存區（手動搬的）
+                    oCreated = true;
+                    return true;
+                }
+                Directory.CreateDirectory(aActive);
+                var j = SCP_JsonData.NewObject();
+                j.Set("id", MainChannelId);
+                j.Set("name", MainChannelName);
+                j.Set("description", "主頻道（Senate 自動建立）。沒指定主題的對話都進這裡。");
+                j.Set("created_at", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
+                j.Set("disable_quest_mirror", false);
+
+                if (!WriteJson(aActive + "/meta.json", j, out _)) return false;
+                oCreated = true;
+                return IsChannelDir(aActive);
+            }
+            catch (Exception) { return false; }
+        }
         public const int SchemaVersion = 1;
         public const int MaxCategoryNameLength = 32;
 
@@ -274,6 +313,7 @@ namespace SCP.Core.Tavern
         {
             oError = null;
             if (!ChannelExists(iDataRoot, iRoom)) { oError = $"沒有這個頻道：'{iRoom}'"; return false; }
+            if (iArchived && iRoom == MainChannelId) { oError = $"'{MainChannelId}' 是主頻道 ⇒ ⛔ 不能封存"; return false; }
             string aActive = ActiveDir(iDataRoot, iRoom);
             string aArchived = ArchivedDir(iDataRoot, iRoom);
             string aFrom = iArchived ? aActive : aArchived;

@@ -36,6 +36,19 @@ namespace SCP.Core.Market
     }
 
     /// <summary>
+    /// **帶標頭、回狀態碼**的抓取（TASK-0319：Discord API 要 `Authorization: Bot …`，而且 401／403 要分得出來）。
+    /// ⚠ 是**可選**介面：宿主的抓取器有實作才用得到（`SCP_HttpFetch.Current as ISCP_HttpHeaderFetcher`）；
+    ///   沒實作 ⇒ 呼叫端要明說「本宿主不能帶標頭」，⛔ 不退回不帶標頭的 GET（那只會換來一個看起來像權限問題的 401）。
+    /// ⚠ 標頭值可能是憑證 ⇒ 實作端 ⛔ 不得把標頭寫進錯誤訊息或 log。
+    /// </summary>
+    public interface ISCP_HttpHeaderFetcher : ISCP_HttpFetcher
+    {
+        /// <summary>GET 並帶標頭。<paramref name="oStatus"/>＝HTTP 狀態碼（沒拿到回應 ⇒ 0）。非 2xx 回 false。</summary>
+        bool TryGetText(string iUrl, IReadOnlyDictionary<string, string> iHeaders, int iTimeoutSec,
+                        out string oBody, out int oStatus, out string? oError);
+    }
+
+    /// <summary>
     /// 全域抓取器插座。宿主（Senate CLI／Server）啟動時塞一個進來；
     /// Unity 那側**刻意不塞** ⇒ `op=sync` 會明說「本宿主沒有抓取器」而不是靜默沒事。
     /// </summary>
