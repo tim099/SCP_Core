@@ -17,10 +17,12 @@
 //   ⇒ 偵測成因的守衛，明天會被第四種成因繞過去。差集不會 —— 它量的是**結果**。
 //
 // ⚠ 射程（本層量不到的，⛔ 不假裝量得到）：
-//   · **category 計不計酬的規則在 Unity 的 routing 設定裡**，本層讀不到
-//     ⇒ 分不出「這一類本來就不計酬」與「這一類漏發了」。
-//     ⇒ 所以差集**按 category 分組印出來**，讓看的人自己判斷；
-//       而「某一類整天全缺」與「全部都缺」長得不一樣 —— 後者才是警報。
+//   · category 計不計酬 —— ✅ 2026-09-28 起**量得到**：判準自 TASK-0296 搬到資料根 `tavern_routing.json`，
+//     本層逐則問發薪那支純函式 `SCP_TavernPayroll.Plan`「這則有沒有 work_post」，規則不付的先扣掉（`NotPaidByRule`）。
+//     🩸 這一格原本寫「規則在 Unity 的 routing 設定裡，本層讀不到」—— 寫下時為真，搬家之後沒有人回來改，
+//       於是 09-25（chitchat 探針）與 09-27（alter 探針）各報一次假缺口。
+//     ⚠ 判準讀不了時 Plan 會帶 `A：` 警告 ⇒ 那些則**不扣**、照舊進候選（量不到 ≠ 不付）。
+//     差集仍按 category 分組印出來 —— 剩下的才是規則說該付而帳上沒有的。
 //   · persona 解析不到的那些則**先扣掉**（那是②，合法跳過）——
 //     扣得掉的前提是本層拿得到 `lettersRoot` 與 `region`；拿不到就說「未扣」，⛔ 不當成 0。
 #nullable enable
@@ -29,6 +31,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using SCP.Core.Json;
+using SCP.Core.Tavern;
 
 namespace SCP.Core.Bank
 {
@@ -50,11 +53,13 @@ namespace SCP.Core.Bank
         public string DayKey = "";
         public int Messages;                 // 該日全部訊息
         public int WithoutPersona;           // 沒有 sender_persona ⇒ 結構上不計酬
-        // 有 persona、而 `sender_id` 不是真實 agent（alter／bot／system／discord 中繼）⇒ 結構上不計酬。
-        // 🩸 2026-09-27 差 2 就是這一格：demo#213／215 的 sender_id＝`Template-alter`，發薪那側照規則沒付，
-        //   而本層只看 persona ⇒ 報成缺口。⚠ 判準**直接呼叫** `SCP_TavernPayroll.IsRealAgentSender` ——
+        // 有 persona、而**發薪規則本來就不付底薪**的（非真實 agent／工具廣播／不計酬頻道／出資方）。
+        // 🩸 2026-09-27 差 2：demo#213／215 的 sender_id＝`Template-alter`；2026-09-25 差 2：demo#196／201
+        //   的 category＝chitchat（`is_paid_post=false`）。兩天發薪那側都照規則沒付，而本層只看 persona ⇒ 報成缺口。
+        // ⚠ 判準**直接問** `SCP_TavernPayroll.Plan`（發薪真正跑的那支純函式）有沒有 `work_post` 項 ——
         //   ⛔ 抄一份到這裡就是第二份規則，而兩份漂開時差集會安靜地錯。
-        public int NotRealAgent;
+        public int NotPaidByRule;
+        public readonly Dictionary<string, int> NotPaidByRuleReasons = new Dictionary<string, int>(StringComparer.Ordinal);
         public int Unresolvable;             // 有 persona 但解析不到帳號 ⇒ 成因② 合法跳過
         public bool ResolverAvailable;       // 拿不到 lettersRoot/region 時＝false ⇒ Unresolvable 未扣
         public int Candidates;               // 應該要領到的那些則
@@ -349,12 +354,17 @@ namespace SCP.Core.Bank
                     string aRef = SourceRef(aRoom, aSeq);
                     aSeenRefs.Add(aRef);
 
-                    string aPersona = "", aSenderId = "", aCategory = "(unset)";
+                    string aPersona = "", aCategory = "(unset)";
+                    SCP_TavernPayPlan? aPlan = null;
+                    string aSenderId = "";
                     try
                     {
                         SCP_JsonData d = SCP_JsonParser.Parse(File.ReadAllText(aFile));
                         aPersona = d.GetString("sender_persona", "").Trim();
-                        aSenderId = d.GetString("sender_id", "").Trim();
+                        // ⚠ 訊息形狀走酒館那側的**同一支**對應（`FromJson`），發薪看到的就是這個形狀。
+                        SCP_TavernMessage aMsg = SCP_TavernRead.FromJson(d, aRoom, aSeq, aFile);
+                        aSenderId = aMsg.SenderId;
+                        aPlan = SCP_TavernPayroll.Plan(iDataRoot, SCP_TavernPayInput.From(aMsg, aRoom, aSeq));
                         SCP_JsonData aMeta = d["meta"];
                         if (aMeta.Exists && !aMeta.IsNull)
                         {
@@ -370,10 +380,15 @@ namespace SCP.Core.Bank
                     }
 
                     if (aPersona.Length == 0) { r.WithoutPersona++; continue; }
-                    // ⚠ 只在 `sender_id` **有值**時判：沒有那個欄位的訊息本層沒量過它長什麼樣，
-                    //   ⛔ 不把「欄位不在」當成「不是真實 agent」（那會把一整類靜默扣掉）。
-                    if (aSenderId.Length > 0 && !SCP.Core.Tavern.SCP_TavernPayroll.IsRealAgentSender(aSenderId))
-                    { r.NotRealAgent++; continue; }
+                    // 發薪規則說「這則本來就不付底薪」⇒ 不進候選。
+                    // ⚠ 只在規則**明確判不付**時扣：底薪那段有 `A：` 開頭的 Warning（判準讀不了／帳號解析不到）
+                    //   ⇒ 那是「量不到」不是「不付」，⛔ 不扣，照舊進候選（讀不了的判準不准把差集靜默壓成 0）。
+                    if (aPlan != null && !HasWorkPost(aPlan) && !HasBaseRewardWarning(aPlan))
+                    {
+                        r.NotPaidByRule++;
+                        Bump(r.NotPaidByRuleReasons, NotPaidReason(aPlan, aSenderId));
+                        continue;
+                    }
 
                     if (r.ResolverAvailable)
                     {
@@ -492,7 +507,7 @@ namespace SCP.Core.Bank
             r.Why = "應計酬 " + r.Candidates + " 則，帳上 " + r.Paid
                   + (r.Settled > 0 ? "（另有 " + r.Settled + " 則走請款結清，已扣掉）" : "")
                   + " ⇒ 差 " + r.Missing
-                  + "（⚠ 本層讀不到 category 計不計酬的設定 ⇒ 按 category 分組列在下面）"
+                  + "（規則本來就不付的已先扣掉，剩下的按 category 分組列在下面）"
                   + (r.SettledUnreadable
                      ? "　⚠ **`" + SettledFileName + "` 這次沒讀到**（不存在／讀壞了 —— 哪一種見問題欄）"
                        + " ⇒ 走請款結清的那些則沖不掉，差集**偏高**，⛔ 別照這個數字補。"
@@ -515,6 +530,25 @@ namespace SCP.Core.Bank
                      ? "　⚠ **當天的撥款分類不出來**（讀不到對應請款單）⇒ 本層答不出其中有沒有補薪。"
                        + "⛔ 這是「不知道」，不是「都不是補薪」。"
                      : "");
+        }
+
+        static bool HasWorkPost(SCP_TavernPayPlan iPlan)
+            => iPlan.Items.Exists(i => string.Equals(i.Kind, SCP_TavernPayroll.KindWorkPost, StringComparison.Ordinal));
+
+        /// <summary>底薪那段（規則 A）有沒有「量不到」型的警告 —— 有就不准當成「規則不付」。</summary>
+        static bool HasBaseRewardWarning(SCP_TavernPayPlan iPlan)
+            => iPlan.Warnings.Exists(w => w.StartsWith("A：", StringComparison.Ordinal));
+
+        /// <summary>
+        /// 分組用的理由。⚠ 非真實 agent 那條 Note 帶著 sender id（每人一組會把分組打散）⇒ 先認它，
+        /// 其餘取規則 A 的 Note 原文（例：group `chitchat-channel` 不計酬）。
+        /// </summary>
+        static string NotPaidReason(SCP_TavernPayPlan iPlan, string iSenderId)
+        {
+            if (!SCP_TavernPayroll.IsRealAgentSender(iSenderId)) return "非真實 agent（alter／bot／system）";
+            foreach (string n in iPlan.Notes)
+                if (n.StartsWith("A：", StringComparison.Ordinal)) return n.Substring(2);
+            return iPlan.Notes.Count > 0 ? iPlan.Notes[0] : "(無理由)";
         }
 
         static void Bump(Dictionary<string, int> iMap, string iKey)

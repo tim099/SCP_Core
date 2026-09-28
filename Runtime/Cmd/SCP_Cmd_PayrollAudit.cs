@@ -29,8 +29,8 @@ namespace SCP.Core.Cmd
             + "\n"
             + "**判決**：`alarm`（有一堆應計酬而帳上 0 筆）／`warn`（有缺口）／`clean`／\n"
             + "`no_sample`（那天沒訊息 —— ⛔ 不是「沒問題」）／`unmeasurable`（比對關係壞了 —— ⛔ 不是「全漏」）。\n"
-            + "⚠ 射程：本層**讀不到 category 計不計酬的設定**（那在 Unity 的 routing 資產裡）\n"
-            + "  ⇒ 差集按 category 分組印出來讓人自己判斷；某一類整天全缺多半是那一類本來就不計酬。\n"
+            + "⭐ 計不計酬逐則問發薪那支純函式（`SCP_TavernPayroll.Plan`）：規則本來就不付的（非真實 agent／工具廣播／\n"
+            + "  不計酬頻道／出資方）先扣掉、列在「依發薪規則不付」；判準讀不了的那些則**不扣**（量不到 ≠ 不付）。\n"
             + "⚠ 不給 `letters_root`/`region` ⇒ 「persona 解析不到」那些則**扣不掉**，報告會明說它沒扣。";
 
         public override string Example =>
@@ -78,7 +78,8 @@ namespace SCP.Core.Cmd
                 aR.Lines.Add("- " + a.HeadLine());
                 aR.Lines.Add("  · " + a.Why);
                 aR.Lines.Add("  · 內訳：沒有 persona **" + a.WithoutPersona + "**（結構上不計酬）"
-                             + "／非真實 agent **" + a.NotRealAgent + "**（alter／bot／system，同發薪那側的判準）"
+                             + "／依發薪規則不付 **" + a.NotPaidByRule + "**"
+                             + (a.NotPaidByRule > 0 ? "（" + Join(a.NotPaidByRuleReasons) + "）" : "")
                              + "／解析不到帳號 **" + a.Unresolvable + "**"
                              + (a.ResolverAvailable ? "（刻意不計酬）" : " ⚠ **未扣**（沒給 letters_root/region）")
                              + "／帳上 work_post **" + a.LedgerWorkPostEntries + "** 筆"
