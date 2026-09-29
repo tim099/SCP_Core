@@ -16,12 +16,14 @@
 | **入口檔受管區塊**（本檔就是被那個機制裝進來的） | `<SCP_Core>/Docs~/Entry_Doc_Blocks.md` |
 | **Agent skills** | `<SCP_Core>/Skills~/<name>/SKILL.md` |
 | 指令系統（`senate cmd`，不需要 Unity） | `<Senate>/Docs/Workflows/SCP_Cmd_System.md` |
+| **查文件**（`senate cmd doc`）＋**文件住哪**：指令住哪、文件就住哪；ucmd 搬到 Senate CLI 時文件跟著重寫、舊的同一筆刪 | `senate cmd doc --arg op=show --arg name=Doc_Query` |
 
 ## 常用入口指令
 
 ```bash
 senate cmd                      # 列出所有可用指令
-senate cmd help <name>          # 單支的參數說明
+senate cmd help <name>          # 單支的參數說明（＋它的使用說明在哪份文件）
+senate cmd doc                  # 列出文件；--arg op=show --arg name=<名字> 看全文
 senate ui                       # 後台頁（純文字）
 senate ui --window              # 後台頁（原生視窗）
 senate selftest                 # 自我對拍：印出讀數，不是印 ✓

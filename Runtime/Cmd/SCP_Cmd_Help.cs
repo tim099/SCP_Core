@@ -100,6 +100,21 @@ namespace SCP.Core.Cmd
             oResult.Lines.Add("單支詳細：" + SCP_CmdRegistry.Invoke("help <name>"));
         }
 
+        /// <summary>
+        /// 「文件：…」那一行。三種情況分開說 —— ⛔ 「沒有對應文件」「宿主沒裝文件根」「文件根讀不齊」不可同形。
+        /// </summary>
+        static string DocLine(string iCmdName)
+        {
+            if (!Docs.SCP_DocStore.TryList(out List<Docs.SCP_DocEntry> aEntries, out List<string> aProblems, out string aError))
+                return "文件：（查不了 —— " + aError + "）";
+            List<Docs.SCP_DocEntry> aHits = Docs.SCP_DocStore.FindByCmd(aEntries, iCmdName);
+            string aWarn = aProblems.Count > 0 ? "　⚠ 文件根有 " + aProblems.Count + " 個問題，這一格可能不完整（" + SCP_CmdRegistry.Invoke("doc") + " 會列出）" : "";
+            if (aHits.Count == 0) return "文件：沒有 —— 這支指令還沒有對應的使用說明" + aWarn;
+            var aNames = new List<string>();
+            foreach (Docs.SCP_DocEntry aDoc in aHits) aNames.Add(aDoc.Name);
+            return "文件：" + string.Join(", ", aNames) + "　（" + SCP_CmdRegistry.Invoke("doc --arg op=show --arg name=" + aNames[0]) + "）" + aWarn;
+        }
+
         /// <summary>執行位置的行尾標記。Native 回空字串 —— 多數不必被標。</summary>
         static string PortTag(SCP_CmdPortStatus iStatus)
         {
@@ -132,6 +147,10 @@ namespace SCP.Core.Cmd
                 oResult.Lines.Add("執行位置：⛔ 還沒有實作 —— 這是登記在案的缺口，不是打錯名字");
             if (iCmd.PortNote.Length > 0)
                 oResult.Lines.Add("待移植：" + iCmd.PortNote);
+
+            // 這支指令的**使用說明**在哪份文件（TASK-0337）—— 參數表由下面的 ArgSpecs 產生，
+            // 怎麼用、什麼時候用、有什麼紀律寫在文件裡；對應關係寫在文件的 frontmatter `cmds:`。
+            oResult.Lines.Add(DocLine(iCmd.Name));
 
             if (iCmd.Details.Length > 0) { oResult.Lines.Add(""); oResult.Lines.Add(iCmd.Details); }
 
