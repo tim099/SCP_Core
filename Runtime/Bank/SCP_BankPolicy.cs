@@ -14,12 +14,10 @@
 //   ③ **央行帳戶與費率分開**：前者決定**錢從哪來**（換掉它，所有撥款換一個來源），
 //      後者只改數字 ⇒ 呼叫端該給前者二段確認，⛔ 不必給後者。
 //
-// ⚠ **現在有兩份，而那是過渡狀態**（Tim 2026-09-18：「UCL 那邊之後要廢棄，
-//   相關功能遷移到 Senate 後台」）：Unity 那側 `UCL_CentralBankSettings` 自己也有一份
-//   同名常數與夾值規則，⇒ 本檔是**接手的那一份**。
-//   🩸 在它退場之前，兩份夾值規則漂掉時**兩邊都會讀出一個合法的數字**，
-//     而「誰是權威」在畫面上看不出來 ⇒ 過渡期改參數**只從一邊改**（這一邊）。
-//   📌 退場本身排在 TASK-0242（廢棄 Unity 端舊銀行流程，整段移除不留墓碑）。
+// ⭐ **本檔是央行政策參數唯一的讀寫實作**（區域名在同一個檔的 `SCP_BankRegion`）。
+//   TASK-0242 ⑫ 移掉了 Unity 那側的寫入端；TASK-0330（2026-09-29）再把讀取端收掉 ——
+//   `UCL_CentralBankSettings` 只剩區域名的轉呼叫，常數與夾值規則都不在那裡了。
+//   🩸 收成一份的理由：兩份夾值規則漂掉時**兩邊都會讀出一個合法的數字**，而「誰是權威」在畫面上看不出來。
 #nullable enable
 using System;
 using System.IO;
@@ -54,6 +52,12 @@ namespace SCP.Core.Bank
         public const int DefaultThreshold = 1000;
         /// <summary>千分比整數（50 ＝ 5.0%）。</summary>
         public const int DefaultFeePermille = 50;
+        /// <summary>付費掛號信每封費用（Tim 2026-08-01；0 ＝ 免費寄信，合法設定）。</summary>
+        /// <remarks>
+        /// ⚠ 這筆錢**蒸發，不進央行**（Tim 2026-08-01：「蒸發代表 token 消失，不進入央行」）—— 純 debit 無對應 credit。
+        /// 職責跟保管費相反：央行 ＝ 集中再分配（circulation）；掛號信費 ＝ 真的減少貨幣總量（burn）。
+        /// ⛔ 別看到「都是收費」就把它也導進央行 —— 那會讓系統再次沒有 sink。
+        /// </remarks>
         public const int DefaultMailFee = 5;
 
         /// <summary>費率下限 0 ＝ **停收**（那是合法的關閉手段，不必改 code）。</summary>
