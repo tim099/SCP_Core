@@ -103,6 +103,20 @@ namespace SCP.Core.Cmd
             int aApplied = 0, aDup = 0, aFailed = 0;
             if (aOp == "apply")
             {
+                // ── 兩道閘（TASK-0332：Unity 補款那支有、本支原本沒有）—— ⛔ 往付錢的方向不猜 ──
+                // ① 結清清單讀不動 ⇒ 不知道哪些則已經用別的方式補過 ⇒ 補下去就是付第二次錢。
+                if (r.SettledUnreadable)
+                    return SCP_CmdResult.Fail(1,
+                        "✗ `" + SCP_PayrollAudit.SettledFileName + "` 讀不動 —— **拒絕補發，一筆都沒補**：",
+                        "  不知道哪些則已經用請款等方式補過，補下去會重複增發。先修好那份清單再跑（`op=report` 照樣看得到差集）。");
+                // ② 射程內帳上一筆 work_post 都沒有、而酒館推得出應有 ⇒ 分不出「真的沒發過」與「讀不到帳／根給錯」。
+                int aWorkPostExpected = r.Coverage.Where(c => c.Kind == SCP_TavernPayroll.KindWorkPost).Sum(c => c.Expected);
+                if (r.LedgerWorkPostScanned == 0 && aWorkPostExpected > 0)
+                    return SCP_CmdResult.Fail(1,
+                        "✗ 射程 " + r.From + "～" + r.To + " 內帳上**一筆 work_post 都讀不到**，而酒館推得出應有 " + aWorkPostExpected
+                        + " 筆 —— **拒絕補發，一筆都沒補**：",
+                        "  分不出「真的沒發過」與「讀不到帳（路徑錯／全部壞檔）」；後者照補會把每一則都當成沒發過而重複增發。先人工確認帳本。");
+
                 var aBankRoot = SCP_TavernPayroll.BankRootOf(aData);
                 if (aBankRoot.Error != null || aBankRoot.Value.Length == 0)
                     return SCP_CmdResult.Fail(1, "✗ 銀行根解不出來（" + aBankRoot.Error + "）⇒ 一筆都沒補");

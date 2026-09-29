@@ -3,7 +3,9 @@
 //          從事實源推出「帳上應該有哪幾筆」，對照帳本實際有的，差出來的就是**該有而沒有**的那些。
 // 數值影響：`Run` **零寫入**（連讀數檔都不寫 —— 那是 `RecordRun` 的事，由呼叫端決定要不要落）。
 //
-// ⭐ 兩條命脈（從 Unity 那支 `UCL_TavernPostRewardBackfill` 繼承，⛔ 兩條都要保住）：
+// ⭐ **發文薪資補款的唯一入口**（TASK-0332 起；Unity 那支補款已刪）。apply 前的兩道閘也一起搬過來了：
+//   結清清單讀不動 ⇒ 拒絕／射程內帳上 0 筆 work_post 而酒館推得出應有 ⇒ 拒絕（分不出沒發過與讀不到帳）。
+// ⭐ 兩條命脈（⛔ 兩條都要保住）：
 //   ① **判準與發放路徑同源**：酒館那一類逐則問 `SCP_TavernPayroll.Plan()`（寫入端發薪真正跑的純函式），
 //      ⛔ 不自己抄規則 —— 抄了之後對出來的是「對帳作者以為當時會付的」，帳看起來平、只是平在錯的基準上。
 //   ② **不按失敗原因分類，算差集**：同一個「沒付到」有很多種成因（build 不符／Server 換手／逾時不重排…），
@@ -76,6 +78,12 @@ namespace SCP.Core.Bank
         public readonly List<string> AmountMismatches = new List<string>();
         public readonly List<string> Problems = new List<string>();
         public int MissingTotal => Gaps.Count;
+
+        // ── 補發前的兩道閘要看的讀數（TASK-0332）──
+        /// <summary>`payroll_settled.json` 讀不動 ⇒ 走第二條路結清的那些則會被報成缺口；**apply 必須拒絕**（補下去就是付第二次）。</summary>
+        public bool SettledUnreadable;
+        /// <summary>射程內帳上讀到的 `work_post` 筆數。0 而酒館卻推得出應有 ⇒ 分不出「真的沒發過」與「讀不到帳」；**apply 必須拒絕**。</summary>
+        public int LedgerWorkPostScanned;
     }
 
     public static class SCP_BankReconcile
@@ -127,6 +135,7 @@ namespace SCP.Core.Bank
                 foreach (SCP_BankEntry e in SCP_BankClosing.EnumerateDay(aBank, aDay, r.Problems))
                 {
                     r.LedgerEntriesScanned++;
+                    if (string.Equals(e.Kind, SCP_TavernPayroll.KindWorkPost, StringComparison.Ordinal)) r.LedgerWorkPostScanned++;
                     string k = KeyOf(e.Type, e.Kind, e.Ref);
                     aLedger.TryGetValue(k, out int aSum);
                     aLedger[k] = aSum + e.Amount;
@@ -206,7 +215,8 @@ namespace SCP.Core.Bank
             string aRooms = Path.Combine(iDataRoot, SCP_PayrollAudit.RoomsRelPath.Replace('/', Path.DirectorySeparatorChar));
             if (!Directory.Exists(aRooms)) { r.Problems.Add("找不到房間根：" + aRooms + " ⇒ 酒館那一類**沒量**（⛔ 不是沒缺口）"); return; }
             HashSet<string> aSettled = SCP_PayrollAudit.ReadSettledRefs(iBank, r.Problems, out bool aUnreadable);
-            if (aUnreadable) r.Problems.Add("請款結清清單讀不動 ⇒ work_post 走第二條路結清的那些則會被報成缺口（差集偏高）");
+            r.SettledUnreadable = aUnreadable;
+            if (aUnreadable) r.Problems.Add("請款結清清單讀不動 ⇒ work_post 走第二條路結清的那些則會被報成缺口（差集偏高；apply 會拒絕）");
 
             foreach (string aRoomDir in Directory.GetDirectories(aRooms))
             {

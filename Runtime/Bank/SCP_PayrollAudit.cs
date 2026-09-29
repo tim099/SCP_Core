@@ -174,8 +174,8 @@ namespace SCP.Core.Bank
         /// <summary>
         /// 🔴 **第二條合法的完成路徑**：走請款補發的那些則。請款分錄不帶逐則 `ref`
         /// ⇒ 它們另外記在這份清單裡（`<Bank>/payroll_settled.json`，`settled[].refs`）。
-        /// ⚠ 檔名與結構**必須與 Unity 那側的 `UCL_TavernPostRewardBackfill.SettledFileName` 逐字相同** ——
-        ///   那支補款工具讀它是為了「不要再付一次」，本層讀它是為了「不要再報一次」。
+        /// ⚠ 讀它的有兩種目的：補款（`bank-reconcile op=apply`）讀它是為了「不要再付一次」，
+        ///   本層（稽核）讀它是為了「不要再報一次」—— 兩者都走 <see cref="ReadSettledRefs"/>，⛔ 不各自 parse。
         /// 🩸 而這一格的由來要寫死：本檔原本**知道有這 114 則、也知道它們付過了**
         ///   （`CompensationEntries` 那段註解逐字寫著「稽核會每天對那一天亮燈…人會在第三天學會忽略它」），
         ///   而當時的判斷是「要逐則證明，而**證據不存在**」⇒ 選擇只把金額擺在旁邊。
