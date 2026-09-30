@@ -52,7 +52,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("enabled", "op=route／whitelist-enable：1＝開", iDefault: "1", iChoices: new[] { "0", "1" }),
             new SCP_CmdArgSpec("source_class", "op=route：external／internal／work…（空＝既有列不動、新列 external）", iDefault: ""),
             new SCP_CmdArgSpec("label", "op=route：顯示名（空＝不動）", iDefault: ""),
-            new SCP_CmdArgSpec("guild", "op=route：Discord Server id（新列用）", iDefault: ""),
+            new SCP_CmdArgSpec("guild", "op=route：Discord Server id（新列寫入；既有列給了就覆寫，結果印舊 → 新）", iDefault: ""),
             new SCP_CmdArgSpec("user_id", "op=whitelist-add／remove：Discord 使用者 id", iDefault: ""),
             new SCP_CmdArgSpec("display_name", "op=whitelist-add：酒館上顯示的名字", iDefault: ""),
             new SCP_CmdArgSpec("profile", "op=whitelist-add：身分說明", iDefault: ""),
@@ -87,12 +87,15 @@ namespace SCP.Core.Cmd
                 case "route":
                 {
                     string aCh = iArgs.Get("channel").Trim();
+                    string aOldGuild = SCP_DiscordInboundConfig.LoadRoutes(aRoot, out _).FirstOrDefault(x => x.ChannelId == aCh)?.GuildId ?? "";
                     if (!SCP_DiscordInboundConfig.TryUpsertRoute(aRoot, aCh, iArgs.Get("guild"), iArgs.Get("label"), iArgs.Get("room"),
                             iArgs.Get("enabled").Trim() == "1", iArgs.Get("source_class"), out string? aErr))
                         return SCP_CmdResult.Fail(2, "✗ 沒有寫入：" + aErr);
                     SCP_DiscordRoute r = SCP_DiscordInboundConfig.LoadRoutes(aRoot, out _).First(x => x.ChannelId == aCh);
-                    return SCP_CmdResult.Success($"✅ Discord `{aCh}` → 酒館 **{r.TavernRoom}**（{(r.Enabled ? "開" : "關")}，{r.SourceClass}；回讀）")
-                        .AddValue("tavern_room", r.TavernRoom);
+                    string aGuildNote = aOldGuild == r.GuildId ? $"guild {r.GuildId}" : $"guild {aOldGuild} → {r.GuildId}";
+                    return SCP_CmdResult.Success($"✅ Discord `{aCh}` → 酒館 **{r.TavernRoom}**（{(r.Enabled ? "開" : "關")}，{r.SourceClass}，{aGuildNote}；回讀）")
+                        .AddValue("tavern_room", r.TavernRoom)
+                        .AddValue("guild_id", r.GuildId);
                 }
                 case "unroute":
                 {

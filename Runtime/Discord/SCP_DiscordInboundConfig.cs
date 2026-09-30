@@ -143,12 +143,16 @@ namespace SCP.Core.Discord
                 aHit.Set("enabled", iEnabled);
                 if (aSrc.Length > 0) aHit.Set("source_class", aSrc);
                 if (aLabel.Length > 0) aHit.Set("label", aLabel);
-                if (aGuild.Length > 0 && aHit.GetString("guild_id", "").Length == 0) aHit.Set("guild_id", aGuild);
+                // 🩸 TASK-0322：原本是「既有列的 guild 空的才寫」—— 錯的 guild 永遠改不掉，而且不說話
+                //   （CLI 印 ✅、GUI 從快取選頻道傳的是 Discord 真值，照樣被擋）。遷移指南第 6 步「對不上的要修」因此無路可走。
+                //   ⇒ 呼叫端給了 guild 就是意圖：跟現值不同就覆寫。孤兒那條路傳的是現值 ⇒ 不變。
+                if (aGuild.Length > 0) aHit.Set("guild_id", aGuild);
             }
             if (!WriteJson(RoutingPath(iDataRoot), j, out oError)) return false;
 
             SCP_DiscordRoute? aBack = LoadRoutes(iDataRoot, out string? aBackErr).FirstOrDefault(r => r.ChannelId == aCh);
-            if (aBackErr != null || aBack == null || aBack.TavernRoom != aRoom || aBack.Enabled != iEnabled)
+            if (aBackErr != null || aBack == null || aBack.TavernRoom != aRoom || aBack.Enabled != iEnabled
+                || (aGuild.Length > 0 && aBack.GuildId != aGuild))
             { oError = "寫完回讀對不上：" + (aBackErr ?? "那一列不是剛寫的值"); return false; }
             return true;
         }
