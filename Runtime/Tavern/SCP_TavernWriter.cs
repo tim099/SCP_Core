@@ -177,6 +177,9 @@ namespace SCP.Core.Tavern
                         iMsg.Room = iRoom;
                         iMsg.Path = aPath;
                         WriteSeqCache(iDataRoot, iRoom, aSeq);
+                        // 索引的維護者是寫入端（TASK-0335）⇒ 還在房間鎖裡刷，同房兩次刷新不會交錯。
+                        // 它自己吞例外 —— 刷不成只是讀慢一點，⛔ 不影響「已落盤」。
+                        SCP_TavernMsgIndex.Refresh(iDataRoot, iRoom);
                         return new SCP_TavernWriteResult(true, aSeq, aPath, "已落盤", aAttempt);
                     }
 

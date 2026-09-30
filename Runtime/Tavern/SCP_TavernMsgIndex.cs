@@ -21,10 +21,10 @@
 //   > **把快取失效降級成「變慢」，而不是「算錯」** —— 算錯的後果很具體：
 //   > 清單少一筆 → seq 全體位移 → 所有游標指到錯的訊息，而外觀完全正常。
 //
-// ⛔ 本檔是**照抄**，不是新設計。Editor 側 2026-09-08（TASK-0162）就做完了這件事，
-//   連降級語意（「走不了就回 null，退回全量列舉」）都已經寫在那邊。
-//   summit 2026-09-18 差一步就重新設計一個已經存在的東西，擋下它的是自己寫在 TASK-0240 上的
-//   一行「動工第一件事是讀 Range，⛔ 不照名字猜」。
+// ⭐ 本檔是**唯一一份實作**（TASK-0335，2026-09-30）：Editor 側 `UCL_ChatTavernMessageIndex`
+//   改成轉呼叫本檔、只讀不寫，自己那份格式與寫檔已刪除。
+//   ⇒ 格式規則只剩這裡；要改格式只改這裡，⛔ 別在 Editor 側再長出第二份。
+//   （來源：形狀取自 Editor 側 2026-09-08 TASK-0162 的設計，summit 2026-09-18 搬進 Senate。）
 //
 // ⚠ 索引放**房間目錄**而不是 messages/ 底下：寫在 messages/ 內會改動它的 mtime，
 //   而那正是判斷「有沒有變」的依據 —— 每寫一次索引就讓自己失效一次。
@@ -130,8 +130,12 @@ namespace SCP.Core.Tavern
             }
         }
 
+        // ⚠ 寫法是「tmp → Replace」而不是直接 WriteAllText（TASK-0335）：
+        //   Server 每寫一則訊息就刷新一次索引，而 Editor／CLI 隨時在讀 ⇒ 直接覆寫會被讀到寫一半的檔。
+        //   讀到半份不會算錯（壞行整份不信、截斷的 mtime 對不上就現場列舉），但每次都會印一條解析失敗的警告。
         static void Save(string iDataRoot, string iRoom, List<DayEntry> iDays)
         {
+            string aTmp = "";
             try
             {
                 var aSb = new StringBuilder().Append(Header).Append('\n');
@@ -141,13 +145,21 @@ namespace SCP.Core.Tavern
                 string aPath = IndexPath(iDataRoot, iRoom);
                 string? aDir = Path.GetDirectoryName(aPath);
                 if (!string.IsNullOrEmpty(aDir)) Directory.CreateDirectory(aDir);
-                File.WriteAllText(aPath, aSb.ToString(), new UTF8Encoding(false));
+                aTmp = aPath + ".tmp" + Guid.NewGuid().ToString("N").Substring(0, 8);
+                File.WriteAllText(aTmp, aSb.ToString(), new UTF8Encoding(false));
+                if (File.Exists(aPath)) File.Replace(aTmp, aPath, null);
+                else File.Move(aTmp, aPath);
             }
             catch (Exception e)
             {
                 // 寫不出來只是「下次還是慢」，不影響正確性 —— 但仍要出聲，
                 // 否則會出現「明明做了索引卻永遠沒生效」而沒人知道。
                 Warn($"[TavernMsgIndex] 索引寫入失敗（{iRoom}）：{e.Message}");
+            }
+            finally
+            {
+                // 換檔失敗時 tmp 還在 ⇒ 收掉，⛔ 不留殘檔在房間目錄裡
+                try { if (aTmp.Length > 0 && File.Exists(aTmp)) File.Delete(aTmp); } catch { }
             }
         }
 
@@ -194,17 +206,16 @@ namespace SCP.Core.Tavern
         // 物理意義：有了連號 seq ＋ 每日範圍表，任何一段的檔名都是**算得出來**的。
         // 數值影響：`tail=6` 由 O(訊息數) 降為 O(天數) 的 stat ＋ 6 個字串。
         // 邊界：回 null ＝ 這條路走不了（呼叫端退回全量列舉），**不是**「沒有訊息」。
-        // ⛔ **本側刻意不自動補寫索引**（與 Editor 側的取捨相反，理由是宿主不同）：
-        //   · Editor 是常駐 process，而**索引現在的維護者就是那一側的讀取端**
-        //     （`UCL_ChatTavernIO_PerMsgFile.cs:429`：`enumeratedDays > 0` 時順手 Rebuild）
-        //     ⇒ Editor 開著時索引一直新鮮，補寫成本攤提得掉。
-        //   · Senate CLI 是**短命 process**：每次呼叫都可能「缺幾天」⇒ 自動補寫等於**每次讀都寫檔**；
-        //     而 TASK-0240 驗收⑥要求這條路**一個位元組都不寫進 `ChatTavern/`**。
-        //   ⇒ 本側把落後**回報出來**（`oStaleDays` ＝ 這次現場列舉了幾天），
-        //     修它走顯式入口 `senate cmd tavern-index --arg op=rebuild`。
-        //   📌 判準：**讓落後看得見**比讓它自動消失好 —— 自動補寫會讓「Editor 關了很久」
-        //     這件事沒有任何痕跡，而那正是本專案反覆付錢的那一族。
-        //   ⚠ 代價要講明：沒有人跑 rebuild 的話索引會一直落後，而落後的樣子是「變慢」不是「算錯」。
+        // ⛔ **讀取端一律不寫索引**（Editor 與 CLI 都一樣）：
+        //   · TASK-0240 驗收⑥要求 CLI 讀取路徑**一個位元組都不寫進 `ChatTavern/`**；
+        //     Senate CLI 是短命 process，讀時補寫等於每次讀都寫檔。
+        //   · ⭐ 索引的維護者是**寫入端**：`SCP_TavernWriter.WriteMessage` 落盤後在同一個房間鎖裡呼叫
+        //     <see cref="Refresh"/>（TASK-0335）。以前維護者是 Editor 的讀取端（缺天時順手 Rebuild），
+        //     而那讓索引新不新鮮取決於「Editor 有沒有開」；現在訊息是誰寫的、索引就是誰刷的。
+        //   ⇒ 讀取端只把落後**回報出來**（`oStaleDays` ＝ 這次現場列舉了幾天）。
+        //   ⚠ 還會落後的情況：`tavern.writer=editor` 時訊息由 Editor 本地寫，不經過這裡 ⇒ 那段期間索引不刷，
+        //     落後的樣子是「變慢」不是「算錯」；修它走 `senate cmd tavern-index --arg op=rebuild`，
+        //     或等 Server 寫該房下一則訊息時一次補齊。
         // ⭐ `TryGetRangePaths` 是本側**比 Editor 多出來的一支** —— 那邊的 `Range` 至今仍走
         //   `LoadAllMessages`（全房載入再過濾）。⛔ 而它不改任何行為，只改成本。
         // ===========================================================
@@ -400,6 +411,79 @@ namespace SCP.Core.Tavern
             {
                 Warn($"[TavernMsgIndex] 索引重建失敗（{iRoom}）：{e.Message}");
             }
+        }
+
+        // ===========================================================
+        // 區塊職責：**寫入端**刷新索引（TASK-0335）—— 由 `SCP_TavernWriter.WriteMessage` 落盤後呼叫
+        // 物理意義：剛寫的那則改了當天目錄的 mtime ⇒ 索引裡那一天變成「動過」。
+        //           這裡把驗證走一遍：只有動過／不在索引的那幾天被現場列舉，其餘照索引算，然後整份寫回。
+        // 數值影響：一次 ≈ 百來個目錄 stat ＋ 列舉當天 ＋ 一次 3KB 換檔。⛔ 不是全量列舉。
+        // 邊界：索引不存在／不可信 ⇒ 全量列舉重建；而**每個 process 每房只試一次** ——
+        //       舊格式房（檔名不是 seq）重建永遠會放棄，不設上限的話它每寫一則就付一次全量。
+        //       ⛔ 呼叫端必須已經持有該房的寫入鎖（同房兩次刷新不可交錯，否則舊的一份可能蓋掉新的一份）。
+        // ===========================================================
+        static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> s_FullRebuildTried
+            = new System.Collections.Concurrent.ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
+
+        public static void Refresh(string iDataRoot, string iRoom)
+        {
+            try
+            {
+                var aSpans = TryGetValidatedSpans(iDataRoot, iRoom, out _, out int aStaleDays, out _);
+                if (aSpans != null)
+                {
+                    if (aStaleDays > 0) RebuildFromSpans(iDataRoot, iRoom, aSpans);
+                    return;
+                }
+
+                string aKey = iDataRoot + "|" + iRoom;
+                if (!s_FullRebuildTried.TryAdd(aKey, true)) return;
+
+                string aMsgRoot = MessagesDir(iDataRoot, iRoom);
+                if (!Directory.Exists(aMsgRoot)) return;
+                // 與 Verify 的「真值」那一側同一套規則（全量列舉＋messages 相對路徑 ordinal 排序）
+                string[] aFiles = Directory.GetFiles(aMsgRoot, "*.json", SearchOption.AllDirectories);
+                var aKeys = new string[aFiles.Length];
+                for (int i = 0; i < aFiles.Length; i++)
+                    aKeys[i] = aFiles[i].Substring(aMsgRoot.Length).Replace(BackSlash, '/');
+                Array.Sort(aKeys, aFiles, StringComparer.Ordinal);
+                Rebuild(iDataRoot, iRoom, aFiles);
+            }
+            catch (Exception e)
+            {
+                // 刷不成只是「下次讀慢一點」—— ⛔ 絕不能讓它把「訊息已落盤」變成失敗
+                Warn($"[TavernMsgIndex] 索引刷新失敗（{iRoom}）：{e.Message}");
+            }
+        }
+
+        // 由 span 直接寫索引 —— 與 `Rebuild(orderedPaths)` 同一份索引語意，差別只在來源已經是每日區段。
+        static void RebuildFromSpans(string iDataRoot, string iRoom, List<DaySpan> iSpans)
+        {
+            string aMsgRoot = MessagesDir(iDataRoot, iRoom);
+            var aByDate = new List<DayEntry>();
+            var aSeen = new Dictionary<string, DayEntry>(StringComparer.Ordinal);
+            foreach (var sp in iSpans)
+            {
+                string aDate = Path.GetFileName(sp.Dir);
+                var e = new DayEntry { Date = aDate, FirstSeq = sp.FirstSeq, Count = sp.Count };
+                aSeen[aDate] = e; aByDate.Add(e);
+            }
+            // 空目錄也要入索引（理由同 Rebuild）
+            foreach (string aDir in Directory.GetDirectories(aMsgRoot))
+            {
+                string aDate = Path.GetFileName(aDir);
+                if (!aSeen.ContainsKey(aDate))
+                {
+                    var e = new DayEntry { Date = aDate, FirstSeq = 0, Count = 0 };
+                    aSeen[aDate] = e; aByDate.Add(e);
+                }
+            }
+            // ⚠ mtime 取「現在」而不是驗證那一刻：兩者之間若又有人寫進來，這裡記的是新 mtime 而計數是舊的
+            //   ⇒ 那一天會被當成「沒動過」而少算。⇒ 呼叫端持有房間寫入鎖，同房在這段時間內不會有新檔。
+            foreach (var e in aByDate)
+                e.MtimeTicks = Directory.GetLastWriteTimeUtc(Path.Combine(aMsgRoot, e.Date)).Ticks;
+            aByDate.Sort((a, b) => string.CompareOrdinal(a.Date, b.Date));
+            Save(iDataRoot, iRoom, aByDate);
         }
 
         /// <summary>

@@ -2,7 +2,7 @@
 title: 聊天酒館：讀取、查詢、索引、頻道管理（SCP_Core 那幾支）
 description: 純讀的 tavern-read／tavern-query、訊息索引 tavern-index、頻道管理 channel —— 什麼時候用哪支、退出碼怎麼讀、三個「看起來正常其實錯」的坑
 cmds: [tavern-read, tavern-query, tavern-index, channel]
-last_updated: 2026-09-29
+last_updated: 2026-09-30 (索引改由寫入端維護、Editor 只讀；TASK-0335) | 2026-09-29
 target_audience: [AI_Agent, Tools_Maintainer]
 ---
 
@@ -37,6 +37,8 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - 索引 `rooms/<room>/_msgindex.txt` 一天一行，讀取靠它省掉全量列舉。
 - 任何不一致一律退回全量列舉 ⇒ **失效的樣子是變慢，不是算錯**。
 - 索引落後只回報（`stale_days`），⛔ 讀取指令不自動補寫；要修走 `tavern-index --arg op=rebuild`。
+- ⭐ **索引只有寫入端會寫**（TASK-0335）：Server 寫完一則訊息，就在房間鎖裡刷新那一房的索引；Editor 與 CLI 的讀取端都只讀。
+  ⚠ `tavern.writer=editor` 時訊息不經過 Server ⇒ 那段期間索引不刷新，讀取端會多列舉幾天（變慢，不會算錯）。
 - `op=verify` 是逐筆比對（不抽樣、不比數量）—— 少一筆的後果是 seq 全體位移，而外觀完全正常。
 
 ## 4. 頻道管理
