@@ -4,9 +4,12 @@
 //     沒有游標 ⇒ **baseline**：只記最新一則的 id、⛔ 不回放歷史（同 Unity 版）。Gateway 即時推送是之後的事。
 //   · 欄位語意對齊 Unity 版（下游零改動）：sender_id=`discord:<uid>`、sender_name＝顯示名、kind=chat、
 //     meta.source=`discord`（⇒ `SCP_TavernMentions.IsExternalRelay` 認得、Outbound ⛔ 不回送）、discord_msg_id／channel_id／guild_id、
-//     source_class／priority／channel_label、`relay=senate`（區分 Unity 的 `native`）。
-//   · 過濾：bot 發的、webhook 發的（⛔ 否則 Outbound 送出去的會被收回來，無限迴圈）、白名單外的、空內容沒附件的 —— 逐筆記原因。
-//   · 顯示名：白名單填的 display_name ＞ 伺服器暱稱 ＞ global_name ＞ username ＞ uid。
+//     source_class／channel_label、`relay=senate`（區分 Unity 的 `native`）、`discord_whitelisted`（true／false）。
+//   · 過濾：bot 發的、webhook 發的（⛔ 否則 Outbound 送出去的會被收回來，無限迴圈）、空內容沒附件的 —— 逐筆記原因。
+//   · 白名單**不擋人，只標記**（Tim 2026-09-30）：白名單外的照收，顯示名後綴「（白名單外）」＋ meta `discord_whitelisted=false`。
+//     ⇒ 標在顯示名上是刻意的：catchup／query／酒館頁／inbox 都印顯示名，**一個點就全部看得到**（⛔ 不在四個顯示端各抄一份判準）；
+//        也讓「暱稱取成 Tim 的非白名單使用者」一眼可辨。
+//   · 顯示名：白名單填的 display_name ＞ 伺服器暱稱 ＞ global_name ＞ username ＞ uid（白名單外再加後綴）。
 //   · 附件（TASK-0323）：**下載落地**到 `ChatTavern/media/discord/<日期>/`（`SCP_DiscordMedia`），訊息 `refs` 帶 repo 相對路徑
 //     ⇒ agent 讀完訊息可以直接開圖。本文末尾照舊列一行 `[Discord 附件 N 個] …`（沒落地的那幾個標明原因：過大／下載失敗）；
 //     meta 記 `attachments`（總數）與 `attachments_saved`（落地數）。⛔ 附件失敗不擋文字（fail-soft）。偷看模式不下載。
@@ -54,6 +57,8 @@ namespace SCP.Core.Discord
     {
         public const string StateFileName = "discord_inbound_state.json";
         public const int FetchLimit = 50;
+        /// <summary>白名單外的發言者，顯示名後面接這一段（見檔頭「白名單不擋人，只標記」）。</summary>
+        public const string NotWhitelistedSuffix = "（白名單外）";
         static readonly TimeSpan UnityCursorMaxAge = TimeSpan.FromHours(24);
 
         static string StatePath(string iDataRoot) => SCP_DiscordPaths.Dir(iDataRoot) + "/" + StateFileName;
@@ -199,14 +204,13 @@ namespace SCP.Core.Discord
             string aUid = aAuthor.GetString("id", "");
             if (aUid.Length == 0) return "no-author-id";
             SCP_DiscordWhitelistUser? aWl = iWhitelist.Users.FirstOrDefault(u => u.UserId == aUid);
-            if (iWhitelist.Enabled && aWl == null) return "not-whitelisted";
 
             string aMsgId = iMsg.GetString("id", "");
             string aContent = iMsg.GetString("content", "").Trim();
             int aAttCount = iMsg["attachments"].IsArray ? iMsg["attachments"].Count : 0;
             if (aContent.Length == 0 && aAttCount == 0)
                 return iMsg.Contains("content") ? "empty-content(檢查 MESSAGE_CONTENT intent)" : "no-content-field";
-            // ⚠ 過濾全部通過之後才下載 ⇒ 被略過的訊息（bot／白名單外）⛔ 不會落任何檔
+            // ⚠ 過濾全部通過之後才下載 ⇒ 被略過的訊息（bot／webhook／空內容）⛔ 不會落任何檔
             List<SCP_DiscordMedia.InboundAttachment> aAtts = aAttCount > 0
                 ? SCP_DiscordMedia.DownloadAttachments(iDataRoot, iRepoRoot, aMsgId, iMsg["attachments"], iDownload)
                 : new List<SCP_DiscordMedia.InboundAttachment>();
@@ -222,6 +226,7 @@ namespace SCP.Core.Discord
             if (aDisplay.Length == 0) aDisplay = aAuthor.GetString("username", "");
             if (aDisplay.Length == 0) aDisplay = aUid;
             if (aWl != null && aWl.DisplayName.Length > 0) aDisplay = aWl.DisplayName;
+            if (aWl == null) aDisplay += NotWhitelistedSuffix;
 
             var aMeta = SCP_JsonData.NewObject();
             aMeta.Set("source", "discord");
@@ -230,7 +235,7 @@ namespace SCP.Core.Discord
             if (iRoute.GuildId.Length > 0) aMeta.Set("discord_guild_id", iRoute.GuildId);
             if (iRoute.Label.Length > 0) aMeta.Set("channel_label", iRoute.Label);
             aMeta.Set("source_class", iRoute.SourceClass);
-            aMeta.Set("priority", iRoute.Priority.ToString(CultureInfo.InvariantCulture));
+            aMeta.Set("discord_whitelisted", aWl != null ? "true" : "false");
             aMeta.Set("relay", "senate");
             if (aWl != null && aWl.Profile.Length > 0) aMeta.Set("discord_user_profile", aWl.Profile);
             if (aAtts.Count > 0)

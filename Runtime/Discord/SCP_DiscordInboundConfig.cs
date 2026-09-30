@@ -1,11 +1,13 @@
 // 區塊職責：**Discord Inbound 的設定** —— 「Discord 頻道 → 酒館頻道」對應表與使用者白名單（TASK-0319）。唯一讀寫層。
 // 物理意義：
 //   · 對應表：`ChatTavern/discord/discord_channel_routing.json` 的 `mappings`（沿用既有檔與格式，⇒ Senate 版 Inbound 直接讀它）。
-//     寫回時**每一列的其他欄位原樣保留**（priority／tags／_note…），頂層的 `_description` 之類也保留；
+//     寫回時**每一列的其他欄位原樣保留**（_note…），頂層的 `_description` 之類也保留；
+//     ⛔ `priority`／`tags` 已移除（Tim 2026-09-30：沒有任何讀取端）⇒ 寫到哪一列就順手拔掉那一列的這兩格；
 //     後台只露出 酒館頻道／開關／source_class 三格（Tim 2026-09-28：照建議）。
 //     酒館頻道只收**沒封存**的（`SCP_TavernChannels`）；新接的 Discord 頻道預設接主頻道 `tavern`（Tim 2026-09-28）。
 //   · 白名單：從 `PromptQueue/notify_config.json` 的 `tavern_inbound.user_whitelist` **搬到**
 //     `ChatTavern/discord/discord_inbound_whitelist.json`（Tim 2026-09-28：「白名單一起搬」）。
+//     白名單**不擋人，只標記**（Tim 2026-09-30）⇒ 沒有啟用開關了；舊檔的 `enabled` 在下一次寫入時拔掉（標記見 SCP_DiscordInbound）。
 //     新檔不在 ⇒ 照舊讀 notify_config（`Source` 會說）；第一次寫入就寫新檔，⛔ 不回寫 notify_config
 //     （那個檔裡有明文 webhook，不為了白名單整份重寫它）。
 //   · Unity 端 Inbound 已廢棄（Tim 2026-09-28）⇒ 本檔只顧 Senate 這一側。
@@ -30,7 +32,6 @@ namespace SCP.Core.Discord
         public string TavernRoom = "";
         public bool Enabled;
         public string SourceClass = "";
-        public int Priority;
     }
 
     public sealed class SCP_DiscordWhitelistUser
@@ -42,7 +43,6 @@ namespace SCP.Core.Discord
 
     public sealed class SCP_DiscordWhitelist
     {
-        public bool Enabled;
         public List<SCP_DiscordWhitelistUser> Users = new List<SCP_DiscordWhitelistUser>();
         /// <summary>從哪裡讀到的：`whitelist`（新檔）／`notify_config`（還沒搬家）／`none`。</summary>
         public string Source = "none";
@@ -100,12 +100,11 @@ namespace SCP.Core.Discord
             TavernRoom = m.GetString("tavern_room", ""),
             Enabled = m.GetBool("enabled", false),
             SourceClass = m.GetString("source_class", ""),
-            Priority = m.GetInt("priority", 0),
         };
 
         /// <summary>
         /// 新增或更新一列（以 channel_id 為鍵）。<paramref name="iRoom"/> 空 ⇒ 主頻道 `tavern`。
-        /// 酒館頻道不存在或已封存 ⇒ 擋下、零寫入。既有列的其他欄位原樣保留；新列補 priority=10、tags=[]。
+        /// 酒館頻道不存在或已封存 ⇒ 擋下、零寫入。既有列的其他欄位原樣保留（`priority`／`tags` 除外：拔掉）。
         /// </summary>
         public static bool TryUpsertRoute(string iDataRoot, string iChannelId, string iGuildId, string iLabel,
                                           string iRoom, bool iEnabled, string iSourceClass, out string? oError)
@@ -131,10 +130,8 @@ namespace SCP.Core.Discord
                 aHit.Set("tavern_room", aRoom);
                 aHit.Set("label", aLabel);
                 aHit.Set("source_class", aSrc.Length > 0 ? aSrc : "external");
-                aHit.Set("priority", 10);
                 aHit.Set("enabled", iEnabled);
                 aHit.Set("guild_id", aGuild);
-                aHit.Set("tags", SCP_JsonData.NewArray());
                 aArr.Add(aHit);
             }
             else
@@ -148,6 +145,7 @@ namespace SCP.Core.Discord
                 //   ⇒ 呼叫端給了 guild 就是意圖：跟現值不同就覆寫。孤兒那條路傳的是現值 ⇒ 不變。
                 if (aGuild.Length > 0) aHit.Set("guild_id", aGuild);
             }
+            aHit.Remove("priority"); aHit.Remove("tags");
             if (!WriteJson(RoutingPath(iDataRoot), j, out oError)) return false;
 
             SCP_DiscordRoute? aBack = LoadRoutes(iDataRoot, out string? aBackErr).FirstOrDefault(r => r.ChannelId == aCh);
@@ -215,7 +213,6 @@ namespace SCP.Core.Discord
                     if (aOld.IsObject) { aNode = aOld; w.Source = "notify_config"; }
                 }
                 if (aNode == null) return w;
-                w.Enabled = aNode.GetBool("enabled", false);
                 if (aNode["users"].IsArray)
                     foreach (SCP_JsonData u in aNode["users"])
                         w.Users.Add(new SCP_DiscordWhitelistUser
@@ -236,35 +233,23 @@ namespace SCP.Core.Discord
             try
             {
                 if (File.Exists(WhitelistPath(iDataRoot)))
-                    return SCP_JsonParser.Parse(File.ReadAllText(WhitelistPath(iDataRoot), Encoding.UTF8));
+                {
+                    SCP_JsonData aCur = SCP_JsonParser.Parse(File.ReadAllText(WhitelistPath(iDataRoot), Encoding.UTF8));
+                    aCur.Remove("enabled");   // 已沒有啟用開關（白名單只標記）
+                    return aCur;
+                }
                 var j = SCP_JsonData.NewObject();
                 j.Set("schema_version", 1);
-                j.Set("note", "Discord Inbound 使用者白名單（TASK-0319，自 notify_config.json 的 tavern_inbound.user_whitelist 搬來）。enabled=true 時只收 users 裡的人。後台：senate ui --page discord-bot");
-                j.Set("enabled", false);
+                j.Set("note", "Discord Inbound 使用者白名單（TASK-0319，自 notify_config.json 的 tavern_inbound.user_whitelist 搬來）。**不擋人**：白名單外的照收，顯示名標「（白名單外）」。後台：senate ui --page discord-bot");
                 j.Set("users", SCP_JsonData.NewArray());
                 if (File.Exists(NotifyConfigPath(iDataRoot)))
                 {
                     SCP_JsonData aOld = SCP_JsonParser.Parse(File.ReadAllText(NotifyConfigPath(iDataRoot), Encoding.UTF8))["tavern_inbound"]["user_whitelist"];
-                    if (aOld.IsObject)
-                    {
-                        j.Set("enabled", aOld.GetBool("enabled", false));
-                        if (aOld["users"].IsArray) j.Set("users", aOld["users"]);
-                    }
+                    if (aOld.IsObject && aOld["users"].IsArray) j.Set("users", aOld["users"]);
                 }
                 return j;
             }
             catch (Exception e) { oError = e.Message; return null; }
-        }
-
-        public static bool TrySetWhitelistEnabled(string iDataRoot, bool iEnabled, out string? oError)
-        {
-            SCP_JsonData? j = LoadWhitelistNode(iDataRoot, out oError);
-            if (j == null) { oError = "白名單讀不了，⛔ 不覆寫：" + oError; return false; }
-            j.Set("enabled", iEnabled);
-            if (!WriteJson(WhitelistPath(iDataRoot), j, out oError)) return false;
-            SCP_DiscordWhitelist aBack = LoadWhitelist(iDataRoot);
-            if (aBack.Source != "whitelist" || aBack.Enabled != iEnabled) { oError = "寫完回讀對不上"; return false; }
-            return true;
         }
 
         /// <summary>新增或更新一人（以 user_id 為鍵；既有欄位如 aliases 原樣保留）。</summary>

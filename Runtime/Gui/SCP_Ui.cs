@@ -9,6 +9,16 @@ using System.Collections.Generic;
 using System.Text;
 namespace SCP.Core.Gui
 {
+    /// <summary>頁面對內容捲動區的請求（見 <see cref="SCP_Ui.ContentScroll"/>）。</summary>
+    public enum SCP_GuiContentScroll
+    {
+        None,
+        /// <summary>上一幀在最底才跟著捲（聊天軟體的黏底）。</summary>
+        FollowBottom,
+        /// <summary>這一幀無條件捲到最底。</summary>
+        Bottom,
+    }
+
     /// <summary>
     /// 一次繪製的上下文。用法：
     /// <code>
@@ -71,6 +81,22 @@ namespace SCP.Core.Gui
         public bool ToggleValue(string iId, bool iFallback = false)
         {
             return m_Input.Toggles.TryGetValue(iId, out bool v) ? v : iFallback;
+        }
+
+        /// <summary>
+        /// 這一輪頁面對**內容捲動區**的請求（renderer 在內容子區域裡執行；文字 renderer 沒有捲動，忽略它）。
+        /// <para>為什麼需要：聊天式的頁面（最新的在最下面）打開時停在最上面 ⇒ 看不到最新訊息（Tim 2026-09-30，酒館頁）。
+        /// 而「現在捲到哪」只有 renderer 知道，頁面不知道 ⇒ 頁面只說意圖，判斷交給 renderer。</para>
+        /// </summary>
+        public SCP_GuiContentScroll ContentScroll { get; private set; } = SCP_GuiContentScroll.None;
+
+        /// <summary>這一輪把內容捲到最底（一次性：打開頁面、按「最新」、換房間時用）。優先於 <see cref="FollowContentBottom"/>。</summary>
+        public void ScrollContentToBottom() => ContentScroll = SCP_GuiContentScroll.Bottom;
+
+        /// <summary>黏底：上一幀已經在最底 ⇒ 新內容長出來時繼續留在最底；使用者捲上去看舊的 ⇒ 不動。</summary>
+        public void FollowContentBottom()
+        {
+            if (ContentScroll == SCP_GuiContentScroll.None) ContentScroll = SCP_GuiContentScroll.FollowBottom;
         }
 
         public SCP_GuiNode Root { get; }

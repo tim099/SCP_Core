@@ -164,7 +164,7 @@ namespace SCP.Core.Cmd
             List<SCP_DiscordRoute> aRoutes = SCP_DiscordInboundConfig.LoadRoutes(iRoot, out string? aErr).Where(r => r.Enabled).ToList();
             if (aErr != null) return SCP_CmdResult.Fail(1, "✗ 對應表讀不了：" + aErr);
             SCP_DiscordWhitelist aWl = SCP_DiscordInboundConfig.LoadWhitelist(iRoot);
-            var aR = SCP_CmdResult.Success($"# Inbound 偷看（{aRoutes.Count} 個頻道；白名單{(aWl.Enabled ? "啟用 " + aWl.Users.Count + " 人" : "停用")}）—— ⛔ 不寫、不動游標");
+            var aR = SCP_CmdResult.Success($"# Inbound 偷看（{aRoutes.Count} 個頻道；白名單 {aWl.Users.Count} 人（只標記不擋））—— ⛔ 不寫、不動游標");
             int aTotal = 0;
             foreach (SCP_DiscordRoute rt in aRoutes)
             {

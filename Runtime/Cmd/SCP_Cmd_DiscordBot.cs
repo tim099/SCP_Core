@@ -31,7 +31,7 @@ namespace SCP.Core.Cmd
             + "· `op=test`：`GET /users/@me` ⇒ Bot 名稱與 id。　`op=refresh`：重抓 Server／頻道清單寫快取。　`op=servers`：印快取。\n"
             + "· `op=routes`：對應表。　`op=route --arg channel=<id> [--arg room=<酒館頻道，預設 tavern>] [--arg enabled=1] [--arg source_class=...] [--arg label=...] [--arg guild=<id>]`\n"
             + "  `op=unroute --arg channel=<id>`。酒館頻道要存在且沒封存。\n"
-            + "· `op=whitelist`／`op=whitelist-enable --arg enabled=0|1`／`op=whitelist-add --arg user_id=<id> [--arg display_name=] [--arg profile=]`／`op=whitelist-remove --arg user_id=<id>`。";
+            + "· `op=whitelist`／`op=whitelist-add --arg user_id=<id> [--arg display_name=] [--arg profile=]`／`op=whitelist-remove --arg user_id=<id>`。";
 
         public override string Example => SCP_CmdRegistry.Invoke("discord-bot --arg op=status");
 
@@ -41,7 +41,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("op", "做什麼", iDefault: "status", iChoices: new[]
             {
                 "status", "set-token", "test", "refresh", "servers", "routes", "route", "unroute",
-                "whitelist", "whitelist-enable", "whitelist-add", "whitelist-remove",
+                "whitelist", "whitelist-add", "whitelist-remove",
             }),
             new SCP_CmdArgSpec("token_path", "op=set-token：放 token 的檔（讀完不動它；⛔ 不收 token 本身）", iDefault: ""),
             new SCP_CmdArgSpec("passphrase_path", "op=set-token：放密碼的檔", iDefault: ""),
@@ -49,7 +49,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("overwrite", "op=set-token：1＝允許覆寫既有 .enc", iDefault: "0", iChoices: new[] { "0", "1" }),
             new SCP_CmdArgSpec("channel", "op=route／unroute：Discord 頻道 id", iDefault: ""),
             new SCP_CmdArgSpec("room", "op=route：酒館頻道（空＝主頻道 tavern）", iDefault: ""),
-            new SCP_CmdArgSpec("enabled", "op=route／whitelist-enable：1＝開", iDefault: "1", iChoices: new[] { "0", "1" }),
+            new SCP_CmdArgSpec("enabled", "op=route：1＝開", iDefault: "1", iChoices: new[] { "0", "1" }),
             new SCP_CmdArgSpec("source_class", "op=route：external／internal／work…（空＝既有列不動、新列 external）", iDefault: ""),
             new SCP_CmdArgSpec("label", "op=route：顯示名（空＝不動）", iDefault: ""),
             new SCP_CmdArgSpec("guild", "op=route：Discord Server id（新列寫入；既有列給了就覆寫，結果印舊 → 新）", iDefault: ""),
@@ -104,12 +104,6 @@ namespace SCP.Core.Cmd
                     return SCP_CmdResult.Success($"✅ 已移除 Discord `{aCh}` 的對應（回讀）");
                 }
                 case "whitelist": return Whitelist(aRoot);
-                case "whitelist-enable":
-                {
-                    bool aOn = iArgs.Get("enabled").Trim() == "1";
-                    if (!SCP_DiscordInboundConfig.TrySetWhitelistEnabled(aRoot, aOn, out string? aErr)) return SCP_CmdResult.Fail(2, "✗ 沒有寫入：" + aErr);
-                    return SCP_CmdResult.Success($"✅ 白名單 {(aOn ? "啟用" : "停用")}（寫在 {SCP_DiscordInboundConfig.WhitelistPath(aRoot)}；回讀）");
-                }
                 case "whitelist-add":
                 {
                     if (!SCP_DiscordInboundConfig.TryUpsertWhitelistUser(aRoot, iArgs.Get("user_id"), iArgs.Get("display_name"), iArgs.Get("profile"), out string? aErr))
@@ -153,7 +147,7 @@ namespace SCP.Core.Cmd
             if (s.DirWarning.Length > 0) aR.Lines.Add("  ⚠ " + s.DirWarning);
             aR.Lines.Add(c.Exists ? $"- Server 快取：{c.Guilds.Count} 個（Bot {c.BotName}，{c.FetchedAt}）" : "- Server 快取：還沒抓過（`op=refresh`）");
             aR.Lines.Add(aRouteErr != null ? "- 對應表：✗ " + aRouteErr : $"- 對應表：{aRoutes.Count} 條（開 {aRoutes.Count(r => r.Enabled)}）");
-            aR.Lines.Add($"- 白名單：{(w.Enabled ? "啟用" : "停用")}，{w.Users.Count} 人（來源：{WhitelistSource(w)}）");
+            aR.Lines.Add($"- 白名單：{w.Users.Count} 人（不擋人，白名單外的顯示名標「{SCP_DiscordInbound.NotWhitelistedSuffix}」；來源：{WhitelistSource(w)}）");
             aR.AddValue("token_ready", s.Ready ? "1" : "0");
             aR.AddValue("enc", s.EncExists ? "1" : "0");
             aR.AddValue("plain", s.PlainExists ? "1" : "0");
@@ -198,10 +192,10 @@ namespace SCP.Core.Cmd
             List<SCP_DiscordRoute> aRoutes = SCP_DiscordInboundConfig.LoadRoutes(iRoot, out string? aErr);
             if (aErr != null) return SCP_CmdResult.Fail(1, "✗ " + aErr);
             var aR = SCP_CmdResult.Success($"# Discord 頻道 → 酒館頻道（{aRoutes.Count}）");
-            aR.Lines.Add("| Discord 頻道 | id | → 酒館頻道 | 開 | source_class | priority |");
-            aR.Lines.Add("|---|---|---|---|---|---:|");
+            aR.Lines.Add("| Discord 頻道 | id | → 酒館頻道 | 開 | source_class |");
+            aR.Lines.Add("|---|---|---|---|---|");
             foreach (SCP_DiscordRoute r in aRoutes)
-                aR.Lines.Add($"| {r.Label} | {r.ChannelId} | {r.TavernRoom} | {(r.Enabled ? "開" : "關")} | {r.SourceClass} | {r.Priority} |");
+                aR.Lines.Add($"| {r.Label} | {r.ChannelId} | {r.TavernRoom} | {(r.Enabled ? "開" : "關")} | {r.SourceClass} |");
             aR.AddValue("routes", aRoutes.Count.ToString(CultureInfo.InvariantCulture));
             return aR;
         }
@@ -210,7 +204,7 @@ namespace SCP.Core.Cmd
         {
             SCP_DiscordWhitelist w = SCP_DiscordInboundConfig.LoadWhitelist(iRoot);
             if (w.Error.Length > 0) return SCP_CmdResult.Fail(1, "✗ 白名單讀不了：" + w.Error);
-            var aR = SCP_CmdResult.Success($"# Inbound 白名單（{(w.Enabled ? "啟用" : "停用")}，{w.Users.Count} 人；來源：{WhitelistSource(w)}）");
+            var aR = SCP_CmdResult.Success($"# Inbound 白名單（{w.Users.Count} 人；不擋人，只標記；來源：{WhitelistSource(w)}）");
             foreach (SCP_DiscordWhitelistUser u in w.Users)
                 aR.Lines.Add($"- `{u.UserId}`　{u.DisplayName}{(u.Profile.Length > 0 ? "（" + u.Profile + "）" : "")}");
             aR.AddValue("users", w.Users.Count.ToString(CultureInfo.InvariantCulture));
