@@ -213,7 +213,7 @@ namespace SCP.Core.Tavern
         //     <see cref="Refresh"/>（TASK-0335）。以前維護者是 Editor 的讀取端（缺天時順手 Rebuild），
         //     而那讓索引新不新鮮取決於「Editor 有沒有開」；現在訊息是誰寫的、索引就是誰刷的。
         //   ⇒ 讀取端只把落後**回報出來**（`oStaleDays` ＝ 這次現場列舉了幾天）。
-        //   ⚠ 還會落後的情況：`tavern.writer=editor` 時訊息由 Editor 本地寫，不經過這裡 ⇒ 那段期間索引不刷，
+        //   ⚠ 還會落後的情況：繞過寫入端直接丟進 messages/ 的檔（遷移工具、人工）不經過這裡 ⇒ 索引不刷，
         //     落後的樣子是「變慢」不是「算錯」；修它走 `senate cmd tavern-index --arg op=rebuild`，
         //     或等 Server 寫該房下一則訊息時一次補齊。
         // ⭐ `TryGetRangePaths` 是本側**比 Editor 多出來的一支** —— 那邊的 `Range` 至今仍走

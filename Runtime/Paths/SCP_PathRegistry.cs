@@ -96,7 +96,7 @@ namespace SCP.Core.Paths
         BankRoot,
 
         [SCP_PathInfo("資料根層設定檔",
-            "`agent_settings.json` —— 這棵資料樹上**大家要一致**的那些開關（第一個是 `tavern.writer`，TASK-0106）。"
+            "`agent_settings.json` —— 這棵資料樹上**大家要一致**的那些開關（第一個是 `tavern.writer`，已於 TASK-0341 拔掉）。"
             + "⚠ 它跟 `senate.local.json` 的差別是**誰讀得到**：那個檔只有 Senate 看得見，"
             + "而這裡的開關 Unity Editor 與 Server 兩側都要照著走。"
             + "⛔ 檔不在 ＝ 全部走預設值，那不是錯誤。")]
@@ -104,8 +104,8 @@ namespace SCP.Core.Paths
         SettingsFile,
 
         [SCP_PathInfo("酒館根",
-            "訊息、seq、inbox 都在這下面。**寫入端由 `tavern.writer` 決定**（TASK-0106）："
-            + "`editor`（預設，今天的行為）／`server`（Senate 常駐 Server 單一寫入端）。"
+            "訊息、seq、inbox 都在這下面。**寫入端只有 Senate 常駐 Server**（`tavern-write`；"
+            + "TASK-0341 起 Editor 本地寫入與 `tavern.writer` 開關都已刪除）。"
             + "⚠ 舊註記寫著「`_seq.txt` 沒有跨 process lock」—— 那句的**受詞已經不對**："
             + "seq 的權威是訊息**檔數**、檔名就是 seq，而建檔走原子建檔（TASK-0256）"
             + "⇒ 撞檔會出聲，⛔ 不再是靜默覆蓋。")]

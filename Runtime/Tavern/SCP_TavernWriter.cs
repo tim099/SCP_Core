@@ -1,9 +1,8 @@
 // 區塊職責：酒館訊息的**寫入臨界區**（Senate 側）—— TASK-0106 的第一塊。
 // 物理意義：Editor 側 `UCL_ChatTavernWriteService.WriteMessageWithSeq` 的同義移植：
 //           「算 seq（＝訊息檔數＋1）→ 原子建檔 → 寫 `_seq.txt` 快取」三件事在同一個 per-room 臨界區裡。
-//           ⭐ 這一份**不是第二個寫入端**：它存在的目的是讓那個臨界區能活在 **Server 那一顆 process 裡**，
-//           而終局是 Editor 那側改成委派（`tavern_writer=server`），⇒ 同時只有一邊在寫。
-//           ⛔ 在切換開關落地之前，**沒有任何呼叫端**會走到這裡 —— 那是刻意的，不是還沒接完。
+//           ⭐ 這一份是酒館訊息**唯一的寫入端**，活在 Server 那一顆 process 裡（TASK-0341，2026-09-30：
+//           Editor 本地寫入與 `tavern.writer` 開關都已刪除，Editor 一律委派 `tavern-write`）。
 //
 // 數值影響：seq 的權威是**訊息檔數**（`_seq.txt` 只是給 wait 機制讀的 cache，不是 atomic counter）；
 //           檔名就是 seq（`{seq:D8}.json`）⇒ 撞號＝撞檔名，而撞檔名由 `FileMode.CreateNew` 當場量到。
