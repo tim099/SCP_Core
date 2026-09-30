@@ -1,5 +1,5 @@
 // 區塊職責：`senate cmd commit` —— commit 的最後一步：組 trailer、提交、公告領薪、推進單號。
-//           **git 與 trailer 本地跑（Editor 沒開也成）；公告與推單委派 Editor。**
+//           **git 與 trailer 本地跑（Editor 沒開也成）；公告走酒館 Server、推單走任務寫入端（TASK-0349）——都不需要 Editor。**
 // 物理意義：trailer 以前是手打的，於是它會漂 —— 同一位同事出現過 (GPT)/(GPT-5)/(GPT-5.6) 與兩種
 //           domain。身分／型號／信箱三欄全部推導自檔案，手不碰就不會漂。
 //           而**公告不是附帶動作，是領薪** —— 漏發就是錢沒領到（血證：新制上線後
@@ -42,8 +42,8 @@ namespace SCP.Core.Cmd
 
         public override string Summary =>
             "提交（只做最後一步，**不 stage 不 push**）：組 Co-Authored-By ＋ git commit ——"
-            + " 本地跑，Editor 沒開也成；**酒館公告領薪與單號推進委派 Editor**"
-            + "（沒開＝exit 6 確定沒發／等不到回執＝**exit 7 不知道，先回讀別補發**）";
+            + " 本地跑，Editor 沒開也成；**酒館公告領薪交酒館 Server、單號推進交任務寫入端**（TASK-0349）"
+            + "（公告：exit 6 確定沒發／等不到回執＝**exit 7 不知道，先回讀別補發**）";
 
         public override string Details =>
             "⚠ **三本帳分開結算**（⛔ 不是「成功／失敗」兩種）：\n"
@@ -511,7 +511,7 @@ namespace SCP.Core.Cmd
                     ioResult.Lines.Add("⚠ 訊息裡有 `Fixes/Refs TASK-n`，但**沒有一條頂格** ⇒ 單子狀態沒有動、sha 也沒掛上去。");
                     ioResult.Lines.Add("   （頂格錨定是刻意的：縮排代表引用，引述別人的 trailer 不該推進別人的單。）");
                     foreach (string aN in aMissed)
-                        ioResult.Lines.Add("   · TASK-" + aN + "　手動補：senate ucmd run Task --persona "
+                        ioResult.Lines.Add("   · TASK-" + aN + "　手動補：" + SCP_CmdRegistry.Invoke("task --arg persona=")
                                            + iPersona + " --arg op=commit --arg index=" + aN
                                            + " --arg sha=" + iSha + " --arg mode=refs|fixes");
                 }
@@ -523,7 +523,7 @@ namespace SCP.Core.Cmd
             {
                 ioResult.Lines.Add("⚠ 本宿主**沒有登記推單閘** ⇒ 下列單**狀態沒有動**（commit 與領薪不受影響）：");
                 foreach (var aKv in aSeen)
-                    ioResult.Lines.Add("   · TASK-" + aKv.Key + "　手動補：senate ucmd run Task --persona "
+                    ioResult.Lines.Add("   · TASK-" + aKv.Key + "　手動補：" + SCP_CmdRegistry.Invoke("task --arg persona=")
                                        + iPersona + " --arg op=commit --arg index=" + aKv.Key
                                        + " --arg sha=" + iSha + " --arg mode=" + aKv.Value);
                 return;
@@ -549,7 +549,7 @@ namespace SCP.Core.Cmd
                     continue;
                 }
                 ioResult.Lines.Add("⚠ TASK-" + aKv.Key + " **沒有送出去**（" + aV.Detail
-                                   + "）—— 單子狀態沒動，手動補：senate ucmd run Task --persona " + iPersona
+                                   + "）—— 單子狀態沒動，手動補：" + SCP_CmdRegistry.Invoke("task --arg persona=") + iPersona
                                    + " --arg op=commit --arg index=" + aKv.Key + " --arg sha=" + iSha
                                    + " --arg mode=" + aKv.Value);
             }

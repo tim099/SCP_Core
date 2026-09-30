@@ -1,13 +1,10 @@
 // 區塊職責：任務單的**讀取層** —— 掃 `Tasks/tasks/*.md`、解析 frontmatter 與留言、給查詢。
-// 物理意義：磁碟是既成事實。本檔**只讀不寫** —— 寫入端（`Save` / 配號 / 酒館公告）
-//           留在 Unity Editor 那側，理由不是懶：
-//           🩸 配號（`_index.txt`）是**沒有跨 process lock** 的 read-modify-write，
-//              而 UCL 那支自己的 self-heal 訊息就在描述「有人繞過 Cmd 建單」。
-//              兩個 process 同時配號 ⇒ 拿到同號 ⇒ 第二個 Save 覆蓋第一個，**靜默**。
-//              （同族：ChatTavern 的 `_seq.txt` —— ⚠ **那一族 2026-09-21 已經處理掉了**（TASK-0106／0256）：
-//               配號改看訊息檔數、建檔改原子建檔、寫入端可切到 Senate Server。
-//               ⛔ 所以那邊不再是同病相憐的對照組，是**已經走過一次的路**；本檔這一格還沒走。）
-//           ⇒ 判準：**分配單調 id 或持有鎖的寫入，只能有一個寫者。** 整格搬或整格不搬。
+// 物理意義：磁碟是既成事實。本檔**只讀不寫** —— 寫入端在旁邊的 `SCP_TaskStore`（TASK-0349，2026-09-30），
+//           而它只在 Senate Server 裡被呼叫（`task-write`）：配號改成原子建檔、讀改寫包在跨 process 檔案鎖裡。
+//           🩸 搬之前的形狀：寫入端在 Unity Editor，配號（`_index.txt`）是**沒有跨 process lock** 的 read-modify-write
+//              ⇒ 兩個 process 同時配號會拿到同號、第二個 Save 覆蓋第一個，**靜默**。
+//              酒館 `_seq.txt` 走過同一條路（TASK-0106／0256），本檔這一格照它的樣子搬。
+//           ⇒ 判準不變：**分配單調 id 或持有鎖的寫入，只能有一個寫者。** 整格搬或整格不搬。
 // 數值影響：純讀。無 `tasks/` 目錄回空清單（那是「還沒有人開單」的誠實讀數，不是錯誤）。
 //
 // ⚠ **語意與 UCL 端逐條對齊**（`UCL_TaskIO.LoadFile`）—— 本檔是那支的移植，不是重寫：
@@ -192,7 +189,7 @@ namespace SCP.Core.Tasks
                 var aBody = new StringBuilder();
                 foreach (string aLine in File.ReadAllLines(iPath, Encoding.UTF8))
                 {
-                    if (aLine.StartsWith("## 留言", StringComparison.Ordinal)) { aIn = true; continue; }
+                    if (IsHeading(aLine, "## 留言")) { aIn = true; continue; }
                     if (!aIn) continue;
                     if (IsSectionHeading(aLine)) break;
 
@@ -209,7 +206,10 @@ namespace SCP.Core.Tasks
                             CultureInfo.InvariantCulture, out aCur.id);
                         continue;
                     }
-                    if (aCur != null) aBody.AppendLine(aLine);
+                    // 寫入端把行首 `#` 逃脫成 `\#`（否則內文裡的 `## 驗收標準` 會被當成區塊邊界）⇒ 讀取時脫掉。
+                    // 🩸 本支原本沒脫（UCL 那支有）⇒ 讀出來的留言多一個反斜線 —— 顯示層的差，
+                    //   而寫入端搬到 SCP 之後它變成**資料**的差：整檔重寫會把 `\#` 再逃脫一次成 `\\#`。
+                    if (aCur != null) aBody.Append(UnescapeCommentLine(aLine)).Append('\n');
                 }
                 Flush(aOut, ref aCur, aBody);
             }
@@ -231,16 +231,34 @@ namespace SCP.Core.Tasks
             ioBody.Length = 0;
         }
 
-        static bool IsSectionHeading(string iLine)
+        // ⚠ 區塊標題是**整行相等**（容許行尾空白），⛔ 不是前綴（TASK-0349 量到的）：
+        //   🩸 前綴比對時，內文裡一行 `## 驗收標準怎麼處置（…）` 會被當成「驗收標準」區塊的開頭／上一區的結尾
+        //   ⇒ 結單說明在那一行被截斷，**而任何一次整檔重寫都會把後半段靜默刪掉**。
+        //   2026-09-30 讀數：352 張裡 0126（34 行）、0204（7 行）兩張中招；舊寫入端（UCL）也是前綴比對，同一隻病。
+        //   ⇒ 寫入端寫出的標題永遠是整行（`SCP_TaskStore.Render`），整行比對不會漏認任何一張既有單（352/352 標題逐字相符）。
+        internal static bool IsSectionHeading(string iLine)
         {
             foreach (string aH in SECTION_HEADINGS)
-                if (iLine.StartsWith(aH, StringComparison.Ordinal)) return true;
+                if (IsHeading(iLine, aH)) return true;
             return false;
         }
 
-        // ── 純讀的計數（配號本身留在 Editor）──────────────────────
+        internal static bool IsHeading(string iLine, string iHeading)
+            => string.Equals(iLine.TrimEnd(), iHeading, StringComparison.Ordinal);
 
-        /// <summary>計數檔現值。⚠ **只讀** —— 遞增留在 Editor 那側的單一寫者。</summary>
+        /// <summary>留言行的逃脫（寫入端用）—— 行首是 `#` 就前綴 `\`。⚠ 與 <see cref="UnescapeCommentLine"/> 成對。</summary>
+        internal static string EscapeCommentLine(string iLine)
+            => iLine.TrimStart().StartsWith("#", StringComparison.Ordinal) ? "\\" + iLine : iLine;
+
+        internal static string UnescapeCommentLine(string iLine)
+            => iLine.StartsWith("\\#", StringComparison.Ordinal) ? iLine.Substring(1) : iLine;
+
+        /// <summary>留言標頭（寫入端用）—— 與 <c>COMMENT_HEAD</c> 那條 regex 成對，**改一邊要改另一邊**。</summary>
+        internal static string CommentHeader(SCP_TaskComment c) => $"### 💬 #{c.id} {c.persona} {c.at}";
+
+        // ── 純讀的計數（配號在 SCP_TaskStore，只在 Server 裡跑）──────
+
+        /// <summary>計數檔現值。⚠ **只讀** —— 遞增在 `SCP_TaskStore.Create`（單一寫者）。</summary>
         public static int ReadCurrentIndex(SCP_DataRoot iRoot)
         {
             string aPath = IndexPath(iRoot);

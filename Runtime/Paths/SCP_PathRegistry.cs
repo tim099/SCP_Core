@@ -122,8 +122,8 @@ namespace SCP.Core.Paths
         Queues,
 
         [SCP_PathInfo("任務單根",
-            "讀取層已在 SCP_Core（`SCP_TaskIO`）；**配號與寫入仍只有 Editor 一個寫者**"
-            + "（`_index.txt` 是沒有跨 process lock 的 read-modify-write）。")]
+            "讀取層 `SCP_TaskIO`、寫入層 `SCP_TaskStore`（SCP_Core）；**寫入只在 Senate Server 裡跑**"
+            + "（`task-write`，TASK-0349）——配號是原子建檔，讀改寫包在跨 process 檔案鎖裡。")]
         [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, "Tasks", SCP_PathScope.Global)]
         TasksRoot,
 

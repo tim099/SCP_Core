@@ -147,7 +147,7 @@ namespace SCP.Core.Tasks
                     : $"- ⏳ ③ 有 **{aStaleClaims.Count}** 張我認領後逾期未動 ⇒ 認領已經變成占位：");
                 foreach (var e in aStaleClaims) sb.AppendLine($"    · {e.Id} {Trunc(e.title, 60)}　{DaysSinceUpdate(e, aNow)} 天沒動");
                 if (aStaleClaims.Count > 0)
-                    sb.AppendLine("    ⇒ 釋放回 todo（機械、可重跑）：`run Task --arg op=sweep --arg confirm=1`");
+                    sb.AppendLine("    ⇒ 釋放回 todo（機械、可重跑）：`" + SCP.Core.Cmd.SCP_CmdRegistry.Invoke("task --arg op=sweep --arg persona=" + iPersona + " --arg confirm=1") + "`");
 
                 // ④ Task ↔ 工作記憶（只判「主題不存在」，不判「主題在但沒有 state」—— 後者是拍板後的正確形狀）
                 var aBrokenLink = new List<string>();
@@ -190,7 +190,7 @@ namespace SCP.Core.Tasks
                 {
                     sb.AppendLine("    ⇒ 現在就可以收（**本段只列不擋**，擋的是 `step=sleep`）：");
                     foreach (var e in aPre)
-                        sb.AppendLine($"      `run Task --arg op=wrapup --arg index={e.index}"
+                        sb.AppendLine($"      `{SCP.Core.Cmd.SCP_CmdRegistry.Invoke("task --arg op=wrapup --arg persona=" + iPersona)} --arg index={e.index}"
                             + " --arg-file progress=<還剩什麼、下一步從哪接>"
                             + " [--arg-file why=<為什麼卡住／試過什麼不行 ⇒ 進工作記憶>]`");
                     sb.AppendLine("    ⇒ 真的沒東西可寫 → `step=sleep` 帶 `--arg skip_reason=<一句話>`"

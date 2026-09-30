@@ -2,8 +2,8 @@
 // 物理意義：任務單是 `Tasks/tasks/<index>.md`（frontmatter markdown），磁碟就是真相源。
 //           讀取不需要 Editor，所以不該綁在「Editor 開著」這個前提上 ——
 //           而早安 brief 的 §9／§6 需要這份讀數，那兩節正是卡在這裡。
-// 數值影響：純讀。⛔ **本 Cmd 不寫任何東西** —— 開單／改狀態／配號仍走 Editor 的 `Cmd_Task`，
-//           理由在 `SCP_TaskIO` 檔頭（配號是沒有跨 process lock 的 read-modify-write）。
+// 數值影響：純讀。⛔ **本 Cmd 不寫任何東西** —— 開單／改狀態／配號走 `senate cmd task`
+//           （寫入端是 Senate Server 的 `task-write`，TASK-0349；理由在 `SCP_TaskStore` 檔頭）。
 //
 // ⚠ 回傳形狀照 Tim 2026-08-31 拍板：**values 只放平的純量；巢狀資料走寫檔（JSON）**。
 //   ⇒ `--arg out_json=<路徑>` 才落 JSON，路徑進 outputs；不給就只印人讀的摘要與純量。
@@ -27,8 +27,8 @@ namespace SCP.Core.Cmd
 
         public override string Details =>
             "資料源＝`<data_root>/Tasks/tasks/*.md`（frontmatter markdown），磁碟即事實。\n"
-            + "⛔ **只讀**：開單／改狀態／配號請走 Editor 的 `Cmd_Task`（`senate ucmd run Task`）——\n"
-            + "   配號是沒有跨 process lock 的 read-modify-write，兩個寫者會靜默撞號。\n"
+            + "⛔ **只讀**：開單／改狀態／留言／勾格請走 `" + SCP_CmdRegistry.Invoke("task") + "`"
+            + "（寫入端是 Senate Server，不需要 Editor —— TASK-0349）\n"
             + "⚠ 壞欄位（例如 status 寫著篩選成員 `all`）會**出聲**並落回預設，不靜默接受。";
 
         public override string Example =>

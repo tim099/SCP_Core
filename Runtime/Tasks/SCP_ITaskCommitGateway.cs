@@ -1,6 +1,7 @@
 // 區塊職責：「commit 訊息裡的 `Fixes/Refs TASK-n` → 推進那張單」這一步的**委派閘**。
 // 物理意義：狀態機不在這裡 —— 有 blocker 不推進／有 QA 推 in_review／沒 QA 才 done，
-//           那些判斷全在 Editor 的 `Cmd_Task op=commit`。本層只負責**把訊號送過去**。
+//           那些判斷全在 SCP_Core `SCP_TaskOps`，由任務單唯一的寫入端（Senate Server `task-write`）執行
+//           （TASK-0349；在此之前是 Editor 的 `Cmd_Task op=commit`）。本層只負責**把訊號送過去**。
 //           複製一份狀態機到這邊就是兩份產線：兩邊都不報錯，而它們遲早各說各話。
 // 數值影響：本檔只有介面與結局型別，零行為。沒有宿主登記 ⇒ 呼叫端會明說「沒有推進」。
 //

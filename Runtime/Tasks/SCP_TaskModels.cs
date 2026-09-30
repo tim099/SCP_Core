@@ -161,5 +161,38 @@ namespace SCP.Core.Tasks
                 if (string.Equals(aP.persona, iPersona, StringComparison.Ordinal)) return true;
             return false;
         }
+
+        // ── 寫入端（SCP_TaskOps，TASK-0349）用的三支 ──────────────────
+        // ⚠ 寫入端的判準**照 UCL `Cmd_Task` 原樣搬**：persona 比對**不分大小寫**。
+        //   上面兩支 `RolesOf`／`HasParticipant` 是讀取層既有的 Ordinal 版（早安／晚安在用），
+        //   ⛔ 不改它們的語意 —— 改了會讓既有讀取端的讀數在沒有人動手的情況下變掉。
+        //   ⇒ 兩種比對並存、名字分開，讀的人一眼看得出這一支是哪一套。
+
+        /// <summary>這個人在本單的角色（**不分大小寫**，寫入端的閘用這一支）。</summary>
+        public List<SCP_TaskRole> RolesOfAnyCase(string iPersona)
+        {
+            var aOut = new List<SCP_TaskRole>();
+            if (string.IsNullOrEmpty(iPersona)) return aOut;
+            foreach (SCP_TaskParticipant aP in participants)
+                if (string.Equals(aP.persona, iPersona, StringComparison.OrdinalIgnoreCase)) aOut.Add(aP.role);
+            return aOut;
+        }
+
+        /// <summary>本單指名的 QA（可多個）。空 ⇒ 沒有人被指名驗收。</summary>
+        public List<string> QaPersonas()
+        {
+            var aOut = new List<string>();
+            foreach (SCP_TaskParticipant aP in participants)
+                if (aP.role == SCP_TaskRole.qa) aOut.Add(aP.persona);
+            return aOut;
+        }
+
+        /// <summary>距上次更新幾天；`updated_at` 解析不了回 -1（⛔ 不假裝知道它幾天沒動）。</summary>
+        public int DaysSinceUpdate(DateTime iNowUtc)
+        {
+            if (!DateTime.TryParse(updated_at, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime aTs)) return -1;
+            return (int)(iNowUtc - aTs).TotalDays;
+        }
     }
 }

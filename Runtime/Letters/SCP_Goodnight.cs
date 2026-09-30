@@ -42,7 +42,7 @@ namespace SCP.Core.Letters
         /// <summary>非空＝這一步有一段要 Editor 才做得完（原因）。
         /// 呼叫端的處置（Tim 2026-09-26）：Editor 活著 ⇒ 整步交給 Editor；Editor 沒開 ⇒ 本層照走，**只跳過那一段並大聲說**。</summary>
         public string NeedsEditor = "";
-        /// <summary>收工閘帶了 skip_reason、而有單要寫理由（寫入端只有 Editor）。</summary>
+        /// <summary>收工閘帶了 skip_reason、而有單要寫理由 ⇒ 呼叫端交 `task op=wrapup_skip`（任務寫入端，TASK-0349 起不需要 Editor）。</summary>
         public bool NeedsTaskSkipWrite;
         /// <summary>本人有進行中的觀影場（結算只有 Editor）。</summary>
         public string ActiveStreamWatchId = "";
@@ -473,18 +473,16 @@ namespace SCP.Core.Letters
                     foreach (var t in p) aR.AppendLine($"    · {t.Id} `{t.status}` {t.title}");
                     aR.AppendLine("- exits:");
                     foreach (var t in p)
-                        aR.AppendLine($"    · 收工 → `run Task --arg op=wrapup --arg index={t.index}"
+                        aR.AppendLine($"    · 收工 → `{SCP.Core.Cmd.SCP_CmdRegistry.Invoke("task --arg op=wrapup --arg persona=" + iPersona)} --arg index={t.index}"
                             + " --arg-file progress=<還剩什麼、下一步從哪接>"
                             + " [--arg-file why=<為什麼卡住／試過什麼不行 ⇒ 進工作記憶>]`");
                     aR.AppendLine("    · 真的沒東西可寫 → 本步驟帶 `--arg skip_reason=<一句話>`"
                         + "（**理由會寫進那幾張單的時間線** —— 跳過要留在別人看得到的地方）");
                     aOut.Blocked = true; aOut.Report = aR.ToString(); return aOut;
                 }
-                if (p.Count > 0)
-                {
-                    aOut.NeedsTaskSkipWrite = true;
-                    aOut.NeedsEditor = $"收工閘顯式跳過要把理由寫進 {p.Count} 張單的時間線 —— 單子的寫入端目前只有 Editor 有";
-                }
+                // ⚠ 理由要寫進那幾張單的時間線 —— TASK-0349 之後寫入端是 Senate Server，⛔ 不再是「要 Editor」的理由
+                //   （🩸 在此之前這一格讓晚安整步交給 Editor，Editor 沒開就只能把理由記在廣播裡）。
+                if (p.Count > 0) aOut.NeedsTaskSkipWrite = true;
 
                 // 收尾信閘
                 int aLetters = SCP_Consolidate.WakeLetterCount(iR.LettersRoot, iPersona);
