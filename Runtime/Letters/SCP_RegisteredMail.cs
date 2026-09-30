@@ -107,5 +107,183 @@ namespace SCP.Core.Letters
             File.WriteAllText(aTmp, iContent, new UTF8Encoding(false));
             SCP_TextFile.ReplaceOrMove(aTmp, iPath);
         }
+
+        // ── 讀取端：收件匣／送達章／已讀（TASK-0333／0347，移植自 registered_mail.py）─────────────
+        // 區塊職責：「投遞」＝早安 brief 列出到期未 ack 的信（0347：09-04 python brief 退場後這段沒有人做，90 封沒人看得到）。
+        // 物理意義（規則逐條照 py 版，那是付過錢的東西的保證）：
+        //   · 到期 ＝ 沒指定 wake，或指定的 wake ≤ 目前 wake。指定 #100 而現在 #105 ⇒ **仍算到期**（晚醒不該吃掉別人付過錢的信）。
+        //   · 已 ack（frontmatter 有 read_at）才除名 —— **唯一**的除名條件。⛔ 不用「列過一次就消失」：
+        //     只要有一次 render 沒被看到（溢出／那天沒讀 brief），信就永遠消失且無人知曉。
+        //   · 送達章 first_seen_wake：第一次端上桌蓋一次、之後不覆寫；⚠ 蓋章≠除名。
+        //   · 只改 frontmatter，⛔ 不動內文 —— 信的內容是寄件者寫的。
+
+        /// <summary>收件匣裡的一封信（讀自 frontmatter）。</summary>
+        public sealed class MailItem
+        {
+            public string Path = "";
+            public string FileName = "";
+            public string From = "";
+            public string Subject = "";
+            /// <summary>指定投遞的 wake；null ＝ 下次醒來（壞值也當 null —— 不吞信）。</summary>
+            public int? DeliverAtWake;
+            public string FirstSeenWake = "";
+            public string ReadAt = "";
+            public string Fee = "";
+        }
+
+        /// <summary>persona／收件者名稱合法（不含路徑字元）。⛔ 不合法就不碰檔案系統。</summary>
+        public static bool IsValidPersonaName(string? iName)
+            => !string.IsNullOrWhiteSpace(iName) && iName!.Trim().IndexOfAny(new[] { '/', '\\', ':' }) < 0
+               && !iName.Contains("..");
+
+        public static string MailboxDir(string iLettersRoot, string iPersona)
+            => Path.Combine(iLettersRoot, iPersona, MailboxDirName).Replace('\\', '/');
+
+        /// <summary>
+        /// 列出 <paramref name="iPersona"/> 的未 ack 信件，分成「到期」與「未到期」。
+        /// <paramref name="iWake"/> ＝ null ⇒ 全部算到期（py 版 `wake_count is None` 同語意：ack 全部用）。
+        /// </summary>
+        public static void ListUnread(string iLettersRoot, string iPersona, int? iWake,
+                                      out System.Collections.Generic.List<MailItem> oDue,
+                                      out System.Collections.Generic.List<MailItem> oLater)
+        {
+            oDue = new System.Collections.Generic.List<MailItem>();
+            oLater = new System.Collections.Generic.List<MailItem>();
+            if (!IsValidPersonaName(iPersona)) return;
+            string aBox = MailboxDir(iLettersRoot, iPersona);
+            if (!Directory.Exists(aBox)) return;
+            string[] aFiles = Directory.GetFiles(aBox, "*.md");
+            Array.Sort(aFiles, StringComparer.Ordinal);
+            foreach (string f in aFiles)
+            {
+                MailItem m = ReadItem(f);
+                if (m.ReadAt.Length > 0) continue;   // 已確認閱讀 ⇒ 除名
+                if (m.DeliverAtWake == null || iWake == null || iWake.Value >= m.DeliverAtWake.Value) oDue.Add(m);
+                else oLater.Add(m);
+            }
+        }
+
+        public static MailItem ReadItem(string iPath)
+        {
+            var d = ReadFrontmatter(iPath);
+            var m = new MailItem { Path = iPath.Replace('\\', '/'), FileName = Path.GetFileName(iPath) };
+            d.TryGetValue("from", out m.From);
+            d.TryGetValue("subject", out m.Subject);
+            d.TryGetValue("first_seen_wake", out m.FirstSeenWake);
+            d.TryGetValue("read_at", out m.ReadAt);
+            d.TryGetValue("fee", out m.Fee);
+            m.From ??= ""; m.Subject ??= ""; m.FirstSeenWake ??= ""; m.ReadAt ??= ""; m.Fee ??= "";
+            if (d.TryGetValue("deliver_at_wake", out string? aRaw)
+                && int.TryParse(aRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int aW)) m.DeliverAtWake = aW;
+            return m;
+        }
+
+        /// <summary>送達章：第一次端上桌時蓋 first_seen_wake（已蓋過不覆寫）。回是否有變動。</summary>
+        public static bool StampDelivered(string iPath, int iWake)
+        {
+            if (ReadItem(iPath).FirstSeenWake.Length > 0) return false;
+            return SetFrontmatterField(iPath, "first_seen_wake", iWake.ToString(CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>ack 一封的結果（逐封回報，⛔ 不合成一個「成功 N 封」）。</summary>
+        public sealed class AckResult
+        {
+            public string FileName = "";
+            /// <summary>acked ／ already ／ missing ／ failed</summary>
+            public string State = "";
+            public bool MirrorUpdated;
+            public string FirstSeenWake = "";
+        }
+
+        /// <summary>
+        /// 確認閱讀：寫 read_at，並回寫寄件者 outbox 副本（同 ts、同對象；找不到不擋 ack）。
+        /// <paramref name="iFileName"/> 空 ⇒ ack 全部未讀（不看 wake —— 同 py 版）。
+        /// </summary>
+        public static System.Collections.Generic.List<AckResult> Ack(string iLettersRoot, string iPersona, string? iFileName)
+        {
+            var aOut = new System.Collections.Generic.List<AckResult>();
+            if (!IsValidPersonaName(iPersona)) return aOut;
+            string aBox = MailboxDir(iLettersRoot, iPersona);
+            var aTargets = new System.Collections.Generic.List<string>();
+            if (!string.IsNullOrWhiteSpace(iFileName))
+            {
+                string aName = Path.GetFileName(iFileName!.Trim());   // ⛔ 只收檔名，不收路徑
+                aTargets.Add(Path.Combine(aBox, aName));
+            }
+            else
+            {
+                ListUnread(iLettersRoot, iPersona, null, out var aDue, out _);
+                foreach (MailItem m in aDue) aTargets.Add(m.Path);
+            }
+            string aNow = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff", CultureInfo.InvariantCulture) + "Z";
+            foreach (string f in aTargets)
+            {
+                var r = new AckResult { FileName = Path.GetFileName(f) };
+                aOut.Add(r);
+                if (!File.Exists(f)) { r.State = "missing"; continue; }
+                MailItem m = ReadItem(f);
+                r.FirstSeenWake = m.FirstSeenWake;
+                if (m.ReadAt.Length > 0) { r.State = "already"; continue; }
+                if (!SetFrontmatterField(f, "read_at", aNow)) { r.State = "failed"; continue; }
+                r.State = "acked";
+                if (IsValidPersonaName(m.From))
+                {
+                    string aTs = r.FileName.Split(new[] { "__" }, 2, StringSplitOptions.None)[0];
+                    string aMirror = Path.Combine(iLettersRoot, m.From.Trim(), OutboxDirName, $"{aTs}__to_{iPersona}.md");
+                    if (File.Exists(aMirror)) r.MirrorUpdated = SetFrontmatterField(aMirror, "read_at", aNow);
+                }
+            }
+            return aOut;
+        }
+
+        static System.Collections.Generic.Dictionary<string, string> ReadFrontmatter(string iPath)
+        {
+            var d = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
+            try
+            {
+                string t = File.ReadAllText(iPath, Encoding.UTF8).TrimStart('﻿').TrimStart();
+                if (!t.StartsWith("---", StringComparison.Ordinal)) return d;
+                int aEnd = t.IndexOf("\n---", 3, StringComparison.Ordinal);
+                if (aEnd < 0) return d;
+                foreach (string raw in t.Substring(3, aEnd - 3).Split('\n'))
+                {
+                    int c = raw.IndexOf(':');
+                    if (c <= 0) continue;
+                    string k = raw.Substring(0, c).Trim();
+                    if (k.Length > 0 && !d.ContainsKey(k)) d[k] = raw.Substring(c + 1).Trim();
+                }
+            }
+            catch (Exception) { }   // 讀不了 ⇒ 空 frontmatter（當成「下次醒來、未讀」—— 不吞信）
+            return d;
+        }
+
+        /// <summary>在 frontmatter 就地寫入／更新一個欄位；已是該值不重寫（冪等）。⛔ 不動內文。</summary>
+        static bool SetFrontmatterField(string iPath, string iField, string iValue)
+        {
+            try
+            {
+                string aText = File.ReadAllText(iPath, Encoding.UTF8).TrimStart('﻿');
+                string t = aText.TrimStart();
+                if (!t.StartsWith("---", StringComparison.Ordinal)) return false;
+                int aEnd = t.IndexOf("\n---", 3, StringComparison.Ordinal);
+                if (aEnd < 0) return false;
+                string aRest = t.Substring(aEnd);
+                var aLines = new System.Collections.Generic.List<string>();
+                foreach (string raw in t.Substring(3, aEnd - 3).Split('\n'))
+                    if (raw.Trim().Length > 0) aLines.Add(raw.TrimEnd('\r'));
+                bool aHit = false;
+                for (int i = 0; i < aLines.Count; i++)
+                {
+                    int c = aLines[i].IndexOf(':');
+                    if (c <= 0 || aLines[i].Substring(0, c).Trim() != iField) continue;
+                    if (aLines[i].Substring(c + 1).Trim() == iValue) return false;
+                    aLines[i] = iField + ": " + iValue; aHit = true; break;
+                }
+                if (!aHit) aLines.Add(iField + ": " + iValue);
+                WriteAtomic(iPath, "---\n" + string.Join("\n", aLines) + aRest);
+                return true;
+            }
+            catch (Exception) { return false; }
+        }
     }
 }

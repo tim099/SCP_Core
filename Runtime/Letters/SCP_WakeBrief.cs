@@ -81,6 +81,11 @@ namespace SCP.Core.Letters
 
         /// <summary>被移進續讀檔的區塊標題。</summary>
         public List<string> MovedSections = new List<string>();
+
+        /// <summary>這次端上桌的到期掛號信（絕對路徑）—— <see cref="SCP_WakeBrief.Write"/> 寫檔成功後才蓋送達章（TASK-0347）。</summary>
+        public List<string> DeliveredMail = new List<string>();
+        /// <summary>這次新蓋上送達章的封數（寫檔後才有值；Build 單獨呼叫時恆 0）。</summary>
+        public int MailStamped;
     }
 
     public static class SCP_WakeBrief
@@ -179,6 +184,7 @@ namespace SCP.Core.Letters
             {
                 RootSection(iLettersRoot, iPersona),
                 KeysSection(iLettersRoot, iPersona),
+                MailSection(iLettersRoot, iPersona, iWakeCount, aResult),
                 ActiveTasksSection(iPersona, iDataRoot),
                 ForestSection(iLettersRoot, iPersona),
                 DigestSection(iLettersRoot, iPersona),
@@ -240,6 +246,10 @@ namespace SCP.Core.Letters
 
             string aMainPath = Path.Combine(iOutDir, "wake_brief.md");
             File.WriteAllText(aMainPath, aResult.Main);
+            // 送達章在**主檔寫成功之後**才蓋（TASK-0347）：信要真的端到收件者面前才算送達；
+            //   Build 單獨被呼叫（預覽／測試殼）不蓋 —— 那不是投遞。
+            foreach (string aMail in aResult.DeliveredMail)
+                if (SCP_RegisteredMail.StampDelivered(aMail, iWakeCount)) aResult.MailStamped++;
 
             string aPart2Path = Path.Combine(iOutDir, "wake_brief_part2.md");
             if (aResult.Part2 != null)
@@ -256,6 +266,34 @@ namespace SCP.Core.Letters
         }
 
         // ── 各層 ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// 📮 掛號信：到期未 ack 的信（TASK-0347）。**必讀**（付過錢的信不能被溢出移走）；沒有信時只一行，不佔版面。
+        /// <para>🩸 09-04 python brief 退場（206e5f94）時這一節沒搬過來 ⇒ 之後寄出的掛號信與銀行系統通知信收件者都看不到，而沒有任何一層會叫。</para>
+        /// </summary>
+        static SCP_BriefSection MailSection(string iLettersRoot, string iPersona, int iWakeCount, SCP_WakeBriefResult ioResult)
+        {
+            var s = new SCP_BriefSection { Title = "📮 掛號信（到期未確認）", Essential = true };
+            SCP_RegisteredMail.ListUnread(iLettersRoot, iPersona, iWakeCount, out var aDue, out var aLater);
+            if (aDue.Count == 0)
+            {
+                s.Lines.Add("- ✓ 沒有到期未確認的掛號信" + (aLater.Count > 0 ? $"（另有 {aLater.Count} 封指定了之後的 wake，還沒到）" : ""));
+                return s;
+            }
+            s.Lines.Add($"> **{aDue.Count} 封**到期、還沒確認閱讀。⚠ 列出≠讀過：信會每次醒來都出現，直到 ack。");
+            s.Lines.Add("> 讀完確認：`senate cmd mail --arg op=ack --arg persona=" + iPersona + "`（全部）或加 `--arg file=<檔名>`（單封）");
+            s.Lines.Add("");
+            foreach (SCP_RegisteredMail.MailItem m in aDue)
+            {
+                string aWhen = m.DeliverAtWake.HasValue ? $"　[指定 wake #{m.DeliverAtWake.Value}]" : "";
+                string aSeen = m.FirstSeenWake.Length > 0 ? $"　（首次投遞 wake #{m.FirstSeenWake}）" : "　🆕";
+                s.Lines.Add($"- **@{(m.From.Length > 0 ? m.From : "?")}** → {(m.Subject.Length > 0 ? m.Subject : "(無主旨)")}{aWhen}{aSeen}");
+                s.Lines.Add($"  `{m.Path}`");
+                ioResult.DeliveredMail.Add(m.Path);
+            }
+            if (aLater.Count > 0) { s.Lines.Add(""); s.Lines.Add($"（另有 {aLater.Count} 封指定了之後的 wake，還沒到，先不拆）"); }
+            return s;
+        }
 
         static List<string> ConstitutionLines(string iLettersRoot, string iPersona)
         {
