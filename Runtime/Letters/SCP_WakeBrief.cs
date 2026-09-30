@@ -123,7 +123,7 @@ namespace SCP.Core.Letters
         /// </param>
         /// <param name="iRegion">
         /// 現地的區域（貨幣）ID。**由宿主傳進來，本層不推導** —— 真相源是宿主的央行設定
-        /// （`Treasury/bank_settings.json` 的 `currency_id`），而本層不該多長一個讀它的嘴。
+        /// （`Bank/bank_settings.json` 的 `currency_id`），而本層不該多長一個讀它的嘴。
         /// ⚠ 不給就印 `unstated` 並明說沒人給，**不填預設** ——
         /// 宿主端的 `CurrencyId` 缺值時會回預設 `Ducat`，如果這裡也自己補一個預設，
         /// 兩個沒設定過的專案會印出同一個區域，而那正是這個定語要防的事。

@@ -122,7 +122,7 @@ namespace SCP.Core.Cmd
                 return SCP_CmdResult.Fail(2, "⛔ 不是 git 工作目錄：" + aRepo);
 
             SCP_CmdResult aResult = SCP_CmdResult.Success();
-            // 區域一律依當前資料樹自動判定（Treasury/bank_settings.json 的 currency_id，TASK-0248，Tim 2026-09-18 拍板）
+            // 區域一律依當前資料樹自動判定（Bank/bank_settings.json 的 currency_id，TASK-0248，Tim 2026-09-18 拍板）
             string aRegion = SCP_BankRegion.Read(aDataRoot, out string? aRegionWhy);
             if (aRegionWhy != null)
                 aResult.Lines.Add("⚠ 區域判定說明（" + aRegionWhy + "）⇒ 使用 `" + aRegion + "`");

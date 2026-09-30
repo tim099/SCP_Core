@@ -7,7 +7,7 @@
 // 數值影響：**純讀**。本層沒有任何寫入路徑，也不 checkout、不開 worktree、不 fetch ——
 //           git 本身就是跨 ref 的隨機存取層（實測 `git show <ref>:<path>` 30ms）。
 //
-// ⭐「哪些分支是區」由**分支自報**，不新增對照設定檔：該 ref 的 `Treasury/bank_settings.json`
+// ⭐「哪些分支是區」由**分支自報**，不新增對照設定檔：該 ref 的 `Bank/bank_settings.json`（舊 ref 退回 `Treasury/`，見 ShowBankSettings）
 //   有 `currency_id` 才算一區（已量：origin/main → BTC、origin/LY → Florin；
 //   Bar / Dev / RingWorld 沒有那個檔 ⇒ 自動不在清單裡）。
 //   ⇒ 與 2026-09-02 region 定語拍板共用同一個真相源同一個欄位，不長出第二套 region 定義。
@@ -30,7 +30,7 @@ namespace SCP.Core.Tavern
     /// <summary>一個「區」＝一條自報了 <c>currency_id</c> 的 ref。</summary>
     public sealed class SCP_TavernRegionInfo
     {
-        /// <summary>區名（＝該 ref 的 <c>Treasury/bank_settings.json</c> 的 <c>currency_id</c>）。</summary>
+        /// <summary>區名（＝該 ref 的 <c>Bank/bank_settings.json</c>（舊 ref 退回 <c>Treasury/</c>） 的 <c>currency_id</c>）。</summary>
         public string Region = "";
 
         /// <summary>這個區對應的 ref（例：<c>origin/LY</c>）。</summary>
