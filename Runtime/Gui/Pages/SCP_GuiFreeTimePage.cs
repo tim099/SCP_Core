@@ -15,6 +15,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using SCP.Core.FreeTime;
 using SCP.Core.Paths;
 
@@ -85,6 +86,7 @@ namespace SCP.Core.Gui
         protected override void TopBarButtons(SCP_Ui g)
         {
             base.TopBarButtons(g);
+            OpenFolderButton(g, Ok(m_Data) ? Path.GetDirectoryName(SCP_FreeTimeSettings.PathOf(m_Data.Value)) : null, "freetime/open-dir");
             if (g.Button("重新讀取", "freetime/reload"))
             {
                 bool aDirty = IsSettingsDirty();

@@ -70,6 +70,7 @@ namespace SCP.Core.Gui
         {
             base.TopBarButtons(iUi);
             DrawRootRow(iUi);
+            OpenFolderButton(iUi, HasRoot ? SCP_PersonaLetters.CleanPath(m_Root.Value) : null, "login/open-dir");
         }
         protected override void DrawContent(SCP_Ui g)
         {

@@ -12,6 +12,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using SCP.Core.Paths;
 using SCP.Core.Tavern;
@@ -64,6 +65,7 @@ namespace SCP.Core.Gui
         protected override void TopBarButtons(SCP_Ui g)
         {
             base.TopBarButtons(g);
+            OpenFolderButton(g, HasRoot ? Path.GetDirectoryName(SCP_TavernRouting.PathOf(m_Root.Value)) : null, "routing/open-dir");
             if (g.Button("重新讀取", "routing/reload"))
             {
                 bool aDirty = IsDirty();

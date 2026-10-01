@@ -7,6 +7,7 @@
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
+using System.IO;
 using System.Runtime.CompilerServices;
 
 namespace SCP.Core.Gui
@@ -56,6 +57,35 @@ namespace SCP.Core.Gui
         /// </summary>
         void SetMessage(string? iText)
             => m_SourceMessage = string.IsNullOrWhiteSpace(iText) ? null : iText;
+
+        /// <summary>工具列「開啟資料夾」鈕的預設 id（一頁只有一顆時用它）。</summary>
+        public const string OpenFolderButtonId = "page/open-folder";
+
+        /// <summary>
+        /// 工具列的「開啟資料夾」鈕 —— 這一頁的資料存放位置要能一鍵打開（Tim 2026-10-01）。
+        /// 在 <see cref="TopBarButtons"/> 裡呼叫；結果走跟「原始碼」鈕同一條訊息列。
+        /// <para>⚠ 宿主沒裝 <see cref="SCP_GuiHost.RevealInFileManager"/> 就不畫 —— 本層會被包進 Unity，
+        /// Build 出來的那份不一定開得了（Tim 2026-10-01）。能力判斷**只在這裡**：
+        /// 宿主自己的頁面（例：Senate 一定裝）直接呼叫，不必各自再判一次。</para>
+        /// </summary>
+        protected void OpenFolderButton(SCP_Ui iUi, string? iDir, string iId = OpenFolderButtonId, string iLabel = "開啟資料夾")
+        {
+            if (SCP_GuiHost.RevealInFileManager == null) return;
+            if (iUi.Button(iLabel, iId)) SetMessage(RevealFolder(iDir));
+        }
+
+        /// <summary>
+        /// 開一個資料夾，回傳要給人看的一句話（空字串＝成功且宿主沒話要說）。
+        /// <para>⛔ 不存在就**不建**：路徑解錯時建出來的是一個新的空資料夾，看起來像「打開了但沒有資料」。</para>
+        /// </summary>
+        protected static string RevealFolder(string? iDir)
+        {
+            if (string.IsNullOrWhiteSpace(iDir)) return "⚠ 這一頁的資料夾還解不出來（路徑是空的）—— 到「路徑管理」頁看";
+            if (!Directory.Exists(iDir)) return "⚠ 資料夾不存在：" + iDir;
+            Func<string, string>? aReveal = SCP_GuiHost.RevealInFileManager;
+            if (aReveal == null) return "⚠ 這個環境開不了檔案總管 —— 資料夾是 " + iDir;
+            return aReveal(iDir);
+        }
 
         /// <summary>
         /// 這一頁的原始碼檔**精確路徑** —— 編譯時由 <see cref="CallerFilePathAttribute"/> 烤進來。

@@ -53,6 +53,7 @@ namespace SCP.Core.Gui
         {
             base.TopBarButtons(g);
             if (g.Button("重新掃描", "secrets/reload")) { m_Message = null; Load(); }
+            OpenFolderButton(g, m_Dir, "secrets/open-dir");
         }
 
         protected override void DrawContent(SCP_Ui g)
