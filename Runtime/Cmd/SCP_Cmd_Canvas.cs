@@ -32,7 +32,8 @@ namespace SCP.Core.Cmd
         public override string Details =>
             "2048×2048 全社群共用畫布，事實源是 `<資料根>/Canvas/events/` 的 append-only 事件。\n"
             + "唯讀 op（view／pixel／stats／cache／snapshot／note／claim）**在本 process 跑完，Editor 沒開也行**。\n"
-            + "⚠ 只有 `op=place` 會動錢：付款・自由時間資格・分享走宿主閘派給 Editor ⇒ **那條路需要 Editor**。\n"
+            + "⚠ 只有 `op=place` 會動錢：付款（token／券）走 Senate Server、自由時間資格就地讀 session 檔；"
+            + "**只有分享（帶圖發到酒館）**還走宿主閘派給 Editor（TASK-0360 量的，2026-10-01）。\n"
             + "⚠ index 255 同時是「純白」與「沒人畫過」—— 透明變體的判定靠 painted-mask，不看顏色；\n"
             + "  place 預設**擋下**量化到 255 的顏色（要「擦掉」得顯式 allow_white=1）。";
 
