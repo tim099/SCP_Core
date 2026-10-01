@@ -79,6 +79,13 @@ namespace SCP.Core.Gui
         Paths.SCP_PathResolution LettersRoot { get; }
 
         /// <summary>
+        /// 專案根（<see cref="Paths.SCP_PathId.ProjectRoot"/>）—— 與 CLI 替 cmd 填 `project_root` 同一個解析器
+        /// （TASK-0360：自由時間後台頁要它找活動 md 的兩層目錄）。
+        /// <para>⛔ 頁面不准從資料根往上推一層當專案根 —— 資料根可以不是 `auto`，推出來的會是別的目錄，而它不會報錯。</para>
+        /// </summary>
+        Paths.SCP_PathResolution ProjectRoot { get; }
+
+        /// <summary>
         /// 宿主想補在尺寸頁底下的說明（例：CLI 的一次性覆寫旗標、Unity 的 Editor 行為）。
         /// <para>⚠ 為什麼要這一格：尺寸頁的**功能**是共用的，但它底下那幾句註腳
         /// （「`--scale` 不寫回檔案」）**只在某一個宿主為真**。
