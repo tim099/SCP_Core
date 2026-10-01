@@ -261,6 +261,14 @@ namespace SCP.Core.Letters
             return true;
         }
 
+        /// <summary>
+        /// **只讀本區那一顆**綁定檔（不借別區）。<paramref name="oBusy"/>＝這一瞬間讀不了（⛔ 不是「沒有綁定」）。
+        /// 給換區重綁這種「要分清楚兩區各自是什麼」的呼叫端用（TASK-0354）。
+        /// </summary>
+        public static string ReadOwnBankBinding(string iLettersRoot, string iPersona, string iCurrencyId, out bool oBusy)
+            => ReadBankFile(SCP_LettersPaths.PersonaDir(new SCP_LettersRoot(iLettersRoot), iPersona)
+                            + "/bank/" + iCurrencyId + ".md", out oBusy);
+
         /// <summary>bank 檔的內文（去掉尾端換行）。讀不到 ⇒ 空字串。</summary>
         static string ReadBankFile(string iPath) => ReadBankFile(iPath, out _);
 

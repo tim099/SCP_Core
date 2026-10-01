@@ -1,6 +1,6 @@
 // 區塊職責：關係（好感度）的**讀取端** —— 讀 `letters/<persona>/relationship/<target>/`。
 // 物理意義：關係是**事件帳本**不是一個數字：分數由事件重算，`_current.md` 是那本帳的當前投影。
-//           ⇒ 本檔只讀那份投影與 `opinions/`，一個位元組都不寫；要改關係走寫入端（Cmd_Relationship）。
+//           ⇒ 本檔只讀那份投影與 `opinions/`，一個位元組都不寫；要改關係走寫入端（`senate cmd relationship` ／ `SCP_RelationshipStore`）。
 // 數值影響：純讀。分數解析失敗回 0，而 0 與「沒有這個人」**要分得開**（見 LoadError／找不到的差別）。
 //
 // ⚠ 「讀失敗」與「真的沒有紀錄」不可以合成一句：
