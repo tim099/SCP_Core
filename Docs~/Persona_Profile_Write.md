@@ -2,7 +2,7 @@
 title: persona 設定寫入 —— 身分欄與區域銀行綁定
 description: senate cmd persona-profile 的使用說明：身分欄 set／unset（純量欄與結構欄的差別）、區域銀行綁定 get_bank／set_bank／unbind、全 pool 的 migrate_bank 與 rebind_region、寫入審計，以及「綁定不是動錢」的邊界。讀整份 persona 走 senate cmd persona。
 cmds: [persona-profile]
-last_updated: 2026-10-01 (TASK-0354：從 UCL `ucmd run PersonaProfile` 搬到 Senate CLI)
+last_updated: 2026-10-01 (TASK-0354：從 UCL `ucmd run PersonaProfile` 搬到 Senate CLI；TASK-0361：唯一寫入端＋op=create)
 target_audience: [AI_Agent, Tools_Maintainer]
 related:
   - ucl_core:Docs~/{lang}/Workflows/Bank_Region_Binding_Migration_Workflow.md | 區域綁定遷移 | 新專案第一次設區域時的半自動流程（migrate_bank 的用法在那裡）
@@ -15,6 +15,22 @@ related:
 
 > ⛔ **只寫 persona 檔＋一行審計** —— 不碰帳本、不動任何一分錢、不改央行設定。
 > 綁定決定的是「**之後**的收付進哪一戶」；既有分錄 append-only，不追溯。
+
+> ⭐ **這是 persona 檔唯一的寫入端**（TASK-0361，Tim 2026-10-01「寫入端整合到 Senate，Unity 端不留」）：
+> Senate 銀行後台換綁、早安寫 model／actual_agent、Unity Editor 的頁面（建 persona、email、actual_agent、Plurk 帳號；
+> 經 `UCL_PersonaProfileSenateBridge` spawn 本指令）全部走同一份 `SCP_PersonaProfileWrite`，稽核只有一份。
+
+## 建 persona
+
+```bash
+senate cmd persona-profile --arg op=create --arg persona=<新名字> --arg account=<帳號 id> \
+    --arg-file fields=<檔：JSON 物件，身分欄 → 值> --arg actor=<誰> --arg reason=<憑什麼>
+```
+
+- 先寫本區綁定、再逐欄寫身分欄（先有帳號歸屬，錢才不會在半成品狀態落央行）；每欄一行稽核，最後一行總結
+  `profile:[..] skipped(推導欄):[..] refused(走 set_bank):[agent]`。
+- 整份 `fields` 先驗完才寫（結構欄形狀不符 ⇒ 整筆擋下、零寫入）；`agent` 與推導欄不寫並明講。
+- 名字已存在、空白、`_`／`.` 開頭、不能當資料夾名 ⇒ 擋。
 
 ## 身分欄
 
