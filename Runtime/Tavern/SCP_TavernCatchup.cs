@@ -29,6 +29,10 @@ namespace SCP.Core.Tavern
         /// <summary>可安全推進到的水位；null＝不得推進（0 筆未讀／積壓超過回捲上限）。</summary>
         public string? NewestTs;
         public bool Truncated;
+        /// <summary>帶了 skip_backlog 時實際跳過了什麼（TASK-0369）；沒跳 ⇒ Applied＝false。</summary>
+        public SCP_TavernBacklogSkip Skip;
+        /// <summary>有要求跳過積壓（不論實際有沒有跳）—— 用來說「這次帶了但用不到」。</summary>
+        public bool SkipRequested;
     }
 
     public static class SCP_TavernCatchup
@@ -38,7 +42,7 @@ namespace SCP.Core.Tavern
 
         public static SCP_TavernCatchupResult Build(
             string iDataRoot, string iLettersRoot, string iPersona, string iRoom, int iMinCount,
-            bool iQuietSystem, bool iIncludeSelf, int iInboxShow)
+            bool iQuietSystem, bool iIncludeSelf, int iInboxShow, bool iSkipBacklog = false)
         {
             var aOut = new SCP_TavernCatchupResult();
             string room = string.IsNullOrEmpty(iRoom) ? "tavern" : iRoom;
@@ -54,7 +58,10 @@ namespace SCP.Core.Tavern
             AppendOnline(sb, iLettersRoot, iPersona);
 
             // ── 未讀 ──
-            var unread = SCP_TavernCursor.ReadUnread(iDataRoot, iPersona, room, out string? newestTs, out bool truncated);
+            var unread = SCP_TavernCursor.ReadUnread(iDataRoot, iPersona, room, iSkipBacklog,
+                                                     out string? newestTs, out bool truncated, out SCP_TavernBacklogSkip skip);
+            aOut.Skip = skip;
+            aOut.SkipRequested = iSkipBacklog;
             var shown = new List<SCP_TavernMessage>();
             int hiddenSystem = 0, hiddenSelf = 0;
             foreach (var m in unread)
@@ -87,6 +94,16 @@ namespace SCP.Core.Tavern
             sb.AppendLine($"## 💬 未看訊息　**{shown.Count}** 筆"
                 + (hiddenSelf > 0 ? $"（已排除自己 {hiddenSelf} 筆）" : "")
                 + (hiddenSystem > 0 ? $"（已隱藏酒保系統廣播 {hiddenSystem} 筆 —— 打款／獎金可能在裡面，`quiet_system=0` 看得到）" : ""));
+            if (skip.Applied)
+            {
+                // ⚠ 跳過的那段要**點名**：從哪個游標起、到哪一則之前、至少幾則 —— 並給回讀的路。
+                sb.AppendLine("⏭ **已跳過積壓**（`skip_backlog=1`）—— 下面是**最新**的那批，不是最舊的。");
+                sb.AppendLine($"   跳過的是：游標 `{skip.FromCursorTs}` 之後、**seq {skip.FirstKeptSeq} 之前**的訊息，"
+                    + $"**至少 {skip.SkippedInWindowAtLeast} 則**（回捲上限 {SCP_TavernCursor.BACKLOG_SCAN_CAP} 則之外更舊的沒數到）。");
+                sb.AppendLine($"   要回頭看：`{SCP.Core.Cmd.SCP_CmdRegistry.Invoke("tavern-query --arg kind=seq --arg from=1 --arg to=" + Math.Max(1, skip.FirstKeptSeq - 1) + " --arg grep=@" + iPersona)}`（先撈 @ 你的）");
+            }
+            else if (iSkipBacklog && !truncated)
+                sb.AppendLine("· 帶了 `skip_backlog=1`，但積壓在回捲上限內 ⇒ **沒有跳過任何一則**，照舊由舊到新交付。");
             if (truncated)
                 sb.AppendLine("⚠ **未讀一次交付不完** —— 這批是**最舊的**那段；更新的還留在未讀裡，"
                     + "再跑一次 catchup 會接著給（不會遺失）。");
@@ -121,12 +138,13 @@ namespace SCP.Core.Tavern
             if (string.IsNullOrEmpty(iBuilt.NewestTs))
                 return (iBuilt.Truncated
                     ? "- 游標：**未推進**（積壓超過回捲上限 —— 最舊的未讀還沒進到窗口）"
-                      + " ⇒ 推了就會永久跳過它們。請先消化積壓或調高 `BACKLOG_SCAN_CAP`。"
+                      + " ⇒ 推了就會永久跳過它們。要整段跳過、推到最新：再跑一次並帶 `--arg skip_backlog=1`（會點名跳過哪一段）。"
                     : "- 游標：**未推進**（本次 0 筆未讀）—— 沒有讀數就不該移動水位。", null);
             string? aErr = SCP_TavernCursor.WriteCursor(iDataRoot, iPersona, iBuilt.NewestTs!);
             string? readBack = SCP_TavernCursor.ReadCursor(iDataRoot, iPersona);
             string aLine = readBack == iBuilt.NewestTs
                 ? $"- ✓ 游標已推進到 `{readBack}`（寫入後讀回確認）"
+                  + (iBuilt.Skip.Applied ? $"　⏭ 跳過了 seq {iBuilt.Skip.FirstKeptSeq} 之前至少 {iBuilt.Skip.SkippedInWindowAtLeast} 則（見上面那段）" : "")
                 : $"- ✗ 游標寫入後讀回不符：期望 `{iBuilt.NewestTs}`、實際 `{readBack}` —— 下次會重讀這一段"
                   + (aErr != null ? $"（寫入丟了：{aErr}）" : "");
             return (aLine, readBack);
