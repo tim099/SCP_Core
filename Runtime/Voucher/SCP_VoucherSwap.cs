@@ -6,6 +6,11 @@
 //   ① **無快取或無有效報價時一律拒絕**（並非所有券都能互相兌換）。
 //   ② **餘額不足整筆不扣**（TryConsume 守衛，嚴禁扣出負數）。
 //   ③ **小數點無縫進位**（套用 TASK-0271 零頭進位模型，滿 1e8 自動進位可用永久券）。
+//   ④ **目標券簿永久券不得超過 int 上限**（TASK-0371）：法幣一張＝一單位，單位極小
+//      （1 KRW ≈ 0.0007 USD），173 BTC 換 KRW 就是兩百多億張 —— `AddE8` 的 int 轉型會**靜默繞成負數**。
+//      ⇒ 試算階段就擋下並說明，⛔ 不讓它走到落盤。
+//   ⑤ **成交後寫一筆交易事件**（TASK-0371，給報酬率用）：兩個券檔都落盤之後才寫；
+//      事件沒寫成**不推翻已成立的兌換**（券已經動了），而是放進 `PortfolioWarning` 讓呼叫端印出來。
 #nullable enable
 using System;
 using SCP.Core.Market;
@@ -30,6 +35,9 @@ namespace SCP.Core.Voucher
         public decimal ToNewFractionalValue => (decimal)ToNewFractionalE8 / SCP_VoucherBook.FractionScale;
         public decimal EffectiveRate;
         public bool IsPreview;
+
+        /// <summary>兌換成立、但交易事件沒寫成時的原因（null ＝ 已記）。⚠ 呼叫端必須印出來 —— 漏記會讓報酬率少一筆。</summary>
+        public string? PortfolioWarning;
     }
 
     public static class SCP_VoucherSwap
@@ -119,6 +127,16 @@ namespace SCP.Core.Voucher
 
             int aToPermanentBefore = aToBook.Permanent;
 
+            // 守衛④：進位後的永久券會不會超過 int 上限（AddE8 內部是 (int) 轉型，超過會靜默繞成負數）
+            long aToTotalE8 = aToBook.FractionalE8 + aToUnitsE8;
+            if ((long)aToPermanentBefore + aToTotalE8 / SCP_VoucherBook.FractionScale > int.MaxValue)
+            {
+                aResult.Success = false;
+                aResult.Error = $"兌換後 `{aResult.ToVoucher}` 會有 {(long)aToPermanentBefore + aToTotalE8 / SCP_VoucherBook.FractionScale} 張，"
+                                + $"超過券簿上限 {int.MaxValue} 張 ⇒ 拒絕（請分批、或少換一點）";
+                return aResult;
+            }
+
             // 5. 試算或執行扣款與進位
             if (!SCP_VoucherStore.TryConsume(aFromBook, iAmount, iNow, out string? aConsumeWhy))
             {
@@ -158,6 +176,15 @@ namespace SCP.Core.Voucher
             }
 
             aResult.Success = true;
+
+            // 守衛⑤：記交易事件（給報酬率用）。報價取試算那一刻的同一份設定 —— 跟實際成交率同源。
+            SCP_MarketRateCache.TryGetQuote(aConfig, aResult.FromVoucher, out var aFromQ);
+            SCP_MarketRateCache.TryGetQuote(aConfig, aResult.ToVoucher, out var aToQ);
+            aResult.PortfolioWarning = SCP_Portfolio.RecordSwap(iDataRoot, iPersona,
+                aResult.FromVoucher, (long)iAmount * SCP_VoucherBook.FractionScale, aFromQ?.Bid ?? 0m,
+                aResult.ToVoucher, aToUnitsE8, aToQ?.Ask ?? 0m,
+                SCP_MarketRateCache.TotalFeeFactor(aConfig, aResult.FromVoucher, aResult.ToVoucher),
+                iNow, iRegion);
             return aResult;
         }
     }

@@ -144,10 +144,19 @@ namespace SCP.Core.Market
         /// <summary>gold-api `/price/XAU` 之類 —— **只有中間價**（`price`）。</summary>
         public const string MidPriceJson = "mid_price_json";
 
-        public static bool IsKnown(string iKind)
-            => iKind == BinanceBookTicker || iKind == MidPriceJson;
+        /// <summary>
+        /// 法幣匯率表（TASK-0371）—— 回應是 `{"rates": {"TWD": 32.1, "JPY": 149.3, …}}`、**以 USD 為底**
+        /// （1 USD 兌多少該幣，例：open.er-api.com `/v6/latest/USD`）。
+        /// ⚠ 方向跟本系統相反：報價模型存的是「1 單位該幣值多少 USD」⇒ 解析時**取倒數**。
+        /// 取哪一格由報價自己的 Symbol 決定 —— ⛔ 不另開欄位寫路徑，一個 URL 就能餵所有法幣。
+        /// 只有中間價 ⇒ Bid ＝ Ask、two_sided = false（成本由手續費承擔，同 <see cref="MidPriceJson"/>）。
+        /// </summary>
+        public const string FxRatesPerUsd = "fx_rates_per_usd";
 
-        public static IReadOnlyList<string> All => new[] { BinanceBookTicker, MidPriceJson };
+        public static bool IsKnown(string iKind)
+            => iKind == BinanceBookTicker || iKind == MidPriceJson || iKind == FxRatesPerUsd;
+
+        public static IReadOnlyList<string> All => new[] { BinanceBookTicker, MidPriceJson, FxRatesPerUsd };
     }
 
     /// <summary>
@@ -168,6 +177,7 @@ namespace SCP.Core.Market
             {
                 case SCP_RateSourceKind.BinanceBookTicker: return ParseBinance(iSymbol, iBody);
                 case SCP_RateSourceKind.MidPriceJson: return ParseMidPrice(iSymbol, iBody);
+                case SCP_RateSourceKind.FxRatesPerUsd: return ParseFxRatesPerUsd(iSymbol, iBody);
                 default:
                     return SCP_RateFetchResult.Fail(iSymbol,
                         $"認不得的來源種類 '{iKind}'（可用：{string.Join(" / ", SCP_RateSourceKind.All)}）");
@@ -205,6 +215,35 @@ namespace SCP.Core.Market
             // ⛔ 不編造價差：不知道盤口就讓 Bid ＝ Ask，並標 two_sided = false。
             //    成本本來就該由手續費承擔（守衛③）。
             return Validate(iSymbol, aMid, aMid, iTwoSided: false);
+        }
+
+        static SCP_RateFetchResult ParseFxRatesPerUsd(string iSymbol, string iBody)
+        {
+            SCP_JsonData aJd;
+            try { aJd = SCP_JsonParser.Parse(iBody); }
+            catch (Exception e) { return SCP_RateFetchResult.Fail(iSymbol, $"回應不是合法 JSON（{e.GetType().Name}）：{Sample(iBody)}"); }
+
+            // 端點自己說失敗（open.er-api：`"result": "error"`）⇒ 照實回報，⛔ 不往下找數字
+            string aResult = aJd.GetString("result", "");
+            if (aResult.Length > 0 && !string.Equals(aResult, "success", StringComparison.OrdinalIgnoreCase))
+                return SCP_RateFetchResult.Fail(iSymbol, $"端點回報失敗（result={aResult}）：{Sample(iBody)}");
+
+            // 底幣必須是 USD：底幣換了，倒數出來的就不是「值多少 USD」，而數字仍然合理 —— 不會有人發現
+            string aBase = aJd.GetString("base_code", aJd.GetString("base", "USD"));
+            if (!string.Equals(aBase, "USD", StringComparison.OrdinalIgnoreCase))
+                return SCP_RateFetchResult.Fail(iSymbol, $"匯率表的底幣是 '{aBase}' 不是 USD ⇒ 倒數會是錯的單位，拒收");
+
+            var aRates = aJd["rates"];
+            if (!aRates.IsObject)
+                return SCP_RateFetchResult.Fail(iSymbol, $"回應缺 rates 物件（端點改格式了？）：{Sample(iBody)}");
+            string aKey = iSymbol.Trim().ToUpperInvariant();
+            if (!aRates[aKey].Exists)
+                return SCP_RateFetchResult.Fail(iSymbol, $"匯率表裡沒有 '{aKey}'（這個端點不報這個幣）");
+            if (!TryDec(aRates[aKey].AsString(), out decimal aPerUsd) || aPerUsd <= 0m)
+                return SCP_RateFetchResult.Fail(iSymbol, $"'{aKey}' 的匯率不是正數：'{aRates[aKey].AsString()}'");
+
+            decimal aUsdPerUnit = 1m / aPerUsd;
+            return Validate(iSymbol, aUsdPerUnit, aUsdPerUnit, iTwoSided: false);
         }
 
         static SCP_RateFetchResult Validate(string iSymbol, decimal iBid, decimal iAsk, bool iTwoSided)

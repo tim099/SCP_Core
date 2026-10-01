@@ -107,6 +107,9 @@ namespace SCP.Core.Cmd
             aR.AddValue("to_permanent_added", aRes.ToPermanentAdded.ToString());
             aR.AddValue("to_new_permanent", aRes.ToNewPermanent.ToString());
             aR.AddValue("to_new_fractional_e8", aRes.ToNewFractionalE8.ToString());
+            if (aRes.PortfolioWarning != null)
+                aR.Lines.Add($"⚠ 兌換已成立，但**{aRes.PortfolioWarning}** ⇒ 報酬率會少這一筆（`portfolio op=show` 會顯示成「與紀錄不符」）");
+            aR.AddValue("portfolio_logged", aRes.PortfolioWarning == null ? "1" : "0");
             aR.AddValue("is_preview", aConfirm ? "0" : "1");
             return aR;
         }

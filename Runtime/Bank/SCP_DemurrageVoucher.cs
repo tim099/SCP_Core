@@ -21,6 +21,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using SCP.Core.Json;
+using SCP.Core.Market;
 using SCP.Core.Paths;
 using SCP.Core.Voucher;
 
@@ -258,7 +259,11 @@ namespace SCP.Core.Bank
                     //   在這裡自己算一次就是第二份，而兩份會漂。
                     aBook.AddE8(r.PerPersonaE8);
                     if (!SCP_VoucherStore.Save(aRoot, aBook, aNow, iRegion, out int _, out string? aErr))
-                    { oProblems.Add($"✗ `{p}` 發券寫入失敗 ⇒ {aErr}"); aRowOk = false; }
+                    { oProblems.Add($"✗ `{p}` 發券寫入失敗 ⇒ {aErr}"); aRowOk = false; continue; }
+                    // 交易事件（TASK-0371，報酬率用）：券已落盤 ⇒ 沒記成只喊、不推翻（⛔ 不把這一列標成失敗，否則下次會重發）
+                    string? aLogErr = SCP_Portfolio.RecordFlow(iDataRoot, p, iPlan.VoucherType, r.PerPersonaE8,
+                                                                          "demurrage", r.FeeEntryId, aNow, out _);
+                    if (aLogErr != null) oProblems.Add($"⚠ `{p}` 的券發了，但{aLogErr}");
                 }
                 if (!aRowOk)
                 {

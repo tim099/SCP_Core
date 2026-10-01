@@ -61,7 +61,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("source", "資料來源標記（預設 manual）", iDefault: "manual"),
             new SCP_CmdArgSpec("fee_pct", "手續費率（0.001 ＝ 0.1%）。op=fee 設全域；op=set 設該券覆寫 —— ⛔ **留空＝不覆寫（吃全域）**，不是 0", iDefault: ""),
             new SCP_CmdArgSpec("url", "op=source：抓取端點完整網址", iDefault: ""),
-            new SCP_CmdArgSpec("kind", "op=source：回應解析器（binance_bookticker｜mid_price_json）", iDefault: ""),
+            new SCP_CmdArgSpec("kind", "op=source：回應解析器（binance_bookticker｜mid_price_json｜fx_rates_per_usd —— 後者讀「1 USD 兌多少」的匯率表並取倒數，例 https://open.er-api.com/v6/latest/USD）", iDefault: ""),
             new SCP_CmdArgSpec("force", "op=sync：1＝無視 TTL 一律重抓（預設只抓過期的）", iDefault: "0"),
             new SCP_CmdArgSpec("timeout_sec", "op=sync：單一端點逾時秒數", iDefault: "12"),
             new SCP_CmdArgSpec("day", "op=sync：**每日一版**模式（`yyyy-MM-dd`，UTC 日）—— 那天已有刷新版本就不抓，沒有就無視 TTL 抓一次。`demurrage op=run` 發完券後用的就是這個", iDefault: ""),
@@ -243,6 +243,14 @@ namespace SCP.Core.Cmd
                 UpdatedAtUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
             };
 
+            // 🩸 沿用既有的抓取端點（TASK-0371）：手填只是改價，⛔ 不是「改成純手填」——
+            //   以前這裡整個換新物件，端點跟著消失 ⇒ 那個幣從此 `op=sync` 都跳過，而沒有任何一層會說。
+            if (iConfig.Quotes.TryGetValue(aSymbol, out var aPrevQuote))
+            {
+                aQuote.SourceUrl = aPrevQuote.SourceUrl;
+                aQuote.SourceKind = aPrevQuote.SourceKind;
+                aQuote.TwoSided = aPrevQuote.TwoSided;
+            }
             iConfig.Quotes[aSymbol] = aQuote;
 
             if (!SCP_MarketRateCache.Save(iDataRoot, iConfig, out string? aSaveErr))
