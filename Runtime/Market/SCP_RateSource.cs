@@ -79,6 +79,21 @@ namespace SCP.Core.Market
     }
 
     /// <summary>
+    /// **帶標頭的表單 POST**（TASK-0362：Plurk 的 OAuth 1.0a —— 每一次請求都要自己簽的 `Authorization` 標頭）。
+    /// <para><paramref name="iFiles"/> 為 null ⇒ `application/x-www-form-urlencoded`（欄位走 body）；
+    /// 非 null ⇒ `multipart/form-data`（欄位當字串段、檔案當檔案段 —— Plurk 上傳圖片那條）。</para>
+    /// <para>回傳語意與其他介面**刻意不同**：**拿到 HTTP 回應就回 true（不論狀態碼）**，body 照樣填 ——
+    /// Plurk 的 4xx body 帶 `error_text`，那正是要印給人看的東西；只有連線層失敗（逾時／DNS）才回 false 且 <paramref name="oStatus"/>=0。</para>
+    /// ⚠ 標頭含簽章 ⇒ 實作端 ⛔ 不得把標頭寫進錯誤訊息或 log。
+    /// </summary>
+    public interface ISCP_HttpFormRequester
+    {
+        bool TryPostForm(string iUrl, IReadOnlyDictionary<string, string> iHeaders,
+                         IReadOnlyList<KeyValuePair<string, string>> iFields, IReadOnlyList<SCP_HttpFilePart>? iFiles,
+                         int iTimeoutSec, out string oBody, out int oStatus, out string? oError);
+    }
+
+    /// <summary>
     /// **multipart/form-data POST**（TASK-0323：Discord webhook 帶圖）：一段 `payload_json` ＋ N 個檔案段。
     /// 回傳語意同 <see cref="ISCP_HttpPoster.TryPostJson"/>（含 429 的 Retry-After）。⛔ URL 不進錯誤訊息。
     /// </summary>
