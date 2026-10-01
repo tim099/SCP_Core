@@ -5,7 +5,8 @@
 // 數值影響：純唯讀。`profile/` 不存在 ⇒ 回 null（＝查無此人，與 Exists 同一套判準）。
 //
 // ⚠ **不做的三件事**（少做是選擇，不是遺漏）：
-//   ① 不寫任何檔（owned 欄寫入、審計、快照仍在 UCL 端 —— 讀寫分工，不是兩份實作）
+//   ① 不寫任何檔 —— 寫入（身分欄、綁定、審計）全部在 `SCP_PersonaProfileWrite`，**唯一一支**（TASK-0361：
+//      Unity 端不留寫入；本檔原本那支 `WriteBankAccount`＋`bank/_audit.log` 已併進去）
 //   ② 不做 lazy migration（實測 2026-08-31 本 repo 全庫 `_field_sources` ＝
 //      profile 178／absent 53／**legacy 0** ⇒ 那條路是死碼。⚠ 別台的 clone 若還沒遷完會不一樣，
 //      所以 `SrcLegacy` 常數與那條分支的**位置**保留，只是不搬「自動遷移的寫入」）
@@ -200,65 +201,6 @@ namespace SCP.Core.Letters
             var aRoot = new SCP_LettersRoot(iLettersRoot);
             return ReadBankFile(SCP_LettersPaths.PersonaDir(aRoot, iPersona)
                                 + "/bank/" + iCurrencyId + ".md").Length > 0;
-        }
-
-        // ===========================================================
-        // 區塊職責：**寫**本區綁定（換綁）—— `letters/<p>/bank/<region>.md`。
-        // 物理意義：**讀綁定不是動錢，寫綁定是**（Tim 2026-08-31 拍板）：
-        //          這一行字決定「這個人的錢進哪個帳戶」。⛔ 它**不搬錢** ——
-        //          既有分錄 append-only 不追溯，換綁之後的收付才走新帳戶。
-        // 數值影響：原子寫（tmp → replace）＋ 審計一行落 `bank/_audit.log`。
-        // 🩸 `actor` / `reason` **必填**：寫入要能回答「是誰、憑什麼」。
-        //   匿名換綁的失效樣子是 —— 三個月後有人問「他的錢為什麼在這一戶」，
-        //   而檔案裡只有一個合法的帳號字串，**沒有任何人答得出來**。
-        // ⚠ 要**清空**綁定請刪檔，⛔ 不是寫空字串：空檔與沒有檔在讀取端同形，
-        //   而寫一個空字串進去只是讓那個同形多一個來源。
-        // ===========================================================
-        public static bool WriteBankAccount(string iLettersRoot, string iPersona, string iCurrencyId,
-                                            string iAccount, string iActor, string iReason, out string oError)
-        {
-            oError = "";
-            if (string.IsNullOrWhiteSpace(iPersona)) { oError = "persona 必填"; return false; }
-            if (string.IsNullOrWhiteSpace(iCurrencyId)) { oError = "region 必填"; return false; }
-            if (string.IsNullOrWhiteSpace(iAccount))
-            { oError = "account 必填 —— 要清空綁定請**刪檔**，⛔ 不是寫空字串"; return false; }
-            if (string.IsNullOrWhiteSpace(iActor) || string.IsNullOrWhiteSpace(iReason))
-            { oError = "actor 與 reason 必填 —— 寫入要能回答「是誰、憑什麼」；匿名寫入不收"; return false; }
-
-            var aRoot = new SCP_LettersRoot(iLettersRoot);
-            string aDir = SCP_LettersPaths.PersonaDir(aRoot, iPersona) + "/bank";
-            string aPath = aDir + "/" + iCurrencyId + ".md";
-            string aBefore = ReadBankFile(aPath);
-            string aAccount = iAccount.Trim();
-            if (string.Equals(aBefore, aAccount, StringComparison.Ordinal))
-            { oError = "`" + iPersona + "` 在 `" + iCurrencyId + "` 已經綁著 `" + aAccount + "`，未變更"; return false; }
-
-            try
-            {
-                Directory.CreateDirectory(aDir);
-                string aTmp = aPath + ".tmp";
-                File.WriteAllText(aTmp, aAccount + "\n");
-                if (File.Exists(aPath)) File.Delete(aPath);
-                File.Move(aTmp, aPath);
-            }
-            catch (Exception e) { oError = "寫不進去（" + aPath + "）：" + e.Message; return false; }
-
-            // 印 ✓ 不算數，讀回來才算。
-            string aBack = ReadBankFile(aPath);
-            if (!string.Equals(aBack, aAccount, StringComparison.Ordinal))
-            { oError = "寫入後讀回不符：期望 `" + aAccount + "`、實際 `" + aBack + "`"; return false; }
-
-            try
-            {
-                File.AppendAllText(aDir + "/_audit.log",
-                    DateTime.UtcNow.ToString("o") + "\t" + iCurrencyId + "\t"
-                    + (aBefore.Length > 0 ? aBefore : "(未綁)") + " → " + aAccount
-                    + "\tactor=" + iActor + "\treason=" + iReason + "\n");
-            }
-            // ⚠ 審計寫不進去**不讓換綁失敗**（綁定已經落盤且讀回過了）——
-            //   但要讓呼叫端知道那一行沒留下，⛔ 不靜默吞掉。
-            catch (Exception e) { oError = "⚠ 綁定已生效，而**審計那一行沒留下**：" + e.Message; return true; }
-            return true;
         }
 
         /// <summary>

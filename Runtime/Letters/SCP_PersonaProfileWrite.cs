@@ -3,6 +3,9 @@
 //           不需要 Unity Editor。讀取那半早就在 `SCP_PersonaProfile`（本檔只寫，讀回驗證走它）。
 //           ⭐ 寫出來的檔與 Editor 版**逐位元組同形**：純量欄 `值\n`、結構欄 UCL beautify（`\r\n`＋`\uXXXX`）、
 //           綁定檔 `帳號\n`、審計一行 UCL 緊湊 JSON（`\uXXXX`）。
+// ⭐ TASK-0361（Tim 2026-10-01「寫入端整合到 Senate，Unity 端不留」）：**persona 檔的唯一寫入端**。
+//   CLI（`persona-profile`）、Senate 銀行後台換綁、早安寫 model／actual_agent、Unity 頁面（經 CLI）全部走這裡；
+//   稽核只有 `_persona_write_audit.jsonl` 一份（原本銀行後台另寫 `bank/_audit.log`，已收掉）。
 // 數值影響：只寫 `letters/<p>/profile/<field>.md`、`letters/<p>/bank/<region>.md` 與 `AwakenInit/_persona_write_audit.jsonl`。
 //           ⛔ **不碰帳本、不動任何一分錢、不改央行設定**（綁定只決定「之後的收付進哪一戶」，既有分錄不追溯）。
 //
@@ -140,6 +143,78 @@ namespace SCP.Core.Letters
             try { WriteAtomic(ProfileFieldPath(iLettersRoot, iPersona, iField), aBody + "\n"); }
             catch (Exception e) { oError = e.Message; return false; }
             oAuditWarn = AppendAudit(iDataRoot, iPersona, "profile/" + iField, iActor, iReason);
+            return true;
+        }
+
+        /// <summary>
+        /// **建一個新 persona**：建 `profile/`、寫本區綁定、逐欄寫身分欄（每欄一行審計）、最後一行總結審計。
+        /// <para>移植自 Editor 版身分後台的「建 persona」（`WriteBankAccount` ＋ `WriteRaw`，TASK-0361）。
+        /// 總結那一行的形狀照 `WriteRaw`：`profile:[a,b] skipped(推導欄):[..] refused(走 set_bank):[agent]`。</para>
+        /// <para>⚠ 順序刻意先綁定再寫身分欄：先有帳號歸屬，錢才不會在半成品狀態落央行。</para>
+        /// </summary>
+        /// <param name="iFields">JSON 物件：身分欄 → 值（結構欄是陣列；`forked_from`／`forked_at` 可為 null）。</param>
+        public static bool Create(string iLettersRoot, string iDataRoot, string iPersona, string iRegion, string iAccount,
+                                  SCP_UclLegacyObject iFields, string iActor, string iReason,
+                                  out List<string> oWarnings, out string oError)
+        {
+            oWarnings = new List<string>(); oError = "";
+            string p = (iPersona ?? "").Trim();
+            if (p.Length == 0 || p.StartsWith("_", StringComparison.Ordinal) || p.StartsWith(".", StringComparison.Ordinal)
+                || p.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || p.Contains(".."))
+            { oError = $"persona 名不合法（不能空白、不能 `_`／`.` 開頭、要能當資料夾名）：'{iPersona}'"; return false; }
+            if (SCP_PersonaProfile.Exists(iLettersRoot, p)) { oError = $"`{p}` 已經存在 —— 建人不覆寫既有的人（改欄位走 op=set）"; return false; }
+            if (!NeedActorReason(iActor, iReason, out oError)) return false;
+            if (string.IsNullOrWhiteSpace(iAccount)) { oError = "account 必填 —— 建人要先有本區帳號歸屬"; return false; }
+
+            // 先驗完整份 payload（⛔ 寫到一半才發現第三欄壞掉＝留下半個人）
+            var aBodies = new List<KeyValuePair<string, string>>();
+            var aSkipped = new List<string>();
+            var aRefused = new List<string>();
+            foreach (string f in SCP_PersonaProfile.IdentityFields)
+            {
+                int i = iFields.FindIndex(kv => kv.Key == f);
+                if (i < 0) continue;
+                object? v = iFields[i].Value;
+                string aBody;
+                if (IsStructured(f))
+                {
+                    if (v == null) aBody = "null";
+                    else
+                    {
+                        if (!ParseStructured(f, SCP_UclLegacyJson.ToJson(v), out List<object?>? aList, out oError)) return false;
+                        aBody = SCP_UclLegacyJson.ToJsonBeautify(aList);
+                    }
+                }
+                else aBody = v == null ? "" : (v is string s ? s.TrimEnd('\r', '\n') : SCP_UclLegacyJson.ToJson(v));
+                aBodies.Add(new KeyValuePair<string, string>(f, aBody));
+            }
+            foreach (var kv in iFields)
+            {
+                if (SCP_PersonaProfile.IsIdentityField(kv.Key) || kv.Key == SCP_PersonaProfile.FieldSourcesKey) continue;
+                if (kv.Key == "agent") aRefused.Add(kv.Key); else aSkipped.Add(kv.Key);
+            }
+
+            try { Directory.CreateDirectory(SCP_LettersPaths.ProfileDir(new SCP_LettersRoot(iLettersRoot), p)); }
+            catch (Exception e) { oError = "建不出 profile/：" + e.Message; return false; }
+            if (!WriteBankBinding(iLettersRoot, iDataRoot, p, iRegion, iAccount, iActor, iReason, out string aWarn, out oError))
+            { oError = "本區綁定寫入失敗（" + iRegion + "）：" + oError; return false; }
+            if (aWarn.Length > 0) oWarnings.Add(aWarn);
+
+            var aWritten = new List<string>();
+            foreach (var kv in aBodies)
+            {
+                try { WriteAtomic(ProfileFieldPath(iLettersRoot, p, kv.Key), kv.Value + "\n"); }
+                catch (Exception e) { oError = $"profile/{kv.Key} 寫入失敗：{e.Message}"; return false; }
+                string w = AppendAudit(iDataRoot, p, "profile/" + kv.Key, iActor, iReason);
+                if (w.Length > 0) oWarnings.Add(w);
+                aWritten.Add(kv.Key);
+            }
+            string aSum = AppendAudit(iDataRoot, p, "profile:[" + string.Join(",", aWritten) + "]"
+                + (aSkipped.Count > 0 ? " skipped(推導欄):[" + string.Join(",", aSkipped) + "]" : "")
+                + (aRefused.Count > 0 ? " refused(走 set_bank):[" + string.Join(",", aRefused) + "]" : ""), iActor, iReason);
+            if (aSum.Length > 0) oWarnings.Add(aSum);
+            if (aRefused.Count > 0) oWarnings.Add("以下欄位**未寫入**（帳號欄走 account／set_bank）：" + string.Join(",", aRefused));
+            if (aSkipped.Count > 0) oWarnings.Add("推導欄不儲存（真相源在 wakes/、lock、longterm/）：" + string.Join(",", aSkipped));
             return true;
         }
 

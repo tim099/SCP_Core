@@ -3,6 +3,8 @@
 //           op 名與參數與 Editor 版同名同義，本體在 `SCP_PersonaProfileWrite`。讀取（整份 persona）仍走 `senate cmd persona`。
 //           **原生**，不需要 Unity。
 // 數值影響：只寫 persona 檔（`profile/`、`bank/`）與 `AwakenInit/_persona_write_audit.jsonl`。⛔ 不動帳本、不動錢。
+// ⭐ TASK-0361：這是 persona 檔**唯一**的寫入入口 —— Unity Editor 的頁面（建 persona、email、actual_agent、Plurk 帳號）
+//   也是 spawn 本指令（`UCL_SenateCmdBridge`），Unity 端不留寫入程式碼。
 //
 // ⚠ Editor 版的另外兩個 op **刻意沒有移植**（寫在這裡，免得以為漏了）：
 //   · `refresh`：只重寫衍生快照 `_persona_profile_snapshot.json` —— Editor 自己在 domain reload 時重寫；Senate 不靠它。
@@ -28,7 +30,8 @@ namespace SCP.Core.Cmd
             "persona 設定寫入：身分欄 set／unset、本區銀行綁定 get_bank／set_bank／unbind、導出綁定 migrate_bank、換區重綁 rebind_region —— **本地跑，不需要 Editor**";
 
         public override string Details =>
-            "set：`persona field value actor reason`（value 必須**在場**，清空欄位顯式給空值；結構欄 identity_vector／vector_history／fork_lineage 要合法 JSON 陣列，長 JSON 走 --arg-file）。\n"
+            "create：`persona account fields actor reason`（建新 persona：先寫本區綁定、再逐欄寫身分欄；fields 是 JSON 物件，走 --arg-file；已存在 ⇒ 擋）。\n"
+            + "set：`persona field value actor reason`（value 必須**在場**，清空欄位顯式給空值；結構欄 identity_vector／vector_history／fork_lineage 要合法 JSON 陣列，長 JSON 走 --arg-file）。\n"
             + "unset：`persona field actor reason`（刪掉 profile/<欄>.md；本來就沒有 ⇒ 零寫入）。\n"
             + "get_bank／set_bank `account`／unbind：`persona` 在本區（`currency` 沒給 ＝ 本專案區域）的綁定。\n"
             + "migrate_bank：`actor reason`，**預設 dry_run**；把全 pool 目前解析得到的帳號（本區沒有就是借別區的）寫成本區綁定；本區已有 ⇒ 跳過（overwrite=1 才覆寫）。\n"
@@ -38,10 +41,11 @@ namespace SCP.Core.Cmd
         public override string Example =>
             SCP_CmdRegistry.Invoke("persona-profile --arg op=set --arg persona=Template --arg field=email --arg value=t@example.com --arg actor=summit --arg reason=驗收");
 
-        static readonly string[] s_Ops = { "set", "unset", "get_bank", "set_bank", "unbind", "migrate_bank", "rebind_region" };
+        static readonly string[] s_Ops = { "create", "set", "unset", "get_bank", "set_bank", "unbind", "migrate_bank", "rebind_region" };
 
         static readonly Dictionary<string, string[]> s_Required = new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
+            ["create"] = new[] { "persona", "account", "fields", "actor", "reason" },
             ["set"] = new[] { "persona", "field", "actor", "reason" },
             ["unset"] = new[] { "persona", "field", "actor", "reason" },
             ["get_bank"] = new[] { "persona" },
@@ -53,6 +57,7 @@ namespace SCP.Core.Cmd
 
         static readonly Dictionary<string, string[]> s_Known = new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
+            ["create"] = new[] { "persona", "account", "fields", "actor", "reason", "currency" },
             ["set"] = new[] { "persona", "field", "value", "actor", "reason" },
             ["unset"] = new[] { "persona", "field", "actor", "reason" },
             ["get_bank"] = new[] { "persona", "currency" },
@@ -69,7 +74,8 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("persona", "對象 persona", iDefault: ""),
             new SCP_CmdArgSpec("field", "set／unset：身分欄名", iDefault: ""),
             new SCP_CmdArgSpec("value", "set：值（必須在場；結構欄是 JSON 陣列，走 --arg-file）", iDefault: ""),
-            new SCP_CmdArgSpec("account", "set_bank：帳號 id（⛔ 不是 persona 名）", iDefault: ""),
+            new SCP_CmdArgSpec("account", "set_bank／create：帳號 id（⛔ 不是 persona 名）", iDefault: ""),
+            new SCP_CmdArgSpec("fields", "create：身分欄的 JSON 物件（欄 → 值；結構欄是陣列）。走 --arg-file", iDefault: ""),
             new SCP_CmdArgSpec("currency", "區域 ID（沒給 ＝ 本專案 `Bank/bank_settings.json` 的區域）", iDefault: ""),
             new SCP_CmdArgSpec("from", "rebind_region：舊區 ID", iDefault: ""),
             new SCP_CmdArgSpec("to", "rebind_region：新區 ID", iDefault: ""),
@@ -119,6 +125,7 @@ namespace SCP.Core.Cmd
             if (!SCP_BankRegion.IsValid(aCurrency)) return SCP_CmdResult.Fail(2, $"✗ 區域 ID 不合法（要能當檔名）：'{aCurrency}'");
             r.AddValue("currency", aCurrency);
             if (aOp == "migrate_bank") return OpMigrate(iArgs, aLetters, aData, aCurrency, aActor, aReason, r);
+            if (aOp == "create") return OpCreate(iArgs, aLetters, aData, aPersona, aCurrency, aActor, aReason, r);
 
             string aBefore = SCP_PersonaProfile.GetBankAccount(aLetters, aPersona, aCurrency, out string aBeforeSrc, out string aBeforeNote);
             if (aOp == "get_bank")
@@ -196,6 +203,27 @@ namespace SCP.Core.Cmd
             r.Lines.Add($"✅ unset {iPersona}.{aField}：'{aOld}'（had_file={(aHad ? 1 : 0)}）→ 來源 {aSrc}（actor={iActor}）"
                         + (aHad ? "" : "　（本來就沒有 ⇒ 零寫入）"));
             r.AddValue("had_file", aHad ? "1" : "0").AddValue("old_value", aOld).AddValue("now_source", aSrc);
+            return r;
+        }
+
+        static SCP_CmdResult OpCreate(SCP_CmdArgs iArgs, string iLetters, string iData, string iPersona, string iRegion,
+                                      string iActor, string iReason, SCP_CmdResult r)
+        {
+            object? aParsed;
+            try { aParsed = SCP_UclLegacyJson.Parse(iArgs.Get("fields").Trim()); }
+            catch (Exception e) { return SCP_CmdResult.Fail(2, "✗ fields 不是合法 JSON：" + e.Message); }
+            if (!(aParsed is SCP_UclLegacyObject aFields)) return SCP_CmdResult.Fail(2, "✗ fields 必須是 JSON **物件**（欄 → 值）");
+            string aAccount = iArgs.Get("account").Trim();
+            if (!SCP_PersonaProfileWrite.Create(iLetters, iData, iPersona, iRegion, aAccount, aFields, iActor, iReason,
+                                                out List<string> aWarns, out string aErr))
+                return SCP_CmdResult.Fail(1, "✗ create 失敗：" + aErr);
+            foreach (string w in aWarns) r.Lines.Add("⚠ " + w);
+            // 讀回：人存在、本區綁定是 account
+            string aBack = SCP_PersonaProfile.GetBankAccount(iLetters, iPersona, iRegion, out string aSrc, out _);
+            if (!SCP_PersonaProfile.Exists(iLetters, iPersona) || aBack != aAccount || aSrc != iRegion)
+                return SCP_CmdResult.Fail(1, $"✗ create 寫入後讀回不符：exists={SCP_PersonaProfile.Exists(iLetters, iPersona)}／'{aBack}'@{aSrc}");
+            r.Lines.Add($"✅ 建立 persona `{iPersona}` @ {aAccount}（{iRegion}）");
+            r.AddValue("persona", iPersona).AddValue("account", aBack);
             return r;
         }
 

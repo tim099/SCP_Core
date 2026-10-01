@@ -491,27 +491,16 @@ namespace SCP.Core.Letters
         // ── profile 寫入（identity 欄）───────────────────────────────
 
         /// <summary>
-        /// 寫 `profile/&lt;field&gt;.md`（值＋換行，原子）＋ 一行審計（`AwakenInit/_persona_write_audit.jsonl`）。
-        /// 格式與 Editor `UCL_PersonaProfile.WriteProfileField` 相同。審計寫不進去不擋主寫入（資料已落地）。
+        /// 寫一個 identity 欄 —— 走**唯一的寫入端** `SCP_PersonaProfileWrite.SetField`（TASK-0361：原本這裡有一份私有的
+        /// 寫檔＋審計，審計行的形狀還跟 Editor 版不同（中文沒轉義），同一個檔兩種寫法）。
+        /// 寫不進去丟例外（與原本的 WriteAtomic 同）；審計寫不進去不擋主寫入（資料已落地）。
         /// </summary>
         static void WriteProfileField(SCP_MorningRoots iR, string iPersona, string iField, string iValue,
                                       string iActor, string iReason)
         {
-            string aPath = SCP_LettersPaths.ProfileDir(iR.Letters, iPersona) + "/" + iField + ".md";
-            SCP_CmdPayload.WriteAtomic(aPath, iValue + "\n");
-            try
-            {
-                var aLine = SCP_JsonData.NewObject();
-                aLine["ts"] = NowIso();
-                aLine["persona"] = iPersona;
-                aLine["fields"] = "profile/" + iField;
-                aLine["actor"] = iActor;
-                aLine["reason"] = iReason;
-                string aAudit = Path.Combine(iR.DataRoot, "AwakenInit", "_persona_write_audit.jsonl");
-                Directory.CreateDirectory(Path.GetDirectoryName(aAudit)!);
-                File.AppendAllText(aAudit, SCP_JsonWriter.Write(aLine, false) + "\n", new UTF8Encoding(false));
-            }
-            catch (Exception) { /* 審計失敗不擋主寫入 */ }
+            if (!SCP_PersonaProfileWrite.SetField(iR.Letters.Value, iR.DataRoot, iPersona, iField, iValue,
+                                                  iActor, iReason, out _, out string aErr))
+                throw new IOException("profile/" + iField + " 寫不進去：" + aErr);
         }
 
         // ── 雜項讀取 ─────────────────────────────────────────────
