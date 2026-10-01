@@ -70,7 +70,7 @@ namespace SCP.Core.Gui
         {
             base.TopBarButtons(iUi);
             DrawRootRow(iUi);
-            OpenFolderButton(iUi, HasRoot ? SCP_PersonaLetters.CleanPath(m_Root.Value) : null, "login/open-dir");
+
         }
         protected override void DrawContent(SCP_Ui g)
         {
@@ -116,7 +116,9 @@ namespace SCP.Core.Gui
                     Rescan();
                     m_Message = "・已重新掃描（路徑沒有重讀 —— 要連路徑一起重讀請按「重新讀取」）";
                 }
+                OpenFolderButton(g, HasRoot ? SCP_PersonaLetters.CleanPath(m_Root.Value) : null, "login/open-dir");
             }
+            
             g.Note("· persona 信件庫根：`" + (m_Root.Value.Length > 0 ? m_Root.Value : "（解不出來）")
                 + "`　來源：" + m_Root.Origin + "　—— 設定在「路徑管理」頁，本頁只讀");
         }
