@@ -2,7 +2,7 @@
 title: 自動 Commit —— 機器生成的檔分群整批提交
 description: senate cmd auto-commit 與 Senate「自動 Commit」頁共用的引擎：掃描範圍（AgentCommands＋全部信件庫＋有設定檔的 submodule，不分模式）、兩張寫死的分群表、.ucl_autocommit.json 設定檔與地板、四道硬擋、提交流程與機讀值。
 cmds: [auto-commit]
-last_updated: 2026-09-30 (TASK-0340：從 UCL_Core 下沉到 SCP_Core；拿掉模式與在線守衛；巢狀 repo 歸 __subptr)
+last_updated: 2026-10-01
 target_audience: [AI_Agent, Tools_Maintainer]
 related:
   - Coding_Standards.md | SCP 撰寫規範 | 方言／SCP_Json／prefs／路徑單一落點
@@ -157,13 +157,7 @@ ephemeral（永遠不進候選）：`*.log`、`*.tmp`、`_last_op.md`、`_last_v
 - 「儲存預設勾選」只存**跟規則預設不同**的那幾格（`<repo>:<群>`），寫 `senate.pages.local.json` 的 `auto-commit` 區塊；特殊群永不持久化。
 - 提交：「Commit 勾選群組」→ 攤出每一筆 commit 的訊息 →「⚠ 確定 Commit」／「取消」。
 
-## 8. Unity 端（準備退場）
-
-`UCL_AutoCommitPage` / `Cmd_AutoCommit` / `UCL_AutoCommitRules` / `UCL_AutoCommitConfig` 仍在，但**準備退場**（Tim 2026-09-30）。
-⚠ 下沉時量到的分岔：Unity **頁面**的提交路徑沒有 BUG-30 的三道守衛（pre-staged 擋／pathspec 提交／提交後對帳），
-失敗時還整個 `git reset` ⇒ 退場前請改用 Senate 這一側。
-
-## 9. 血證（本次下沉）
+## 8. 血證（本次下沉）
 
 - 🩸 **未登記的巢狀 repo 會被當成 runtime 檔收走**（TASK-0340 沙盒）：新信件庫 `ChatTavern/baton/letters/alice/` 被 `ChatTavern/` 前綴吃進 runtime 群（預設勾選），
   `git add` 會把它塞成沒有 `.gitmodules` 的 gitlink，而那不會報錯。UCL 版規則表同形。⇒ `dir/` 結尾的條目一律歸 `__subptr`。
