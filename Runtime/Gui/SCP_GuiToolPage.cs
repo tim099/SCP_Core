@@ -151,7 +151,7 @@ namespace SCP.Core.Gui
         /// 開不了檔案總管時的**退路**：一顆「複製類別名」。
         /// <para>⚠ 是退路不是附加品 —— 兩顆都畫只是讓工具列變長，
         /// 而它們回答的是同一個問題（「這一頁的碼在哪」）。</para>
-        /// <para>兩種能力都沒有時這顆也不畫，改由 <see cref="ShowKeyHint"/> 那行**直接把類別名印出來** ——
+        /// <para>兩種能力都沒有時這顆也不畫，改由工具列上一行純文字**直接把類別名印出來** ——
         /// 「至少知道是哪個 class」這件事不可以有任何一條路徑掉在地上。</para>
         /// </summary>
         protected virtual bool ShowCopyClassButton
@@ -192,6 +192,8 @@ namespace SCP.Core.Gui
                 //   而缺字**不報錯**，只會變成一個方塊（SenateFonts 的血證就是這一族）。
                 if (ShowSourceButton && iUi.Button($"原始碼({key})", SourceButtonId)) aAction = 3;
                 else if (ShowCopyClassButton && iUi.Button($"複製類別名({SourceClassName})", CopyClassButtonId)) aAction = 4;
+                // 兩顆鈕都不畫時，類別名只剩這一條路（TASK-0357：舊的 page key 尾巴拿掉後這格掉在地上）
+                else if (NeedsClassInHint) iUi.Label(key);
 
                 // ⚠ 這裡刻意**不 try/catch**：工具列的按鈕炸掉是程式錯誤，
                 //   吞掉它只會讓「那顆鈕沒反應」變成沒有人查得到的事（UCL 那側有 Debug.LogException
