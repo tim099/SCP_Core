@@ -27,7 +27,7 @@ namespace SCP.Core.Cmd
         public override string Details =>
             "op（預設 resolve）：" + string.Join(" | ", SCP_PlurkOps.Ops) + "\n"
             + "· 發文三路 lint／preview／post 都吃 `slip_file`（交付單**五欄**：persona／心情詞／文案本體／圖片路徑／公開度，"
-            + "格式見 Plurk_Posting_Workflow §2）；起手先把缺 nick 的帳號自動補齊，`@persona` 自動轉成 `@nick[→persona]`。\n"
+            + "格式見 `senate cmd doc --arg op=show --arg name=Plurk_Posting` §2）；起手先把缺 nick 的帳號自動補齊，`@persona` 自動轉成 `@nick[→persona]`。\n"
             + "· post **預設 dry-run**：沒帶 `confirm=1` 只印 payload 不送；lint 有錯一律拒絕；送出後寫 audit ＋ 回讀查重複。\n"
             + "· 唯讀 op 預設**現抓 API**並落本地快取；`cache=1` 才改讀快取（回傳檔會標來源與年齡）。\n"
             + "· ⚠ `alerts`（getActive）**讀了就清通知** —— 要看歷史走 `history=1`。\n"
@@ -44,7 +44,7 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("op", "要做什麼（" + string.Join(" | ", SCP_PlurkOps.Ops) + "）", iDefault: "resolve"),
             new SCP_CmdArgSpec("persona", "誰要發／誰在看（lint／preview／post 建議給 —— 決定用共用還是個人帳號；mentions 的室友路由也靠它）。沒給 ⇒ 回落共用帳號、回傳檔落 basecamp"),
-            new SCP_CmdArgSpec("slip_file", "交付單檔案路徑（lint／preview／post 必填；**五欄**格式見 Plurk_Posting_Workflow §2）"),
+            new SCP_CmdArgSpec("slip_file", "交付單檔案路徑（lint／preview／post 必填；**五欄**格式見 `senate cmd doc --arg op=show --arg name=Plurk_Posting` §2）"),
             new SCP_CmdArgSpec("confirm", "1 ＝ 真的送（post／upload／like／unlike／emoadd／關係動作）；沒帶＝dry-run 只印不送"),
             new SCP_CmdArgSpec("reply_to", "把這則發成該噗的回應（plurk id）—— 長文拆則的預設形態（preview／post）"),
             new SCP_CmdArgSpec("plurk_id", "已發出的噗 id（get／responses／like／unlike）"),

@@ -795,7 +795,7 @@ namespace SCP.Core.Plurk
         //          一律要 `confirm=1`，且送出前把「那個人是誰」印成人看得懂的東西。
         //
         // ⚠ 端點名的驗證狀態：本區塊那幾支是 **2026-08-24 首次接上**，
-        //   事實來源仍在 `Docs~/{lang}/Workflows/Plurk_Maintenance.md` §5（別在這裡另記一份）。
+        //   事實來源仍在 `SCP_Core/Docs~/Plurk_Maintenance.md`（`senate cmd doc --arg op=show --arg name=Plurk_Maintenance`） §5（別在這裡另記一份）。
         //   ⇒ 所以每一支的非 200 都**把 body 印出來**：
         //     「端點不存在」「簽章錯」「被 WAF 擋」三種失敗都是 4xx，長得一樣。
         // ⛔ 這裡不做「全部同意」「批次加好友」：

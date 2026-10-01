@@ -16,7 +16,7 @@
 //          報告換行一律 `\n`（SCP 慣例；Unity 版是 `AppendLine` 的 CRLF —— 內容同、換行不同）。
 //
 // ⛔ 發布不可回復，而 Plurk 沒有 history ⇒ 這支永遠不自動發：`confirm=1` 是人打的。
-// ⚠ 端點與參數的**驗證狀態**：事實來源在 `Docs~/{lang}/Workflows/Plurk_Maintenance.md` §5
+// ⚠ 端點與參數的**驗證狀態**：事實來源在 `SCP_Core/Docs~/Plurk_Maintenance.md`（`senate cmd doc --arg op=show --arg name=Plurk_Maintenance`） §5
 //   （別在這裡另記一份 —— 兩份清單必漂，而漂掉的那份看起來一樣可信）。
 //   ⇒ `preview` 印出**完整將送內容**，讓人在送之前用眼睛驗一次。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
@@ -786,7 +786,7 @@ namespace SCP.Core.Plurk
             string aFile = Arg("slip_file").Trim();
             if (aFile.Length == 0)
                 throw SCP_PlurkFailure.Blocked("[Plurk] 需要 --arg slip_file=<交付單檔案>"
-                    + "（四欄格式見 Plurk_Posting_Workflow §二；長文一律走檔案不走參數）");
+                    + "（四欄格式見 `senate cmd doc --arg op=show --arg name=Plurk_Posting` §2；長文一律走檔案不走參數）");
             if (!File.Exists(aFile)) throw SCP_PlurkFailure.Blocked($"[Plurk] 找不到交付單：{aFile}");
             var aSlip = SCP_PlurkLint.Parse(File.ReadAllText(aFile, Encoding.UTF8));
 

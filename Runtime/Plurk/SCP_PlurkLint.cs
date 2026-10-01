@@ -10,7 +10,7 @@
 //   ⇒ 所以本類別**不提供任何「可以發」的綠燈**，呼叫端輸出必須附上那句免責，
 //   否則「過了 lint」會被讀成「過了審查」（某一層的回報只涵蓋它自己那一層，卻講得像涵蓋全部）。
 //
-// 📄 加一條規則 / 改判準之前先讀 `Docs~/{lang}/Workflows/Plurk_Maintenance.md` §2
+// 📄 加一條規則 / 改判準之前先讀 `SCP_Core/Docs~/Plurk_Maintenance.md`（`senate cmd doc --arg op=show --arg name=Plurk_Maintenance`） §2
 //   （errors 與 warns 的分野、血證的寫法、以及「驗收要看是哪一條規則報的」那條）。
 //
 // 為什麼規則住 C# 而不是 python：`post` 在 C#（唯一寫入端），而**規則要長在必經路上** ——
@@ -24,7 +24,7 @@ using System.Text.RegularExpressions;
 
 namespace SCP.Core.Plurk
 {
-    /// <summary>一份交付單（`Plurk_Posting_Workflow.md` §二 的四欄 ＋ 公開度）。</summary>
+    /// <summary>一份交付單（`Plurk_Posting.md` §2 的四欄 ＋ 公開度）。</summary>
     public sealed class SCP_PlurkSlip
     {
         public string Persona = "";
