@@ -36,16 +36,21 @@ namespace SCP.Core.Cmd
             + "get_bank／set_bank `account`／unbind：`persona` 在本區（`currency` 沒給 ＝ 本專案區域）的綁定。\n"
             + "migrate_bank：`actor reason`，**預設 dry_run**；把全 pool 目前解析得到的帳號（本區沒有就是借別區的）寫成本區綁定；本區已有 ⇒ 跳過（overwrite=1 才覆寫）。\n"
             + "rebind_region：`from to actor reason`，**預設 dry_run**（dry_run=0 才寫）；只複製到新區，⛔ 不刪舊區、不改設定；新區已有不同值 ⇒ 衝突、exit 1。\n"
+            + "set_lock_actual_agent：`persona value actor reason`（改在線者 lock 的 actual_agent，同一步改 profile/actual_agent）。\n"
+            + "force_release_lock：`persona actor reason`（最後手段：強制刪 lock，⛔ 不寫信不廣播不關場 —— 能跑晚安就跑晚安）。\n"
             + "⚠ 只寫 persona 檔＋一行審計（`AwakenInit/_persona_write_audit.jsonl`）—— ⛔ 不動帳本、不動錢。讀整份 persona 走 `persona`。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("persona-profile --arg op=set --arg persona=Template --arg field=email --arg value=t@example.com --arg actor=summit --arg reason=驗收");
 
-        static readonly string[] s_Ops = { "create", "set", "unset", "get_bank", "set_bank", "unbind", "migrate_bank", "rebind_region" };
+        static readonly string[] s_Ops = { "create", "set", "unset", "get_bank", "set_bank", "unbind", "migrate_bank", "rebind_region",
+                                           "set_lock_actual_agent", "force_release_lock" };
 
         static readonly Dictionary<string, string[]> s_Required = new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["create"] = new[] { "persona", "account", "fields", "actor", "reason" },
+            ["set_lock_actual_agent"] = new[] { "persona", "value", "actor", "reason" },
+            ["force_release_lock"] = new[] { "persona", "actor", "reason" },
             ["set"] = new[] { "persona", "field", "actor", "reason" },
             ["unset"] = new[] { "persona", "field", "actor", "reason" },
             ["get_bank"] = new[] { "persona" },
@@ -58,6 +63,8 @@ namespace SCP.Core.Cmd
         static readonly Dictionary<string, string[]> s_Known = new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["create"] = new[] { "persona", "account", "fields", "actor", "reason", "currency" },
+            ["set_lock_actual_agent"] = new[] { "persona", "value", "actor", "reason" },
+            ["force_release_lock"] = new[] { "persona", "actor", "reason" },
             ["set"] = new[] { "persona", "field", "value", "actor", "reason" },
             ["unset"] = new[] { "persona", "field", "actor", "reason" },
             ["get_bank"] = new[] { "persona", "currency" },
@@ -112,6 +119,26 @@ namespace SCP.Core.Cmd
             var r = new SCP_CmdResult();
 
             if (aOp == "set") return OpSet(iArgs, aLetters, aData, aPersona, aActor, aReason, r);
+            if (aOp == "set_lock_actual_agent")
+            {
+                if (!SCP_PersonaProfileWrite.SetLockActualAgent(aLetters, aData, aPersona, iArgs.Get("value"), aActor, aReason, out string aW, out string aE))
+                    return SCP_CmdResult.Fail(1, "✗ set_lock_actual_agent 失敗：" + aE);
+                if (aW.Length > 0) r.Lines.Add("⚠ " + aW);
+                r.Lines.Add($"✅ {aPersona} 的 lock 與 profile/actual_agent ＝ `{iArgs.Get("value").Trim()}`（顯示 Agent／bank 不變）");
+                return r.AddValue("actual_agent", iArgs.Get("value").Trim());
+            }
+            if (aOp == "force_release_lock")
+            {
+                if (!SCP_PersonaProfileWrite.ForceReleaseLock(aLetters, aData, aPersona, aActor, aReason, out bool aHad, out string aW, out string aE))
+                    return SCP_CmdResult.Fail(1, "✗ force_release_lock 失敗：" + aE);
+                if (aW.Length > 0) r.Lines.Add("⚠ " + aW);
+                bool aStill = File.Exists(SCP_LettersPaths.SessionLockPath(new SCP_LettersRoot(aLetters), aPersona));
+                if (aStill) return SCP_CmdResult.Fail(1, $"✗ 刪完回讀 lock 還在 —— 未生效");
+                r.Lines.Add(aHad
+                    ? $"✅ `{aPersona}` 的 lock 已強制刪除 —— ⚠ 沒寫信、沒廣播、沒關場（那些是晚安的事；能跑晚安就跑晚安）"
+                    : $"・`{aPersona}` 本來就沒有 lock ⇒ 零寫入");
+                return r.AddValue("had_lock", aHad ? "1" : "0");
+            }
             if (aOp == "unset") return OpUnset(iArgs, aLetters, aData, aPersona, aActor, aReason, r);
             if (aOp == "rebind_region") return OpRebind(iArgs, aLetters, aData, aActor, aReason, r);
 

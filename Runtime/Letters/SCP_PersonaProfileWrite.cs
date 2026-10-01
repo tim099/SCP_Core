@@ -284,6 +284,60 @@ namespace SCP.Core.Letters
             return true;
         }
 
+        // ── session lock（`profile/_session.json`）——後台操作的兩支（TASK-0361：Unity 登入狀態頁原本直寫）──
+        // ⚠ lock 的**建立**只在早安（`SCP_Morning`）、**正常刪除**只在晚安（`SCP_Goodnight.SleepApply`）；
+        //   這裡只收後台的兩個例外動作，每一筆都留審計（lock 本身不入版控，事後沒有別的地方查得到是誰動的）。
+
+        /// <summary>
+        /// 改在線者 lock 裡的 `actual_agent`，同一步把 `profile/actual_agent.md` 也改掉（兩邊不准只改一邊）。
+        /// lock 讀進來只換那一格、用早安寫 lock 的同一個格式寫回（key 順序與其他欄位不動）。
+        /// </summary>
+        public static bool SetLockActualAgent(string iLettersRoot, string iDataRoot, string iPersona, string iValue,
+                                              string iActor, string iReason, out string oAuditWarn, out string oError)
+        {
+            oAuditWarn = ""; oError = "";
+            string aValue = (iValue ?? "").Trim();
+            if (aValue.Length == 0) { oError = "actual_agent 不能是空的"; return false; }
+            if (!SCP_PersonaProfile.Exists(iLettersRoot, iPersona)) { oError = $"查無此 persona：{iPersona}"; return false; }
+            if (!NeedActorReason(iActor, iReason, out oError)) return false;
+            string aLock = SCP_LettersPaths.SessionLockPath(new SCP_LettersRoot(iLettersRoot), iPersona);
+            if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aLock, out string aText, out var aState))
+            { oError = aState == SCP.Core.Io.SCP_FileReadState.Busy ? "lock 這一瞬間讀不了（換檔中）—— 重跑一次" : $"`{iPersona}` 沒有 lock（不在線）"; return false; }
+            SCP_JsonData aJson;
+            try { aJson = SCP_JsonData.Parse(aText); }
+            catch (Exception e) { oError = "lock 解析不了（⛔ 不覆寫一顆壞 lock）：" + e.Message; return false; }
+            aJson["actual_agent"] = aValue;
+            try { WriteAtomic(aLock, SCP_JsonWriter.Write(aJson, SCP_JsonStyle.UclLegacy)); }
+            catch (Exception e) { oError = "lock 寫不進去：" + e.Message; return false; }
+            oAuditWarn = AppendAudit(iDataRoot, iPersona, "lock/actual_agent", iActor, iReason);
+            if (!SetField(iLettersRoot, iDataRoot, iPersona, "actual_agent", aValue, iActor, iReason, out string aW2, out oError))
+            { oError = "lock 已更新，而 profile/actual_agent 寫入失敗：" + oError; return false; }
+            if (aW2.Length > 0) oAuditWarn = (oAuditWarn + " " + aW2).Trim();
+            return true;
+        }
+
+        /// <summary>
+        /// **強制刪 lock**（最後手段：晚安跑不通、lock 卡死）。⛔ 不寫信、不廣播、不關場 —— 那些是晚安的事。
+        /// lock 本來就不在 ⇒ 回 true、零寫入、不審計。
+        /// </summary>
+        public static bool ForceReleaseLock(string iLettersRoot, string iDataRoot, string iPersona,
+                                            string iActor, string iReason, out bool oHadLock, out string oAuditWarn, out string oError)
+        {
+            oHadLock = false; oAuditWarn = ""; oError = "";
+            if (string.IsNullOrWhiteSpace(iPersona)) { oError = "persona 必填"; return false; }
+            if (!NeedActorReason(iActor, iReason, out oError)) return false;
+            string aLock = SCP_LettersPaths.SessionLockPath(new SCP_LettersRoot(iLettersRoot), iPersona);
+            try
+            {
+                oHadLock = File.Exists(aLock);
+                if (!oHadLock) return true;
+                File.Delete(aLock);
+            }
+            catch (Exception e) { oError = e.Message; return false; }
+            oAuditWarn = AppendAudit(iDataRoot, iPersona, "lock (force-released)", iActor, iReason);
+            return true;
+        }
+
         /// <summary>導出綁定的計數。</summary>
         public sealed class MigrateReport
         {

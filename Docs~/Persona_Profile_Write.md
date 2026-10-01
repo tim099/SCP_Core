@@ -73,6 +73,19 @@ senate cmd persona-profile --arg op=rebind_region --arg from=<舊區> --arg to=<
 - `rebind_region`：把全 pool 從舊區**複製**到新區 —— ⛔ 不刪舊區、不改設定；新區已有**不同值** ⇒ 衝突、exit 1，不覆寫也不挑。
 - 兩支都是：任一區這一瞬間讀不了 ⇒ 計失敗、不寫（⛔ 不當成「沒有綁定」—— TASK-0265）。
 
+## session lock（`profile/_session.json`）—— 後台的兩個例外動作
+
+```bash
+senate cmd persona-profile --arg op=set_lock_actual_agent --arg persona=<在線者> --arg value=<Codex|ClaudeCode|Antigravity> --arg actor= --arg reason=
+senate cmd persona-profile --arg op=force_release_lock    --arg persona=<p> --arg actor= --arg reason=
+```
+
+- lock 的**建立**只在早安（`morning-wake`）、**正常刪除**只在晚安（`goodnight-sleep`／`goodnight-logout`）—— 兩者都在 Senate（TASK-0361）。
+- `set_lock_actual_agent`：改 lock 裡的 `actual_agent`，**同一步**改 `profile/actual_agent.md`（只換那一格，其餘欄位與格式不動）。
+  不在線（沒有 lock）⇒ 擋；lock 解析不了 ⇒ 擋（⛔ 不覆寫一顆壞 lock）。
+- `force_release_lock`：**最後手段**（晚安跑不通、lock 卡死）—— 只刪 lock，⛔ 不寫信、不廣播、不關場。能跑晚安就跑晚安。
+- 兩支都留審計（`lock/actual_agent`、`lock (force-released)`）：lock 不入版控，事後沒有別的地方查得到是誰動的。
+
 ## 審計
 
 每一筆寫入 append 一行到 `AgentCommands/AwakenInit/_persona_write_audit.jsonl`：
