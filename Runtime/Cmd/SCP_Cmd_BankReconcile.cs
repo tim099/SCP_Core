@@ -219,9 +219,21 @@ namespace SCP.Core.Cmd
         {
             int aMissing = iLast.GetInt("missing", -1);
             int aUnclassified = iLast["unclassified_kinds"].Exists ? iLast["unclassified_kinds"].Count : 0;
-            return (aMissing == 0 ? "✓" : "⚠") + " 上次對帳 `" + iLast.GetString("at_utc", "?") + "`（" + iLast.GetString("trigger", "?")
+            // 頂層 missing 只數量得到的差集 ⇒ 某類整類量不到時它照樣是 0
+            // （TASK-0359：09-30 work_post 246 則量不到，被印成「差集 0 ✓」）
+            var aUnmeasurable = new List<string>();
+            SCP_JsonData aCoverage = iLast["coverage"];
+            if (aCoverage.Exists)
+                foreach (string k in aCoverage.Keys)
+                {
+                    int n = aCoverage[k].GetInt("unmeasurable", 0);
+                    if (n > 0) aUnmeasurable.Add(k + " 量不到 " + n + " 則");
+                }
+            bool aClean = aMissing == 0 && aUnmeasurable.Count == 0;
+            return (aClean ? "✓" : "⚠") + " 上次對帳 `" + iLast.GetString("at_utc", "?") + "`（" + iLast.GetString("trigger", "?")
                    + "）射程 " + iLast.GetString("from", "?") + "～" + iLast.GetString("to", "?")
                    + "：差集 **" + aMissing + "**"
+                   + (aUnmeasurable.Count > 0 ? "／⚠ " + string.Join("、", aUnmeasurable) + "（⛔ 不是沒差，是沒量）" : "")
                    + (aUnclassified > 0 ? "／⚠ 未分類 kind " + aUnclassified : "")
                    + (iLast.GetInt("problems", 0) > 0 ? "／問題 " + iLast.GetInt("problems", 0) : "");
         }
