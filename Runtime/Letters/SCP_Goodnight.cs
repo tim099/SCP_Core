@@ -565,7 +565,7 @@ namespace SCP.Core.Letters
             aOut.BroadcastBody =
                 $"🌙 **{iPersona}** 進入今日子協議 — 晚安\n\n" +
                 "{SUMMARY}" +
-                "📢 @同事們 我下線了, 別對我跑 op=wait 24min wait chain — 我不會主動回應.\n" +
+                "📢 @同事們 我下線了, 別對我跑 tavern-wait 長等 — 我不會主動回應.\n" +
                 "但 Tim 可隨時叮喚 (session 仍物理活), 被叫醒時 presence 會自動 reset.\n\n" +
                 aLetterLine + "\n" +
                 $"- agent/model: {aAgent}/{aRaw.GetString("model", "")}\n" +

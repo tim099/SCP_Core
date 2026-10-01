@@ -87,6 +87,58 @@ namespace SCP.Core.Tavern
             return aOut;
         }
 
+        // ===========================================================
+        // 區塊職責：**沒有 persona** 的發言（系統元件／人在後台頁打字）—— 組訊息的第二個入口（TASK-0366）。
+        // 物理意義：Unity `Cmd_Tavern.Op_Post` 匿名那條路的搬家版（酒保廣播、酒館頁、沒帶 persona 的棋局廣播）。
+        //          與 <see cref="Build"/> 共用 ⑤ CLI 判定與 ④ 詞典判準（`SCP_Glossary.ShouldAutoAttach` 對系統 sender 本來就不附）；
+        //          差在身分：sender_id 由呼叫端給、sender_name ＝ 顯式給的 → 新銀行帳戶的顯示名 → id，**沒有 sender_persona**
+        //          ⇒ 寫入端不計酬（計酬一律由 persona 解析，SCP_TavernPayroll）。
+        // ⚠ 為什麼不併進 Build（persona 給空就當匿名）：「刻意匿名」與「忘了帶 persona」在輸入上同形 ——
+        //   併成一支的話，忘了帶的人會安靜地發成匿名、少領薪水。分兩支 ⇒ 匿名要**點名**才走得到。
+        // ===========================================================
+        public static SCP_TavernPostDraft BuildSystem(string iDataRoot, string iBankRoot, string iProjectRoot, string iGlossaryRoot,
+                                                      string iRoom, string iSenderId, string iSenderName, string iBody,
+                                                      IReadOnlyDictionary<string, string> iMeta)
+        {
+            var aOut = new SCP_TavernPostDraft();
+            string aId = (iSenderId ?? "").Trim();
+            if (aId.Length == 0) { aOut.Error = "系統發言要點名 sender（⛔ 不猜身分）"; return aOut; }
+            if (string.IsNullOrEmpty(iBody)) { aOut.Error = "body 是空的"; return aOut; }
+            if (!Directory.Exists(SCP_TavernRooms.RoomDir(iDataRoot, iRoom))) { aOut.Error = $"房間不存在：{iRoom}"; return aOut; }
+
+            string aName = (iSenderName ?? "").Trim();
+            if (aName.Length == 0)
+            {
+                try
+                {
+                    var aAcc = SCP.Core.Bank.SCP_BankAccounts.TryLoad(iBankRoot, aId, out _);
+                    if (aAcc != null && aAcc.DisplayName.Length > 0) aName = aAcc.DisplayName;
+                }
+                catch (Exception e) { aOut.Notes.Add($"帳戶顯示名讀不到（{e.Message}）—— 顯示成 id"); }
+                if (aName.Length == 0) { aName = aId; aOut.Notes.Add($"sender '{aId}' 沒有帳戶顯示名 —— 顯示成 id"); }
+            }
+
+            bool aIsCli = SCP_TavernCli.LooksLikeCliCommand(iDataRoot, iBody);
+            bool aAttach = !aIsCli && SCP_Glossary.ShouldAutoAttach(aId, iMeta);
+            var aMsg = new SCP_TavernMessage
+            {
+                Room = iRoom,
+                SenderId = aId,
+                SenderName = aName,
+                Kind = "chat",
+                Body = aAttach ? AppendGlossaryRefs(iProjectRoot, iGlossaryRoot, iBody) : iBody,
+            };
+            foreach (var kv in iMeta) aMsg.Meta[kv.Key] = kv.Value;
+            if (aIsCli)
+            {
+                if (!aMsg.Meta.TryGetValue("tag", out string? aTag) || string.IsNullOrEmpty(aTag))
+                    aMsg.Meta["tag"] = SCP_TavernCli.Tag;
+                aMsg.Meta[SCP_TavernCli.MetaKey] = "true";
+            }
+            aOut.Message = aMsg;
+            return aOut;
+        }
+
         // ── glossary 自動附註 ⇒ 唯一實作在 `SCP.Core.Glossary.SCP_Glossary`（TASK-0313）────────────
         //   此前這裡是一份「逐字對齊 Editor Cmd_Glossary」的移植版；兩份都對，而改一份不會讓另一份知道。
         //   ⇒ 本檔只留兩個薄包裝（既有呼叫端與 selftest 用），⛔ 不再持有任何解析／偵測邏輯。
