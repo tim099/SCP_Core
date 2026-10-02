@@ -113,8 +113,17 @@ namespace SCP.Core.Sculpture
         public double Z = 0;
         /// <summary>範圍：true ＝ 整個 0..256 空間；false ＝ 可見 voxel 外框向外擴 <see cref="Margin"/> 格。</summary>
         public bool FullGrid = false;
-        /// <summary>外框模式向外擴幾格。</summary>
+        /// <summary>外框模式向外擴幾格的**上限**（<see cref="MarginRatio"/> ＝ 0 時就是固定外擴量）。</summary>
         public double Margin = 24;
+        /// <summary>
+        /// 外框模式的外擴 ＝ 作品 xy 外框最長邊 × 本值，封頂 <see cref="Margin"/>（Tim 2026-10-02：小展品不該被 24 格地板鋪滿整個畫面）。
+        /// 0 ＝ 固定外擴 <see cref="Margin"/> 格（舊行為）。
+        /// </summary>
+        public double MarginRatio = 0.5;
+
+        /// <summary>給定作品 xy 外框最長邊，實際外擴幾格。</summary>
+        public double EffectiveMargin(double iExtent)
+            => MarginRatio > 0 ? System.Math.Min(Margin, MarginRatio * iExtent) : Margin;
         /// <summary>貼圖絕對路徑（PNG／JPG，可重複鋪）；null ＝ 內建量尺網格（每 1／16／64 格）。</summary>
         public string? Texture;
         /// <summary>貼圖每重複一次涵蓋幾格（voxel）；內建網格忽略（它天生對齊 1 格）。</summary>

@@ -186,16 +186,16 @@ namespace SCP.Core.Sculpture
         static readonly HashSet<string> s_CameraKeys = new HashSet<string>(StringComparer.Ordinal)
         { "projection", "yaw", "pitch", "roll", "target", "eye", "distance", "fov", "zoom", "fit_upscale" };
         static readonly HashSet<string> s_FloorKeys = new HashSet<string>(StringComparer.Ordinal)
-        { "enabled", "z", "full_grid", "margin", "texture", "tile_size", "color", "fade" };
+        { "enabled", "z", "full_grid", "margin", "margin_ratio", "texture", "tile_size", "color", "fade" };
         /// <summary>CLI 的扁平地板鍵 → 設定檔 floor 物件裡的鍵。</summary>
         static readonly Dictionary<string, string> s_FloorFlat = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["floor"] = "enabled", ["floor_z"] = "z", ["floor_full_grid"] = "full_grid", ["floor_margin"] = "margin",
+            ["floor"] = "enabled", ["floor_z"] = "z", ["floor_full_grid"] = "full_grid", ["floor_margin"] = "margin", ["floor_margin_ratio"] = "margin_ratio",
             ["floor_texture"] = "texture", ["floor_tile"] = "tile_size", ["floor_color"] = "color", ["floor_fade"] = "fade",
         };
         /// <summary>CLI 認得的扁平地板鍵（`render-profile set` 與 view 的一次性參數同一份）。</summary>
         public static IReadOnlyCollection<string> FloorFlatKeys => s_FloorFlat.Keys;
-        public const double FloorZMin = -64, FloorZMax = 320, FloorMarginMax = 256, FloorTileMin = 0.25, FloorTileMax = 4096, FloorFadeMax = 0.5;
+        public const double FloorZMin = -64, FloorZMax = 320, FloorMarginMax = 256, FloorMarginRatioMax = 4, FloorTileMin = 0.25, FloorTileMax = 4096, FloorFadeMax = 0.5;
         static readonly HashSet<string> s_LightKeys = new HashSet<string>(StringComparer.Ordinal)
         { "dir", "color", "intensity", "shadow" };
         static readonly HashSet<string> s_SkyKeys = new HashSet<string>(StringComparer.Ordinal) { "path", "yaw", "tilt" };
@@ -344,7 +344,7 @@ namespace SCP.Core.Sculpture
 
         static SCP_SculptFloor CloneFloor(SCP_SculptFloor f) => new SCP_SculptFloor
         {
-            Z = f.Z, FullGrid = f.FullGrid, Margin = f.Margin, Texture = f.Texture, TileSize = f.TileSize,
+            Z = f.Z, FullGrid = f.FullGrid, Margin = f.Margin, MarginRatio = f.MarginRatio, Texture = f.Texture, TileSize = f.TileSize,
             R = f.R, G = f.G, B = f.B, Fade = f.Fade,
         };
 
@@ -383,6 +383,7 @@ namespace SCP.Core.Sculpture
             o.Set("z", f.Z);
             o.Set("full_grid", f.FullGrid);
             o.Set("margin", f.Margin);
+            o.Set("margin_ratio", f.MarginRatio);
             o.Set("texture", f.Texture ?? FloorBuiltin);
             o.Set("tile_size", f.TileSize);
             o.Set("color", "#" + f.R.ToString("x2") + f.G.ToString("x2") + f.B.ToString("x2"));
@@ -403,6 +404,7 @@ namespace SCP.Core.Sculpture
             if (iFloor["z"].Exists) v.Z = Range(iFloor["z"], "floor.z", FloorZMin, FloorZMax);
             if (iFloor["full_grid"].Exists) v.FullGrid = iFloor["full_grid"].AsBool();
             if (iFloor["margin"].Exists) v.Margin = Range(iFloor["margin"], "floor.margin", 0, FloorMarginMax);
+            if (iFloor["margin_ratio"].Exists) v.MarginRatio = Range(iFloor["margin_ratio"], "floor.margin_ratio", 0, FloorMarginRatioMax);
             if (iFloor["tile_size"].Exists) v.TileSize = Range(iFloor["tile_size"], "floor.tile_size", FloorTileMin, FloorTileMax);
             if (iFloor["fade"].Exists) v.Fade = Range(iFloor["fade"], "floor.fade", 0, FloorFadeMax);
             if (iFloor["color"].Exists)
@@ -445,7 +447,7 @@ namespace SCP.Core.Sculpture
         /// 把扁平的 CLI 參數改進一份設定（就地改 <paramref name="ioProfile"/>）。
         /// 認得的鍵：projection yaw pitch roll target eye distance fov zoom ambient ao shadow skybox skybox_yaw skybox_tilt background
         /// width height fit_upscale、lights（整組 JSON 陣列取代）、light_add（`x,y,z[;#rrggbb[;強度[;shadow 0|1]]]`，可用 `|` 串多盞）、
-        /// light_clear=1、地板 floor（on|off）floor_z floor_full_grid floor_margin floor_texture floor_tile floor_color floor_fade、
+        /// light_clear=1、地板 floor（on|off）floor_z floor_full_grid floor_margin floor_margin_ratio floor_texture floor_tile floor_color floor_fade、
         /// unset（逗號分隔的鍵 ⇒ 從設定裡拿掉，回到沿用下層；`floor` ＝ 整個地板物件，floor_* ＝ 其中一格）。
         /// <para>target／eye／distance／zoom 給 <c>auto</c> ⇒ 寫 null（明確改回自動）。</para>
         /// </summary>
@@ -490,7 +492,7 @@ namespace SCP.Core.Sculpture
                         case "fit_upscale": Cam().Set("fit_upscale", Bool(v, k)); break;
                         case "floor": Floor().Set("enabled", Bool(v, k)); break;
                         case "floor_full_grid": Floor().Set("full_grid", Bool(v, k)); break;
-                        case "floor_z": case "floor_margin": case "floor_tile": case "floor_fade": Floor().Set(s_FloorFlat[k], Num(v, k)); break;
+                        case "floor_z": case "floor_margin": case "floor_margin_ratio": case "floor_tile": case "floor_fade": Floor().Set(s_FloorFlat[k], Num(v, k)); break;
                         case "floor_texture": case "floor_color": Floor().Set(s_FloorFlat[k], v); break;
                         case "lights":
                         {
