@@ -11,8 +11,7 @@
 // 🩸 來由：拿 Florin 的 seq 去 main 區解析，端回一則格式完整、日期合理、屬於別人的訊息，
 //   據此宣告「那題不存在」—— 而它存在，欠了 22 天，破它的不是更仔細，是有人把第二個軸遞過來。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
-// @doc-sync: ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md（§2.2.0 跨區讀一則）
-// @doc-sync: ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Internals/Cmd_Tavern_Internals.md（§1.2.1 seq 每條分支一套）
+// @doc-sync: <SCP_Core>/Docs~/Tavern_Read.md（§5 跨區讀一則：regions／msg；區怎麼認、seq 每條分支一套）
 // @doc-sync: ucl_core:Docs~/{lang}/Workflows/Work_Memory_Workflow.md（常見坑 6：記憶裡的酒館引用要帶定語）
 // @doc-sync: <Senate>/Docs/API/Cli_Reference.md（`cmd` 節「跨區讀酒館訊息」）
 #nullable enable
