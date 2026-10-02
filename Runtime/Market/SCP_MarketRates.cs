@@ -142,6 +142,12 @@ namespace SCP.Core.Market
 
         public Dictionary<string, SCP_RateQuote> Quotes = new Dictionary<string, SCP_RateQuote>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// 固定折算比率對（例："FLORIN->GOLD" = 20.0m，即 1 FLORIN 固定換 20 GOLD）。
+        /// 優先於 USD 雙向樞紐撮合；免收撮合手續費。
+        /// </summary>
+        public Dictionary<string, decimal> FixedPairs = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+
         public SCP_JsonData ToJson()
         {
             var aData = SCP_JsonData.NewObject();
@@ -157,6 +163,17 @@ namespace SCP.Core.Market
                 aQuotesObj.Set(kvp.Key, kvp.Value.ToJson());
             }
             aData.Set("quotes", aQuotesObj);
+
+            if (FixedPairs.Count > 0)
+            {
+                var aFixedPairsObj = SCP_JsonData.NewObject();
+                foreach (var kvp in FixedPairs)
+                {
+                    aFixedPairsObj.Set(kvp.Key, SCP_JsonData.NewNumber((double)kvp.Value));
+                }
+                aData.Set("fixed_pairs", aFixedPairsObj);
+            }
+
             return aData;
         }
 
@@ -185,6 +202,16 @@ namespace SCP.Core.Market
                     }
                 }
             }
+
+            SCP_JsonData aFixed = iData["fixed_pairs"];
+            if (aFixed.Exists && aFixed.IsObject)
+            {
+                foreach (string aKey in aFixed.Keys)
+                {
+                    aCfg.FixedPairs[aKey] = (decimal)aFixed.GetDouble(aKey, 0.0);
+                }
+            }
+
             return aCfg;
         }
     }
@@ -227,6 +254,7 @@ namespace SCP.Core.Market
                     UpdatedAtUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
                     IsEnabled = true
                 };
+                aDefault.FixedPairs["FLORIN->GOLD"] = 20.0m;
                 return aDefault;
             }
 
@@ -246,6 +274,10 @@ namespace SCP.Core.Market
                         UpdatedAtUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
                         IsEnabled = true
                     };
+                }
+                if (!aCfg.FixedPairs.ContainsKey("FLORIN->GOLD"))
+                {
+                    aCfg.FixedPairs["FLORIN->GOLD"] = 20.0m;
                 }
                 return aCfg;
             }
@@ -374,7 +406,30 @@ namespace SCP.Core.Market
         }
 
         /// <summary>
-        /// 計算兩券之間雙向折算比率（以 USD 為樞紐）。
+        /// 嘗試查詢固定折算對（例：FLORIN->GOLD ＝ 20.0m）。免收撮合手續費。
+        /// </summary>
+        public static bool TryGetFixedPairRate(SCP_MarketRateConfig iConfig, string iFromSymbol, string iToSymbol, out decimal oRate)
+        {
+            oRate = 0m;
+            if (string.IsNullOrWhiteSpace(iFromSymbol) || string.IsNullOrWhiteSpace(iToSymbol)) return false;
+            string aKey = $"{iFromSymbol.Trim().ToUpperInvariant()}->{iToSymbol.Trim().ToUpperInvariant()}";
+            if (iConfig.FixedPairs != null && iConfig.FixedPairs.TryGetValue(aKey, out decimal r) && r > 0m)
+            {
+                oRate = r;
+                return true;
+            }
+            // 內建固定對保底：FLORIN ➔ GOLD 固定 1:20
+            if (string.Equals(iFromSymbol.Trim(), "FLORIN", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(iToSymbol.Trim(), "GOLD", StringComparison.OrdinalIgnoreCase))
+            {
+                oRate = 20.0m;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 計算兩券之間雙向折算比率（以 USD 為樞紐，或優先採用固定折算對）。
         /// 賣出 1 A 可換得 B：Bid(A) / Ask(B)
         /// 買入 1 B 需支付 A：Ask(B) / Bid(A)
         /// ⚠ **這是毛率（gross），不含手續費** —— 要拿來對帳實際到手數量請用
@@ -393,6 +448,14 @@ namespace SCP.Core.Market
             {
                 oReason = "匯率系統未啟用（fx_system_enabled: false）";
                 return false;
+            }
+
+            // 優先判定固定對
+            if (TryGetFixedPairRate(iConfig, iFromSymbol, iToSymbol, out decimal aFixedRate))
+            {
+                oSellRate = aFixedRate;
+                oBuyRate = aFixedRate > 0m ? 1m / aFixedRate : 0m;
+                return true;
             }
 
             if (!TryGetQuote(iConfig, iFromSymbol, out var aFromQuote))
@@ -431,6 +494,15 @@ namespace SCP.Core.Market
 
             if (!TryGetPairRate(iConfig, iFromSymbol, iToSymbol, out decimal aSellGross, out decimal aBuyGross, out oReason))
                 return false;
+
+            // 固定折算對免收手續費
+            if (TryGetFixedPairRate(iConfig, iFromSymbol, iToSymbol, out _))
+            {
+                oSellRateNet = aSellGross;
+                oBuyRateNet = aBuyGross;
+                oFeeFactor = 1.0m;
+                return true;
+            }
 
             oFeeFactor = TotalFeeFactor(iConfig, iFromSymbol, iToSymbol);
             if (oFeeFactor <= 0m)
@@ -475,6 +547,21 @@ namespace SCP.Core.Market
             {
                 oReason = $"來源券與目標券相同（{aFrom}），無需兌換";
                 return false;
+            }
+
+            // 優先檢查固定折算對（例：FLORIN -> GOLD 固定 1:20，免手續費）
+            if (TryGetFixedPairRate(iConfig, aFrom, aTo, out decimal aFixedRate))
+            {
+                oEffectiveRate = aFixedRate;
+                decimal aFixedTargetTotal = (decimal)iFromAmount * oEffectiveRate;
+                long aFixedUnitsE8 = (long)Math.Floor(aFixedTargetTotal * (decimal)SCP_VoucherBook.FractionScale);
+                if (aFixedUnitsE8 <= 0)
+                {
+                    oReason = $"折算後目標券數量不足 1e-8 單位（{aFixedTargetTotal:0.########}），無法完成兌換";
+                    return false;
+                }
+                oToUnitsE8 = aFixedUnitsE8;
+                return true;
             }
 
             if (!TryGetQuote(iConfig, aFrom, out var aFromQuote))

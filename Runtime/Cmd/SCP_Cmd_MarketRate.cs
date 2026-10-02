@@ -119,6 +119,16 @@ namespace SCP.Core.Cmd
                 aR.Lines.Add($"| `{q.Symbol}` | {q.Bid:0.########} | {q.Ask:0.########} | {aSpread:0.######}% | {aFeeStr} | {aStatus} | {q.Source} | {q.UpdatedAtUtc} |");
             }
 
+            if (iConfig.FixedPairs != null && iConfig.FixedPairs.Count > 0)
+            {
+                aR.Lines.Add("");
+                aR.Lines.Add("# 📌 固定折算清單 (Fixed Swap Pairs)");
+                foreach (var kvp in iConfig.FixedPairs)
+                {
+                    aR.Lines.Add($"- `{kvp.Key}`：固定折算比率 **{kvp.Value:0.########}**（免手續費）");
+                }
+            }
+
             aR.Lines.Add("");
             aR.Lines.Add("⚠ 手續費欄**粗體＝該券自己的覆寫**，非粗體＝吃全域。⛔ USD 是樞紐不是成交標的 ⇒ 永遠 0%。");
 

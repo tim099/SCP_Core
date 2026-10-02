@@ -180,9 +180,16 @@ namespace SCP.Core.Voucher
             // 守衛⑤：記交易事件（給報酬率用）。報價取試算那一刻的同一份設定 —— 跟實際成交率同源。
             SCP_MarketRateCache.TryGetQuote(aConfig, aResult.FromVoucher, out var aFromQ);
             SCP_MarketRateCache.TryGetQuote(aConfig, aResult.ToVoucher, out var aToQ);
+            decimal aFromBidUsd = aFromQ?.Bid ?? 0m;
+            decimal aToAskUsd = aToQ?.Ask ?? 0m;
+            if (aFromBidUsd == 0m && aToAskUsd > 0m && aResult.EffectiveRate > 0m)
+            {
+                // 固定折算對（如 FLORIN -> GOLD）：來源券隱含 USD 價值以目標券市價乘折算率
+                aFromBidUsd = aToAskUsd * aResult.EffectiveRate;
+            }
             aResult.PortfolioWarning = SCP_Portfolio.RecordSwap(iDataRoot, iPersona,
-                aResult.FromVoucher, (long)iAmount * SCP_VoucherBook.FractionScale, aFromQ?.Bid ?? 0m,
-                aResult.ToVoucher, aToUnitsE8, aToQ?.Ask ?? 0m,
+                aResult.FromVoucher, (long)iAmount * SCP_VoucherBook.FractionScale, aFromBidUsd,
+                aResult.ToVoucher, aToUnitsE8, aToAskUsd,
                 SCP_MarketRateCache.TotalFeeFactor(aConfig, aResult.FromVoucher, aResult.ToVoucher),
                 iNow, iRegion);
             return aResult;
