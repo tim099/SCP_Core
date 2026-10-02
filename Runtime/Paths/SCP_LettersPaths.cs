@@ -182,6 +182,17 @@ namespace SCP.Core.Paths
         public static string SessionLockPath(SCP_LettersRoot iRoot, string iPersona)
             => ProfileDir(iRoot, iPersona) + "/" + SessionLockFileName;
 
+        /// <summary>
+        /// 最後一次登入的紀錄檔名（Tim 2026-10-02：離線也要看得到最後登入時間）。
+        /// <para>⚠ 為什麼不從 lock 讀：lock 登出就刪，**離線那一刻它就不在了**。本檔登入時跟 lock 同一個時刻寫、登出不刪。</para>
+        /// <para>⚠ 不含 session_token ⇒ 可以入版控（跟 lock 不同，不在 .gitignore 基線裡）。</para>
+        /// </summary>
+        public const string LastLoginFileName = "_last_login.json";
+
+        /// <summary>某個 persona 的最後登入紀錄（<c>&lt;persona&gt;/profile/_last_login.json</c>）—— 只供顯示，不閘任何行為。</summary>
+        public static string LastLoginPath(SCP_LettersRoot iRoot, string iPersona)
+            => ProfileDir(iRoot, iPersona) + "/" + LastLoginFileName;
+
         /// <summary>now_status 檔名（TASK-0294：與 lock 分開讀寫；Editor 端 <c>UCL_LettersPath.NowStatusFileName</c> 同一個名字）。</summary>
         public const string NowStatusFileName = "now_status.json";
 

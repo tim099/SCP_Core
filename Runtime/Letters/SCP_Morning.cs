@@ -14,7 +14,7 @@
 //   ⑤ `_persona_profile_snapshot.json` **不刷新**（Editor 版每次寫 profile 都整池重寫）——
 //      它是衍生快照，讀者是 Editor 頁與 python，而 python 端已明說不靠它（persona_profile.py:98）。
 //   ⑥ 見林書籤換算（RebaseBookmark）不做：Editor 版的換算結果**從不落盤**（WriteRaw 略過推導欄），只印一行。
-// 數值影響：wake 寫 lock（含 session_token）／memo／profile/{model,actual_agent}.md／審計 jsonl，刪 now_status。
+// 數值影響：wake 寫 lock（含 session_token）／memo／profile/{model,actual_agent}.md／profile/_last_login.json／審計 jsonl，刪 now_status。
 //          brief 寫 cmd/wake_brief.md。其餘純讀。
 #nullable enable
 using System;
@@ -197,12 +197,27 @@ namespace SCP.Core.Letters
             aLockJson["model"] = aModel;
             aLockJson["bank_account"] = aBank;
             aLockJson["wake_expected"] = aDerived;     // sleep 端的 letter 閘門要靠它
-            aLockJson["locked_at"] = NowIso();
+            string aLockedAt = NowIso();
+            aLockJson["locked_at"] = aLockedAt;
             aLockJson["session_key"] = aSessionKey;
             aLockJson["claim_origin"] = aClaimOrigin;
             aLockJson["pid"] = System.Diagnostics.Process.GetCurrentProcess().Id;
             aLockJson["session_token"] = aToken;
             SCP_CmdPayload.WriteAtomic(aLockPath, SCP_JsonWriter.Write(aLockJson, SCP_JsonStyle.UclLegacy));
+            // 最後登入紀錄（登入狀態頁離線時顯示用）：時刻與 lock 的 locked_at **同一個值**，登出不刪。
+            // ⚠ 寫不進去不擋登入 —— lock 已落地、這一格只供顯示；失敗要出聲，不然離線那格會安靜地停在舊時刻。
+            try
+            {
+                var aLastLogin = SCP_JsonData.NewObject();
+                aLastLogin["persona"] = iPersona;
+                aLastLogin["locked_at"] = aLockedAt;
+                aLastLogin["wake"] = aDerived;
+                aLastLogin["actual_agent"] = aActual;
+                aLastLogin["model"] = aModel;
+                SCP_CmdPayload.WriteAtomic(SCP_LettersPaths.LastLoginPath(iR.Letters, iPersona),
+                                           SCP_JsonWriter.Write(aLastLogin, SCP_JsonStyle.UclLegacy));
+            }
+            catch (Exception e) { aR.AppendLine($"⚠ 最後登入紀錄寫不進去（只供顯示，登入照樣有效）：{e.Message}"); }
             try { File.Delete(SCP_LettersPaths.NowStatusPath(iR.Letters, iPersona)); }   // 新的一場從「沒設定狀態」開始（TASK-0294 ④）
             catch (Exception e) { aR.AppendLine($"⚠ now_status 刪除失敗（只供顯示）：{e.Message}"); }
 

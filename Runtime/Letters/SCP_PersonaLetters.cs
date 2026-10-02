@@ -70,6 +70,15 @@ namespace SCP.Core.Letters
 
         /// <summary>lock 檔在、但讀不了的原因。⚠ 這種情況是 <see cref="SCP_PersonaOnline.Unknown"/> 不是 Offline。</summary>
         public string? LockError { get; set; }
+
+        /// <summary>
+        /// 最後一次登入的時刻（`profile/_last_login.json` 的 <c>locked_at</c>；登出不刪，離線也讀得到）。
+        /// 空字串 ＝ 沒有這份紀錄（這個檔是 2026-10-02 才開始寫的 ⇒ 之後還沒登入過的人都是空的，**不是「從沒登入過」**）。
+        /// </summary>
+        public string LastLoginAt { get; set; } = "";
+
+        /// <summary>`_last_login.json` 在、但讀不了的原因（跟「沒有紀錄」不同形）。</summary>
+        public string? LastLoginError { get; set; }
     }
 
     /// <summary>一次掃描的全部結果 —— 含**掃不到的原因**（那跟「掃到零個」不同形）。</summary>
@@ -153,6 +162,7 @@ namespace SCP.Core.Letters
                 {
                     aStatus.Online = SCP_PersonaOnline.Offline;
                 }
+                ReadLastLogin(SCP_LettersPaths.LastLoginPath(aLettersRoot, aName), aStatus);
                 aScan.Personas.Add(aStatus);
             }
             return aScan;
@@ -208,6 +218,20 @@ namespace SCP.Core.Letters
                 oStatus.Online = SCP_PersonaOnline.Unknown;
                 oStatus.LockError = $"{e.GetType().Name}: {e.Message}";
             }
+        }
+
+        // 區塊職責：讀最後登入紀錄（SCP_Morning.Wake 寫）。
+        // 數值影響：檔不在 ⇒ LastLoginAt 留空（沒有紀錄）；檔在但讀不了 ⇒ LastLoginError 有值。三態不壓成兩態。
+        static void ReadLastLogin(string iPath, SCP_PersonaStatus oStatus)
+        {
+            if (!File.Exists(iPath)) return;
+            try
+            {
+                SCP_JsonData aRoot = SCP_JsonParser.Parse(File.ReadAllText(iPath, Encoding.UTF8));
+                oStatus.LastLoginAt = aRoot.GetString("locked_at", "");
+                if (oStatus.LastLoginAt.Length == 0) oStatus.LastLoginError = "檔在但沒有 locked_at 欄";
+            }
+            catch (Exception e) { oStatus.LastLoginError = $"{e.GetType().Name}: {e.Message}"; }
         }
 
         // ── 手動登出（TASK-0294）──────────────────────────────────────

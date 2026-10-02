@@ -2,7 +2,7 @@
 title: persona 設定寫入 —— 身分欄與區域銀行綁定
 description: senate cmd persona-profile 的使用說明：身分欄 set／unset（純量欄與結構欄的差別）、區域銀行綁定 get_bank／set_bank／unbind、全 pool 的 migrate_bank 與 rebind_region、寫入審計，以及「綁定不是動錢」的邊界。讀整份 persona 走 senate cmd persona。
 cmds: [persona-profile]
-last_updated: 2026-10-01 (TASK-0354：從 UCL `ucmd run PersonaProfile` 搬到 Senate CLI；TASK-0361：唯一寫入端＋op=create)
+last_updated: 2026-10-02 (早安另寫 profile/_last_login.json；前版 2026-10-01 TASK-0354/0361)
 target_audience: [AI_Agent, Tools_Maintainer]
 related:
   - ucl_core:Docs~/{lang}/Workflows/Bank_Region_Binding_Migration_Workflow.md | 區域綁定遷移 | 新專案第一次設區域時的半自動流程（migrate_bank 的用法在那裡）
@@ -81,6 +81,9 @@ senate cmd persona-profile --arg op=force_release_lock    --arg persona=<p> --ar
 ```
 
 - lock 的**建立**只在早安（`morning-wake`）、**正常刪除**只在晚安（`goodnight-sleep`／`goodnight-logout`）—— 兩者都在 Senate（TASK-0361）。
+- 早安寫 lock 的同一步會寫 `profile/_last_login.json`（`locked_at` 跟 lock 同一個值，另有 `wake`／`actual_agent`／`model`），**登出不刪**。
+  登入狀態頁的離線列靠它顯示最後登入時間。它不是身分欄（本入口不寫它）、不含 token，所以會入版控。
+  ⚠ 2026-10-02 才開始寫：之後還沒登入過的人沒有這個檔，頁面印「（無紀錄）」，意思**不是**「從沒登入過」。
 - `set_lock_actual_agent`：改 lock 裡的 `actual_agent`，**同一步**改 `profile/actual_agent.md`（只換那一格，其餘欄位與格式不動）。
   不在線（沒有 lock）⇒ 擋；lock 解析不了 ⇒ 擋（⛔ 不覆寫一顆壞 lock）。
 - `force_release_lock`：**最後手段**（晚安跑不通、lock 卡死）—— 只刪 lock，⛔ 不寫信、不廣播、不關場。能跑晚安就跑晚安。

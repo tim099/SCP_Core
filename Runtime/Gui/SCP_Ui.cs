@@ -210,6 +210,22 @@ namespace SCP.Core.Gui
             Current.Add(aRow);
         }
 
+        /// <summary>
+        /// 可以放按鈕的一列：scope 裡每一個直接子節點佔一格（字用 <see cref="TableCell"/>，按鈕照常 <see cref="Button"/>）。
+        /// <para>⭐ 沒有新增節點型別：兩個 renderer 本來就會把非 TableCell 的格子交給一般節點畫
+        /// （ImGui 走 RenderNode、文字版走 Inline）—— 缺的只是這一層的入口。</para>
+        /// <para>⚠ 一格只能放**一個**節點；要放兩顆鈕就是兩格。按鈕請傳顯式 key（清單增刪時 id 才不會漂）。</para>
+        /// </summary>
+        public Scope TableRowScope()
+        {
+            m_Ids.PushLevel("tr");
+            Push(new SCP_GuiNode { Kind = SCP_GuiNodeKind.TableRow });
+            return new Scope(this);
+        }
+
+        /// <summary>純文字的一格（給 <see cref="TableRowScope"/> 用）。</summary>
+        public void TableCell(string iText) => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.TableCell, Text = iText });
+
         // ── 圖表 ──────────────────────────────────────────────────
         /// <summary>折線圖（非互動）。<paramref name="iSeries"/> 由舊到新。</summary>
         public void Plot(string iLabel, IReadOnlyList<double> iSeries)

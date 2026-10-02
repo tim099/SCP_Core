@@ -8,6 +8,8 @@
 //           搬得動的前提是前三步：掃描層進了 SCP_Core（SCP_PersonaLetters）、
 //           設定改走 prefs 介面（本頁**不知道** senate.local.json 這個檔名的存在）。
 // 數值影響：畫面純讀（走 SCP_PersonaLetters.Scan）；唯一的寫入是按下「確認登出」那一下（刪 lock ＋ now_status）。
+//           每列最前面一顆「複製」＝把早安指令 `/ucl-morning <persona>` 放進剪貼簿（對照 UCL_LoginStatusPage，只動剪貼簿）。
+//           排序在線 → 未知 → 離線；離線那格的時間讀 `profile/_last_login.json`（SCP_Morning.Wake 寫，登出不刪）。
 //           🩸 2026-09-05 拿掉了「信件夾根」的輸入框與儲存鈕：本頁曾自己走
 //           `Prefs.Read(awakening.lettersRoot)` 讀**存起來的原始值**，而那一格是 `[SCP_PathAuto]` 的 ——
 //           有人填 `auto` 時本頁會拿字面 `"auto"` 去掃目錄，掃不到 ⇒ 畫面說「這裡真的還沒有人」，
@@ -151,16 +153,30 @@ namespace SCP.Core.Gui
                 return;
             }
 
-            using (g.Table("persona", "狀態", "agent", "model", "登入時間"))
+            // 排序：在線 → 未知 → 離線（Tim 2026-10-02「同時在線 persona 顯示在最上方」）；同組內維持掃描的名字序。
+            //   ⚠ 未知排在離線前面：它是「量不到」，混進離線堆裡就看不見了（同上面計數那行的理由）。
+            var aOrdered = new System.Collections.Generic.List<SCP_PersonaStatus>(aScan.Personas);
+            aOrdered.Sort((a, b) =>
             {
-                foreach (SCP_PersonaStatus p in aScan.Personas)
+                int c = SortRank(a).CompareTo(SortRank(b));
+                return c != 0 ? c : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+            });
+
+            // 第一欄是「複製早安指令」（對照 Unity UCL_LoginStatusPage 的 Copy 鈕）：只複製 persona ——
+            //   agent 由 persona 綁定反推，帶 agent 反而讓 caller 有機會宣稱一個跟綁定不符的身分（Tim 2026-07-31）。
+            using (g.Table("早安", "persona", "狀態", "agent", "model", "登入時間（離線＝最後一次）"))
+            {
+                foreach (SCP_PersonaStatus p in aOrdered)
                 {
-                    g.TableRow(
-                        p.Name,
-                        StatusText(p),
-                        p.Agent.Length > 0 ? p.Agent : "—",
-                        p.Model.Length > 0 ? p.Model : "—",
-                        p.LockedAt.Length > 0 ? p.LockedAt : "—");
+                    using (g.TableRowScope())
+                    {
+                        if (g.Button("複製", $"login/copy-morning/{p.Name}")) CopyMorning(p.Name);
+                        g.TableCell(p.Name);
+                        g.TableCell(StatusText(p));
+                        g.TableCell(p.Agent.Length > 0 ? p.Agent : "—");
+                        g.TableCell(p.Model.Length > 0 ? p.Model : "—");
+                        g.TableCell(LoginTimeText(p));
+                    }
                 }
             }
 
@@ -231,6 +247,49 @@ namespace SCP.Core.Gui
                     }
                 }
             }
+        }
+
+        /// <summary>早安指令的字面（與 Unity UCL_LoginStatusPage 同一句）。</summary>
+        public static string MorningCommand(string iPersona) => $"/ucl-morning {iPersona}";
+
+        void CopyMorning(string iPersona)
+        {
+            string aText = MorningCommand(iPersona);
+            Func<string, string>? aCopy = SCP_GuiHost.CopyToClipboard;
+            // 複製不了時字面要留在畫面上 —— 讓人至少能手抄（同工具列「複製類別名」那條退路）。
+            if (aCopy == null) { m_Message = $"⚠ 這個環境沒有剪貼簿 —— 指令是：{aText}"; return; }
+            string aResult = aCopy(aText);
+            m_Message = aResult.StartsWith("⚠", StringComparison.Ordinal)
+                ? $"{aResult}　—— 指令是：{aText}"
+                : $"・已複製：{aText}";
+        }
+
+        static int SortRank(SCP_PersonaStatus iStatus) => iStatus.Online switch
+        {
+            SCP_PersonaOnline.Online => 0,
+            SCP_PersonaOnline.Unknown => 1,
+            _ => 2,
+        };
+
+        // 在線 ⇒ lock 的 locked_at（這一場）；離線 ⇒ `_last_login.json`（上一場，登出不刪）。
+        // ⚠ 「沒有紀錄」與「讀不了」分開印：紀錄檔 2026-10-02 才開始寫，之後還沒登入過的人一律沒有紀錄 ——
+        //   那**不是**「從沒登入過」，所以不印成「—」那種看起來像空值的樣子。
+        static string LoginTimeText(SCP_PersonaStatus p)
+        {
+            if (p.Online == SCP_PersonaOnline.Online)
+                return p.LockedAt.Length > 0 ? LocalTime(p.LockedAt) : "（lock 沒有 locked_at）";
+            if (p.LastLoginError != null) return "？ 紀錄讀不了：" + p.LastLoginError;
+            if (p.LastLoginAt.Length > 0) return LocalTime(p.LastLoginAt);
+            return "（無紀錄）";
+        }
+
+        /// <summary>ISO UTC → 本地時間 `yyyy-MM-dd HH:mm`；解析不了就原字照印（不吞掉讀數）。</summary>
+        static string LocalTime(string iIso)
+        {
+            return DateTime.TryParse(iIso, System.Globalization.CultureInfo.InvariantCulture,
+                                     System.Globalization.DateTimeStyles.RoundtripKind, out DateTime t)
+                ? t.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)
+                : iIso;
         }
 
         static string StatusText(SCP_PersonaStatus iStatus) => iStatus.Online switch
