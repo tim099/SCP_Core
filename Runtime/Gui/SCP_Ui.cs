@@ -6,6 +6,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 namespace SCP.Core.Gui
 {
@@ -268,6 +269,80 @@ namespace SCP.Core.Gui
             Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.TextField, Id = aId, Text = iLabel, Value = aVal });
             return aVal;
         }
+
+        // ===========================================================
+        // 區塊職責：數值滑桿（TASK-0377）—— 值住在**跟 TextField 同一份欄位狀態**（invariant 字串）。
+        // 物理意義：同一份狀態 ⇒ session 落盤、CLI `--set id=值`、常駐窗 set 請求全都不用另開一條路。
+        //           欄位空白 ＝ 「使用者沒設」⇒ 顯示呼叫端給的預設（頁面可以拿這格做「沿用上游設定」）。
+        // 數值影響：回傳值一律夾進 [iMin, iMax]；寫回欄位時照 iFormat 的小數位捨入（＝步距）。
+        // ===========================================================
+
+        /// <summary>
+        /// 數值滑桿。回傳這一輪的有效值（欄位有合法數字 ⇒ 夾進範圍的它；空白／不是數字 ⇒ <paramref name="iDefault"/>）。
+        /// <para>⚠ key 必填（逐字採用）：值要進 session、要被 CLI `--set` 指名 —— 會漂的 id 不行。</para>
+        /// <para>「這一輪拖完了沒」問 <see cref="Committed"/>（放開滑鼠那一輪才 true；拖曳中的每一幀是 false）。</para>
+        /// </summary>
+        /// <param name="iFormat">C# invariant 自訂格式（預設 <c>0.##</c>）；小數位數 ＝ 步距。</param>
+        public double Slider(string iLabel, string iKey, double iMin, double iMax, double iDefault, string? iFormat = null)
+        {
+            string aId = m_Ids.MakeExplicit(iKey);
+            string aFormat = string.IsNullOrEmpty(iFormat) ? "0.##" : iFormat!;
+            if (iMax < iMin) { double t = iMin; iMin = iMax; iMax = t; }
+            // ⚠ 走 FieldValue（同一輪 SetField 過的值優先）：頁面在畫滑桿之前改了它（例：環繞鈕）
+            //   ⇒ 這一輪就畫新值，不是慢一幀的舊值。
+            string aRaw = FieldValue(aId, "");
+            double aVal = TryParseSlider(aRaw, iMin, iMax, out double v) ? v : Clamp(iDefault, iMin, iMax);
+            Current.Add(new SCP_GuiNode
+            {
+                Kind = SCP_GuiNodeKind.Slider, Id = aId, Text = iLabel, Value = aRaw,
+                SliderMin = iMin, SliderMax = iMax, SliderValue = aVal, SliderFormat = aFormat,
+            });
+            return aVal;
+        }
+
+        /// <summary>
+        /// 這個欄位這一輪「編輯完成」了嗎（滑桿放開、輸入框按 Enter／離開、CLI `--set`）。見 <see cref="SCP_GuiInput.Committed"/>。
+        /// <para>⚠ 傳的是**欄位 id**（顯式 key 逐字採用 ⇒ 就是當初給 Slider／TextField 的 key）。</para>
+        /// </summary>
+        public bool Committed(string iId) => m_Input.Committed.Contains(iId);
+
+        /// <summary>這一輪有沒有任何欄位編輯完成。</summary>
+        public bool AnyCommitted => m_Input.Committed.Count > 0;
+
+        /// <summary>
+        /// 欄位字串 → 夾進範圍的數字。空白／不是數字／NaN／∞ ⇒ false（呼叫端用預設）。
+        /// ⚠ 一律 invariant culture：欄位值會落盤、會被 CLI 寫，跟著系統語系走的話「1,5」與「1.5」會各說各話。
+        /// </summary>
+        public static bool TryParseSlider(string? iRaw, double iMin, double iMax, out double oValue)
+        {
+            oValue = 0;
+            if (string.IsNullOrWhiteSpace(iRaw)) return false;
+            if (!double.TryParse(iRaw!.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double d)) return false;
+            if (double.IsNaN(d) || double.IsInfinity(d)) return false;
+            oValue = Clamp(d, iMin, iMax);
+            return true;
+        }
+
+        /// <summary>數字 → 欄位字串（invariant、照格式捨入）。滑桿寫回欄位一律走這一支 ⇒ 視窗與 CLI 寫出同一個字串。</summary>
+        public static string FormatSlider(double iValue, string? iFormat)
+        {
+            string aFormat = string.IsNullOrEmpty(iFormat) ? "0.##" : iFormat!;
+            string s = iValue.ToString(aFormat, CultureInfo.InvariantCulture);
+            return s == "-0" ? "0" : s;   // 捨入到 0 的負數會印成 -0（看起來像另一個值）
+        }
+
+        /// <summary>格式的小數位數（renderer 用來組 printf 格式 —— 例：<c>0.##</c> ⇒ 2）。</summary>
+        public static int SliderDecimals(string? iFormat)
+        {
+            if (string.IsNullOrEmpty(iFormat)) return 2;
+            int aDot = iFormat!.IndexOf('.');
+            if (aDot < 0) return 0;
+            int n = 0;
+            for (int i = aDot + 1; i < iFormat.Length && (iFormat[i] == '0' || iFormat[i] == '#'); i++) n++;
+            return n;
+        }
+
+        static double Clamp(double v, double iMin, double iMax) => v < iMin ? iMin : v > iMax ? iMax : v;
 
         /// <summary>密碼欄 id 的固定後綴 —— 只有 <see cref="PasswordField"/> 產得出來。</summary>
         public const string MaskedIdSuffix = "#secret";

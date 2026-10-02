@@ -73,6 +73,7 @@ namespace SCP.Core.Gui
 
                 case SCP_GuiNodeKind.Toggle:
                 case SCP_GuiNodeKind.TextField:
+                case SCP_GuiNodeKind.Slider:
                     oSb.Append(pad).Append(Inline(iNode)).Append('\n');
                     break;
 
@@ -153,10 +154,25 @@ namespace SCP.Core.Gui
             SCP_GuiNodeKind.Button => $"[ {iNode.Text} ]",
             SCP_GuiNodeKind.Toggle => $"[{(iNode.On ? "x" : " ")}] {iNode.Text}",
             SCP_GuiNodeKind.TextField => $"{iNode.Text}: ⟨{(iNode.Masked ? MaskedText(iNode.Value) : iNode.Value)}⟩",
+            SCP_GuiNodeKind.Slider => SliderText(iNode),
             SCP_GuiNodeKind.Note => $"· {iNode.Text}",
             SCP_GuiNodeKind.Image => iNode.Value.Length > 0 ? $"[圖：{iNode.Text}]" : $"[無圖：{iNode.Text}]",
             _ => iNode.Text,
         };
+
+        /// <summary>
+        /// 滑桿：`標籤: 值 (min..max)`。欄位空白 ⇒ 註明「預設」；欄位有字但不是數字 ⇒ **照實說**
+        /// （畫面顯示的是預設，頁面讀到的卻是那串字 —— 不講的話兩邊不一致看不出來）。
+        /// </summary>
+        static string SliderText(SCP_GuiNode iNode)
+        {
+            string aVal = SCP_Ui.FormatSlider(iNode.SliderValue, iNode.SliderFormat);
+            string aRange = SCP_Ui.FormatSlider(iNode.SliderMin, iNode.SliderFormat) + ".." + SCP_Ui.FormatSlider(iNode.SliderMax, iNode.SliderFormat);
+            string aTail = "";
+            if (string.IsNullOrWhiteSpace(iNode.Value)) aTail = "（未設 ＝ 預設）";
+            else if (!SCP_Ui.TryParseSlider(iNode.Value, iNode.SliderMin, iNode.SliderMax, out _)) aTail = $"（⚠ 欄位值「{iNode.Value}」不是數字 ⇒ 顯示預設）";
+            return $"{iNode.Text}: {aVal} ({aRange}){aTail}";
+        }
 
         static void RenderTable(SCP_GuiNode iTable, StringBuilder oSb, int iIndent, SCP_GuiStyle iStyle)
         {

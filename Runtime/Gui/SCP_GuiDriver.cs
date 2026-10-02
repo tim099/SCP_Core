@@ -20,6 +20,11 @@ namespace SCP.Core.Gui
         public string Value = "";
         public bool On;
 
+        /// <summary>Slider 的範圍與格式（其他 Kind 不使用）。<see cref="Value"/> 是有效值的字串；欄位空白時 <see cref="IsDefault"/> 為 true。</summary>
+        public double Min, Max;
+        public string Format = "";
+        public bool IsDefault;
+
         /// <summary>怎麼操作它 —— 直接可以照抄的指令片段。</summary>
         public string HowTo
         {
@@ -30,6 +35,8 @@ namespace SCP.Core.Gui
                     case SCP_GuiNodeKind.Button: return "--click " + Id;
                     case SCP_GuiNodeKind.Toggle: return "--toggle " + Id;
                     case SCP_GuiNodeKind.TextField: return "--set " + Id + "=<值>";
+                    case SCP_GuiNodeKind.Slider:
+                        return "--set " + Id + "=<" + SCP_Ui.FormatSlider(Min, Format) + ".." + SCP_Ui.FormatSlider(Max, Format) + "｜空白＝預設>";
                     case SCP_GuiNodeKind.Box: return "--fold " + Id;
                     default: return "";
                 }
@@ -58,9 +65,13 @@ namespace SCP.Core.Gui
         public List<string> Nav = new List<string>();
 
         /// <summary>組成下一次 Draw 的輸入。iClickedId 是**這一次**的一次性事件。</summary>
-        public SCP_GuiInput ToInput(string? iClickedId)
+        public SCP_GuiInput ToInput(string? iClickedId) => ToInput(iClickedId, null);
+
+        /// <summary>同上，另帶**這一次**編輯完成的欄位 id（CLI `--set` 用；見 <see cref="SCP_GuiInput.Committed"/>）。</summary>
+        public SCP_GuiInput ToInput(string? iClickedId, string? iCommittedId)
         {
             var aInput = new SCP_GuiInput { ClickedId = iClickedId };
+            if (iCommittedId != null) aInput.Committed.Add(iCommittedId);
             foreach (var kv in Fields) aInput.Fields[kv.Key] = kv.Value;
             foreach (var kv in Toggles) aInput.Toggles[kv.Key] = kv.Value;
             foreach (var kv in Folds) aInput.Folds[kv.Key] = kv.Value;
@@ -129,15 +140,22 @@ namespace SCP.Core.Gui
             if (iNode.Kind == SCP_GuiNodeKind.Button
                 || iNode.Kind == SCP_GuiNodeKind.Toggle
                 || iNode.Kind == SCP_GuiNodeKind.TextField
+                || iNode.Kind == SCP_GuiNodeKind.Slider
                 || (iNode.Kind == SCP_GuiNodeKind.Box && iNode.Collapsible))
             {
+                bool aSlider = iNode.Kind == SCP_GuiNodeKind.Slider;
                 oList.Add(new SCP_GuiElement
                 {
                     Id = iNode.Id,
                     Kind = iNode.Kind,
                     Label = iNode.Text,
-                    Value = iNode.Masked ? SCP_GuiTextRenderer.MaskedText(iNode.Value) : iNode.Value,
+                    Value = aSlider ? SCP_Ui.FormatSlider(iNode.SliderValue, iNode.SliderFormat)
+                          : iNode.Masked ? SCP_GuiTextRenderer.MaskedText(iNode.Value) : iNode.Value,
                     On = iNode.Kind == SCP_GuiNodeKind.Box ? iNode.Open : iNode.On,
+                    Min = iNode.SliderMin,
+                    Max = iNode.SliderMax,
+                    Format = iNode.SliderFormat,
+                    IsDefault = aSlider && !SCP_Ui.TryParseSlider(iNode.Value, iNode.SliderMin, iNode.SliderMax, out _),
                 });
             }
             foreach (var c in iNode.Children) Walk(c, oList);
@@ -153,6 +171,31 @@ namespace SCP.Core.Gui
             return null;
         }
 
+        /// <summary>
+        /// 外部寫入（CLI `--set`／常駐窗 set 請求）**落進欄位之前**的驗證與正規化 —— 兩條路共用這一份。
+        /// <para>Slider：空白 ＝ 清掉（回到預設）；不是數字 ⇒ false（⛔ 不寫：寫進去的話畫面顯示預設、
+        /// 頁面卻拿到那串字，兩邊各說各話）；超出範圍 ⇒ 夾進去並在 <paramref name="oNote"/> 說出來；
+        /// 其餘照 <see cref="SCP_GuiElement.Format"/> 捨入。其他 Kind 原樣通過。</para>
+        /// </summary>
+        public static bool NormalizeSet(SCP_GuiElement iElem, string iRaw, out string oValue, out string oNote)
+        {
+            oValue = iRaw;
+            oNote = "";
+            if (iElem.Kind != SCP_GuiNodeKind.Slider) return true;
+            string aRaw = (iRaw ?? "").Trim();
+            if (aRaw.Length == 0) { oValue = ""; oNote = "清空 ⇒ 回到預設"; return true; }
+            if (!double.TryParse(aRaw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d)
+                || double.IsNaN(d) || double.IsInfinity(d))
+            {
+                oNote = $"「{aRaw}」不是數字（範圍 {SCP_Ui.FormatSlider(iElem.Min, iElem.Format)}..{SCP_Ui.FormatSlider(iElem.Max, iElem.Format)}；小數點用 .）";
+                return false;
+            }
+            SCP_Ui.TryParseSlider(aRaw, iElem.Min, iElem.Max, out double aClamped);
+            oValue = SCP_Ui.FormatSlider(aClamped, iElem.Format);
+            if (aClamped != d) oNote = $"超出範圍 ⇒ 夾到 {oValue}（範圍 {SCP_Ui.FormatSlider(iElem.Min, iElem.Format)}..{SCP_Ui.FormatSlider(iElem.Max, iElem.Format)}）";
+            return true;
+        }
+
         /// <summary>整棵樹轉 JSON（給程式讀畫面用；文字輸出是給人看的）。</summary>
         public static SCP_JsonData ToJson(SCP_GuiNode iNode)
         {
@@ -162,6 +205,12 @@ namespace SCP.Core.Gui
             if (iNode.Text.Length > 0) aObj.Set("text", iNode.Text);
             if (iNode.Value.Length > 0) aObj.Set("value", iNode.Value);
             if (iNode.Kind == SCP_GuiNodeKind.Toggle) aObj.Set("on", iNode.On);
+            if (iNode.Kind == SCP_GuiNodeKind.Slider)
+            {
+                aObj.Set("min", iNode.SliderMin);
+                aObj.Set("max", iNode.SliderMax);
+                aObj.Set("effective", iNode.SliderValue);
+            }
             if (iNode.Headers.Count > 0)
             {
                 var aHeaders = SCP_JsonData.NewArray();

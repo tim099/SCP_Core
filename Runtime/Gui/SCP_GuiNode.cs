@@ -30,6 +30,7 @@ namespace SCP.Core.Gui
         TableCell,
         Plot,         // 折線圖（資料在 Series；非互動）—— TASK-0272 歷史匯率波動圖
         Image,        // 圖片（路徑在 Value、邊長在 ImageSize、替代文字在 Text；非互動）—— TASK-0317 頭像
+        Slider,       // 數值滑桿（原始欄位字串在 Value、範圍在 SliderMin／SliderMax、有效值在 SliderValue）—— TASK-0377 雕刻觀測頁
     }
 
     /// <summary>
@@ -123,6 +124,24 @@ namespace SCP.Core.Gui
         /// </summary>
         public bool Wrap { get; init; }
 
+        /// <summary>Slider 的下限（含）；其他 Kind 不使用。</summary>
+        public double SliderMin { get; init; }
+
+        /// <summary>Slider 的上限（含）；其他 Kind 不使用。</summary>
+        public double SliderMax { get; init; }
+
+        /// <summary>
+        /// Slider 這一輪的**有效值**（欄位有合法數字 ⇒ 夾進範圍後的它；欄位空白／不是數字 ⇒ 呼叫端給的預設）。
+        /// <para>⚠ 原始欄位字串在 <see cref="Value"/>（空字串 ＝ 使用者沒設 ⇒ renderer 要讓人看得出「這是預設不是設定」）。</para>
+        /// </summary>
+        public double SliderValue { get; init; }
+
+        /// <summary>
+        /// Slider 的數字格式（C# invariant 自訂格式，例：<c>0</c>、<c>0.##</c>、<c>0.00</c>）。
+        /// 小數位數同時是**步距**：寫回欄位時照這個格式捨入（見 <see cref="SCP_Ui.FormatSlider"/>）。
+        /// </summary>
+        public string SliderFormat { get; init; } = "0.##";
+
         public List<SCP_GuiNode> Children { get; } = new();
 
         public SCP_GuiNode Add(SCP_GuiNode iChild) { Children.Add(iChild); return iChild; }
@@ -145,6 +164,7 @@ namespace SCP.Core.Gui
                 case SCP_GuiNodeKind.Button:
                 case SCP_GuiNodeKind.Toggle:
                 case SCP_GuiNodeKind.TextField:
+                case SCP_GuiNodeKind.Slider:
                 case SCP_GuiNodeKind.Image:
                     return true;
                 default:
@@ -178,6 +198,15 @@ namespace SCP.Core.Gui
         /// 而那會出現在 diff 裡（然後沒有人知道那是誰改的）。</para>
         /// </summary>
         public Dictionary<string, bool> Folds { get; } = new();
+
+        /// <summary>
+        /// 這一輪「**編輯完成**」的欄位 id（一次性事件，同 <see cref="ClickedId"/>）。
+        /// <para>物理意義：滑桿拖曳時欄位值每幀都在變，但「放開滑鼠」只有一次 ——
+        /// 要做貴的事（重渲一張圖）的頁面要的是後者，不是每一幀的中間值。
+        /// 視窗 renderer 在 ImGui `IsItemDeactivatedAfterEdit` 時填（Slider／TextField 都填）；
+        /// CLI 的 `--set` 與常駐窗的 set 請求也算一次完成（那本來就是一次寫完的值）。</para>
+        /// </summary>
+        public HashSet<string> Committed { get; } = new();
 
         public static SCP_GuiInput None => new();
     }
