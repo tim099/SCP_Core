@@ -122,6 +122,7 @@ namespace SCP.Core.Plurk
         //          （SCP_PlurkLint ⑤：共用帳號末行署名是硬規則）。
         // 數值影響：只看**最後一個非空行**、比對 `—— <persona>`（破折號三種寫法，不分大小寫）。
         //          內文中段提到 persona 名不算 —— 那是在講她，不是她在講。
+        //          ⚠ 「什麼算署名」只有一份規則：<see cref="SCP_PlurkLint.TryGetSignature"/>（行尾署名也算，TASK-0386）。
         // ===========================================================
         static string LastNonEmptyLine(string? iText)
         {
@@ -132,14 +133,11 @@ namespace SCP.Core.Plurk
         }
 
         static bool SignedByAnyone(string iText)
-            => System.Text.RegularExpressions.Regex.IsMatch(LastNonEmptyLine(iText), @"^(——|—|--)\s*\S");
+            => SCP_PlurkLint.TryGetSignature(LastNonEmptyLine(iText), out _);
 
         static bool SignedBy(string iText, string iPersona)
-        {
-            string aLast = LastNonEmptyLine(iText);
-            var m = System.Text.RegularExpressions.Regex.Match(aLast, @"^(——|—|--)\s*([A-Za-z0-9_\-]+)");
-            return m.Success && string.Equals(m.Groups[2].Value, iPersona, StringComparison.OrdinalIgnoreCase);
-        }
+            => SCP_PlurkLint.TryGetSignature(LastNonEmptyLine(iText), out string aWho)
+               && string.Equals(aWho, iPersona, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// 解析 Plurk 的 RFC 時間字串成 UTC。⛔ 這組 <c>DateTimeStyles</c> 本檔原本抄了三處 ——

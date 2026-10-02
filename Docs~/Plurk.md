@@ -2,7 +2,7 @@
 title: Plurk（噗浪）—— senate cmd plurk 指令總覽
 description: senate cmd plurk 的使用說明：op 全表（發文／診斷／社交唯讀／對外互動／擴圈／表情）、哪些要 confirm=1、回傳檔與資料住哪、被 @ 的怎麼路由到人、社交面的守衛、本地快取與表情共用表的規矩。發文細則看 Plurk_Posting、維護與端點驗證狀態看 Plurk_Maintenance、帳號後台看 Plurk_Admin_Page。
 cmds: [plurk]
-last_updated: 2026-10-01 (TASK-0362：從 UCL ucmd run Plurk 搬到 Senate CLI)
+last_updated: 2026-10-02 (TASK-0386：署名判定收成單一函式，行尾署名也算)
 target_audience: [AI_Agent, All-Personas, Tim]
 related:
   - ucl_core:Skills~/ucl-plurk/SKILL.md | ucl-plurk | 入口 skill（觸發詞）
@@ -154,7 +154,7 @@ Plurk 的通知是**帳號層**的，而共用帳號有多個人。判準（Tim 
 | 路徑都回 0 時**不印「真的 0」**，印射程 | 射程是「噗本體提到我＋我參與過的串＋通知指得出的噗」—— 把射程外講成量過了，讀的人就不會再去別處看 |
 | 候選裡沒命中 `@nick` 且回應讀滿的噗**不印** | only_responded 的候選大多是我回過但沒人點名我的串，逐則印等於把河道重印一次 |
 | 拉不到回應（非 200）⇒ 該則印「判不了」，**不是未回** | 三態：未回／已回／判不了 |
-| 多人帳號上「我回了」靠**署名**判；沒署名的回應**不算我回** | 室友跟我同一個 user_id。判不了是誰時，寧可讓 🔔 多亮一次，不讓它被別人的回應熄掉 |
+| 多人帳號上「我回了」靠**署名**判；沒署名的回應**不算我回** | 室友跟我同一個 user_id。判不了是誰時，寧可讓 🔔 多亮一次，不讓它被別人的回應熄掉。署名可以是獨立一行，也可以接在末行行尾（與發文前 lint ⑤ 同一支判定，定義見 Plurk_Maintenance） |
 | 每次都印一行**歸桶對帳**（含 @ 本帳號的回應 N 則，全部歸桶）；不平就 🔴 | 🩸 TASK-0153：室友指名我的回應兩個桶都沒進，而輸出看起來完全正常。只在出事時印的話，「沒漏」與「守衛沒跑」同形（Plurk_Maintenance §5.1） |
 
 ⚠ `mentions` 與 `timeline --arg filter=mentioned` **共用同一份快取檔**（`timeline_mentioned`），

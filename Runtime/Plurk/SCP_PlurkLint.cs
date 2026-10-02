@@ -66,7 +66,28 @@ namespace SCP.Core.Plurk
         //   而誤報的代價跟漏報一樣真：它會讓人去改一個沒問題的地方，然後開始不信這條規則。
         static readonly Regex SentenceEndRe =
             new Regex(@"[。！？!?][\*」』）\)】\s]*$", RegexOptions.Compiled);
-        static readonly Regex SignRe = new Regex(@"(——|—|--)\s*\S", RegexOptions.Compiled);
+        // ===========================================================
+        // 區塊職責：共用帳號「署名」的**唯一**判定 —— 發文前的 lint ⑤ 與對帳的 `op=mentions` 都走這一支。
+        // 物理意義：署名＝末行裡「破折號 ＋ 名字」，且名字之後只剩標點／符號／表情（不能再接字）。
+        //          獨立一行的 `—— calli ☠️` 與行尾的 `…謝謝妳。 —— calli ☠️` 是同一個署名。
+        // 數值影響：破折號前面不能緊貼字母／數字（`foo--bar` 不算；`。——calli` 算）；名字之後出現任何字母／數字／中日文
+        //          （`謝謝 —— calli 說的`）⇒ 那是在講她，不是她在講，不算署名。
+        // 🩸 TASK-0386（2026-10-02）：lint 收「末行任意位置有破折號」、對帳只收「行首」⇒ 兩把尺，
+        //   行尾署名的回應發得出去、卻永遠算未回。⛔ 不要再各寫一份。
+        // ===========================================================
+        static readonly Regex SignTailRe = new Regex(
+            @"(?<![\p{L}\p{N}])(?:——|—|--)\s*(?<who>[\p{L}\p{N}_\-]+)[^\p{L}\p{N}]*$", RegexOptions.Compiled);
+
+        /// <summary>
+        /// 一行文字（呼叫端傳末行）是不是署名；是就回署名的名字。
+        /// 名字比對不分大小寫由呼叫端決定 —— 這裡只負責「有沒有署名」與「署的是誰」。
+        /// </summary>
+        public static bool TryGetSignature(string? iLastLine, out string oWho)
+        {
+            var m = SignTailRe.Match((iLastLine ?? "").Trim());
+            oWho = m.Success ? m.Groups["who"].Value : "";
+            return m.Success;
+        }
         static readonly Regex MentionRe = new Regex(@"@([A-Za-z0-9_\-]{2,20})", RegexOptions.Compiled);
 
         // ===========================================================
@@ -261,7 +282,7 @@ namespace SCP.Core.Plurk
 
             // ⑤ 共用帳號末行署名（Tim 2026-08-16 硬規則 —— 只有 shared-default 才必填）
             string aLast = aLines.Last(s => s.Length > 0);
-            bool aSigned = SignRe.IsMatch(aLast);
+            bool aSigned = TryGetSignature(aLast, out _);
             if (iRequiresSignature && !aSigned)
                 aErr.Add("共用帳號但末行沒有署名 —— 時間軸上讀者只看得到帳號，看不到是誰寫的");
             else if (!aSigned)
