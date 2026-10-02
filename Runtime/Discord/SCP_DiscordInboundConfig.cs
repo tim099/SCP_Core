@@ -39,6 +39,8 @@ namespace SCP.Core.Discord
         public string UserId = "";
         public string DisplayName = "";
         public string Profile = "";
+        /// <summary>同一個人的其他稱呼（outbound 把 `@別名` 也換成他的 id —— TASK-0380）。</summary>
+        public List<string> Aliases = new List<string>();
     }
 
     public sealed class SCP_DiscordWhitelist
@@ -220,10 +222,18 @@ namespace SCP.Core.Discord
                             UserId = u.GetString("user_id", ""),
                             DisplayName = u.GetString("display_name", ""),
                             Profile = u.GetString("profile", ""),
+                            Aliases = ReadAliases(u["aliases"]),
                         });
             }
             catch (Exception e) { w.Error = e.Message; }
             return w;
+        }
+
+        static List<string> ReadAliases(SCP_JsonData iNode)
+        {
+            var aOut = new List<string>();
+            if (iNode.IsArray) foreach (SCP_JsonData a in iNode) { string s = a.AsString(); if (s.Length > 0) aOut.Add(s); }
+            return aOut;
         }
 
         /// <summary>讀出白名單的原始節點（保留 aliases 之類的欄位），給寫入用。</summary>

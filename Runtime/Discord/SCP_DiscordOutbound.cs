@@ -2,7 +2,10 @@
 // 物理意義：一則酒館訊息 ⇒ 一到數個 webhook payload（長文拆段）⇒ 依序 POST 到「這個頻道的分類」綁的每一條 webhook。
 //           · 名字：`SCP_TavernDisplay` 的顯示名（`Agent@persona`，跟 Senate 酒館頁同源 —— TASK-0316 ⑨）。
 //           · 頭像：`SCP_DiscordConfigStore.ResolveAvatarUrl`（persona 自填 ＞ 範本）。
-//           · ⛔ 不 @ 任何人：`allowed_mentions.parse = []` —— 補發舊訊息不該把人叫起來，而 Discord 預設會解析 @everyone。
+//           · @：`allowed_mentions.parse = []`（⛔ 永遠不解析 @everyone／@here／身分組）。
+//             **常駐送出**（`SendNew`）把內文登記過的 `@名字` 換成 `<@id>`，並只把那幾個 id 放進 `allowed_mentions.users` ⇒
+//             只通知真的被 @ 的人（`SCP_DiscordMentions`，TASK-0380；Unity 版的行為）。
+//             **手動補發**（`op=backfill`）不換、不通知 —— 補發舊訊息不該把人叫起來。
 //           · ⛔ 不回送：從 Discord 轉進來的訊息（`SCP_TavernMentions.IsExternalRelay`）一律跳過。
 //           · 只送 `kind=chat`（同 Unity 版預設）。
 //           · 圖（TASK-0323）：訊息 refs 裡的本地圖檔 ⇒ **第一段**改走 multipart 一起上傳（`SCP_DiscordMedia.CollectUploads`；
@@ -65,15 +68,18 @@ namespace SCP.Core.Discord
             return !SCP_TavernMentions.IsExternalRelay(iMsg.Meta, iMsg.SenderId);
         }
 
-        /// <summary>一則訊息 ⇒ 依序要送的 payload（JSON 字串）。長文照換行切，切不開才硬切。</summary>
+        /// <summary>一則訊息 ⇒ 依序要送的 payload（JSON 字串）。長文照換行切，切不開才硬切。
+        /// <paramref name="iMentions"/> 非 null ⇒ 內文的 `@名字` 照對照換成 `&lt;@id&gt;` 並只允許通知那幾個人（見檔頭）。</summary>
         public static List<string> BuildPayloads(string iLettersRoot, string iAvatarTemplate, string iRoom, SCP_TavernMessage iMsg,
-                                                 string iFooter = "")
+                                                 string iFooter = "", IReadOnlyDictionary<string, string>? iMentions = null)
         {
             SCP_TavernDisplayRow aRow = SCP_TavernDisplay.Resolve(iLettersRoot, iMsg);
             string aName = SanitizeUsername(aRow.Name);
             string aAvatar = aRow.Persona.Length > 0 ? SCP_DiscordConfigStore.ResolveAvatarUrl(iLettersRoot, aRow.Persona, iAvatarTemplate, out _) : "";
             string aHeader = $"**`{iRoom}`** · seq {iMsg.Seq} · {aRow.TimeLocal}";
             string aBody = iMsg.Body ?? "";
+            var aPingIds = new List<string>();
+            if (iMentions != null) aBody = SCP_DiscordMentions.Rewrite(aBody, iMentions, aPingIds);
             if (iFooter.Length > 0) aBody = aBody.TrimEnd() + "\n" + iFooter;
             List<string> aParts = Split(aBody, MaxContent - aHeader.Length - 16);
             var aOut = new List<string>();
@@ -86,6 +92,12 @@ namespace SCP.Core.Discord
                 j.Set("content", aContent);
                 var aMentions = SCP_JsonData.NewObject();
                 aMentions.Set("parse", SCP_JsonData.NewArray());
+                if (aPingIds.Count > 0)
+                {
+                    var aUsers = SCP_JsonData.NewArray();
+                    foreach (string id in aPingIds) aUsers.Add(id);
+                    aMentions.Set("users", aUsers);
+                }
                 j.Set("allowed_mentions", aMentions);
                 aOut.Add(j.ToJson(false));
             }
@@ -211,7 +223,7 @@ namespace SCP.Core.Discord
             }
             if (aDirty) SaveState(iDataRoot, aState);
             if (aMin >= aLast) return r;
-            return Backfill(iDataRoot, iLettersRoot, iRoom, aMin + 1, aLast, false, iProgress);
+            return Backfill(iDataRoot, iLettersRoot, iRoom, aMin + 1, aLast, false, iProgress, iPing: true);
         }
 
         /// <summary>
@@ -219,7 +231,7 @@ namespace SCP.Core.Discord
         /// <paramref name="iDryRun"/>=true ⇒ 只算要送幾則，⛔ 不發。游標見檔頭。
         /// </summary>
         public static SCP_DiscordBackfillReport Backfill(string iDataRoot, string iLettersRoot, string iRoom, int iFromSeq, int iToSeq,
-                                                         bool iDryRun, Action<string>? iProgress = null)
+                                                         bool iDryRun, Action<string>? iProgress = null, bool iPing = false)
         {
             var r = new SCP_DiscordBackfillReport();
             SCP_ChannelSettings aSet = SCP_TavernChannels.LoadSettings(iDataRoot, iRoom);
@@ -236,6 +248,12 @@ namespace SCP.Core.Discord
             string aRepoRoot = SCP_DiscordMedia.RepoRootOf(iDataRoot, "");
             Dictionary<string, string> aUrls = SCP_DiscordConfigStore.LoadWebhookUrls(iDataRoot, out string? aUrlErr);
             if (aUrlErr != null) { r.Problems.Add(aUrlErr); return r; }
+            Dictionary<string, string>? aMentionMap = null;   // 只有常駐送出（iPing）才換成 <@id> —— 見檔頭
+            if (iPing)
+            {
+                aMentionMap = SCP_DiscordMentions.LoadMap(iDataRoot, out string? aMentionErr);
+                if (aMentionErr != null) r.Problems.Add("@ 對照：" + aMentionErr + "（照送原文，讀不到的那部分不通知）");
+            }
 
             List<SCP_TavernMessage> aTail = SCP_TavernRead.Tail(iDataRoot, iRoom, 1);
             int aLast = aTail.Count > 0 ? aTail[0].Seq : 0;
@@ -261,7 +279,7 @@ namespace SCP.Core.Discord
                     if (m.Seq <= aDone) { r.SkippedAlready++; continue; }
                     List<SCP_HttpFilePart> aFiles = SCP_DiscordMedia.CollectUploads(iDataRoot, aRepoRoot, m, out List<string> aSkippedImgs);
                     string aFooter = aSkippedImgs.Count > 0 ? "-# 📎 未上傳：" + string.Join("、", aSkippedImgs) : "";
-                    List<string> aPayloads = BuildPayloads(iLettersRoot, c.AvatarUrlTemplate, iRoom, m, aFooter);
+                    List<string> aPayloads = BuildPayloads(iLettersRoot, c.AvatarUrlTemplate, iRoom, m, aFooter, aMentionMap);
                     if (iDryRun) { r.Posts += aPayloads.Count; r.Sent++; r.Images += aFiles.Count; continue; }
                     bool aAllOk = true;
                     int aImgBefore = r.Images;
@@ -277,7 +295,7 @@ namespace SCP.Core.Discord
                             // Discord 明確拒收這包圖 ⇒ 退回純文字重送這一段（⛔ 不因圖讓整則卡住；400／413 ＝ 對方沒收 ⇒ 不會重複）
                             string aNames = string.Join("、", aFiles.Select(f => f.FileName));
                             string aFb = BuildPayloads(iLettersRoot, c.AvatarUrlTemplate, iRoom, m,
-                                (aFooter.Length > 0 ? aFooter + "\n" : "") + $"-# 📎 圖片上傳失敗（HTTP {aStatus}）：{aNames}")[0];
+                                (aFooter.Length > 0 ? aFooter + "\n" : "") + $"-# 📎 圖片上傳失敗（HTTP {aStatus}）：{aNames}", aMentionMap)[0];
                             r.Problems.Add($"{w.Describe()} seq {m.Seq}：圖片被拒（HTTP {aStatus}）⇒ 改送純文字");
                             Thread.Sleep(PaceMs);
                             aOk = TryPost(aUrl, aFb, null, out aErr, out aStatus);

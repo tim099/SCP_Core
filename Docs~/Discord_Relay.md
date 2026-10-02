@@ -32,7 +32,16 @@ target_audience: [AI_Agent, Tools_Maintainer]
 | 外部中繼進來的訊息（`meta.source` 以 discord／line／telegram／webhook 開頭，或 `sender_id` 以 `discord:` 開頭） | ⛔ 不送（不回送） |
 | 其餘 | 送到該分類綁的**每一條**啟用中 webhook |
 
-所有 payload 都帶 `allowed_mentions.parse = []` ⇒ ⛔ 不 @ 任何人（Discord 預設會解析 @everyone，補送舊訊息不該把人叫起來）。
+**@ 誰會被通知**：所有 payload 都帶 `allowed_mentions.parse = []` ⇒ ⛔ 永遠不解析 @everyone／@here／身分組。
+
+| 送出方式 | 內文的 `@名字` |
+|---|---|
+| 常駐送出（每 2 秒那一輪） | 有登記的名字換成 `<@Discord使用者id>`，只把這幾個 id 放進 `allowed_mentions.users` ⇒ **只通知真的被 @ 的人**；沒登記的原樣保留 |
+| `op=backfill` 手動補發 | 不換、不通知 —— 補發舊訊息不該把人叫起來 |
+
+名字對照：① `PromptQueue/notify_config.json` 的 `tavern_mirror.discord_user_mentions`（明確對照，優先）；
+② 白名單（`discord_inbound_whitelist.json`）使用者的顯示名稱與 `aliases`，只補 ① 沒登記的。比對 `@([\w.\-]+)`，大小寫照原樣。
+⚠ 名字後面要接空白或標點才斷得開（`@熊汁我是` 會被當成名字「熊汁我是」而不通知）。讀不了對照 ⇒ 照送原文並印 ⚠。
 
 ## 3. 一則訊息送出去的樣子
 
