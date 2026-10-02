@@ -136,6 +136,23 @@ namespace SCP.Core.Paths
         //   **Server 根** ⇒ 兩者解析出來的完整路徑本來就不同，共用的只到名字這一層。
         [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, SCP_DataPaths.CmdResultsDirName, SCP_PathScope.Global)]
         CmdResults,
+
+        [SCP_PathInfo("Python 環境（安裝系統）",
+            "安裝系統（`senate cmd install`／「安裝管理」頁）把 Python 套件裝進哪一份 Python（TASK-0375）。"
+            + " **空白＝自動找系統安裝的 Python**（Tim 2026-10-02：預設去找系統的，使用者可以手動指定新路徑）。"
+            + " 填一個資料夾＝用那一份：可以是 Python 安裝目錄（裡面有 `python.exe`）或 venv（`Scripts/python.exe`）；"
+            + "資料夾裡還沒有 Python 時，安裝頁可以在那裡建一份 venv。"
+            + " ⚠ 狀態一律看**這一份**實際裝了什麼 —— 換了路徑，已安裝／沒安裝的判定跟著換。")]
+        [SCP_PathStored("pythonEnvRoot", SCP_PathScope.Global, BlankMeans = "自動找系統安裝的 Python（PATH 上的那一顆）")]
+        PythonEnvRoot,
+
+        [SCP_PathInfo("模型下載位置（安裝系統）",
+            "Hugging Face 模型的快取根（等同環境變數 `HF_HOME`；模型在它底下的 `hub/`）。"
+            + " **空白＝HF 的預設位置**（`%USERPROFILE%/.cache/huggingface`）—— 既有的 bge-m3（4.3 GB）就在那裡，"
+            + "空白時直接判為已安裝，不必重新下載。"
+            + " ⚠ 改了位置之後，舊位置的模型**不會跟著搬**，在新位置會顯示「沒安裝」。")]
+        [SCP_PathStored("modelsRoot", SCP_PathScope.Global, BlankMeans = "HF 的預設位置（%USERPROFILE%/.cache/huggingface）")]
+        ModelsRoot,
     }
 
     /// <summary>一格 Stored 的原始值 ＋ 取不到的原因（例：有兩個啟用專案 ⇒ 資料根不唯一）。</summary>
@@ -166,6 +183,12 @@ namespace SCP.Core.Paths
         public bool SupportsAuto;
         public SCP_PathId? AutoFrom;
         public string AutoSuffix = "";
+        /// <summary>空白是合法值時它代表什麼（見 <see cref="SCP_PathStoredAttribute.BlankMeans"/>）；空字串 ＝ 空白就是「還沒設定」。</summary>
+        public string BlankMeans = "";
+
+        /// <summary>這次解析是不是「空白，而空白在這一格是合法的預設」（畫面據此不印 ⚠）。</summary>
+        public bool IsBlankDefault(SCP_PathResolution iRes)
+            => BlankMeans.Length > 0 && iRes.Error != null && iRes.Origin == "未設定";
     }
 
     /// <summary>值解析結果 —— **值與「誰決定的」一起回**，因為看不出來源的路徑沒辦法被質疑。</summary>
@@ -221,6 +244,7 @@ namespace SCP.Core.Paths
                 aD.Kind = SCP_PathKind.Stored;
                 aD.Scope = aStored.Scope;
                 aD.JsonKey = aStored.JsonKey;
+                aD.BlankMeans = aStored.BlankMeans ?? "";
                 if (aAuto != null)
                 {
                     aD.SupportsAuto = true;

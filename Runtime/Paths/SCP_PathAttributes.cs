@@ -37,6 +37,15 @@ namespace SCP.Core.Paths
 
         public string JsonKey { get; }
         public SCP_PathScope Scope { get; }
+
+        /// <summary>
+        /// **空白是合法值**時，它代表什麼（例：「自動找系統安裝的 Python」）。空字串 ＝ 空白就是「還沒設定」。
+        /// <para>⚠ 為什麼要這一格（TASK-0375）：沒有它的話，空白一律印成「⚠ 解不出來」——
+        /// 而對「空白＝用預設」的格子，那句警告是假的，看的人會以為壞了去亂填。</para>
+        /// <para>⛔ 它**不改解析結果**（空白仍然回 Error＋Origin「未設定」）：怎麼解讀空白是讀的那一層的事，
+        /// 這裡只負責讓畫面說得出「空白在這一格是什麼意思」。</para>
+        /// </summary>
+        public string BlankMeans { get; set; } = "";
     }
 
     /// <summary>
