@@ -19,6 +19,7 @@
 //   分隔符選 `|` 是因為 Windows 路徑不能含它（`,`／`;` 都是合法檔名字元，拿來切會把真路徑切斷）。
 //   正規化後仍是**一個字串**（各段正規化、去重、以 `|` 接回）⇒ session 檔的存法不變，舊的單段場照舊判。
 //   重疊＝兩場的段集合**任一對**重疊；擋下訊息講出**撞到的是哪一對**。
+//   ⚠ 用 `,`／`;` 接多段會被擋（`NormalizeOne`，TASK-0385）：它們是合法檔名字元，不擋的話會被收成一條不存在的單段。
 //
 // ⚠ 方言限制：C# 9 / netstandard2.1 / 零第三方（Unity 那側也要編這份）。
 #nullable enable
@@ -79,11 +80,26 @@ namespace SCP.Core.Session
             return true;
         }
 
+        // 🩸 TASK-0385（2026-10-02）：`A,B,C` 被當成**一條**合法路徑收下 —— `,`／`;` 本來就是合法檔名字元，
+        //   正規化解得開，所以閘沒叫，而宣告出去的範圍擋不住任何人（輸出上跟「真的宣告了一條」同形）。
+        //   辨認方式不靠磁碟：**路徑裡出現在第 3 個字元之後的磁碟機代號（`D:\`）或 UNC 開頭（`\\`）不可能是同一條路徑的一部分**
+        //   ⇒ 分隔符（`,`／`;`）後面緊接另一條絕對路徑的起頭，就是有人用錯分隔符。
+        //   ⛔ 不改成「路徑必須存在」—— 檔頭明寫範圍可以是還不存在的新目錄（零 IO 是這個模組的契約）。
+        static readonly System.Text.RegularExpressions.Regex JoinedAbsoluteRe =
+            new System.Text.RegularExpressions.Regex(@"[,;]\s*(?:[A-Za-z]:[\\/]|\\\\)");
+
         /// <summary>單段正規化（多段拆開後逐段呼叫）。</summary>
         static bool NormalizeOne(string aRaw, out string oNormalized, out string oError)
         {
             oNormalized = "";
             oError = "";
+
+            if (JoinedAbsoluteRe.IsMatch(aRaw))
+            {
+                oError = "裡面有 `,`／`;` 後面又接了另一條絕對路徑 —— 像是用逗號接了多段；多段要用 `"
+                    + Separator + "` 分隔（`D:/A" + Separator + "D:/B`）";
+                return false;
+            }
 
             try
             {
