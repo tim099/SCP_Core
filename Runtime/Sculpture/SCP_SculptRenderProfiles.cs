@@ -9,14 +9,21 @@
 //          只差在角度，而沒有任何一層會叫。同理數值越界、型別不對都是錯誤，⛔ 不夾回合法範圍。
 //          ⚠ skybox 的相對路徑以 `<資料根>/Sculpture/skyboxes/` 為基準（設定檔跨專案搬也成立）；
 //          "builtin" ＝ 渲染器內建天空、"none" ＝ 純色背景。
+//          ⚠ 地板貼圖的相對路徑以 `<資料根>/Sculpture/floors/` 為基準；"builtin" ＝ 內建量尺網格；檔案不存在 ⇒ 錯誤。
 // 設定檔格式（全部選填）：
 //   { "camera": { "projection": "orthographic|perspective", "yaw": 45, "pitch": 30, "roll": 0,
-//                 "target": [x,y,z] | null, "eye": [x,y,z] | null, "distance": d | null, "fov": 45, "zoom": z | null },
+//                 "target": [x,y,z] | null, "eye": [x,y,z] | null, "distance": d | null, "fov": 45, "zoom": z | null,
+//                 "fit_upscale": false },
 //     "lights": [ { "dir": [-1,-1,-1], "color": "#ffffff", "intensity": 1, "shadow": true }, … ],
 //     "ambient": 0.4, "ao": true, "shadow": true,
-//     "skybox": { "path": "belfast_sunset_puresky_2k.jpg" | "builtin" | "none" | "<絕對路徑>", "yaw": 0 },
+//     "skybox": { "path": "belfast_sunset_puresky_2k.jpg" | "builtin" | "none" | "<絕對路徑>", "yaw": 0, "tilt": 0 },
+//     "floor": { "enabled": true, "z": 0, "full_grid": false, "margin": 24,
+//                "texture": "builtin" | "stone_tiles_02_diff_2k.jpg" | "<絕對路徑>", "tile_size": 16, "color": "#ffffff", "fade": 0.15 },
 //     "background": "#0f172a", "width": 1024, "height": 1024 }
 //   ⚠ camera 的 target／eye／distance／zoom 寫 null ＝ **明確改回自動**（蓋掉下層的值），不寫 ＝ 沿用下層。
+//   ⚠ floor 的疊法：每個欄位各自沿用下層；**沒寫 enabled 的層不改開關**（例：共用層開了地板、個人層只寫 texture
+//     ⇒ 照樣開著、換了貼圖；反過來共用層沒開、個人層只寫 texture ⇒ 照樣沒有地板，但貼圖記住了，再上一層開了就用它）。
+//     內建預設 ＝ 沒有地板。enabled=false ⇒ Floor＝null。
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -37,11 +44,21 @@ namespace SCP.Core.Sculpture
         public const string SettingsFileName = "render_settings.json";
         public const string SkyboxesDirName = "skyboxes";
         public const string SkyboxBuiltin = "builtin";
+        public const string FloorsDirName = "floors";
+        public const string FloorBuiltin = "builtin";
 
         // ───────────────────────────── 路徑 ─────────────────────────────
 
         public static string SculptureDir(SCP_DataRoot iData) => iData.Value.TrimEnd('/', '\\').Replace('\\', '/') + "/Sculpture";
         public static string SkyboxesDir(SCP_DataRoot iData) => SculptureDir(iData) + "/" + SkyboxesDirName;
+        public static string FloorsDir(SCP_DataRoot iData) => SculptureDir(iData) + "/" + FloorsDirName;
+
+        /// <summary>skyboxes/ 的兄弟資料夾 floors/（TryApply 只拿到 skybox 基準時用）。</summary>
+        static string FloorsDirFromSkyBase(string iSkyBase)
+        {
+            string? aParent = Path.GetDirectoryName(iSkyBase.TrimEnd('/', '\\'));
+            return ((aParent ?? "") + "/" + FloorsDirName).Replace('\\', '/');
+        }
 
         /// <summary>某一層的根目錄（共用 ＝ Sculpture/；個人 ＝ letters/&lt;P&gt;/sculpture/）。</summary>
         public static string ScopeDir(SCP_SculptProfileScope iScope, SCP_DataRoot iData, SCP_LettersRoot? iLetters, string? iPersona)
@@ -165,15 +182,30 @@ namespace SCP.Core.Sculpture
         }
 
         static readonly HashSet<string> s_TopKeys = new HashSet<string>(StringComparer.Ordinal)
-        { "camera", "lights", "ambient", "ao", "shadow", "skybox", "background", "width", "height" };
+        { "camera", "lights", "ambient", "ao", "shadow", "skybox", "floor", "background", "width", "height" };
         static readonly HashSet<string> s_CameraKeys = new HashSet<string>(StringComparer.Ordinal)
-        { "projection", "yaw", "pitch", "roll", "target", "eye", "distance", "fov", "zoom" };
+        { "projection", "yaw", "pitch", "roll", "target", "eye", "distance", "fov", "zoom", "fit_upscale" };
+        static readonly HashSet<string> s_FloorKeys = new HashSet<string>(StringComparer.Ordinal)
+        { "enabled", "z", "full_grid", "margin", "texture", "tile_size", "color", "fade" };
+        /// <summary>CLI 的扁平地板鍵 → 設定檔 floor 物件裡的鍵。</summary>
+        static readonly Dictionary<string, string> s_FloorFlat = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["floor"] = "enabled", ["floor_z"] = "z", ["floor_full_grid"] = "full_grid", ["floor_margin"] = "margin",
+            ["floor_texture"] = "texture", ["floor_tile"] = "tile_size", ["floor_color"] = "color", ["floor_fade"] = "fade",
+        };
+        /// <summary>CLI 認得的扁平地板鍵（`render-profile set` 與 view 的一次性參數同一份）。</summary>
+        public static IReadOnlyCollection<string> FloorFlatKeys => s_FloorFlat.Keys;
+        public const double FloorZMin = -64, FloorZMax = 320, FloorMarginMax = 256, FloorTileMin = 0.25, FloorTileMax = 4096, FloorFadeMax = 0.5;
         static readonly HashSet<string> s_LightKeys = new HashSet<string>(StringComparer.Ordinal)
         { "dir", "color", "intensity", "shadow" };
-        static readonly HashSet<string> s_SkyKeys = new HashSet<string>(StringComparer.Ordinal) { "path", "yaw" };
+        static readonly HashSet<string> s_SkyKeys = new HashSet<string>(StringComparer.Ordinal) { "path", "yaw", "tilt" };
 
-        /// <summary>把一份設定疊到 <paramref name="ioP"/> 上（只蓋有寫的欄位）。驗證失敗 ⇒ false，ioP 可能已被部分修改。</summary>
+        /// <summary>把一份設定疊到 <paramref name="ioP"/> 上（只蓋有寫的欄位）。驗證失敗 ⇒ false，ioP 可能已被部分修改。
+        /// 地板貼圖的相對路徑以 skybox 基準的兄弟資料夾 `floors/` 為準。</summary>
         public static bool TryApply(SCP_JsonData iProfile, SCP_SculptRenderParams ioP, string iSkyBase, out string oError)
+            => TryApply(iProfile, ioP, iSkyBase, FloorsDirFromSkyBase(iSkyBase), out oError);
+
+        public static bool TryApply(SCP_JsonData iProfile, SCP_SculptRenderParams ioP, string iSkyBase, string iFloorBase, out string oError)
         {
             oError = "";
             if (!CheckKeys(iProfile, s_TopKeys, "", out oError)) return false;
@@ -207,6 +239,7 @@ namespace SCP.Core.Sculpture
                     }
                     if (c["distance"].Exists) ioP.Distance = c["distance"].IsNull ? (double?)null : Positive(c["distance"], "camera.distance");
                     if (c["zoom"].Exists) ioP.Zoom = c["zoom"].IsNull ? (double?)null : Positive(c["zoom"], "camera.zoom");
+                    if (c["fit_upscale"].Exists) ioP.FitUpscale = c["fit_upscale"].AsBool();
                 }
 
                 var l = iProfile["lights"];
@@ -262,7 +295,11 @@ namespace SCP.Core.Sculpture
                     if (!CheckKeys(s, s_SkyKeys, "skybox.", out oError)) return false;
                     if (s["path"].Exists && !TryResolveSkybox(s["path"].AsString(), iSkyBase, out ioP.Skybox, out oError)) return false;
                     if (s["yaw"].Exists) ioP.SkyboxYawDeg = Finite(s["yaw"], "skybox.yaw");
+                    if (s["tilt"].Exists) ioP.SkyboxTiltDeg = Range(s["tilt"], "skybox.tilt", -89, 89);
                 }
+
+                var fl = iProfile["floor"];
+                if (fl.Exists && !TryApplyFloor(fl, ioP, iFloorBase, out oError)) return false;
             }
             catch (BadValue e) { oError = e.Message; return false; }
             catch (SCP_JsonTypeException e) { oError = "型別不對：" + e.Message; return false; }
@@ -286,13 +323,130 @@ namespace SCP.Core.Sculpture
             return true;
         }
 
+        // ───────────────────────────── 地板（疊層草稿） ─────────────────────────────
+        //
+        // 區塊職責：地板欄位的逐層疊加。
+        // 物理意義：契約上 Floor＝null ＝ 沒有地板，但「這層只換貼圖、開關沿用下層」需要在**關著**的時候也記得欄位值
+        //          （共用層記了貼圖、個人層才開）⇒ 每個參數物件旁掛一份草稿（ConditionalWeakTable：跟著參數物件生滅、不改契約形狀）。
+        //          草稿 ＝ 開關 ＋ 一份完整欄位；每層只改有寫的欄位，最後 Floor ＝ 開 ? 草稿的複本 : null。
+        // 數值影響：有人繞過本檔直接改了 ioP.Floor（例：呼叫端自己 new 一份）⇒ 下一次疊加以那一份為準（不讓舊草稿蓋掉它）。
+
+        sealed class FloorDraft
+        {
+            public bool Enabled;
+            public SCP_SculptFloor Values = new SCP_SculptFloor();
+            /// <summary>上一次寫回 ioP.Floor 的那一個物件（用來判斷有沒有人在外面改過）。</summary>
+            public SCP_SculptFloor? Materialized;
+        }
+
+        static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SCP_SculptRenderParams, FloorDraft> s_FloorDrafts
+            = new System.Runtime.CompilerServices.ConditionalWeakTable<SCP_SculptRenderParams, FloorDraft>();
+
+        static SCP_SculptFloor CloneFloor(SCP_SculptFloor f) => new SCP_SculptFloor
+        {
+            Z = f.Z, FullGrid = f.FullGrid, Margin = f.Margin, Texture = f.Texture, TileSize = f.TileSize,
+            R = f.R, G = f.G, B = f.B, Fade = f.Fade,
+        };
+
+        static FloorDraft DraftOf(SCP_SculptRenderParams iP)
+        {
+            if (s_FloorDrafts.TryGetValue(iP, out FloorDraft? d) && d != null)
+            {
+                if (!ReferenceEquals(iP.Floor, d.Materialized))
+                {
+                    if (iP.Floor != null) { d.Enabled = true; d.Values = CloneFloor(iP.Floor); }
+                    else d.Enabled = false;
+                    d.Materialized = iP.Floor;
+                }
+                return d;
+            }
+            d = new FloorDraft
+            {
+                Enabled = iP.Floor != null,
+                Values = iP.Floor != null ? CloneFloor(iP.Floor) : new SCP_SculptFloor(),
+                Materialized = iP.Floor,
+            };
+            s_FloorDrafts.Add(iP, d);
+            return d;
+        }
+
+        /// <summary>
+        /// 目前這份參數的地板（含**關著時記住的欄位**）→ 設定檔同形的 JSON（`show`／回傳檔的「實際生效值」用）。
+        /// texture：內建網格寫 "builtin"，否則是解析後的絕對路徑。
+        /// </summary>
+        public static SCP_JsonData DescribeFloor(SCP_SculptRenderParams iP)
+        {
+            FloorDraft d = DraftOf(iP);
+            SCP_SculptFloor f = d.Values;
+            var o = SCP_JsonData.NewObject();
+            o.Set("enabled", d.Enabled);
+            o.Set("z", f.Z);
+            o.Set("full_grid", f.FullGrid);
+            o.Set("margin", f.Margin);
+            o.Set("texture", f.Texture ?? FloorBuiltin);
+            o.Set("tile_size", f.TileSize);
+            o.Set("color", "#" + f.R.ToString("x2") + f.G.ToString("x2") + f.B.ToString("x2"));
+            o.Set("fade", f.Fade);
+            return o;
+        }
+
+        static bool TryApplyFloor(SCP_JsonData iFloor, SCP_SculptRenderParams ioP, string iFloorBase, out string oError)
+        {
+            oError = "";
+            if (iFloor.Type != SCP_JsonType.Object) { oError = "floor 要是物件（{\"enabled\":true,…}）"; return false; }
+            if (!CheckKeys(iFloor, s_FloorKeys, "floor.", out oError)) return false;
+            FloorDraft d = DraftOf(ioP);
+            // 先在複本上改，全部驗過才寫回（失敗 ⇒ 草稿不動）
+            bool aEnabled = d.Enabled;
+            SCP_SculptFloor v = CloneFloor(d.Values);
+            if (iFloor["enabled"].Exists) aEnabled = iFloor["enabled"].AsBool();
+            if (iFloor["z"].Exists) v.Z = Range(iFloor["z"], "floor.z", FloorZMin, FloorZMax);
+            if (iFloor["full_grid"].Exists) v.FullGrid = iFloor["full_grid"].AsBool();
+            if (iFloor["margin"].Exists) v.Margin = Range(iFloor["margin"], "floor.margin", 0, FloorMarginMax);
+            if (iFloor["tile_size"].Exists) v.TileSize = Range(iFloor["tile_size"], "floor.tile_size", FloorTileMin, FloorTileMax);
+            if (iFloor["fade"].Exists) v.Fade = Range(iFloor["fade"], "floor.fade", 0, FloorFadeMax);
+            if (iFloor["color"].Exists)
+            {
+                if (!TryHexColor(iFloor["color"].AsString(), out byte r, out byte g, out byte b))
+                { oError = "floor.color 要 #RRGGBB：" + iFloor["color"].AsString(); return false; }
+                v.R = r; v.G = g; v.B = b;
+            }
+            if (iFloor["texture"].Exists)
+            {
+                if (!TryResolveFloorTexture(iFloor["texture"].AsString(), iFloorBase, out string? aTex, out oError)) return false;
+                v.Texture = aTex;
+            }
+            d.Enabled = aEnabled;
+            d.Values = v;
+            ioP.Floor = aEnabled ? CloneFloor(v) : null;
+            d.Materialized = ioP.Floor;
+            return true;
+        }
+
+        /// <summary>
+        /// 地板貼圖字串 → 渲染參數：builtin（或空）⇒ null（內建量尺網格）、相對路徑以 floors/ 為基準、絕對路徑照用。
+        /// 檔案不存在 ⇒ 錯誤（⛔ 不默默退回內建網格）。
+        /// </summary>
+        public static bool TryResolveFloorTexture(string iValue, string iFloorBase, out string? oTexture, out string oError)
+        {
+            oTexture = null; oError = "";
+            string v = (iValue ?? "").Trim();
+            if (v.Length == 0 || v.Equals(FloorBuiltin, StringComparison.OrdinalIgnoreCase)) return true;
+            string aPath = Path.IsPathRooted(v) ? v : Path.Combine(iFloorBase, v);
+            aPath = aPath.Replace('\\', '/');
+            if (!File.Exists(aPath)) { oError = "地板貼圖不存在：" + aPath; return false; }
+            oTexture = aPath;
+            return true;
+        }
+
         // ───────────────────────────── 編輯（CLI 的 sub=set） ─────────────────────────────
 
         /// <summary>
         /// 把扁平的 CLI 參數改進一份設定（就地改 <paramref name="ioProfile"/>）。
-        /// 認得的鍵：projection yaw pitch roll target eye distance fov zoom ambient ao shadow skybox skybox_yaw background
-        /// width height、lights（整組 JSON 陣列取代）、light_add（`x,y,z[;#rrggbb[;強度[;shadow 0|1]]]`，可用 `|` 串多盞）、
-        /// light_clear=1、unset（逗號分隔的鍵 ⇒ 從設定裡拿掉，回到沿用下層）。
+        /// 認得的鍵：projection yaw pitch roll target eye distance fov zoom ambient ao shadow skybox skybox_yaw skybox_tilt background
+        /// width height fit_upscale、lights（整組 JSON 陣列取代）、light_add（`x,y,z[;#rrggbb[;強度[;shadow 0|1]]]`，可用 `|` 串多盞）、
+        /// light_clear=1、地板 floor（on|off）floor_z floor_full_grid floor_margin floor_texture floor_tile floor_color floor_fade、
+        /// unset（逗號分隔的鍵 ⇒ 從設定裡拿掉，回到沿用下層；`floor` ＝ 整個地板物件，floor_* ＝ 其中一格）。
         /// <para>target／eye／distance／zoom 給 <c>auto</c> ⇒ 寫 null（明確改回自動）。</para>
         /// </summary>
         public static bool TryEdit(SCP_JsonData ioProfile, IReadOnlyDictionary<string, string> iArgs, List<string> oChanged, out string oError)
@@ -307,6 +461,11 @@ namespace SCP.Core.Sculpture
             {
                 if (!ioProfile["skybox"].Exists || ioProfile["skybox"].Type != SCP_JsonType.Object) ioProfile.Set("skybox", SCP_JsonData.NewObject());
                 return ioProfile["skybox"];
+            }
+            SCP_JsonData Floor()
+            {
+                if (!ioProfile["floor"].Exists || ioProfile["floor"].Type != SCP_JsonType.Object) ioProfile.Set("floor", SCP_JsonData.NewObject());
+                return ioProfile["floor"];
             }
             try
             {
@@ -327,6 +486,12 @@ namespace SCP.Core.Sculpture
                         case "background": ioProfile.Set("background", v); break;
                         case "skybox": Sky().Set("path", v); break;
                         case "skybox_yaw": Sky().Set("yaw", Num(v, k)); break;
+                        case "skybox_tilt": Sky().Set("tilt", Num(v, k)); break;
+                        case "fit_upscale": Cam().Set("fit_upscale", Bool(v, k)); break;
+                        case "floor": Floor().Set("enabled", Bool(v, k)); break;
+                        case "floor_full_grid": Floor().Set("full_grid", Bool(v, k)); break;
+                        case "floor_z": case "floor_margin": case "floor_tile": case "floor_fade": Floor().Set(s_FloorFlat[k], Num(v, k)); break;
+                        case "floor_texture": case "floor_color": Floor().Set(s_FloorFlat[k], v); break;
                         case "lights":
                         {
                             SCP_JsonData aArr = SCP_JsonData.Parse(v);
@@ -358,6 +523,8 @@ namespace SCP.Core.Sculpture
                         if (u.Length == 0) continue;
                         bool aDone = s_CameraKeys.Contains(u) ? (ioProfile["camera"].Exists && ioProfile["camera"].Remove(u))
                                    : u == "skybox_yaw" ? (ioProfile["skybox"].Exists && ioProfile["skybox"].Remove("yaw"))
+                                   : u == "skybox_tilt" ? (ioProfile["skybox"].Exists && ioProfile["skybox"].Remove("tilt"))
+                                   : u != "floor" && s_FloorFlat.TryGetValue(u, out string? aFk) ? (ioProfile["floor"].Exists && ioProfile["floor"].Remove(aFk!))
                                    : s_TopKeys.Contains(u) ? ioProfile.Remove(u)
                                    : throw new BadValue("unset 不認得的鍵：" + u);
                         oChanged.Add("unset " + u + (aDone ? "" : "（本來就沒寫）"));

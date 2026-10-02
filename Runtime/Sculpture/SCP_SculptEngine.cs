@@ -1006,6 +1006,8 @@ namespace SCP.Core.Sculpture
             };
             SCP_SculptViewPlan aPlan = BuildPlan(iSpace, aIn, new SCP_SculptCamera(), aP, PhotoBase != null ? PhotoBase() : PythonDefaults());
             if (aPlan.ExitCode != 0) throw new InvalidOperationException(aPlan.Error);
+            // 展品照一律讓主體填滿畫面（自動框住時可以放大超過 24 px／voxel；preset 指定了 zoom 就照 zoom）—— Tim 2026-10-02
+            aPlan.Params.FitUpscale = true;
             if (!TryRenderPng(aPlan, out byte[] aPng, out string aWhy)) throw new InvalidOperationException(aWhy);
             Directory.CreateDirectory(Paths.Exhibits);
             string aOut = Paths.ExhibitPng(aId);

@@ -43,6 +43,13 @@ namespace SCP.Core.Sculpture
         public bool AmbientOcclusion = true;
         /// <summary>null ＝ 自動框住；有值 ＝ 每 voxel 寬 2×12×Zoom 像素（與舊引擎 zoom 同刻度）。</summary>
         public double? Zoom;
+        /// <summary>
+        /// 自動框住（Zoom＝null）時可不可以**放大**超過每 voxel 24 px（Tim 2026-10-02）：
+        /// false ＝ 舊行為（只縮不放 —— 全景圖不會因為空間很空就把零星幾顆放到巨大）；
+        /// true ＝ 主體一律填滿約 92% 畫面（看展品／指定 region 時用：10 格寬的小作品不該縮在正中央一小點）。
+        /// <para>只影響正交；透視本來就由距離框住（Zoom 不適用）。</para>
+        /// </summary>
+        public bool FitUpscale = false;
         /// <summary>投影模式（Tim 2026-10-02 擴充：可切透視）。</summary>
         public SCP_SculptProjection Projection = SCP_SculptProjection.Orthographic;
         /// <summary>鏡頭水平角（度）；45 ＝ 舊引擎的預設視角（從 +x+y 往 −x−y 看）。</summary>
@@ -73,6 +80,14 @@ namespace SCP.Core.Sculpture
         public const string SkyboxNone = "none";
         /// <summary>Skybox 的水平旋轉（度），讓天空的方位可以對齊作品。</summary>
         public double SkyboxYawDeg = 0;
+        /// <summary>
+        /// 正交鏡頭的背景視窗額外**往上**抬幾度（−89..89；Tim 2026-10-02：銀河在仰角 20–70°，預設視窗只看到地平線附近）。
+        /// 正交的視線全平行，背景是渲染器另開的「假透視」視窗（垂直 70°、俯角取鏡頭的 1/4）⇒ 這一格只調那個視窗。
+        /// <para>透視模式忽略（天空是真的視線，鏡頭往哪看就是哪）。</para>
+        /// </summary>
+        public double SkyboxTiltDeg = 0;
+        /// <summary>地板（Tim 2026-10-02）。null ＝ 沒有地板（舊行為）。</summary>
+        public SCP_SculptFloor? Floor;
     }
 
     /// <summary>一盞平行光。</summary>
@@ -86,6 +101,28 @@ namespace SCP.Core.Sculpture
         public double Intensity = 1;
         /// <summary>這盞光投不投陰影（受 <see cref="SCP_SculptRenderParams.Shadow"/> 總開關管）。</summary>
         public bool CastShadow = true;
+    }
+
+    /// <summary>
+    /// 地板：一片水平面（接陰影、邊緣淡出到背景）。
+    /// <para>⚠ 貼圖路徑給了但讀不了 ⇒ TryRender 回 false（⛔ 不默默換成內建網格）。</para>
+    /// </summary>
+    public sealed class SCP_SculptFloor
+    {
+        /// <summary>地板面的高度（世界 z）；0 ＝ voxel 空間的底面。</summary>
+        public double Z = 0;
+        /// <summary>範圍：true ＝ 整個 0..256 空間；false ＝ 可見 voxel 外框向外擴 <see cref="Margin"/> 格。</summary>
+        public bool FullGrid = false;
+        /// <summary>外框模式向外擴幾格。</summary>
+        public double Margin = 24;
+        /// <summary>貼圖絕對路徑（PNG／JPG，可重複鋪）；null ＝ 內建量尺網格（每 1／16／64 格）。</summary>
+        public string? Texture;
+        /// <summary>貼圖每重複一次涵蓋幾格（voxel）；內建網格忽略（它天生對齊 1 格）。</summary>
+        public double TileSize = 16;
+        /// <summary>色調（乘在貼圖上，0..255）。</summary>
+        public byte R = 255, G = 255, B = 255;
+        /// <summary>邊緣淡出寬度（佔範圍的比例 0..0.5）；0 ＝ 硬邊。</summary>
+        public double Fade = 0.15;
     }
 
     public enum SCP_SculptProjection
