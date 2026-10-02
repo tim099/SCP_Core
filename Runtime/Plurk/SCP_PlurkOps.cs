@@ -769,7 +769,7 @@ namespace SCP.Core.Plurk
             if (aPrivacy == "只限朋友" || aPrivacy.Equals("friends", StringComparison.OrdinalIgnoreCase))
                 aOut["limited_to"] = "[0]";         // 社群慣例：[0] = 僅好友可見
             else if (aPrivacy == "本人" || aPrivacy.Equals("self", StringComparison.OrdinalIgnoreCase))
-                aOut["limited_to"] = "[]";          // ⚠ 未驗證：空清單是否等於只有自己
+                aOut["limited_to"] = "[]";          // 空清單 ＝ 只有自己（2026-10-02 實測：存回 |owner_id|、匿名 403）
             // 「所有人」⇒ 不帶 limited_to（公開）
             return aOut;
         }

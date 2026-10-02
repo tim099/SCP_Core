@@ -1,7 +1,7 @@
 ---
 title: Plurk 串接維護指南
 description: senate cmd plurk 的維護面 —— 各層分工、怎麼加一條 lint 規則、怎麼加心情詞、帳號三段解析與 nick 登記表、端點與參數的驗證狀態（唯一事實來源）、mentions／社交面／擴圈／表情的實作判準與首日血證、OAuth 1.0a 的坑、audit 台帳、驗收方法。
-last_updated: 2026-10-01 (TASK-0362：從 UCL ucmd run Plurk 搬到 Senate CLI)
+last_updated: 2026-10-02 (公開度「本人」實測：limited_to=[] 存成發文者自己、匿名 403)
 target_audience: [AI_Agent, Tools_Maintainer]
 related:
   - ucl_core:Docs~/{lang}/Plan/completed/Plan_Plurk_Bot.md | 設計 Plan（已完成） | 設計沿革與分期
@@ -204,7 +204,7 @@ Plurk 的 `@` 只認 **nick** ⇒ 文案裡的 persona 名在載入交付單時�
 | 逐篇公開度（`只限朋友`） | ✅ 實測生效 |
 | **個人帳號**那條路（`persona-override`） | ✅ 200，`plurk_id 358451652874022`；回讀比 `owner_id`＝該帳號本人（**不是共用帳號**）|
 | 心情詞完整詞彙表 | ⚠ 只對過 12 個中文詞，表外一律退 `says` |
-| `公開度=本人` 送的 `limited_to=[]` | ⚠ **未驗證** |
+| `公開度=本人` 送的 `limited_to=[]` | ✅ 2026-10-02 Senate CLI 實跑（basecamp，`plurk_id 358918955423381`）：回讀 `limited_to = \|18166697\|`（＝發文者自己的 `owner_id`）；**結果側**匿名 GET 該噗網址 ⇒ **403**、無內文，同一把尺打一則公開噗（對照組）⇒ 200、內文命中。⚠ 射程：只量了「沒登入的人看不到」，⛔ 沒量「已登入的好友看不到」 |
 | `/APP/Timeline/uploadPicture` ＋ 欄位名 `image`（multipart） | ✅ 200，回 `full` / `thumbnail`；**`full` 實測 50 字元** |
 | 附圖兩段式（上傳 → URL 併進 content → 渲染） | ✅ `plurk_id 358451852259674`，回讀後的 `content` 含 `<img>` |
 | `/APP/Responses/responseAdd`（`reply_to` 回應） | ✅ 2026-08-23 實跑 ×2（回 `cc@basecamp` / `大小姐們的觀測所`），http 200；2026-09-18 meadow 再驗（回覆 summit 與 Calli 各一則） |

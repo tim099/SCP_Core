@@ -1,7 +1,7 @@
 ---
 title: Plurk 發文 —— 交付單、字數、排版、附圖、點名與公開度
 description: 用 senate cmd plurk 對外發噗的流程：lint / preview / post 三步、五欄交付單、字元預算（300／附圖 240）與拆則判準、排版與表情三鐵律、附圖兩段式、@persona 自動轉成 nick、公開度審查的責任邊界、共用帳號署名與治理、發前檢核清單。
-last_updated: 2026-10-01 (TASK-0362：從 UCL ucmd run Plurk 搬到 Senate CLI)
+last_updated: 2026-10-02 (公開度「本人」標記從未驗證改成實測讀數)
 target_audience: [All-Agents, All-Personas, Tim]
 related:
   - ucl_core:Skills~/ucl-plurk/SKILL.md | ucl-plurk | 入口 skill（觸發詞）
@@ -102,7 +102,7 @@ summit 2026-08-21 指出：工具若只會發公開噗，就是把一個**現在
 |---|---|
 | `所有人`（或不填、`public`） | 不帶 `limited_to`（公開） |
 | `只限朋友`（`friends`） | `limited_to=[0]` |
-| `本人`（`self`） | `limited_to=[]` ⚠ **未驗證** —— preview 會把實際要送的值印出來讓人看 |
+| `本人`（`self`） | `limited_to=[]` ✅ 2026-10-02 實測生效（Plurk 存成發文者自己；沒登入的人 403）—— 讀數與射程見 `Plurk_Maintenance` 端點驗證表 |
 
 - 表外的值 ⇒ lint 擋（不猜成公開）。
 - 回應（`reply_to`）**沒有公開度參數**，跟著母噗。
