@@ -1150,18 +1150,15 @@ namespace SCP.Core.Sculpture
                         aIn.Region = aPreset["region"].IsString ? aPreset["region"].AsString() : BadText;
                     if (aIn.Exclude == null && aPreset.Contains("exclude_color") && SCP_SculptPy.Truthy(aPreset["exclude_color"]))
                         aIn.Exclude = aPreset["exclude_color"].IsString ? aPreset["exclude_color"].AsString() : BadText;
-                    if (aPreset.Contains("light_dir"))
-                        aIn.LightDir = aPreset["light_dir"].IsString ? aPreset["light_dir"].AsString() : BadText;
-                    if (aPreset.Contains("ambient")) { aIn.Ambient = aPreset["ambient"]; aIn.AmbientGiven = true; }
-                    if (aPreset.Contains("smooth")) aIn.SmoothText = SCP_SculptPy.Str(aPreset["smooth"]);
-                    // python：`if "shadow" in preset and not shadow_mode` —— CLI 開了就不看 preset；
-                    // ⚠ CLI 顯式關（shadow=0）是 C# 這側多的一格（python 的旗標表達不了「關」），一樣不看 preset
-                    if (!aShadowCli && aPreset.Contains("shadow"))
-                    {
-                        // python 的 shadow_mode 起點是 False：沒給 CLI 時 `not shadow_mode` 為真 ⇒ 吃 preset
-                        aIn.Shadow = SCP_SculptPy.Truthy(aPreset["shadow"]);
-                        aIn.ShadowGiven = true;
-                    }
+                    // ⛔ 展品 preset 的舊光照欄位（light_dir／ambient／smooth／shadow）**不再套用**（Tim 2026-10-02，與 python 的刻意差異）：
+                    //    那幾格是寫給舊的平塗等角渲染器的，而且 4/5 件是 auto-exhibit 自動填的預設值 (-1,-1,-1)／0.4 —— 不是創作者的選擇。
+                    //    照 python 的「preset 優先」套進來，會把渲染設定檔的多光源整組換成一盞白光（Tim 加的補光一盞都進不去，而不會報錯）。
+                    //    ⇒ 光照一律歸渲染設定檔；欄位留在檔裡照讀不誤，只是不生效 —— 並且在輸出明講，⛔ 不默默略過。
+                    var aIgnored = new List<string>();
+                    foreach (string k in new[] { "light_dir", "ambient", "smooth", "shadow" })
+                        if (aPreset.Contains(k) && !aPreset[k].IsNull) aIgnored.Add(k + "=" + SCP_SculptPy.Str(aPreset[k]));
+                    if (aIgnored.Count > 0)
+                        aLines.Add("· 展品的舊光照欄位未套用（光照歸渲染設定檔）：" + string.Join("、", aIgnored));
                     if (SCP_SculptPy.Truthy(aPreset["zoom"]) && !SCP_SculptPy.Truthy(aIn.Zoom))
                     { aIn.Zoom = aPreset["zoom"]; aIn.ZoomGiven = true; }
                     SCP_JsonData t = aPreset["title"], a = aPreset["author"];
