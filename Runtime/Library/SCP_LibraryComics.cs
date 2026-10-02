@@ -4,15 +4,9 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 
-// 區塊職責：**外部實體漫畫庫**（本機資料夾，例如 D:\commic）的掃描，與 Library 既有 media 的三態比對。
-// 物理意義：`UCL_ReadingLibraryIO` 的漫畫那一叢移進 SCP_Core（TASK-0166 ①，Tim 2026-09-17 拍板全搬）。
-// ⚠ **根目錄不由本層決定**：`ScanExternalComics` 吃一個 `iComicRoot` 參數。
-//   理由是身分層而不是偷懶 —— 那個根的真相源是 `UCL_ProjectEditorPrefs`（Unity EditorPrefs，
-//   不上 git、per-project 隔離），而 SCP_Core 叫不到 Unity。
-//   ⛔ 讓本層自己去讀 `.comic_root.local` 快照 ＝ 同一個量有**兩個**真相源，而它們分岔時
-//   兩邊都讀得出一個「看起來正常」的路徑 ⇒ 沒有任何一層會喊。
-//   ⇒ 解析根是**呼叫端的職責**（Editor 讀 prefs／CLI 讀快照或吃 --arg），掃描只有這一份。
-// 數值影響：純讀。掃不到根 ⇒ 回空清單（⛔ 不丟例外 —— 沒設定漫畫庫是常態，不是錯誤）。
+// 區塊職責：掃描外部漫畫資料夾，與 Library 媒材比對。
+// 物理意義：掃描服務接受宿主解析的根；Senate 入口讀設定快照，Editor 入口讀專案偏好。
+// 數值影響：純讀；掃描警告交回呼叫端，不建立漫畫或閱讀資料。
 namespace SCP.Core.Library
 {
     /// <summary>外部漫畫資料夾與 Library 的比對結果。</summary>

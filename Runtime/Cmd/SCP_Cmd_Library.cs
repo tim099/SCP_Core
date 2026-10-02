@@ -1,12 +1,6 @@
-// 區塊職責：閱讀庫的 **Senate／宿主中立入口** —— 把 `SCP.Core.Library` 那一層掛上 Cmd 系統。
-// 物理意義：TASK-0166 ② 要的「第二個入口」在今天之前**不存在**（`SCP_Core/Runtime/Cmd/` 只有
-//           `SCP_Cmd_Book`）⇒ 那一格不是「還沒量」，是**結構上量不了**。本檔讓它變成可量。
-//   ⭐ 而它跟 Editor 端 `Cmd_Library` 是**兩個入口讀寫同一份資料**，不是兩套實作 ——
-//     兩邊的本體都是 `SCP.Core.Library`（Editor 那側要等薄殼落地，見 PortNote）。
-// 數值影響：所有寫入都落在 `<data_root>/BookNotes/Library/` 與 `<letters_root>/<persona>/`；
-//           本檔自己不解析任何路徑，一律走 `SCP_LibraryStore` / `SCP_LettersPaths`。
-// ⚠ **本 Cmd 是 Native**：它不派給任何人，Editor 沒開也跑得完。
-//   ⛔ 別因為 Editor 端有一支同名的 op 就以為要委派 —— 委派回去等於繞一圈寫同一個檔。
+// 區塊職責：閱讀庫的宿主中立 Cmd 入口，根目錄由宿主設定提供。
+// 物理意義：資料根與信件庫根各自解析，persona 決定讀者與信件落點。
+// 數值影響：寫入前驗證根目錄；正文、閱讀卡與追回檔使用同一組已解析根。
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -17,6 +11,9 @@ namespace SCP.Core.Cmd
 {
     public sealed class SCP_Cmd_Library : SCP_Cmd
     {
+        /// <summary>宿主每次呼叫讀取設定並解析根目錄；未註冊時拒絕執行。</summary>
+        public static Func<SCP_LibraryRoots>? RootsProvider { get; set; }
+
         public override string Name => "library";
 
         public override string Summary =>
@@ -33,26 +30,21 @@ namespace SCP.Core.Cmd
             + "　 那不是順手做的 —— **stale 投影比沒有投影更糟**（下次續讀撈到上一次的視圖，而它看起來完全正常）。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("library --arg data_root=<AgentCommands> --arg letters_root=<letters>"
+            SCP_CmdRegistry.Invoke("library"
                                    + " --arg op=recall --arg media_id=<id> --arg persona=<誰>");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
-            new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
-            new SCP_CmdArgSpec("letters_root", "persona 信件夾根目錄（絕對路徑）—— 閱讀卡與追回檔的落點",
-                               iRequired: true),
             new SCP_CmdArgSpec("op", "media_init｜register_reader｜note_chapter｜bookmark｜add_character"
                                      + "｜revise_view｜recall｜sync_shelf｜paths（預設 paths＝純讀）"
                                      + "｜**scan｜comics｜authored_diff｜authored_migrate｜share_body**"
-                                     + "（後四支不需要 persona／media_id）"),
+                                     + "（paths／scan／comics／authored_diff／authored_migrate 不需要 persona／media_id）"),
             new SCP_CmdArgSpec("show_migrated", "op=scan 用：=1 ⇒ 連已遷移的 Archive 一起列（預設隱藏，而隱藏幾筆會印出來）"),
-            new SCP_CmdArgSpec("comic_root", "op=comics 用：外部實體漫畫庫根目錄（**必填** —— "
-                                             + "⛔ 本層不自己去讀 Editor 的偏好設定，那會變成同一個量兩個真相源）"),
             new SCP_CmdArgSpec("book", "authored_diff／authored_migrate 用：舊 store 的書 slug（必填）"),
             new SCP_CmdArgSpec("confirm", "op=authored_migrate 用：=1 才真的寫（預設 dry-run，零寫入）"),
             new SCP_CmdArgSpec("round", "op=share_body 用：要貼哪一個 round（省略＝該章最大那個）"),
-            new SCP_CmdArgSpec("persona", "讀者 persona（除了 paths 之外都必填）"),
-            new SCP_CmdArgSpec("media_id", "媒材 id（除了 paths 之外都必填）"),
+            new SCP_CmdArgSpec("persona", "讀者 persona（讀者操作必填）"),
+            new SCP_CmdArgSpec("media_id", "媒材 id（讀者操作必填）"),
             new SCP_CmdArgSpec("work_id", "op=media_init 用：作品 id（必填）"),
             new SCP_CmdArgSpec("media_kind", "op=media_init 用：comic｜anim｜film｜series｜stream｜book"),
             new SCP_CmdArgSpec("title", "op=media_init 用：作品名（必填）"),
@@ -85,14 +77,22 @@ namespace SCP.Core.Cmd
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
         {
-            string aDataRoot = iArgs.Get("data_root").Trim();
-            if (!Directory.Exists(aDataRoot))
-                return SCP_CmdResult.Fail(2, "✗ 資料根不存在：" + aDataRoot);
-            string aLettersRaw = iArgs.Get("letters_root").Trim();
-            if (aLettersRaw.Length == 0)
-                return SCP_CmdResult.Fail(2, "✗ 缺 `letters_root` —— 閱讀卡與追回檔要落在那棵樹上，⛔ 不從資料根推導",
-                    "  🩸 推導出來的根會靜默指錯樹：檔案照樣寫得出來，而沒有人看得到它們。");
-            var aLetters = new SCP_LettersRoot(aLettersRaw);
+            SCP_LibraryRoots aRoots;
+            try
+            {
+                if (RootsProvider == null)
+                    return SCP_CmdResult.Fail(3, "✗ 宿主尚未提供閱讀庫路徑設定");
+                aRoots = RootsProvider();
+            }
+            catch (Exception e)
+            {
+                return SCP_CmdResult.Fail(3, "✗ 讀取閱讀庫路徑設定失敗：" + e.Message);
+            }
+            string? aError = RootError(aRoots.DataRoot, "資料根")
+                             ?? RootError(aRoots.LettersRoot, "信件庫根");
+            if (aError != null) return SCP_CmdResult.Fail(3, aError);
+            string aDataRoot = aRoots.DataRoot.Value;
+            var aLetters = new SCP_LettersRoot(aRoots.LettersRoot.Value);
 
             // ⭐ 預設是**純讀**那一支 —— 打錯 op 的代價要是「什麼都沒發生」，不是「建了一部作品」。
             string aOp = iArgs.Get("op").Trim();
@@ -107,6 +107,11 @@ namespace SCP.Core.Cmd
                 return SCP_CmdResult.Fail(2, $"✗ op=`{aOp}` 需要 `persona` 與 `media_id` —— 兩者都不代取",
                     "  ⚠ 讀可以跨 persona，**寫只寫自己**：身分猜錯是把心得記到別人頭上。");
 
+            // persona 必須是已存在的身分；拼錯名字不能自動長出第二棵信件樹。
+            if (aPersona.Length > 0 && (!SCP_LibraryStore.IsValidId(aPersona)
+                || !Directory.Exists(SCP_LettersPaths.ProfileDir(aLetters, aPersona))))
+                return SCP_CmdResult.Fail(2, "✗ persona 不存在或格式不合法：" + aPersona);
+
             return aOp switch
             {
                 "paths" => OpPaths(aDataRoot, aLetters, aPersona, aMediaId),
@@ -119,7 +124,7 @@ namespace SCP.Core.Cmd
                 "recall" => OpRecall(aDataRoot, aLetters, aPersona, aMediaId, iArgs),
                 "sync_shelf" => OpSyncShelf(aDataRoot, aLetters, aPersona, aMediaId),
                 "scan" => OpScan(aDataRoot, iArgs),
-                "comics" => OpComics(aDataRoot, iArgs),
+                "comics" => OpComics(aDataRoot, aRoots.ComicRoot),
                 "authored_diff" => OpAuthoredDiff(aDataRoot, iArgs),
                 "authored_migrate" => OpAuthoredMigrate(aDataRoot, iArgs),
                 "share_body" => OpShareBody(aDataRoot, aPersona, aMediaId, iArgs),
@@ -140,6 +145,8 @@ namespace SCP.Core.Cmd
             aR.Lines.Add("# 📚 閱讀庫路徑（唯讀，⛔ 沒有寫入任何東西）");
             void Row(string iLabel, string iPath)
                 => aR.Lines.Add($"  {(File.Exists(iPath) || Directory.Exists(iPath) ? "✅" : "⬚")} {iLabel}：`{iPath}`");
+            Row("資料根", iDataRoot);
+            Row("信件庫根", iLetters.Value);
             Row("庫根", SCP_LibraryStore.LibraryRoot(iDataRoot));
             if (iMediaId.Length > 0)
             {
@@ -334,13 +341,11 @@ namespace SCP.Core.Cmd
         }
 
         // ── op=comics（純讀）──────────────────────────────────────────────
-        static SCP_CmdResult OpComics(string iDataRoot, SCP_CmdArgs iArgs)
+        static SCP_CmdResult OpComics(string iDataRoot, SCP_PathResolution iComicRoot)
         {
-            string aRoot = iArgs.Get("comic_root").Trim();
-            if (aRoot.Length == 0)
-                return SCP_CmdResult.Fail(2, "✗ op=comics 需要 `comic_root`（外部實體漫畫庫的根目錄）",
-                    "  ⛔ 本層不去讀 Editor 的偏好設定：那個根的真相源住在 Unity 那側，"
-                    + "而同一個量有兩個真相源時，它們分岔的樣子是**兩邊都讀得出一條看起來正常的路徑**。");
+            string? aError = RootError(iComicRoot, "外部漫畫庫");
+            if (aError != null) return SCP_CmdResult.Fail(3, aError);
+            string aRoot = iComicRoot.Value;
 
             List<SCP_ExternalComicSeries> aList = SCP_LibraryComics.ScanExternalComics(iDataRoot, aRoot, out string? aWarn);
             var aR = new SCP_CmdResult();
@@ -429,6 +434,16 @@ namespace SCP.Core.Cmd
             aR.Lines.Add(aBody);
             aR.Values.Add(new KeyValuePair<string, string>("round", aRound.ToString()));
             return aR;
+        }
+
+        // 區塊職責：阻止設定錯誤變成寫入錯樹；不建立或修補根目錄。
+        static string? RootError(SCP_PathResolution iRoot, string iLabel)
+        {
+            if (iRoot.Error != null) return "✗ " + iLabel + "設定無法解析：" + iRoot.Error;
+            if (string.IsNullOrWhiteSpace(iRoot.Value) || !Path.IsPathRooted(iRoot.Value)
+                || !Directory.Exists(iRoot.Value))
+                return "✗ " + iLabel + "必須是已存在的絕對路徑：" + iRoot.Value;
+            return null;
         }
 
         static bool Truthy(string? iValue)
