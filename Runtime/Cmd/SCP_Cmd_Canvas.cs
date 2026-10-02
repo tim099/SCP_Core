@@ -39,7 +39,7 @@ namespace SCP.Core.Cmd
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("canvas --arg data_root=D:/Unity/Bar/AgentCommands"
-                                   + " --arg op=view --arg region=1000,1000,32,32 --arg scale=4");
+                                   + " --arg op=view --arg persona=<你> --arg region=1000,1000,32,32 --arg scale=4");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
@@ -52,7 +52,8 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("y", "pixel 的 y"),
             new SCP_CmdArgSpec("no_cache", "1 ＝ 強制全 replay（對拍驗證用）"),
             new SCP_CmdArgSpec("sub", "子動作：cache=status|rebuild|verify；note=add|list|done；claim=add|list|done"),
-            new SCP_CmdArgSpec("persona", "誰（note 必填；claim add 必填）"),
+            new SCP_CmdArgSpec("persona", "誰（view／note 必填；claim add 必填）—— view 的圖寫進這個人的 `letters/<P>/cmd/`"),
+            new SCP_CmdArgSpec("letters_root", "persona 信件夾根（view 用；Senate CLI 沒給會從設定補，再沒有就用資料根的慣例位置）"),
             new SCP_CmdArgSpec("title", "note/claim 的標題"),
             new SCP_CmdArgSpec("plan", "note 的計畫內文"),
             new SCP_CmdArgSpec("size", "note 的預估尺寸 WxH（est_cost = W*H）"),
@@ -78,7 +79,7 @@ namespace SCP.Core.Cmd
             string aOp = iArgs.Get("op");
             switch (aOp)
             {
-                case "view": return OpView(iArgs, aPaths);
+                case "view": return OpView(iArgs, aPaths, aDataRoot);
                 case "pixel": return OpPixel(iArgs, aPaths);
                 case "stats": return OpStats(iArgs, aPaths);
                 case "cache": return OpCache(iArgs, aPaths);
@@ -94,8 +95,24 @@ namespace SCP.Core.Cmd
         // ───────────────────────────── view ─────────────────────────────
         // 數值影響：non_transparent_pixels 是**裁切與放大之後**數的（描述檔案，不描述意圖）；
         //          sha256_t 讓下游能證明「我吃的就是你看的那張」。
-        static SCP_CmdResult OpView(SCP_CmdArgs iArgs, SCP_CanvasPaths iPaths)
+        // 🩸 輸出落在**個人** cmd 夾（TASK-0374，2026-10-02 apex-one）：原本寫 `Canvas/_last_view*.png` 兩個全員共用的固定檔名，
+        //    同時段別人一 view 就把圖換掉、不報錯 —— 她照著別人的圖放點，蓋掉 6 格別人的點。
+        //    ⇒ 沒給 persona 就擋，⛔ 不退回共用檔名（退回去＝同一個病換個入口繼續安靜發生）。
+        public const string ViewPngName = "canvas_view.png";
+        public const string ViewTransparentPngName = "canvas_view_t.png";
+
+        static SCP_CmdResult OpView(SCP_CmdArgs iArgs, SCP_CanvasPaths iPaths, string iDataRoot)
         {
+            string aPersona = iArgs.Get("persona").Trim();
+            if (!SCP.Core.Letters.SCP_RegisteredMail.IsValidPersonaName(aPersona))
+                return SCP_CmdResult.Fail(2, "✗ view 要 `--arg persona=<你>` —— 圖寫進你自己的 `letters/<P>/cmd/`",
+                                          "  （TASK-0374：共用檔名會被別人的 view 換掉而不報錯，所以不再提供）");
+            string aLetters = iArgs.Get("letters_root").Trim();
+            SCP_LettersRoot aLettersRoot = aLetters.Length > 0
+                ? new SCP_LettersRoot(aLetters)
+                : SCP_DataPaths.Letters(new SCP_DataRoot(iDataRoot));
+            string aDir = SCP_LettersPaths.CmdDir(aLettersRoot, aPersona);
+            string aPngPath = aDir + "/" + ViewPngName, aPngTPath = aDir + "/" + ViewTransparentPngName;
             if (!TryRegion(iArgs.Get("region"), out int aX, out int aY, out int aW, out int aH,
                            out string aWhy))
                 return SCP_CmdResult.Fail(2, "✗ " + aWhy);
@@ -107,21 +124,23 @@ namespace SCP.Core.Cmd
                                                   SCP_CanvasSpec.Width, aScale);
             byte[] aRgba = SCP_CanvasPng.EncodeRgba(aSnap.Buffer, aSnap.Mask, aX, aY, aW, aH,
                                                     SCP_CanvasSpec.Width, aScale, out int aOpaque);
-            Directory.CreateDirectory(iPaths.Root);
-            File.WriteAllBytes(iPaths.LastViewPng, aRgb);
-            File.WriteAllBytes(iPaths.LastViewTransparentPng, aRgba);
+            Directory.CreateDirectory(aDir);
+            File.WriteAllBytes(aPngPath, aRgb);
+            File.WriteAllBytes(aPngTPath, aRgba);
 
             var aResult = new SCP_CmdResult();
             aResult.Lines.Add("# 🖼 view rendered");
             aResult.Lines.Add("  size  : " + (aW * aScale) + "x" + (aH * aScale)
                               + (aScale > 1 ? "（原 " + aW + "x" + aH + " ×" + aScale + "）" : ""));
-            aResult.Lines.Add("  path  : " + iPaths.LastViewPng);
-            aResult.Lines.Add("  path_t: " + iPaths.LastViewTransparentPng + "（RGBA 透明變體 — 3D stamp 的輸入）");
+            aResult.Lines.Add("  path  : " + aPngPath);
+            aResult.Lines.Add("  path_t: " + aPngTPath + "（RGBA 透明變體 — 3D stamp 的輸入）");
             aResult.Lines.Add("  non_transparent_pixels: " + aOpaque + " / " + (aW * aScale * aH * aScale));
-            aResult.Lines.Add("  sha256_t: " + Sha256File(iPaths.LastViewTransparentPng));
+            aResult.Lines.Add("  sha256_t: " + Sha256File(aPngTPath));
             aResult.Lines.Add("  快取路徑: " + CachePathText(aSnap));
-            aResult.AddOutput(iPaths.LastViewPng);
-            aResult.AddOutput(iPaths.LastViewTransparentPng);
+            aResult.AddOutput(aPngPath);
+            aResult.AddOutput(aPngTPath);
+            aResult.AddValue("path", aPngPath);
+            aResult.AddValue("path_t", aPngTPath);
             aResult.AddValue("non_transparent_pixels", aOpaque.ToString(CultureInfo.InvariantCulture));
             aResult.AddValue("width", (aW * aScale).ToString(CultureInfo.InvariantCulture));
             aResult.AddValue("height", (aH * aScale).ToString(CultureInfo.InvariantCulture));

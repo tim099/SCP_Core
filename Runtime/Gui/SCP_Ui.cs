@@ -235,6 +235,13 @@ namespace SCP.Core.Gui
         public void Image(string iPath, float iSize, string iAlt)
             => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Image, Value = iPath ?? "", ImageSize = iSize, Text = iAlt ?? "" });
 
+        /// <summary>
+        /// 整張圖照原比例縮進邊長 <paramref name="iMaxSide"/> 的框（不裁切、原解析度）—— 給要看清楚整張的預覽用
+        /// （雕刻觀測頁）。頭像請用 <see cref="Image"/>。
+        /// </summary>
+        public void ImageFit(string iPath, float iMaxSide, string iAlt)
+            => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Image, Value = iPath ?? "", ImageSize = iMaxSide, Text = iAlt ?? "", ImageFit = true });
+
         // ── 互動 ──────────────────────────────────────────────────
         /// <summary>按鈕。**這一輪被按下就回 true**（GUILayout 語意）。</summary>
         public bool Button(string iLabel, string? iKey = null)

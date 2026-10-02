@@ -110,6 +110,13 @@ namespace SCP.Core.Gui
         public float ImageSize { get; init; }
 
         /// <summary>
+        /// Image 的「整張縮進框」模式（TASK-0377 雕刻觀測頁）：<see cref="ImageSize"/> 是框的長邊，
+        /// 圖照原比例縮進去、⛔ 不裁切；貼圖用原解析度（不套頭像那條 256 縮圖）。
+        /// <para>false ＝ 頭像模式（正方形、非方形裁中間）—— 既有呼叫端行為不變。</para>
+        /// </summary>
+        public bool ImageFit { get; init; }
+
+        /// <summary>
         /// Label 要不要**在視窗寬度換行**（<see cref="SCP_Ui.Paragraph"/>）。
         /// <para>🩸 ImGui 的 Text 預設不換行，超出去的字直接被裁掉而**不會有任何一層喊** —— 訊息本文這種長文一定要開。</para>
         /// <para>⚠ 一般 Label 維持不換行：它常跟按鈕排在同一列，換行會讓一列長成好幾行。</para>

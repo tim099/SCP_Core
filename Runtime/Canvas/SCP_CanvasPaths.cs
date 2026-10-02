@@ -45,8 +45,6 @@ namespace SCP.Core.Canvas
 
         public string LatestPng => Sub("canvas_latest.png");
         public string LatestTransparentPng => Sub("canvas_latest_t.png");
-        public string LastViewPng => Sub("_last_view.png");
-        public string LastViewTransparentPng => Sub("_last_view_t.png");
 
         /// <summary>增量快取（衍生物，可隨時丟棄；<c>.gitignore</c> 擋掉）。</summary>
         public string CacheMeta => Sub("_canvas_cache.json");
