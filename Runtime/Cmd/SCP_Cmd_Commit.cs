@@ -202,16 +202,32 @@ namespace SCP.Core.Cmd
             if (aPosted.Outcome == SCP_TavernPostOutcome.NotPosted)
             {
                 aResult.Lines.Add("⚠ **commit 落地了（" + aSha + "）；公告確定沒發** —— 只有領薪那步沒完成。");
-                aResult.Lines.Add("   → 補發（酒館發文只有 Editor 那條路）：senate ucmd run Tavern --persona "
-                                  + aPrimary + " --arg op=post --arg-file body=<檔> --arg meta=tag:commit;sha:"
-                                  + aSha + ";category:meta");
+                // ⚠ 補發走 `tavern-post`（Senate）—— 舊的 `ucmd run Tavern op=post` 已於 TASK-0366 退場（TASK-0372 順手修）。
+                aResult.Lines.Add("   → 補發：" + SCP_CmdRegistry.Invoke("tavern-post --arg persona=" + aPrimary
+                                  + " --arg-file body=<檔> --arg \"meta=tag:commit;sha:" + aSha + ";category:meta\""));
                 aResult.Lines.Add("   ⛔ 單號推進本次**沒有做**（它掛在公告成功之後）。");
                 aResult.ExitCode = ExitAnnounceNotSent;
                 return aResult;
             }
 
-            aResult.Lines.Add("✅ " + aSha + " 已提交並公告（" + aPrimary + "／" + aFiles.Count + " 檔）"
-                              + (aPosted.Seq.Length > 0 ? "　seq=" + aPosted.Seq : ""));
+            if (aPosted.Outcome == SCP_TavernPostOutcome.Queued)
+            {
+                // 已排進酒館 Server 的 queue（TASK-0372）：它起來後送出、照常領薪 ⇒ 對 commit 這一筆而言是成功，
+                //   只是**還沒有 seq**。⛔ 不印補發指令 —— 補了就是兩則公告、付兩次錢。
+                aResult.Lines.Add("✅ " + aSha + " 已提交（" + aPrimary + "／" + aFiles.Count + " 檔）；"
+                                  + "📥 公告**已排隊** —— 酒館 Server 不在，起來後送出並領薪（還沒有 seq）。⛔ 不要補發。");
+                if (aPosted.QueuedCmdId.Length > 0) aResult.AddValue("announce_queued_cmd_id", aPosted.QueuedCmdId);
+            }
+            else if (aPosted.Outcome != SCP_TavernPostOutcome.Posted)
+            {
+                // ⛔ 認不得的判定不准安靜當成成功（列舉加了新的一態而這裡沒跟上時，會走到這裡）。
+                aResult.Lines.Add("⚠ **commit 落地了（" + aSha + "）；公告判定認不得（" + aPosted.Outcome + "）** —— ⛔ 當成不知道：先回讀酒館，別補發。");
+                aResult.ExitCode = ExitAnnounceUnresolved;
+                return aResult;
+            }
+            else
+                aResult.Lines.Add("✅ " + aSha + " 已提交並公告（" + aPrimary + "／" + aFiles.Count + " 檔）"
+                                  + (aPosted.Seq.Length > 0 ? "　seq=" + aPosted.Seq : ""));
 
             // ── ⑤ 單號推進（委派；失敗只警告 —— commit 與領薪是主線）─────────
             AdvanceTasks(aMessage, aSha, aPrimary, aDataRoot, aResult);

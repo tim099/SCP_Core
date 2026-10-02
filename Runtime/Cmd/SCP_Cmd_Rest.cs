@@ -175,8 +175,8 @@ namespace SCP.Core.Cmd
                 aResult.Lines.Add("     " + (aRecheckHint.Length > 0
                     ? aRecheckHint
                     : "（閘沒有給回讀指令 —— 去看 " + aDataRoot + "/_cmd_results/ 最新那筆與酒館）"));
-                aResult.Lines.Add("   → 確認**真的沒發**才補：senate ucmd run Tavern --persona "
-                                  + aPersona + " --arg op=post --arg-file body=<檔> --arg category=meta");
+                aResult.Lines.Add("   → 確認**真的沒發**才補：" + SCP_CmdRegistry.Invoke("tavern-post --arg persona="
+                                  + aPersona + " --arg-file body=<檔> --arg meta=category:meta"));
                 aResult.Lines.Add("   → 記憶那半不受影響（信已經在磁碟上）——⚠ 但**別在沒讀之前就補**：");
                 aResult.Lines.Add("     酒館 seq 是全域遞增的，補錯就是同一件事發兩則。");
                 aResult.ExitCode = ExitBroadcastUnresolved;
@@ -185,22 +185,23 @@ namespace SCP.Core.Cmd
             if (aNotify == "fail")
             {
                 aResult.Lines.Add("⚠ **信寫了、廣播確定沒發** —— 同事與 Tim 不知道你小歇了。");
-                // ⚠ 這行刻意不走 `SCP_CmdRegistry.Invoke`：補發是 **ucmd**（Editor 那條路），
-                //   不是 `senate cmd` —— 用 Invoke 會印出一個不存在的 cmd 名字。
-                aResult.Lines.Add("   → 補發（酒館發文只有 Editor 那條路）：senate ucmd run Tavern --persona "
-                                  + aPersona + " --arg op=post --arg-file body=<檔> --arg category=meta");
+                // ⚠ 補發走 `tavern-post`（Senate）—— 舊的 `ucmd run Tavern op=post` 已於 TASK-0366 退場，
+                //   照舊指令補發會撞到不存在的 Cmd（TASK-0372 順手修）。
+                aResult.Lines.Add("   → 補發：" + SCP_CmdRegistry.Invoke("tavern-post --arg persona="
+                                  + aPersona + " --arg-file body=<檔> --arg meta=category:meta"));
                 aResult.Lines.Add("   → 補發之後再跑 /compact；**記憶那半不受影響**（信已經在磁碟上）。");
                 aResult.ExitCode = ExitLetterOnly;
                 return aResult;
             }
             aResult.Lines.Add("✅ 小歇完成"
-                              + (aNotify == "ok" ? "（信＋廣播）" : "（信；本次未廣播）")
+                              + (aNotify == "ok" ? "（信＋廣播）"
+                                 : aNotify == "queued" ? "（信＋廣播已排隊，Server 起來後送出）" : "（信；本次未廣播）")
                               + "。/compact 後讀回兩份：`_latest.md` ＋ `cmd/wake_brief.md`。");
             return aResult;
         }
 
         /// <summary>
-        /// 回 `ok` / `fail` / `unknown` / `skipped`。⚠ 四種狀態刻意不同形 —— **處置完全不同**。
+        /// 回 `ok` / `fail` / `unknown` / `queued` / `skipped`。⚠ 五種狀態刻意不同形 —— **處置完全不同**（`queued`＝已排進酒館 Server 的 queue，⛔ 不補發）。
         /// <para>`fail`（確定沒發）⇒ 補發；`unknown`（沒等到回執）⇒ ⛔ 先回讀，補發可能多出第二則；
         /// `skipped`（我沒要求它發）⇒ 什麼都不用做。把 `unknown` 併進 `fail` 就是 TASK-0134 的那隻。</para>
         /// </summary>
@@ -259,7 +260,10 @@ namespace SCP.Core.Cmd
             {
                 SCP_TavernPostOutcome.Posted => "OK",
                 SCP_TavernPostOutcome.Unresolved => "**未定**（沒等到回執）",
-                _ => "fail（確定沒發）",
+                SCP_TavernPostOutcome.Queued => "📥 **已排隊**（酒館 Server 不在；起來後送出，⛔ 不要補發）",
+                SCP_TavernPostOutcome.NotPosted => "fail（確定沒發）",
+                // ⛔ 新的一態不准安靜落進「確定沒發」（TASK-0372 加 Queued 時這裡原本是 `_ =>`）
+                _ => "**認不得的判定 " + aVerdict.Outcome + "**（⛔ 當成不知道處理，別補發）",
             };
             ioResult.Lines.Add("📢 廣播：" + aLabel + "　" + aVerdict.Detail);
             if (aVerdict.Seq.Length > 0) ioResult.AddValue("post_seq", aVerdict.Seq);
@@ -268,6 +272,13 @@ namespace SCP.Core.Cmd
                 oRecheckHint = aVerdict.RecheckHint;
                 return "unknown";
             }
+            if (aVerdict.Outcome == SCP_TavernPostOutcome.Queued)
+            {
+                if (aVerdict.QueuedCmdId.Length > 0) ioResult.AddValue("post_queued_cmd_id", aVerdict.QueuedCmdId);
+                return "queued";
+            }
+            if (aVerdict.Outcome != SCP_TavernPostOutcome.Posted && aVerdict.Outcome != SCP_TavernPostOutcome.NotPosted)
+                return "unknown";
             return aVerdict.Posted ? "ok" : "fail";
         }
     }

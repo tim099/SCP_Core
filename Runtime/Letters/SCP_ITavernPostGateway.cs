@@ -19,7 +19,7 @@ using System.Collections.Generic;
 namespace SCP.Core.Letters
 {
     /// <summary>
-    /// 一次發文的三種結局。
+    /// 一次發文的四種結局（第四種「已排隊」是 TASK-0372 加的）。
     /// <para>🩸 <see cref="Unresolved"/> 是 TASK-0134 QA（summit 2026-09-05）用一次真的小歇量出來的：
     /// 她拿到「沒發」的回報，而 <b>Editor 是開著的、廣播其實成功了</b>（<c>post_seq 19082</c>）——
     /// 那一格的真實語意是「<b>等待端沒拿到回執</b>」，不是「沒發」。</para>
@@ -37,19 +37,33 @@ namespace SCP.Core.Letters
 
         /// <summary>不知道（等回執逾時）⇒ ⛔ **先回讀再決定**，補發可能發出第二則。</summary>
         Unresolved = 2,
+
+        /// <summary>
+        /// **已排隊**（TASK-0372，Tim 2026-10-02）：酒館 Server 不在、這一筆**確定還沒送進去**，
+        /// 已照正常協議排進它的 queue ⇒ Server 起來後的下一個心跳送出（配號＋發薪＋@ 照常）。
+        /// <para>⛔ 不是 <see cref="Posted"/>（還沒有 seq），也不是 <see cref="NotPosted"/>（⛔ **不要補發** ——
+        /// 補了就是排隊那一則送出時多一則、付兩次錢）。</para>
+        /// <para>🩸 加這一態時量到：小歇的標籤 switch 有 `_ =&gt;` 預設分支 ⇒ 新的一態會**安靜地**落進「確定沒發」。
+        /// 讀這個列舉的地方一律逐態寫明，⛔ 不要靠預設分支。</para>
+        /// </summary>
+        Queued = 3,
     }
 
     /// <summary>一次發文的判定：成不成、**為什麼**、以及發出去的那則是誰（seq）。</summary>
     public readonly struct SCP_TavernPostVerdict
     {
         public SCP_TavernPostVerdict(SCP_TavernPostOutcome iOutcome, string iDetail, string iSeq,
-                                     string iRecheckHint = "")
+                                     string iRecheckHint = "", string iQueuedCmdId = "")
         {
             Outcome = iOutcome;
             Detail = iDetail ?? "";
             Seq = iSeq ?? "";
             RecheckHint = iRecheckHint ?? "";
+            QueuedCmdId = iQueuedCmdId ?? "";
         }
+
+        /// <summary><see cref="SCP_TavernPostOutcome.Queued"/> 時排進 queue 的那一筆 cmd_id（對 result 檔用）；其餘態是空字串。</summary>
+        public string QueuedCmdId { get; }
 
         /// <summary>三態結局。⛔ 判斷「要不要補發」一律看這個，不要看 <see cref="Posted"/>。</summary>
         public SCP_TavernPostOutcome Outcome { get; }
@@ -84,6 +98,10 @@ namespace SCP.Core.Letters
         /// <summary>**不知道有沒有發**（等回執逾時）—— 呼叫端要印 <paramref name="iRecheckHint"/> 而不是補發指令。</summary>
         public static SCP_TavernPostVerdict Unknown(string iDetail, string iRecheckHint)
             => new SCP_TavernPostVerdict(SCP_TavernPostOutcome.Unresolved, iDetail, "", iRecheckHint);
+
+        /// <summary>**已排隊**（Server 起來後送出）—— 沒有 seq，⛔ 不要補發。</summary>
+        public static SCP_TavernPostVerdict Queued(string iDetail, string iCmdId)
+            => new SCP_TavernPostVerdict(SCP_TavernPostOutcome.Queued, iDetail, "", "", iCmdId);
     }
 
     public interface SCP_ITavernPostGateway
