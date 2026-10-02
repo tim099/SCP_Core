@@ -8,7 +8,6 @@
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 // @doc-sync: <SCP_Core>/Docs~/Tavern_Read.md（§5 跨區讀一則：regions／msg；區怎麼認、seq 每條分支一套）
 // @doc-sync: ucl_core:Docs~/{lang}/Workflows/Work_Memory_Workflow.md（常見坑 6：記憶裡的酒館引用要帶定語）
-// @doc-sync: <Senate>/Docs/API/Cli_Reference.md（`cmd` 節「跨區讀酒館訊息」）
 #nullable enable
 using System.Collections.Generic;
 using SCP.Core.Paths;
