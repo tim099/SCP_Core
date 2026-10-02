@@ -2,7 +2,8 @@
 // 物理意義：兩段式，跟寫信同一個分工：**工具負責持久化與算狀態，反思的內容 agent 自己寫**。
 //           不給 body ＝ inspect（印狀態＋列本段待濃縮的信）；給了 body ＝ 寫檔。
 //           ⇒ 工具代筆的見林不是那個人的記憶，它只是一份摘要（憲法⑥）。
-// 數值影響：linzi 寫 `longterm/wake_XXX-YYY.md` ＋ 重建 `_index.md` ＋ 歸檔見叢；
+// 數值影響：linzi 寫 `longterm/wake_XXX-YYY.md` ＋ 重建 `_index.md` ＋ 歸檔見叢
+//           ＋ 把 keys_carry 寫進新的當期見叢、在歸檔檔尾端記一節交接（TASK-0373）；
 //           forest 寫 `longterm/forest/gen_NNN_*.md` ＋ 重建見根索引。
 //           **不碰 registry／profile 的任何欄位**（理由見 SCP_Consolidate 檔頭的血證）。
 using System.Collections.Generic;
@@ -31,6 +32,10 @@ namespace SCP.Core.Cmd
             + "   ⓐ 根層還有未歸檔畫像 ⇒ 擋（先跑 `portrait-next` 到它印「折人完成」）；\n"
             + "   ⓑ 折人跑完但 digest_body 一位同事都沒提 ⇒ 擋 —— 見林＝這段期間的心得 ＋ 對同事的看法，一起寫。\n"
             + "   ⇒ 出口 `--arg fold_skip_reason=<理由>`：非空即放行，**理由會留名**（回傳檔 ＋ _cmd_results）。\n"
+            + "🌿 **再過一道見叢閘**（Tim 2026-10-02 拍板，TASK-0373）—— 歸檔會清空當期見叢，沒勾的不會自己跟過來：\n"
+            + "   當期見叢還有 `- [ ]` ⇒ 擋，並列出全部未完；逐條判斷後二選一（可同時給）：\n"
+            + "   `--arg-file keys_carry=<檔>`：還活著的，整理／合併後一行一條 ⇒ 歸檔後寫進新的當期見叢；\n"
+            + "   `--arg keys_drop_reason=<理由>`：一條都不帶的理由（理由會留名在歸檔檔尾端）。\n"
             + "⛔ 本 Cmd **不寫任何 registry／profile 欄位** —— 書籤是掃磁碟算出來的（最大 span_end）。\n"
             + "   python 那支（awakening.py consolidate）2026-09-02 起也不再寫 registry，\n"
             + "   原本「檔寫成功卻 exit=1」那條死路已拆掉；本 Cmd 仍是主入口（且不需要 Editor）。";
@@ -58,6 +63,14 @@ namespace SCP.Core.Cmd
             //   ⛔ 刻意不做成 `=1` 的布林旗標：一個不必寫理由的跳過，跟沒有閘一樣。
             new SCP_CmdArgSpec("fold_skip_reason",
                                "顯式跳過折人閘的理由（補跑舊區間等）。非空即放行，**理由會留名**"),
+            // 見叢閘的兩個出口（TASK-0373）。⚠ 刻意不提供「全部照搬」的旗標 ——
+            //   方案 A（自動帶過去）被否的理由就是教訓類的行會一起帶、清單只會越來越長；
+            //   要帶就得一行一行重寫一次，那一次重寫就是「判斷過」的憑據。
+            new SCP_CmdArgSpec("keys_carry",
+                               "見叢交接：還活著的未完事項，整理／合併後**一行一條**（`- [ ]`／`- ` 前綴可有可無）。"
+                               + "歸檔後寫進新的當期見叢。走 --arg-file"),
+            new SCP_CmdArgSpec("keys_drop_reason",
+                               "見叢交接：一條都不帶過去的理由。非空即放行，**理由留名在歸檔檔尾端**"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -103,6 +116,7 @@ namespace SCP.Core.Cmd
                 foreach (string aLetter in aStatus.PendingLetters) aResult.Lines.Add("  - " + aLetter);
                 aResult.Lines.Add("");
                 AppendFoldPeopleHint(iLettersRoot, iPersona, aResult);
+                AppendKeysHint(iLettersRoot, iPersona, aResult);
             aResult.Lines.Add("");
             aResult.Lines.Add("→ 讀完上列信件後，反思濃縮成 digest body 寫回（長內文走檔案）：");
                 aResult.Lines.Add("  " + SCP_CmdRegistry.Invoke(
@@ -121,6 +135,12 @@ namespace SCP.Core.Cmd
             SCP_CmdResult? aGate = FoldGate(iLettersRoot, iPersona, iBody,
                                             iArgs.Get("fold_skip_reason"), aResult);
             if (aGate != null) return aGate;
+
+            // ── 見叢閘（TASK-0373）：在**寫任何檔之前**判 —— 擋下時見林、_index、見叢一個位元組都不動。
+            List<string> aCarry = ParseCarry(iArgs.Get("keys_carry"));
+            string aDropReason = iArgs.Get("keys_drop_reason").Trim();
+            SCP_CmdResult? aKeysGate = KeysGate(iLettersRoot, iPersona, iArgs.Get("keys_carry"), aCarry, aDropReason);
+            if (aKeysGate != null) return aKeysGate;
 
             string aSkipReason = iArgs.Get("fold_skip_reason");
             if (aSkipReason.Length > 0)
@@ -149,11 +169,13 @@ namespace SCP.Core.Cmd
                               + "　gap=" + aAfter.Gap);
             aResult.AddValue("gap", aAfter.Gap.ToString());
 
+            int aOpenBefore = SCP_WakeLetters.KeysEntries(iLettersRoot, iPersona).Todo.Count;
             string? aArchived = SCP_Consolidate.ArchiveKeys(iLettersRoot, iPersona, aSpanStart, aSpanEnd);
             aResult.Lines.Add(aArchived != null
                 ? "   🌿 見叢已歸檔: " + aArchived + "（當期檔已重置）"
                 : "   🌿 當期見叢沒有檔案 ⇒ 沒有東西可歸檔（不是錯誤）");
             if (aArchived != null) aResult.AddOutput(aArchived);
+            CarryKeys(iLettersRoot, iPersona, aArchived, aOpenBefore, aCarry, aDropReason, aSpanEnd, aResult);
 
             SCP_ForestStatus aForest = SCP_Consolidate.ForestStatus(iLettersRoot, iPersona);
             aResult.Lines.Add("");
@@ -237,6 +259,154 @@ namespace SCP.Core.Cmd
 
         static int ParseInt(string iRaw, int iFallback)
             => int.TryParse(iRaw, out int aValue) ? aValue : iFallback;
+
+        // ── 見叢閘（見林寫入路；Tim 2026-10-02 拍板方案 C，TASK-0373）──────────
+        // 區塊職責：見林歸檔見叢**之前**，要求當期還沒勾的條目被逐條判過 ——
+        //           還活著的整理／合併後帶進新見叢（keys_carry），或寫明一條都不帶的理由（keys_drop_reason）。
+        // 物理意義：`ArchiveKeys` 把整份當期檔搬走、刪掉；而 brief 只讀當期檔 ⇒ 沒勾的條目從此不出現，
+        //           **而且沒有任何一層會喊**。
+        // 🩸 讀數（2026-10-02）：basecamp wake 112-121 歸檔時 11 條未完，按完畫面直接是「0 未完」；
+        //   上一期（wake 111）37 條同樣留在歸檔檔裡，沒有人搬。全員歸檔檔裡 `- [ ]` 合計 900+ 行
+        //   （⚠ 其中很多是寫成清單格式的教訓或早已做完沒勾 —— 那正是不能自動照搬的理由，方案 A 被否）。
+        // ⚠ 閘只量「有沒有判過」的形狀（給了哪個出口），⛔ 量不到「判得對不對」—— 那一格仍是當事人的。
+
+        /// <summary>
+        /// 把 keys_carry 拆成條目：一行一條；去掉 `- [ ]`／`- [x]`／`- ` 前綴與尾端的 `&lt;!-- 時間戳 --&gt;`；
+        /// 空行與 `#`／`&gt;` 開頭的行（標題、引言）略過。
+        /// </summary>
+        /// <remarks>
+        /// ⚠ 尾端註解要去掉：從舊見叢整行複製過來的話，append 會再補一個新時間戳 ⇒ 一行兩個註解，
+        /// 而 brief 那邊的「行尾時戳＝權威指路」（跨日指路一律引時戳）就有兩個候選。
+        /// </remarks>
+        static List<string> ParseCarry(string iRaw)
+        {
+            var aOut = new List<string>();
+            if (string.IsNullOrEmpty(iRaw)) return aOut;
+            foreach (string aRawLine in iRaw.Split('\n'))
+            {
+                string aLine = aRawLine.Trim();
+                if (aLine.Length == 0 || aLine.StartsWith("#", StringComparison.Ordinal)
+                    || aLine.StartsWith(">", StringComparison.Ordinal)) continue;
+                if (aLine.StartsWith("- [ ]", StringComparison.Ordinal)
+                    || aLine.StartsWith("- [x]", StringComparison.Ordinal)
+                    || aLine.StartsWith("- [X]", StringComparison.Ordinal))
+                    aLine = aLine.Substring(5).Trim();
+                else if (aLine.StartsWith("- ", StringComparison.Ordinal))
+                    aLine = aLine.Substring(2).Trim();
+                while (aLine.EndsWith("-->", StringComparison.Ordinal))
+                {
+                    int aOpen = aLine.LastIndexOf("<!--", StringComparison.Ordinal);
+                    if (aOpen < 0) break;
+                    aLine = aLine.Substring(0, aOpen).TrimEnd();
+                }
+                if (aLine.Length > 0) aOut.Add(aLine);
+            }
+            return aOut;
+        }
+
+        /// <returns>擋下時回 Fail（**還沒寫任何檔**）；放行回 <c>null</c>。</returns>
+        static SCP_CmdResult? KeysGate(string iLettersRoot, string iPersona, string iCarryRaw,
+                                       List<string> iCarry, string iDropReason)
+        {
+            // 給了 keys_carry 卻拆不出任何一條 ⇒ 多半是檔案路徑錯或內容全是標題 —— 那不是「判過、決定不帶」。
+            if (iCarryRaw.Trim().Length > 0 && iCarry.Count == 0)
+                return SCP_CmdResult.Fail(2,
+                    "🌿 keys_carry 給了，但拆不出任何一條（空行、標題、引言都會被略過）⇒ 見林先擋下，**什麼都沒寫**",
+                    "   一條都不帶的話請改用 `--arg keys_drop_reason=<理由>`。")
+                    .AddValue("keys_gate", "blocked_empty_carry");
+
+            List<string> aOpen = SCP_WakeLetters.KeysEntries(iLettersRoot, iPersona).Todo;
+            if (aOpen.Count == 0 || iCarry.Count > 0 || iDropReason.Length > 0) return null;
+
+            var aLines = new List<string>
+            {
+                "🌿 **當期見叢還有 " + aOpen.Count + " 條沒勾** ⇒ 見林先擋下，**什麼都沒寫**（見林、_index、見叢都沒動）",
+                "   歸檔會清空當期見叢，而 brief 只讀當期檔 ⇒ 沒勾的條目一歸檔就再也不出現（Tim 2026-10-02，TASK-0373）。",
+                "   逐條判斷：做完了 ⇒ 不帶；是教訓不是待辦 ⇒ 不帶（該進 fragment 的先寫進去）；還活著 ⇒ 帶。",
+                "   帶過去的可以**整理、合併、改寫**，一行一條寫成檔：",
+                "   ⇒ `--arg-file keys_carry=<檔>`　／　一條都不帶：`--arg keys_drop_reason=<理由>`",
+                "",
+                "   ── 未完條目（全部，⛔ 不截斷）──",
+            };
+            for (int i = 0; i < aOpen.Count; i++) aLines.Add("   #" + (i + 1) + " " + aOpen[i]);
+            return SCP_CmdResult.Fail(2, aLines.ToArray())
+                .AddValue("keys_gate", "blocked_open")
+                .AddValue("keys_open_count", aOpen.Count.ToString(CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>歸檔之後：把 keys_carry 寫進新的當期見叢，並在歸檔檔尾端留一節「這一期怎麼收的」。</summary>
+        static void CarryKeys(string iLettersRoot, string iPersona, string? iArchived, int iOpenBefore,
+                              List<string> iCarry, string iDropReason, int iSpanEnd, SCP_CmdResult ioResult)
+        {
+            var aRoot = new SCP_LettersRoot(iLettersRoot);
+            string aOpenPath = SCP_LettersPaths.KeysOpenPath(aRoot, iPersona);
+
+            // 歸檔沒成功而當期檔還在 ⇒ 再 append 會把帶過去的條目跟舊的混在同一份裡（下次歸檔就重複一次）。
+            if (iArchived == null && File.Exists(aOpenPath) && iCarry.Count > 0)
+            {
+                ioResult.Lines.Add("   ⚠ 見叢**沒有歸檔成功**而當期檔還在 ⇒ keys_carry 這次**沒有寫入**（避免新舊混在一起）。");
+                ioResult.Lines.Add("     要帶的條目改用 `cmd keys --arg-file add=<檔>` 逐條補。");
+                ioResult.AddValue("keys_carried", "0");
+                return;
+            }
+
+            int aWritten = 0;
+            foreach (string aItem in iCarry)
+            {
+                try { SCP_Cmd_Keys.Append(aOpenPath, iPersona, aItem); aWritten++; }
+                catch (Exception e)
+                {
+                    ioResult.Lines.Add("   ⚠ 帶過去的第 " + (aWritten + 1) + " 條寫不進新見叢：" + e.GetType().Name + ": " + e.Message);
+                    break;
+                }
+            }
+
+            // 回讀：「我寫了」不是「它在裡面」。
+            int aNowOpen = SCP_WakeLetters.KeysEntries(iLettersRoot, iPersona).Todo.Count;
+            if (iCarry.Count > 0)
+            {
+                ioResult.Lines.Add("   ↪ 見叢交接：帶過去 " + aWritten + "/" + iCarry.Count
+                                   + " 條 ⇒ 新的當期見叢回讀 " + aNowOpen + " 條未完");
+                ioResult.AddOutput(aOpenPath);
+            }
+            if (iDropReason.Length > 0)
+                ioResult.Lines.Add("   ↪ 見叢交接：放掉的理由 —— " + iDropReason);
+            ioResult.AddValue("keys_open_before", iOpenBefore.ToString(CultureInfo.InvariantCulture));
+            ioResult.AddValue("keys_carried", aWritten.ToString(CultureInfo.InvariantCulture));
+            if (iDropReason.Length > 0) ioResult.AddValue("keys_drop_reason", iDropReason);
+
+            // 歸檔檔自己看得出這一期怎麼收的 —— 不必回頭翻回傳檔或 _cmd_results。
+            if (iArchived == null || (iCarry.Count == 0 && iDropReason.Length == 0)) return;
+            try
+            {
+                string aNl = SCP_Cmd_Keys.DetectNewLine(iArchived);
+                var aFooter = new System.Text.StringBuilder();
+                aFooter.Append(aNl).Append("## ↪ 交接到下一期（wake ").Append(iSpanEnd + 1).Append(" 起）").Append(aNl).Append(aNl)
+                       .Append("- 歸檔時未完：").Append(iOpenBefore).Append(" 條").Append(aNl)
+                       .Append("- 帶進新見叢：").Append(aWritten).Append(" 條（整理後重寫，原文見上）").Append(aNl);
+                foreach (string aItem in iCarry) aFooter.Append("  - ").Append(aItem).Append(aNl);
+                if (iDropReason.Length > 0)
+                    aFooter.Append("- 其餘不帶的理由：").Append(iDropReason).Append(aNl);
+                File.AppendAllText(iArchived, aFooter.ToString(), new System.Text.UTF8Encoding(false));
+            }
+            catch (Exception e)
+            {
+                ioResult.Lines.Add("   ⚠ 歸檔檔尾端的交接紀錄寫不進去（" + e.GetType().Name + ": " + e.Message
+                                   + "）—— 交接本身已完成，只是歸檔檔裡看不到。");
+            }
+        }
+
+        /// <summary>inspect 時先印見叢未完 —— 跟折人提示同一個位置，讓人寫 digest 之前就知道要判哪些。</summary>
+        static void AppendKeysHint(string iLettersRoot, string iPersona, SCP_CmdResult iResult)
+        {
+            List<string> aOpen = SCP_WakeLetters.KeysEntries(iLettersRoot, iPersona).Todo;
+            iResult.AddValue("keys_open_count", aOpen.Count.ToString(CultureInfo.InvariantCulture));
+            if (aOpen.Count == 0) return;
+            iResult.Lines.Add("");
+            iResult.Lines.Add("🌿 **當期見叢還有 " + aOpen.Count + " 條沒勾** —— 見林寫入時會被擋，先逐條判斷"
+                              + "（帶過去：`--arg-file keys_carry=<檔>`；一條都不帶：`--arg keys_drop_reason=<理由>`）：");
+            for (int i = 0; i < aOpen.Count; i++) iResult.Lines.Add("   #" + (i + 1) + " " + aOpen[i]);
+        }
 
         // ── 折人閘（見林寫入路；Tim 2026-09-09 拍板）─────────────────
         // 區塊職責：見林**寫入之前**擋兩格 —— ⓐ 折人還沒跑完、ⓑ digest 一位同事都沒提。

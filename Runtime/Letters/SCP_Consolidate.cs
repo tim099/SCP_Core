@@ -4,16 +4,18 @@
 //           ⇒ 本層**只認磁碟**，不讀也不寫任何 registry／profile 欄位。
 // 數值影響：寫 `longterm/wake_XXX-YYY.md` ＋ 整份重建 `longterm/_index.md`；
 //           見森寫 `longterm/forest/gen_NNN_wake_001-YYY.md`（append-only，舊代全留）；
-//           見叢歸檔搬 `_keys_open.md` → `keys/wake_N-M.md` 並重置當期檔。
+//           見叢歸檔搬 `_keys_open.md` → `keys/wake_N-M.md` 並重置當期檔
+//           （沒勾的條目要先過 Cmd 層的交接閘 —— `SCP_Cmd_Consolidate.KeysGate`，TASK-0373）。
 //
 // 🩸 **為什麼不寫書籤**（2026-08-31，移植時查到的真因）：
-//   python 那側的 `awakening.py.write_longterm_digest` 是個 wrapper，寫完記憶檔之後會
+//   python 那側當時的 `awakening.py.write_longterm_digest` 是個 wrapper，寫完記憶檔之後會
 //   `save_registry(reg)` —— 而 registry 存檔對 identity 欄有守衛，於是**別的 persona**
 //   （Sirius）身上一筆舊資料就讓整支 exit=1，**而見林檔明明已經寫成功了**。
 //   那是「處置成功、回報失敗」，靠 exit code 判成敗的呼叫端會重跑一次見林。
 //   ⇒ 本層砍掉那條路：書籤 ＝ 掃磁碟取**最大 span_end**，沒有第二個地方需要對帳。
 //
-// ⚠ 與 python memory.py 的檔案格式逐字同形（frontmatter 欄位、檔名零填充三位、index 行格式）。
+// ⚠ 與 python memory.py 的檔案格式逐字同形（frontmatter 欄位、檔名零填充三位、index 行格式）——
+//   python 那側 2026-10-02 起只剩**讀**（見林寫入收成本層一支，TASK-0373），而它讀的還是同一個形狀。
 using System;
 using System.Collections.Generic;
 using System.IO;

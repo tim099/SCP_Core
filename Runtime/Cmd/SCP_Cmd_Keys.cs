@@ -243,7 +243,8 @@ namespace SCP.Core.Cmd
         }
 
         /// <summary>append 一條（檔不存在時先寫骨架）。⚠ 骨架與行格式都與 python memory.keys_append 同形。</summary>
-        static void Append(string iPath, string iPersona, string iItem)
+        /// <remarks>`consolidate` 的見叢交接（TASK-0373）也走這一支 —— 行格式只准有一份實作。</remarks>
+        internal static void Append(string iPath, string iPersona, string iItem)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(iPath)!);
             string aNewLine = DetectNewLine(iPath);
@@ -271,7 +272,7 @@ namespace SCP.Core.Cmd
         /// 而「兩個工具生出看起來都正常的兩份」正是最難追的那一族（wake 79 血證）。</para>
         /// <para>⚠ 判準是**檔案現在長什麼樣**，不是「我覺得應該用哪種」。</para>
         /// </summary>
-        static string DetectNewLine(string iPath)
+        internal static string DetectNewLine(string iPath)
         {
             try
             {
