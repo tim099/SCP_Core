@@ -233,7 +233,8 @@ namespace SCP.Core.FreeTime
             DateTime aUntil = SCP_ActivitySession.ParseIsoToLocal(aSession.end_ts) ?? aNow;
             bool aExpired = aNow > aUntil;
 
-            if (iEarlyEnd || aExpired) return Close(iCtx, iPersona, aSession, iEarlyEnd, iReason, aNow, aUntil, aExpired, aPath, aR);
+            // ⚠ body 要一起帶進 Close —— 🩸 TASK-0389（2026-10-03）：到期那一刻帶來的留言曾在這裡被丟掉，回傳一行都沒提。
+            if (iEarlyEnd || aExpired) return Close(iCtx, iPersona, aSession, iEarlyEnd, iReason, aNow, aUntil, aExpired, aPath, aR, iChatBody);
 
             // ── roll=0：只讀訊息、不換骰（Tim 2026-08-21）──
             // 物理意義：「我還在做同一件活動，但想看看有沒有人講話」是高頻需求，而換骰會 ①輪次+1 ②重擲 ③發「換骰」公告 ——
@@ -329,8 +330,10 @@ namespace SCP.Core.FreeTime
 
         // 收工（到期或提前）：關 session → 讀本場那一批的用量 → 收工宣告 → next 指路
         static SCP_CmdResult Close(SCP_FreeTimeContext iCtx, string iPersona, SCP_FreeTimeSession iSession, bool iEarlyEnd,
-                                   string iReason, DateTime iNow, DateTime iUntil, bool iExpired, string iPath, StringBuilder ioR)
+                                   string iReason, DateTime iNow, DateTime iUntil, bool iExpired, string iPath, StringBuilder ioR,
+                                   string iChatBody)
         {
+            string aChat = (iChatBody ?? "").Trim();
             string aStepName = iEarlyEnd ? "end" : "next";
             string aEndReason = iEarlyEnd
                 ? (string.IsNullOrEmpty(iReason) ? "early（未附 reason —— 提前收工的形狀該可觀測，下次帶上）" : $"early: {iReason}")
@@ -351,7 +354,9 @@ namespace SCP.Core.FreeTime
             else
                 aVoucherBrief = "🎟 限時券用量：**讀不到**（券帳那一層沒回答 —— 不猜）";
 
+            // 區塊職責：收工時帶來的留言併進收工宣告**同一則**（同換骰的做法：兩則會洗版）；空＝與改動前逐字相同。
             var aBody = new StringBuilder();
+            if (aChat.Length > 0) { aBody.AppendLine(aChat); aBody.AppendLine(); aBody.AppendLine("---"); }
             aBody.AppendLine(iEarlyEnd
                 ? $"🏁 [{iPersona} 大小姐] 自由時間提前收工（{(string.IsNullOrEmpty(iReason) ? "未附 reason" : iReason)}）"
                 : $"⏰ [{iPersona} 大小姐] 自由時間到點收工（至 {iUntil:HH:mm}）");
@@ -373,6 +378,14 @@ namespace SCP.Core.FreeTime
             else
                 ioR.AppendLine($"- 🎟 限時券: **讀不到**（{aUsage.Error}）⇒ 用量無法判定，⛔ 不以發放量推導");
             ioR.AppendLine($"- 收工宣告: {aPost.Describe("未發（best-effort）")}");
+            // 分開印「沒帶」與「帶了」—— 丟掉與沒帶不可同形（TASK-0389）。
+            // 帶了的那則跟收工宣告是**同一則**，所以它的狀態就是上一行那四態之一；⛔ 不在這裡另判「沒發」（Seq==0 也可能是排程中／不知道）。
+            if (aChat.Length == 0)
+                ioR.AppendLine("- 本輪交流: **未帶訊息**");
+            else if (aPost.Seq > 0)
+                ioR.AppendLine($"- 本輪交流: 已併進收工宣告同一則（seq {aPost.Seq}）—— 時間已到，所以跟著收工那則發，不是換骰那則");
+            else
+                ioR.AppendLine("- 本輪交流: ⚠ 併在收工宣告同一則 —— **狀態同上一行**（沒有 seq）；照上一行的指示處理，⛔ 別單獨補發留言");
             ioR.AppendLine("## ⏹ 已收工 —— 自由時間結束，**不要再跑 step=next**");
             ioR.AppendLine("- 回工作；或走晚安流程：" + Cmd("goodnight-check --arg persona=" + iPersona));
             ioR.AppendLine("- 還想花錢再睡 →（可選）ucl-spending-time（不綁死晚安）。");
