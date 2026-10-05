@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using SCP.Core.Letters;
 using SCP.Core.Library;
 using SCP.Core.Paths;
 
@@ -37,12 +38,13 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("op", "media_init｜register_reader｜note_chapter｜bookmark｜add_character"
                                      + "｜revise_view｜recall｜sync_shelf｜paths（預設 paths＝純讀）"
-                                     + "｜**scan｜comics｜authored_diff｜authored_migrate｜share_body**"
-                                     + "（paths／scan／comics／authored_diff／authored_migrate 不需要 persona／media_id）"),
+                                     + "｜**scan｜comics｜comic_pages｜authored_diff｜authored_migrate｜share_body｜share**"
+                                     + "（paths／scan／comics／authored_diff／authored_migrate 不需要 persona／media_id；"
+                                     + "comic_pages 只要 media_id）"),
             new SCP_CmdArgSpec("show_migrated", "op=scan 用：=1 ⇒ 連已遷移的 Archive 一起列（預設隱藏，而隱藏幾筆會印出來）"),
             new SCP_CmdArgSpec("book", "authored_diff／authored_migrate 用：舊 store 的書 slug（必填）"),
             new SCP_CmdArgSpec("confirm", "op=authored_migrate 用：=1 才真的寫（預設 dry-run，零寫入）"),
-            new SCP_CmdArgSpec("round", "op=share_body 用：要貼哪一個 round（省略＝該章最大那個）"),
+            new SCP_CmdArgSpec("round", "op=share_body／share 用：要貼哪一個 round（省略＝該章最大那個）"),
             new SCP_CmdArgSpec("persona", "讀者 persona（讀者操作必填）"),
             new SCP_CmdArgSpec("media_id", "媒材 id（讀者操作必填）"),
             new SCP_CmdArgSpec("work_id", "op=media_init 用：作品 id（必填）"),
@@ -54,7 +56,8 @@ namespace SCP.Core.Cmd
                                                + "**工具不替本人表態**）"),
             new SCP_CmdArgSpec("aliases", "op=media_init 用：別名，`|` 或 `,` 分隔"),
             new SCP_CmdArgSpec("genre_tags", "op=media_init 用：類型標籤，分隔同上"),
-            new SCP_CmdArgSpec("chapter_id", "op=note_chapter 用：四位數章號（必填；`0000`＝序章）"),
+            new SCP_CmdArgSpec("chapter_id", "op=note_chapter／share_body／share 用：四位數章號（必填；`0000`＝序章）；"
+                                             + "op=comic_pages 用：選填 —— 省略＝只列這部有哪些話"),
             new SCP_CmdArgSpec("display_number", "op=note_chapter 用：人話章號（如 `第 1 話`）"),
             new SCP_CmdArgSpec("chapter_title", "op=note_chapter 用：章名"),
             new SCP_CmdArgSpec("time_range", "op=note_chapter 用：時間段（如 `12:37-13:41`）"),
@@ -102,7 +105,11 @@ namespace SCP.Core.Cmd
             string aMediaId = iArgs.Get("media_id").Trim();
             // ⚠ 這幾支是**庫層**的（掃全庫／比對兩個 store／外部漫畫）—— 它們沒有「誰的進度」這一維，
             //   要求 persona／media_id 只會讓人被迫填兩個不會被讀的值，而那種值日後會被人當成真的。
-            bool aLibraryWideOp = aOp is "paths" or "scan" or "comics" or "authored_diff" or "authored_migrate";
+            //   comic_pages 是庫層的、**只要 media_id**（誰讀都一樣的頁檔位置），⇒ 不要求 persona。
+            bool aLibraryWideOp = aOp is "paths" or "scan" or "comics" or "authored_diff" or "authored_migrate"
+                                  or "comic_pages";
+            if (aOp == "comic_pages" && aMediaId.Length == 0)
+                return SCP_CmdResult.Fail(2, "✗ op=`comic_pages` 需要 `media_id`（`comic-<slug>`）—— 不代取");
             if (!aLibraryWideOp && (aPersona.Length == 0 || aMediaId.Length == 0))
                 return SCP_CmdResult.Fail(2, $"✗ op=`{aOp}` 需要 `persona` 與 `media_id` —— 兩者都不代取",
                     "  ⚠ 讀可以跨 persona，**寫只寫自己**：身分猜錯是把心得記到別人頭上。");
@@ -128,10 +135,12 @@ namespace SCP.Core.Cmd
                 "authored_diff" => OpAuthoredDiff(aDataRoot, iArgs),
                 "authored_migrate" => OpAuthoredMigrate(aDataRoot, iArgs),
                 "share_body" => OpShareBody(aDataRoot, aPersona, aMediaId, iArgs),
+                "share" => OpShare(aDataRoot, aPersona, aMediaId, iArgs),
+                "comic_pages" => OpComicPages(aDataRoot, aRoots.ComicRoot, aMediaId, iArgs),
                 _ => SCP_CmdResult.Fail(2,
                     $"✗ 不認得的 op：`{aOp}`（吃的是 media_init｜register_reader｜note_chapter｜bookmark"
                     + "｜add_character｜revise_view｜recall｜sync_shelf｜paths"
-                    + "｜scan｜comics｜authored_diff｜authored_migrate｜share_body）"),
+                    + "｜scan｜comics｜comic_pages｜authored_diff｜authored_migrate｜share_body｜share）"),
             };
         }
 
@@ -434,6 +443,189 @@ namespace SCP.Core.Cmd
             aR.Lines.Add(aBody);
             aR.Values.Add(new KeyValuePair<string, string>("round", aRound.ToString()));
             return aR;
+        }
+
+        // ── op=comic_pages（純讀）─────────────────────────────────────────
+        // 區塊職責：回答「這部漫畫（這一話）的頁檔實際在哪」，讓漫畫閱讀不必自己拼路徑或呼叫 python（TASK-0400）。
+        // 物理意義：內部漫畫（ArtGallery/Comic）優先；不是內部才走外部漫畫庫根（`SCP_PathId.ComicRoot`）。
+        // 數值影響：純讀。外部根沒設／解不出來只影響外部漫畫，⛔ 不擋內部漫畫。
+        static SCP_CmdResult OpComicPages(string iDataRoot, SCP_PathResolution iComicRoot, string iMediaId,
+                                          SCP_CmdArgs iArgs)
+        {
+            string? aRoot = iComicRoot.Error == null ? iComicRoot.Value : null;
+            string aRootNote = iComicRoot.Error == null ? "" : "\n  ⚠ 外部漫畫庫根：" + iComicRoot.Error;
+            string aChapterId = iArgs.Get("chapter_id").Trim();
+
+            if (aChapterId.Length == 0)
+            {
+                SCP_LibraryComics.SCP_ComicChapterIndex? aIndex =
+                    SCP_LibraryComics.ListChapterIds(iDataRoot, aRoot, iMediaId, out string? aIdxErr);
+                if (aIndex == null) return SCP_CmdResult.Fail(1, "✗ comic_pages：" + aIdxErr + aRootNote);
+                var aList = new SCP_CmdResult();
+                aList.Lines.Add($"# 📚 `{iMediaId}` 的話（{(aIndex.Source == "internal" ? "內部 ArtGallery/Comic" : "外部漫畫庫")}）");
+                if (aIndex.ChapterIds.Count == 0) aList.Lines.Add("  （沒有任何話）");
+                else aList.Lines.Add($"  共 {aIndex.ChapterIds.Count} 話：{aIndex.ChapterIds[0]} … "
+                                     + aIndex.ChapterIds[aIndex.ChapterIds.Count - 1]);
+                aList.AddValue("source", aIndex.Source);
+                aList.AddValue("chapters", aIndex.ChapterIds.Count.ToString());
+                return aList;
+            }
+
+            if (!SCP_LibraryStore.IsValidChapterId(aChapterId))
+                return SCP_CmdResult.Fail(2, "✗ comic_pages 的 `chapter_id` 須為四位數字：`" + aChapterId + "`");
+            SCP_LibraryComics.SCP_ComicChapterPages? aPages =
+                SCP_LibraryComics.ListChapterPages(iDataRoot, aRoot, iMediaId, aChapterId, out string? aErr);
+            if (aPages == null) return SCP_CmdResult.Fail(1, "✗ comic_pages：" + aErr + aRootNote);
+
+            var aR = new SCP_CmdResult();
+            aR.Lines.Add($"# 📚 `{iMediaId}` 第 {aChapterId} 話（{(aPages.Source == "internal" ? "內部：分鏡稿＋畫稿" : "外部漫畫庫")}）");
+            if (aPages.Source == "internal")
+                aR.Lines.Add($"  📝 分鏡稿：`{aPages.ChapterPath}`（正文在這裡，圖逐張看）");
+            else
+                aR.Lines.Add($"  📂 章資料夾：`{aPages.ChapterPath}`");
+            int aMissing = 0;
+            foreach (SCP_LibraryComics.SCP_ComicPage p in aPages.Pages)
+            {
+                if (!p.Exists) aMissing++;
+                aR.Lines.Add($"  {(p.Exists ? "✅" : "⬚ 缺檔")} {p.Path}");
+            }
+            if (aPages.Pages.Count == 0)
+                aR.Lines.Add("  ⚠ 這一話找不到任何頁檔 —— ⛔ 沒有頁就沒有可看的東西，不要憑空寫心得");
+            if (aMissing > 0)
+                aR.Lines.Add($"  ⚠ {aMissing} 頁在磁碟上不存在 —— 不是「這話只有 {aPages.Pages.Count - aMissing} 頁」，是有頁掉了");
+            aR.AddValue("source", aPages.Source);
+            aR.AddValue("pages", aPages.Pages.Count.ToString());
+            aR.AddValue("missing_pages", aMissing.ToString());
+            return aR;
+        }
+
+        // ── op=share（發酒館 ＋ 回寫 shared_seq）──────────────────────────────
+        // 區塊職責：把某章某 round 的心得發進酒館，並把 seq 落回該 round 當 receipt（Unity 版 Op_Share 的對應，TASK-0399）。
+        // 物理意義：組稿共用 op=share_body 同一份（SCP_LibraryShare.BuildShareBody）；發文走宿主登記的發文閘
+        //          （Senate＝Senate 組訊息＋酒館 Server 寫入，計酬記在 persona 上；房間固定 tavern）。
+        //          ⛔ 本層不自己組訊息、不碰錢。
+        // 數值影響：同 round 已有 shared_seq ⇒ 拒發（BuildShareBody 擋，防重複計酬）。四態各自處置：
+        //          Posted＝落 receipt／Queued＝已排隊、沒有 seq、⛔ 不要補發／Unresolved＝exit 7 先回讀／NotPosted＝exit 6 補發安全。
+        //          發文失敗不回滾任何檔（檔優先於投影）。
+        const int ExitNotPosted = 6;
+        const int ExitUnresolved = 7;
+
+        static SCP_CmdResult OpShare(string iDataRoot, string iPersona, string iMediaId, SCP_CmdArgs iArgs)
+        {
+            string aChapterId = iArgs.Get("chapter_id").Trim();
+            if (!SCP_LibraryStore.IsValidChapterId(aChapterId))
+                return SCP_CmdResult.Fail(2, "✗ share 需要四位數字的 `chapter_id`：`" + aChapterId + "`");
+            int aRound = 0;
+            string aRaw = iArgs.Get("round").Trim();
+            if (aRaw.Length > 0 && !int.TryParse(aRaw, out aRound))
+                return SCP_CmdResult.Fail(2, $"✗ round 不是整數：`{aRaw}`");
+
+            string? aBody = SCP_LibraryShare.BuildShareBody(iDataRoot, iMediaId, iPersona, aChapterId,
+                                                            ref aRound, out string? aErr);
+            // ⛔ 沒發 ⇒ 沒有任何東西被寫：exit 1（閘擋下，零寫入），⚠ 跟發文後的 6／7 不同形。
+            if (aBody == null) return SCP_CmdResult.Fail(1, "✗ share：" + aErr);
+
+            string aTag = $"{iMediaId} / {aChapterId} r{aRound} by {iPersona}";
+            SCP_ITavernPostGateway? aGate = SCP_TavernPostGatewayHost.Create(iDataRoot);
+            if (aGate == null)
+            {
+                // ⚠ 沒登記閘 ≠ 發出去了：兩件事必須不同形。
+                SCP_CmdResult aNoGate = SCP_CmdResult.Fail(ExitNotPosted,
+                    $"✗ share（{aTag}）：**本宿主沒有登記發文閘 ⇒ 這一則沒有發出去**（補發安全）");
+                aNoGate.AddValue("posted", "0");
+                return aNoGate;
+            }
+
+            var aMeta = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["tag"] = "reading-note",
+                ["category"] = "reading",
+            };
+            var aR = new SCP_CmdResult();
+            aR.Lines.Add("# 📚 Library share");
+            SCP_TavernPostVerdict aVerdict;
+            try
+            {
+                aVerdict = aGate.Post(iPersona, aBody, aMeta, aR.Lines);
+            }
+            catch (Exception e)
+            {
+                // 例外時不知道寫入端做到哪一步 ⇒ 當「不知道」處理（⛔ 不當成「確定沒發」去補發）。
+                aR.Lines.Add("✗ 發文丟出例外：" + e.GetType().Name + ": " + e.Message);
+                aR.Lines.Add("  ⇒ 不知道有沒有發出去：⛔ **先回讀酒館再決定要不要重新 share**（重發會重複計酬）。");
+                aR.ExitCode = ExitUnresolved;
+                aR.AddValue("posted", "unknown");
+                return aR;
+            }
+
+            // ⛔ 逐態寫明，不靠預設分支：新的一態不准安靜落進「確定沒發」。
+            switch (aVerdict.Outcome)
+            {
+                case SCP_TavernPostOutcome.Posted:
+                    return ShareReceipt(iDataRoot, iPersona, iMediaId, aChapterId, aRound, aTag, aVerdict, aR);
+
+                case SCP_TavernPostOutcome.Queued:
+                    aR.Lines.Add($"- 📥 酒館發文已排隊（{aTag}）：{aVerdict.Detail}");
+                    aR.Lines.Add("> ⚠ 還沒有 seq ⇒ receipt（shared_seq）**這一趟沒落**。⛔ **不要重新 share**"
+                                 + "（排著的那一則送出時會多一則、領兩次錢）；送出後要補 receipt，回讀酒館拿 seq 再人工補進該 round。");
+                    aR.AddValue("posted", "queued");
+                    aR.AddValue("receipt", "0");
+                    if (aVerdict.QueuedCmdId.Length > 0) aR.AddValue("post_queued_cmd_id", aVerdict.QueuedCmdId);
+                    return aR;
+
+                case SCP_TavernPostOutcome.Unresolved:
+                    aR.Lines.Add($"✗ share（{aTag}）：**不知道有沒有發出去** —— {aVerdict.Detail}");
+                    aR.Lines.Add("  ⛔ 先回讀再決定要不要重新 share（重發會重複計酬）：");
+                    aR.Lines.Add("     " + (aVerdict.RecheckHint.Length > 0
+                        ? aVerdict.RecheckHint
+                        : SCP_CmdRegistry.Invoke("tavern-query --arg kind=tail --arg room=tavern")));
+                    aR.ExitCode = ExitUnresolved;
+                    aR.AddValue("posted", "unknown");
+                    return aR;
+
+                case SCP_TavernPostOutcome.NotPosted:
+                    aR.Lines.Add($"✗ share（{aTag}）：**確定沒發** —— {aVerdict.Detail}");
+                    aR.Lines.Add("  心得檔不受影響；修好之後重新 share 即可（補發安全）。");
+                    aR.ExitCode = ExitNotPosted;
+                    aR.AddValue("posted", "0");
+                    return aR;
+
+                default:
+                    aR.Lines.Add($"✗ share（{aTag}）：**認不得的判定 {aVerdict.Outcome}** —— ⛔ 當成不知道處理，先回讀、別補發。");
+                    aR.ExitCode = ExitUnresolved;
+                    aR.AddValue("posted", "unknown");
+                    return aR;
+            }
+        }
+
+        // 區塊職責：發文已確認（拿得到 seq）之後落 receipt，並照實報告 receipt 有沒有落。
+        // ⚠ receipt 沒落 ⇒ 仍是 exit 0（文已經發了，非 0 會誘導重跑＝重複計酬），改用 Values 與警告行大聲說。
+        static SCP_CmdResult ShareReceipt(string iDataRoot, string iPersona, string iMediaId, string iChapterId,
+                                          int iRound, string iTag, SCP_TavernPostVerdict iVerdict, SCP_CmdResult ioResult)
+        {
+            ioResult.AddValue("posted", "1");
+            if (!int.TryParse(iVerdict.Seq, out int aSeq) || aSeq <= 0)
+            {
+                ioResult.Lines.Add($"- ✅ 已發酒館（{iTag}），但閘回的 seq 讀不懂：`{iVerdict.Seq}`");
+                ioResult.Lines.Add("> ⚠ receipt **沒落**。⛔ 別重發（會重複計酬）；回讀酒館拿 seq 再人工補進該 round。");
+                ioResult.AddValue("receipt", "0");
+                return ioResult;
+            }
+            SCP_LibraryShare.RecordSharedSeq(iDataRoot, iMediaId, iPersona, iChapterId, iRound, aSeq, out string? aRecErr);
+            ioResult.AddValue("post_seq", aSeq.ToString());
+            ioResult.Lines.Add($"- ✅ 已發酒館：seq={aSeq}（{iTag}）");
+            if (string.IsNullOrEmpty(aRecErr))
+            {
+                ioResult.Lines.Add($"- receipt：`shared_seq={aSeq}` 已落 chapter.json round {iRound}");
+                ioResult.AddValue("receipt", "1");
+            }
+            else
+            {
+                ioResult.Lines.Add($"> ⚠ 已發文（seq={aSeq}）但 receipt 落檔失敗：{aRecErr}");
+                ioResult.Lines.Add($"> 請人工把 shared_seq={aSeq} 補進該 round —— 別重發（會重複計酬）。");
+                ioResult.AddValue("receipt", "0");
+            }
+            return ioResult;
         }
 
         // 區塊職責：阻止設定錯誤變成寫入錯樹；不建立或修補根目錄。

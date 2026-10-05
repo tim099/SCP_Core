@@ -65,6 +65,16 @@ namespace SCP.Core.Paths
         [SCP_PathAuto(SCP_PathId.ProjectRoot, "Docs/Glossary")]
         GlossaryRoot,
 
+        [SCP_PathInfo("外部漫畫庫根（comic_root）",
+            "外部實體漫畫（`<根>/<作品> 01/0001/001.jpg`）住的資料夾，閱讀線 `senate cmd library op=comics` 與漫畫閱讀心得用它（TASK-0400）。"
+            + " **空白＝沒有外部漫畫庫**（那不是錯誤：同事自己畫的內部漫畫在 `ArtGallery/Comic`，不靠這一格）。"
+            + " ⛔ **沒有上游可以推導**（它是這台機器上的一個資料夾，不是專案內的東西）。"
+            + " 存 senate.local.json（機器路徑不入版控）；**這一格是唯一真相源** ——"
+            + " 舊的 `<專案根>/.comic_root.local` 快照（Unity 閱讀心得管理頁寫的）**不再被讀**：它還在而本格空白時，"
+            + "`op=comics` 會明說「舊快照有值、本格沒有」，⛔ 不靜默採用。")]
+        [SCP_PathStored("comicRoot", SCP_PathScope.Project, BlankMeans = "沒有外部漫畫庫（只讀內部 ArtGallery/Comic）")]
+        ComicRoot,
+
         [SCP_PathInfo("AgentCommands 資料根",
             "**Global —— 只有一組**（Tim 2026-08-31）。酒館 seq／任務單號／session lock 全都假設只有一棵樹。"
             + " Stored 的理由：它可以不在專案裡（pointer 檔 `.agentcommands_root.local` 就是為此存在），"

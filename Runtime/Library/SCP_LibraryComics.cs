@@ -243,5 +243,188 @@ namespace SCP.Core.Library
             aResults.Sort((a, b) => string.Compare(a.SeriesName, b.SeriesName, StringComparison.OrdinalIgnoreCase));
             return aResults;
         }
+
+        // ===========================================================
+        // 區塊職責：回答「某部漫畫的某一話，要看的頁檔實際在哪」（`op=comic_pages`，TASK-0400）。
+        // 物理意義：兩種來源、兩種版面 —— 外部 `<根>/<作品 卷>/<話>/<頁>.jpg`、內部
+        //          `ArtGallery/Comic/<slug>/Chapters/NNN.md`（三位）＋ `RawImages/NNN_pNN.png`（從分鏡稿的圖片連結取）。
+        //          呼叫端（agent）**不必自己拼路徑、也不必呼叫 python**。
+        // 數值影響：純讀。內部漫畫優先（它**沒有**外部資料夾，⛔ 不要因為外部根沒設就說找不到）。
+        // ⚠ 缺的頁要**列出來標缺**，⛔ 不靜默略過：略過的話「這話有 9 頁」與「這話 10 頁而第 4 頁掉了」同形，
+        //   而逐頁看圖寫心得的人會把 9 頁當成全部。
+        // ===========================================================
+
+        /// <summary>某一話的一頁。<see cref="Exists"/> false ＝ 來源（分鏡稿連結）指到卻不在磁碟上。</summary>
+        public sealed class SCP_ComicPage
+        {
+            public string Path = "";
+            public bool Exists;
+        }
+
+        public sealed class SCP_ComicChapterPages
+        {
+            /// <summary>external／internal。</summary>
+            public string Source = "";
+            public string ChapterId = "";
+            /// <summary>外部＝章資料夾；內部＝分鏡稿 .md（正文在那裡，圖在 RawImages）。</summary>
+            public string ChapterPath = "";
+            public List<SCP_ComicPage> Pages = new List<SCP_ComicPage>();
+        }
+
+        /// <summary>某部漫畫有哪些話（沒給 chapter_id 時用）。</summary>
+        public sealed class SCP_ComicChapterIndex
+        {
+            public string Source = "";
+            public List<string> ChapterIds = new List<string>();
+        }
+
+        static readonly Regex s_MarkdownImage = new Regex(@"!\[[^\]]*\]\(([^)\s]+)\)", RegexOptions.Compiled);
+
+        static string? SlugOfComicMedia(string iMediaId)
+            => iMediaId.StartsWith("comic-", StringComparison.Ordinal) && iMediaId.Length > "comic-".Length
+                ? iMediaId.Substring("comic-".Length) : null;
+
+        /// <summary>內部漫畫的話檔名：`0001` ⇒ `001`（三位；0 ⇒ 000）。</summary>
+        static string InternalChapterName(string iChapterId)
+            => int.TryParse(iChapterId, out int aN) && aN >= 0 ? aN.ToString("D3") : iChapterId;
+
+        /// <summary>
+        /// 列出某話的頁檔。回 null ＝ 說不出來（原因在 <paramref name="oError"/>，且會帶上「有哪些可選」）。
+        /// </summary>
+        public static SCP_ComicChapterPages? ListChapterPages(string iDataRoot, string? iComicRoot, string iMediaId,
+                                                              string iChapterId, out string? oError)
+        {
+            oError = null;
+            string? aSlug = SlugOfComicMedia(iMediaId);
+            if (aSlug == null)
+            {
+                oError = $"media_id 必須是 `comic-<slug>`：`{iMediaId}`（漫畫一律獨立 comic media）";
+                return null;
+            }
+
+            string aInternalDir = System.IO.Path.Combine(iDataRoot, InternalComicDirName, "Comic", aSlug);
+            if (Directory.Exists(aInternalDir)) return ListInternalPages(aInternalDir, iChapterId, out oError);
+            return ListExternalPages(iDataRoot, iComicRoot, iMediaId, iChapterId, out oError);
+        }
+
+        /// <summary>列出某部漫畫現有的話號（內部優先、外部其次）。回 null ＝ 找不到這部漫畫。</summary>
+        public static SCP_ComicChapterIndex? ListChapterIds(string iDataRoot, string? iComicRoot, string iMediaId,
+                                                            out string? oError)
+        {
+            oError = null;
+            string? aSlug = SlugOfComicMedia(iMediaId);
+            if (aSlug == null)
+            {
+                oError = $"media_id 必須是 `comic-<slug>`：`{iMediaId}`";
+                return null;
+            }
+            var aOut = new SCP_ComicChapterIndex();
+            string aInternalDir = System.IO.Path.Combine(iDataRoot, InternalComicDirName, "Comic", aSlug);
+            if (Directory.Exists(aInternalDir))
+            {
+                aOut.Source = "internal";
+                string aChapters = System.IO.Path.Combine(aInternalDir, "Chapters");
+                if (Directory.Exists(aChapters))
+                {
+                    foreach (string aFile in Directory.GetFiles(aChapters, "*.md"))
+                    {
+                        string aName = System.IO.Path.GetFileNameWithoutExtension(aFile);
+                        if (int.TryParse(aName, out int aN) && aN >= 0) aOut.ChapterIds.Add(aN.ToString("D4"));
+                    }
+                    aOut.ChapterIds.Sort(StringComparer.Ordinal);
+                }
+                return aOut;
+            }
+            SCP_ExternalComicSeries? aSeries = FindExternalSeries(iDataRoot, iComicRoot, iMediaId, out oError);
+            if (aSeries == null) return null;
+            aOut.Source = "external";
+            foreach (SCP_ExternalComicVolume v in aSeries.Volumes) aOut.ChapterIds.AddRange(v.Chapters);
+            aOut.ChapterIds.Sort(StringComparer.OrdinalIgnoreCase);
+            return aOut;
+        }
+
+        static SCP_ExternalComicSeries? FindExternalSeries(string iDataRoot, string? iComicRoot, string iMediaId,
+                                                           out string? oError)
+        {
+            oError = null;
+            if (string.IsNullOrWhiteSpace(iComicRoot) || !Directory.Exists(iComicRoot))
+            {
+                oError = $"`{iMediaId}` 不是內部漫畫（ArtGallery/Comic 底下沒有它），而外部漫畫庫根沒設定或不存在：`{iComicRoot}`";
+                return null;
+            }
+            List<SCP_ExternalComicSeries> aAll = ScanExternalComics(iDataRoot, iComicRoot, out string? aWarn);
+            foreach (SCP_ExternalComicSeries s in aAll)
+                if (string.Equals(s.MediaId, iMediaId, StringComparison.OrdinalIgnoreCase) && s.Volumes.Count > 0)
+                    return s;
+            int aReal = 0;
+            foreach (SCP_ExternalComicSeries s in aAll) if (s.Volumes.Count > 0) aReal++;
+            oError = $"外部漫畫庫 `{iComicRoot}` 找不到 `{iMediaId}`（掃到 {aReal} 個系列；用 op=comics 看清單）"
+                     + (aWarn != null ? "　⚠ " + aWarn : "");
+            return null;
+        }
+
+        static SCP_ComicChapterPages? ListExternalPages(string iDataRoot, string? iComicRoot, string iMediaId,
+                                                        string iChapterId, out string? oError)
+        {
+            SCP_ExternalComicSeries? aSeries = FindExternalSeries(iDataRoot, iComicRoot, iMediaId, out oError);
+            if (aSeries == null) return null;
+
+            foreach (SCP_ExternalComicVolume v in aSeries.Volumes)
+            {
+                bool aHas = false;
+                foreach (string c in v.Chapters)
+                    if (string.Equals(c, iChapterId, StringComparison.OrdinalIgnoreCase)) { aHas = true; break; }
+                if (!aHas) continue;
+
+                // 章資料夾存在就用它；否則是「根目錄直接放圖（單章）」那種卷
+                string aChDir = System.IO.Path.Combine(v.FolderPath, iChapterId);
+                string aDir = Directory.Exists(aChDir) ? aChDir : v.FolderPath;
+                var aOut = new SCP_ComicChapterPages { Source = "external", ChapterId = iChapterId, ChapterPath = aDir.Replace('\\', '/') };
+                var aFiles = new List<string>();
+                foreach (string f in Directory.GetFiles(aDir))
+                    if (s_ImageExts.Contains(System.IO.Path.GetExtension(f))) aFiles.Add(f);
+                aFiles.Sort(StringComparer.OrdinalIgnoreCase);
+                foreach (string f in aFiles)
+                    aOut.Pages.Add(new SCP_ComicPage { Path = f.Replace('\\', '/'), Exists = true });
+                return aOut;
+            }
+
+            var aIds = new List<string>();
+            foreach (SCP_ExternalComicVolume v in aSeries.Volumes) aIds.AddRange(v.Chapters);
+            aIds.Sort(StringComparer.OrdinalIgnoreCase);
+            oError = $"`{iMediaId}` 沒有第 `{iChapterId}` 話"
+                     + (aIds.Count == 0 ? "（這部沒有任何話）" : $"（有 {aIds.Count} 話：{aIds[0]} … {aIds[aIds.Count - 1]}）");
+            return null;
+        }
+
+        static SCP_ComicChapterPages? ListInternalPages(string iComicDir, string iChapterId, out string? oError)
+        {
+            oError = null;
+            string aName = InternalChapterName(iChapterId);
+            string aChaptersDir = System.IO.Path.Combine(iComicDir, "Chapters");
+            string aMd = System.IO.Path.Combine(aChaptersDir, aName + ".md");
+            if (!File.Exists(aMd))
+            {
+                var aIds = new List<string>();
+                if (Directory.Exists(aChaptersDir))
+                    foreach (string f in Directory.GetFiles(aChaptersDir, "*.md"))
+                        aIds.Add(System.IO.Path.GetFileNameWithoutExtension(f));
+                aIds.Sort(StringComparer.Ordinal);
+                oError = $"內部漫畫沒有分鏡稿 `{aMd.Replace('\\', '/')}`"
+                         + (aIds.Count == 0 ? "（Chapters 底下沒有任何 .md）" : $"（有：{string.Join("、", aIds)}）");
+                return null;
+            }
+
+            var aOut = new SCP_ComicChapterPages { Source = "internal", ChapterId = iChapterId, ChapterPath = aMd.Replace('\\', '/') };
+            string aText = File.ReadAllText(aMd, Encoding.UTF8);
+            foreach (Match m in s_MarkdownImage.Matches(aText))
+            {
+                string aRef = m.Groups[1].Value;
+                if (aRef.Contains("://")) continue;   // 外部網址不是頁檔
+                string aFull = System.IO.Path.GetFullPath(System.IO.Path.Combine(aChaptersDir, aRef)).Replace('\\', '/');
+                aOut.Pages.Add(new SCP_ComicPage { Path = aFull, Exists = File.Exists(aFull) });
+            }
+            return aOut;
+        }
     }
 }
