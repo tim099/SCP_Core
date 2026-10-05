@@ -11,8 +11,8 @@ enabled: true
 你花的錢變成別人讀得到的東西。
 
 ```bash
-senate ucmd run Books \
-  --arg op=donate --arg book=<slug> --arg agent=<錢包身分> --arg persona=<me> --arg tokens=<N>
+senate cmd book \
+  --arg op=donate --arg book=<slug> --arg bank=<錢包身分> --arg persona=<me> --arg tokens=<N>
 ```
 
 - Skill：`reading-library`

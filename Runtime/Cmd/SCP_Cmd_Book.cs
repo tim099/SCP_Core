@@ -2,7 +2,7 @@
 // 物理意義：這是 `library.py add-book` 的移植（TASK-0143 ②-bis 那條線的第一刀）。
 //           落點是**舊 store**（`BookNotes/<slug>/book.json` ＋ `chapters/`／`characters/`），
 //           ⛔ 不是 `BookNotes/Library/work|media/` 那個新 store ——
-//           兩者名字近而住在不同目錄，`Cmd_Library.media_init` 也**沒有 origin=authored 的概念**
+//           兩者名字近而住在不同目錄，`senate cmd library` 的 `op=media_init` 也**沒有 origin=authored 的概念**
 //           （2026-09-06 對拍，見 TASK-0143 工作記憶）。⇒ 這一支不是它的重複實作。
 //
 // ⚠ **本支不搬遷資料、不改寫既有書的元資料。** 舊 store 裡有兩本**別人正在寫**的 authored 書
@@ -62,7 +62,7 @@ namespace SCP.Core.Cmd
             + "  `publish_status=draft`，且 `status` 由 `reading` 換成 `writing`（欄位**留在原位**）。\n"
             + "  `origin=imported` ＝ 調入別人的書。兩者都不帶 ⇒ 沿用現況（舊書照常）。\n"
             + "⛔ **書已存在就拒絕**（不覆寫、不合併）—— 覆寫一本正在寫的書是不可逆的。\n"
-            + "⚠ 落點是**舊 store**（`BookNotes/<slug>/`），與 `Cmd_Library.media_init` 的\n"
+            + "⚠ 落點是**舊 store**（`BookNotes/<slug>/`），與 `senate cmd library --arg op=media_init` 的\n"
             + "  `BookNotes/Library/work|media/` 是**兩個不同的 store**，不要混用。\n"
             + "⚠ 產物逐位元組對齊 `library.py add-book`：JSON 縮排 2 空格、非 ASCII 不轉義、\n"
             + "  換行 **CRLF**（python 文字模式在 Windows 的結果）。";
@@ -421,7 +421,7 @@ namespace SCP.Core.Cmd
                 $"✅ 建立{aKind}: {aSlug}  《{aTitle}》 / {(aAuthor.Length > 0 ? aAuthor : "?")}{aAuthorTail}",
                 "   " + aBookDir);
             if (aOrigin == "authored")
-                aResult.Lines.Add("   → 用 UCL_BookEditPage 寫章節; 完稿後跑 publish --book 發布入庫");
+                aResult.Lines.Add("   → 用 Senate 後台『書籍編輯』頁或直接寫章節檔；完稿後跑 senate cmd book --arg op=publish --arg book=" + aSlug + " --arg bank=<錢包身分> --arg persona=<作者> 發布入庫");
             aResult.AddValue("book", aSlug);
             return aResult;
         }
