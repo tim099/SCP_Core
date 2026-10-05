@@ -24,7 +24,7 @@ namespace SCP.Core.Cmd
             + "  所以兩個入口讀到的是同一份，不會有「哪個 client 的版本比較新」這種狀態。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("wake-brief --arg letters_root=D:/Unity/Bar/AgentCommands/ChatTavern/baton/letters"
+            SCP_CmdRegistry.Invoke("wake-brief"
                                    + " --arg persona=Template --arg wake=4");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

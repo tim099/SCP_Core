@@ -35,7 +35,7 @@ namespace SCP.Core.Cmd
             + "  ⇒ 沒人跑的樣子是「上次停在很久以前」，⛔ 不是「沒有缺口」。早安 brief 每天第一個人會自動跑一次唯讀版。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("bank-reconcile --arg data_root=<AgentCommands> --arg days=7");
+            SCP_CmdRegistry.Invoke("bank-reconcile --arg days=7");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {

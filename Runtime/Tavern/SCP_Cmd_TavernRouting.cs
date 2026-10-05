@@ -23,7 +23,7 @@ namespace SCP.Core.Tavern
             + "· `op=import_unity --arg unity_dir=<UCL_TavernCategoryRoutingAsset 目錄>`：一次性搬家；"
             + "不帶 `confirm=1` 只試算。目標檔已存在要再加 `overwrite=1`。webhook URL 一律剝掉並回報條數。";
         public override string Example =>
-            SCP_CmdRegistry.Invoke("tavern-routing --arg data_root=<資料根> --arg op=resolve --arg category=work");
+            SCP_CmdRegistry.Invoke("tavern-routing --arg op=resolve --arg category=work");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {

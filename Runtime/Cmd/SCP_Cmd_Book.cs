@@ -68,7 +68,7 @@ namespace SCP.Core.Cmd
             + "  換行 **CRLF**（python 文字模式在 Windows 的結果）。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("book --arg data_root=<AgentCommands> --arg op=add"
+            SCP_CmdRegistry.Invoke("book --arg op=add"
                                    + " --arg title=<書名> --arg aliases=<別名;別名>");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

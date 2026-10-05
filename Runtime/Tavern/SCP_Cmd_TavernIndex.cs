@@ -38,7 +38,7 @@ namespace SCP.Core.Tavern
             + "⭐ 任何不一致一律退回全量列舉 —— **把失效降級成「變慢」，不是「算錯」**。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("tavern-index --arg data_root=<AgentCommands> --arg op=verify");
+            SCP_CmdRegistry.Invoke("tavern-index --arg op=verify");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {

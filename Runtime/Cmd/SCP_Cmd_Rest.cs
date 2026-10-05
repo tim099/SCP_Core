@@ -53,8 +53,8 @@ namespace SCP.Core.Cmd
             + "  ——「掉線」與「lock 掛在別的 origin」在那個讀數上**同形**（summit 2026-09-06 實測）。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("rest --arg persona=<你> --arg letters_root=<letters>"
-                                   + " --arg data_root=<AgentCommands> --arg-file letter_body=<檔>"
+            SCP_CmdRegistry.Invoke("rest --arg persona=<你>"
+                                   + " --arg-file letter_body=<檔>"
                                    + " --arg-file summary=<公開心得檔>");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
@@ -221,7 +221,7 @@ namespace SCP.Core.Cmd
             {
                 // 「沒給根」與「發失敗」不同形：前者是我沒要求它發，後者是它沒發成。
                 ioResult.Lines.Add("📢 廣播：**沒給 data_root ⇒ 沒有發**（不是失敗，是沒要求）");
-                ioResult.Lines.Add("   → 要廣播就補 `--arg data_root=<AgentCommands>`");
+                ioResult.Lines.Add("   → 資料根跟著 Senate 後台設定走（CLI 自動帶入）；要廣播請檢查後台設定");
                 return "skipped";
             }
             SCP_ITavernPostGateway? aGate = SCP_TavernPostGatewayHost.Create(iDataRoot);

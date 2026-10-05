@@ -43,7 +43,7 @@ namespace SCP.Core.Tavern
             + "  ⚠ 某一房掃到上限會明說**這份清單不完整**（判準是「有沒有某一房掃到頂」，⛔ 不是總數超標）。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("tavern-query --arg data_root=<AgentCommands> --arg kind=tail"
+            SCP_CmdRegistry.Invoke("tavern-query --arg kind=tail"
                                    + " --arg room=tavern --arg limit=10");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

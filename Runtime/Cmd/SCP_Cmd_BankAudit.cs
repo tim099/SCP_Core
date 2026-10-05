@@ -70,7 +70,7 @@ namespace SCP.Core.Cmd
             + "⛔ 本 Cmd 不寫任何檔；綁定是錢的歸屬，改它要走有審計的寫入端。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("bank-audit --arg letters_root=<letters> --arg data_root=<AgentCommands>"
+            SCP_CmdRegistry.Invoke("bank-audit"
                                    + " --arg region=Florin");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

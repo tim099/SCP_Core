@@ -31,7 +31,7 @@ namespace SCP.Core.Cmd
             + "⚠ 順序：**先寫成功、才搬檔** —— 反過來的話寫入失敗時那個人會從 §6.5 消失而且沒有紅燈。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("portrait-fold --arg letters_root=<root> --arg persona=Template"
+            SCP_CmdRegistry.Invoke("portrait-fold --arg persona=Template"
                                    + " --arg target=summit --arg wake_range=33-49 --arg-file body=<檔>");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

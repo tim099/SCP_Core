@@ -134,8 +134,8 @@ ephemeral（永遠不進候選）：`*.log`、`*.tmp`、`_last_op.md`、`_last_v
 
 | 參數 | 意思 |
 |---|---|
-| `data_root`（必填） | AgentCommands 資料根 |
-| `letters_root`（必填） | persona 信件夾根 |
+| `data_root` | AgentCommands 資料根（CLI 依 Senate 後台設定自動帶入） |
+| `letters_root` | persona 信件夾根（CLI 依 Senate 後台設定自動帶入） |
 | `op` | `scan`（預設）｜`commit` |
 | `groups` | 只做這幾群（逗號分隔，對所有 repo 一體適用）；不給＝各 repo 的 DefaultOn。特殊群只有列在這裡才做 |
 | `only` | 只做這幾個 repo（顯示名；⚠ 打錯的名字 exit 2，不會靜默變成「沒東西可收」） |

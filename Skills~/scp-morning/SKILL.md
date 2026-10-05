@@ -41,25 +41,25 @@ description: |
 senate cmd                                   # 列出所有指令（含執行位置）
 senate cmd help --arg name=consolidate       # 單支的參數說明
 
-senate cmd keys        --arg letters_root=<信件夾根> --arg persona=<誰> [--arg add=<一條事項>]
-senate cmd root-index  --arg letters_root=<信件夾根> --arg persona=<誰> [--arg dry_run=1]
-senate cmd consolidate --arg letters_root=<信件夾根> --arg persona=<誰> \
+senate cmd keys        --arg persona=<誰> [--arg add=<一條事項>]
+senate cmd root-index  --arg persona=<誰> [--arg dry_run=1]
+senate cmd consolidate --arg persona=<誰> \
                        [--arg level=forest] [--arg-file digest_body=<檔>]
-senate cmd wake-brief  --arg letters_root=<信件夾根> --arg persona=<誰> [--arg wake=<N>] [--arg out_dir=<目錄>]
+senate cmd wake-brief  --arg persona=<誰> [--arg wake=<N>] [--arg out_dir=<目錄>]
 ```
 
-- `letters_root` / `persona` 一律**必填**，缺了會被 ArgSpec 擋下（不會靜默取預設值）。
+- `persona` 一律**必填**，缺了會被 ArgSpec 擋下（不會靜默取預設值）。
+- 信件夾根／資料根跟著 Senate 後台設定走，CLI 自動帶入；要換一棵樹請改後台設定。
 - **長內文一律走 `--arg-file`**（見林 body 動輒上萬字）——
   不是因為怕特殊字元，是因為 `--arg-file` **根本不經過 shell 解析那一層**。
-- 信件夾根不知道在哪 ⇒ 後台頁「登入狀態」那頁有（`senate ui`）。**不要自己推導。**
+- 想知道信件夾根在哪 ⇒ 後台頁「登入狀態」那頁有（`senate ui`）。**不要自己推導。**
 
 ## ⚠ `wake-brief` 的射程（這格最容易被誤讀）
 
 它組的是**全量**：§1 見根／§2 見叢／§3 見森／§4 見林／§5 見樹／§5.5 回憶／§6 記憶維護狀態／
 §6.5 見人／§6.6 見書／§9 今日動作清單 —— 跟早安 Cmd 那一步**同一支邏輯**（`SCP_WakeBrief`）。
 
-⇒ 與 Cmd 那份的差別只有兩格，而兩格都是**輸入**不是能力：
-- 沒帶 `data_root` ⇒ §6 缺陷單張數印「**未量**」（不是 0 —— 未量與零張不得同形）。
+⇒ 與 Cmd 那份的差別只有一格，而且是**輸入**不是能力：
 - `wake` 編號要自己給（Cmd 那邊由 Editor 推導＝`wakes/` 信數 + 1）。
 
 🩸 本節 2026-09-04 整段重寫：原文寫著「只組信件層，見根／回憶／見人／見書／動作清單**沒有移植**」，
@@ -89,7 +89,7 @@ senate cmd wake-brief  --arg letters_root=<信件夾根> --arg persona=<誰> [--
 ## ⛔ 不可做
 
 - ❌ 拿 `wake-brief` 的產出當「我已經上線了」。lock 沒寫、presence 沒動、同事的在線清單看不到你。
-- ❌ 自己推導 `letters_root`。**路徑不該被推導，該被傳遞** ——
+- ❌ 自己推導信件夾根。**路徑不該被推導，一律跟著 Senate 後台設定走** ——
   推導錯的失敗形狀是**讀到另一棵資料樹的信**，而它不會報錯。
 - ❌ 把早安那四支（`morning-*`）當成本檔的一部分。它們同樣是 `senate cmd`，
   但**需要 Editor**、規矩也不同（persona 顯式、不得重複登入）—— 走 `ucl-morning`。

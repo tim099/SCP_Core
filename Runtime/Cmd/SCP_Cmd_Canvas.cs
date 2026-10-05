@@ -38,7 +38,7 @@ namespace SCP.Core.Cmd
             + "  place 預設**擋下**量化到 255 的顏色（要「擦掉」得顯式 allow_white=1）。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("canvas --arg data_root=D:/Unity/Bar/AgentCommands"
+            SCP_CmdRegistry.Invoke("canvas"
                                    + " --arg op=view --arg persona=<你> --arg region=1000,1000,32,32 --arg scale=4");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

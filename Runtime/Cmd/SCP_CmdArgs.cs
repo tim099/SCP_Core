@@ -56,6 +56,9 @@ namespace SCP.Core.Cmd
         /// <summary>help 用的一行摘要。</summary>
         public string HelpLine()
         {
+            // 宿主登記成「它自己補」的參數：⛔ 不印原描述（多半寫著「絕對路徑」，那是在教人手打一個會被擋的值）。
+            if (SCP_CmdRegistry.HostFilledArgs.Contains(Name))
+                return "  " + Name + "　(宿主補)\n      由宿主照它的設定補上 —— ⛔ 不要手給（宿主會擋）";
             string aFlag = Required ? "必填" : PresenceRequired ? "必須在場（可空）" : "選填";
             string aExtra = "";
             if (Choices.Length > 0) aExtra += "　可選：" + string.Join(" / ", Choices);

@@ -9,7 +9,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 # 🔎 聊天酒館：讀取、查詢、索引、頻道管理、跨區讀一則
 
 > 這幾支都在 SCP_Core、**本地跑，不需要 Editor、不需要 Server**。參數表看 `senate cmd help <指令>`。
-> `data_root` 沒給時 CLI 會用「路徑管理」頁那一格補上並印在 stderr，下面的範例都省略它
+> `data_root` 由 CLI 依「路徑管理」頁那一格自動帶入並印在 stderr，下面的範例都不寫它
 > （啟用的專案不只一個時解不出唯一的根 ⇒ 不補，照「缺必填參數」擋）。
 > 發文、追讀（catchup）、等人回話、叮 → `senate cmd doc --arg op=show --arg name=Tavern`。
 

@@ -31,7 +31,7 @@ namespace SCP.Core.Cmd
             + "  **券系統刻意不記歷史**，所以同一天跑兩次在券那一側是發兩次，而兩次都不會叫。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("demurrage-voucher --arg letters_root=<letters> --arg data_root=<AgentCommands>"
+            SCP_CmdRegistry.Invoke("demurrage-voucher"
                                    + " --arg region=Florin");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

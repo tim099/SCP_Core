@@ -41,7 +41,7 @@ namespace SCP.Core.Cmd
             + "   原本「檔寫成功卻 exit=1」那條死路已拆掉；本 Cmd 仍是主入口（且不需要 Editor）。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("consolidate --arg letters_root=D:/Unity/LY/AgentCommands/ChatTavern/baton/letters"
+            SCP_CmdRegistry.Invoke("consolidate"
                                    + " --arg persona=Template");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
@@ -120,7 +120,7 @@ namespace SCP.Core.Cmd
             aResult.Lines.Add("");
             aResult.Lines.Add("→ 讀完上列信件後，反思濃縮成 digest body 寫回（長內文走檔案）：");
                 aResult.Lines.Add("  " + SCP_CmdRegistry.Invoke(
-                    "consolidate --arg letters_root=" + iLettersRoot + " --arg persona=" + iPersona
+                    "consolidate --arg persona=" + iPersona
                     + " --arg-file digest_body=<檔> --arg span_start=" + aStatus.SpanStart
                     + " --arg span_end=" + aStatus.SpanEnd));
                 aResult.AddValue("gap", aStatus.Gap.ToString());
@@ -225,7 +225,7 @@ namespace SCP.Core.Cmd
                 aResult.Lines.Add("");
                 aResult.Lines.Add("→ 讀完後寫回（森是**縱向敘事 + fragment 索引指標**，不是見林的串接）:");
                 aResult.Lines.Add("  " + SCP_CmdRegistry.Invoke(
-                    "consolidate --arg letters_root=" + iLettersRoot + " --arg persona=" + iPersona
+                    "consolidate --arg persona=" + iPersona
                     + " --arg level=forest --arg-file digest_body=<檔>"));
                 aResult.AddValue("eligible", "1");
                 aResult.AddValue("forest_overdue", aStatus.Overdue ? "1" : "0");
@@ -457,7 +457,7 @@ namespace SCP.Core.Cmd
                     "🪵 **折人還沒跑完：" + aTargets + " 位 / " + aPortraits + " 幅未歸檔** ⇒ 見林先擋下",
                     "   見林＝這段期間的心得 ＋ 這段期間對同事的看法，**一起寫**（Tim 2026-09-09）——",
                     "   折人排在見林之後，那一輪的看法就只能等下一片，**差一整個見林單位（≈10 個 wake）**。",
-                    "   ⇒ `cmd portrait-next --arg letters_root=" + iLettersRoot
+                    "   ⇒ `cmd portrait-next"
                         + " --arg persona=" + iPersona + " --arg wake_range=<折的時點區間>`",
                     "   ⚠ 跑到它印「折人完成」為止 —— **清單清空才算**，"
                         + "別把「我覺得重要的都折了」當成折完（2026-09-01 血證：gura 少折 17 幅、",
@@ -527,7 +527,7 @@ namespace SCP.Core.Cmd
             iResult.Lines.Add("");
             iResult.Lines.Add("🪵 **折人還沒做完：" + aTargets + " 位 / " + aPortraits + " 幅未歸檔**"
                               + "（見林前該先折人 —— 這一輪的看法才趕得上這一片林）");
-            iResult.Lines.Add("   ⇒ `cmd portrait-next --arg letters_root=<root> --arg persona="
+            iResult.Lines.Add("   ⇒ `cmd portrait-next --arg persona="
                               + iPersona + " --arg wake_range=<折的時點區間>`");
             iResult.Lines.Add("   ⚠ 這是**提示不是守衛** —— 補跑舊區間的見林照跑，"
                               + "但別把「我覺得重要的都折了」當成折完（清單清空才算）。");

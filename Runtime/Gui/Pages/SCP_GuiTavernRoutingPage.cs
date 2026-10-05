@@ -89,7 +89,7 @@ namespace SCP.Core.Gui
             {
                 g.Note("⚠ **判準檔讀不到** ⇒ 這不是「沒有任何 group」：" + m_Disk.Error);
                 if (m_Disk.Missing)
-                    g.Note("第一次要從 Unity asset 匯入：`senate cmd tavern-routing --arg data_root=<資料根> --arg op=import_unity --arg unity_dir=<asset 目錄> --arg confirm=1`");
+                    g.Note("第一次要從 Unity asset 匯入：`senate cmd tavern-routing --arg op=import_unity --arg unity_dir=<asset 目錄> --arg confirm=1`");
                 g.Note("發薪判斷此刻讀不到判準 ⇒ **所有底薪都不會發**（它會在每則訊息印警告）。");
                 if (m_Message != null) g.Note(m_Message);
                 return;

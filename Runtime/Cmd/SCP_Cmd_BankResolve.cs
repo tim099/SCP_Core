@@ -31,7 +31,7 @@ namespace SCP.Core.Cmd
             + "⛔ 本 Cmd 不寫任何檔。銷戶（`closed_accounts`）走有審計的寫入端，不在這裡。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("bank-resolve --arg letters_root=<letters> --arg data_root=<AgentCommands>"
+            SCP_CmdRegistry.Invoke("bank-resolve"
                                    + " --arg region=Florin --arg input=kaguya");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

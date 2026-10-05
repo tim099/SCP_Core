@@ -282,7 +282,7 @@ namespace SCP.Core.Letters
             if (aGap >= CONSOLIDATE_GAP_THRESHOLD)
             {
                 aR.AppendLine($"{aStepNo++}. 見林 OVERDUE → senate cmd consolidate "
-                              + $"--arg letters_root={iR.LettersRoot.Replace('\\', '/')} --arg persona={iPersona}");
+                              + $"--arg persona={iPersona}");
                 aR.AppendLine("   （不帶 digest_body ＝ 只列狀態與待濃縮信件；寫入時長內文走 --arg-file digest_body=<檔>）");
             }
             aRes.Ok = true;

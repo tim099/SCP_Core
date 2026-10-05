@@ -419,7 +419,7 @@ namespace SCP.Core.Letters
                 aLines.Add("");
                 aLines.Add("- 🕘 `todo` / `backlog`：**" + aWaiting.Count.ToString(CultureInfo.InvariantCulture)
                            + " 張**（刻意不逐張列 —— 在動的才佔版面）"
-                           + "　清單 → `cmd tasks --arg data_root=<root> --arg persona=" + iPersona + "`");
+                           + "　清單 → `cmd tasks --arg persona=" + iPersona + "`");
                 aLines.Add("- ⛔ 這些**不要抄進見叢** —— 見叢只放個人代辦，單子這一側每天由本節重算。");
             }
             catch (Exception e)
@@ -642,7 +642,7 @@ namespace SCP.Core.Letters
                 else if (aRun != null)
                     aLines.Add("- 🧾 " + SCP.Core.Cmd.SCP_Cmd_BankReconcile.LastRunLine(aRun)
                                + (aRanNow ? "　（本次早安剛跑）" : "")
-                               + (aRun.GetInt("missing", 0) > 0 ? "　→ 細節 `senate cmd bank-reconcile --arg data_root=<root>`" : ""));
+                               + (aRun.GetInt("missing", 0) > 0 ? "　→ 細節 `senate cmd bank-reconcile`" : ""));
             }
             catch (Exception e)
             {
@@ -895,7 +895,7 @@ namespace SCP.Core.Letters
             int aCovered = aDigests.Count > 0 ? LastCoveredWake(aDigests[aDigests.Count - 1]) : 0;
             int aGap = aCovered > 0 ? iWakeCount - aCovered : -1;
             if (aGap >= DigestGapOverdue)
-                aLines.Add("- 🔴 **見林 OVERDUE**（gap=" + aGap + "）⇒ `cmd consolidate --arg letters_root=<root>"
+                aLines.Add("- 🔴 **見林 OVERDUE**（gap=" + aGap + "）⇒ `cmd consolidate"
                            + " --arg persona=" + iPersona + "`（不給 digest_body ＝ 只看狀態）");
             else if (aGap < 0)
                 aLines.Add("- ⚠ 見林 gap 量不到（檔名解不出涵蓋範圍）⇒ 去看 `longterm/` 那幾份的檔名");
@@ -921,13 +921,13 @@ namespace SCP.Core.Letters
                 }
                 aLines.Add(aFoldTargets > 0
                            ? "- 🪵 **折人待辦：" + aFoldTargets + " 位 / " + aFoldPortraits + " 幅未歸檔**"
-                             + "（見林前先折人）⇒ `cmd portrait-next --arg letters_root=<root> --arg persona="
+                             + "（見林前先折人）⇒ `cmd portrait-next --arg persona="
                              + iPersona + " --arg wake_range=<折的時點區間>`"
                            : "- 🪵 折人：無待辦（根層零幅未歸檔）—— 見林可以直接開始");
             }
-            aLines.Add("- 隨時可丟未解線（不限儀式）：`cmd keys --arg letters_root=<root> --arg persona="
+            aLines.Add("- 隨時可丟未解線（不限儀式）：`cmd keys --arg persona="
                        + iPersona + " --arg add=<一句話>`");
-            aLines.Add("- 對同事的看法（濃縮＋未歸檔，**與本檔 §6.5 同一支邏輯**）：`cmd people --arg letters_root=<root>"
+            aLines.Add("- 對同事的看法（濃縮＋未歸檔，**與本檔 §6.5 同一支邏輯**）：`cmd people"
                        + " --arg persona=" + iPersona + " --arg online=1`");
             aLines.Add("- 本檔是機械產物，**手改無效**（下次覆寫）—— 要改去改 fragment / letter / 見叢原檔。");
             return new SCP_BriefSection { Title = "🎯 §9 今日動作清單", Lines = aLines, Essential = true };
@@ -1342,7 +1342,7 @@ namespace SCP.Core.Letters
             }
 
             aLines.Add("");
-            aLines.Add("> 查全部：`senate cmd book --arg data_root=<AgentCommands> --arg op=writing`"
+            aLines.Add("> 查全部：`senate cmd book --arg op=writing`"
                        + "（與本節**同一支讀取器**：`SCP_BookStore.TryListAuthored`）");
             return new SCP_BriefSection { Title = aTitle, Lines = aLines, Essential = false };
         }
@@ -1363,7 +1363,7 @@ namespace SCP.Core.Letters
                 foreach (SCP_TaskEntry aEntry in aAll)
                     if (aEntry.type == SCP_TaskType.bug && !aEntry.IsClosed()) aOpen++;
                 return "- 🐛 缺陷單（type=bug）：open **" + aOpen.ToString(CultureInfo.InvariantCulture) + "** 張"
-                       + "（清單 → `cmd tasks --arg data_root=<root> --arg type=bug`）";
+                       + "（清單 → `cmd tasks --arg type=bug`）";
             }
             catch (Exception e)
             {

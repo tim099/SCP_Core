@@ -45,7 +45,7 @@ namespace SCP.Core.Cmd
             + "  而現實的成本是每筆成交的手續費。⇒ **按腿計**：A→USD→B 兩筆成交收兩次；一端是 USD 只收一次。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("rate --arg data_root=<AgentCommands> --arg op=list");
+            SCP_CmdRegistry.Invoke("rate --arg op=list");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {

@@ -36,7 +36,7 @@ namespace SCP.Core.Cmd
             + "⚠ 分數不在這裡 —— relationship 是事件帳本、分數由事件重算，這支只給質性看法。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("people --arg letters_root=D:/Unity/Bar/AgentCommands/ChatTavern/baton/letters"
+            SCP_CmdRegistry.Invoke("people"
                                    + " --arg persona=Template --arg target=summit");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

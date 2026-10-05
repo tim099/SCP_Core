@@ -36,7 +36,7 @@ namespace SCP.Core.Cmd
             + "⚠ 與 python `awakening.py keys` 寫出的行**逐字同形**；⚠ python 那側**沒有勾銷**（形狀不變，只是入口少一半）。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("keys --arg letters_root=D:/Unity/LY/AgentCommands/ChatTavern/baton/letters"
+            SCP_CmdRegistry.Invoke("keys"
                                    + " --arg persona=Template --arg add=\"明天先驗 X 那一格\"");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

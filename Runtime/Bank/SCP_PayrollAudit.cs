@@ -453,7 +453,7 @@ namespace SCP.Core.Bank
             {
                 r.Verdict = SCP_PayrollVerdict.NoSample;
                 r.Why = "有 " + r.Messages + " 則訊息，而**沒有一則是應計酬的**"
-                      + (r.ResolverAvailable ? "" : "（⚠ 本次沒帶 letters_root/region ⇒ 解析不到的那些則**沒被扣掉**）");
+                      + (r.ResolverAvailable ? "" : "（⚠ 本次沒給 region（或信件夾根讀不到）⇒ 解析不到的那些則**沒被扣掉**）");
                 return;
             }
             if (r.Missing == 0)

@@ -39,8 +39,7 @@ namespace SCP.Core.Cmd
             + "⚠ 在線守衛已拿掉（Tim 2026-09-30）：自動群收的都是機器獨佔的檔，親筆檔本來就落未分類。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("auto-commit --arg data_root=D:/Unity/LY/AgentCommands"
-                                   + " --arg letters_root=D:/Unity/LY/AgentCommands/ChatTavern/baton/letters");
+            SCP_CmdRegistry.Invoke("auto-commit --arg op=scan");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {

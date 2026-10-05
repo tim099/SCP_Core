@@ -25,6 +25,13 @@ namespace SCP.Core.Cmd
         public static string InvocationHint = "cmd";
 
         /// <summary>
+        /// 宿主照自己的設定補上、**不收使用者手給值**的參數名（Senate 在啟動時登記路徑那幾格；預設空）。
+        /// <para>help 照這份把它們標成「宿主補」、不列進必填 —— 否則 help 會教人手打一個宿主會擋下的參數。
+        /// 擋的那一層在宿主的入口（只有那裡分得出「使用者給的」與「宿主補的」），⛔ 不在共用層。</para>
+        /// </summary>
+        public static readonly HashSet<string> HostFilledArgs = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>
         /// Discover／Register 的鎖。
         /// <para>🩸 2026-09-02：Senate Server 三條 lane 同時第一次 <see cref="Find"/> ⇒ 三個 thread 同時進
         /// <see cref="Discover"/> 清空再填同一個字典 ⇒ <c>InvalidOperationException: Operations that change

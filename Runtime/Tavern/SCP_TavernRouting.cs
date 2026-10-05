@@ -88,7 +88,7 @@ namespace SCP.Core.Tavern
                 r.Missing = aMissing;
                 r.Error = aMissing
                     ? "路由判準檔不存在：" + r.Path + " —— ⛔ 這不是「沒有任何頻道計酬」，是**沒有判準**。"
-                      + "第一次要從 Unity asset 匯入：`senate cmd tavern-routing --arg data_root=<資料根> --arg op=import_unity --arg unity_dir=<asset 目錄> --arg confirm=1`"
+                      + "第一次要從 Unity asset 匯入：`senate cmd tavern-routing --arg op=import_unity --arg unity_dir=<asset 目錄> --arg confirm=1`"
                     : "路由判準檔讀不了（重試用完）：" + aReadErr;
                 return r;
             }

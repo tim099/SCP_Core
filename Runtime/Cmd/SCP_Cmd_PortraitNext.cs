@@ -35,7 +35,7 @@ namespace SCP.Core.Cmd
             + "⚠ 本 Cmd 不寫 sketchbook、不折任何東西 —— 它只是把材料端到面前並算出還剩幾位。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("portrait-next --arg letters_root=<root> --arg persona=Template"
+            SCP_CmdRegistry.Invoke("portrait-next --arg persona=Template"
                                    + " --arg wake_range=33-49");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
@@ -220,12 +220,12 @@ namespace SCP.Core.Cmd
                      + "工具代筆的看法不是妳的），存成一個檔");
             aOut.Add("2. **required** — 折這一版：");
             aOut.Add("   ```");
-            aOut.Add("   senate cmd portrait-fold --arg letters_root=<root> --arg persona=" + iPersona);
+            aOut.Add("   senate cmd portrait-fold --arg persona=" + iPersona);
             aOut.Add("       --arg target=" + aTarget + " --arg wake_range=" + aRangeArg
                      + " --arg by=" + iPersona + " --arg-file body=<妳寫的那個檔>");
             aOut.Add("   ```");
             aOut.Add("3. **required** — 回讀確認（不要信回傳的 ✓）：");
-            aOut.Add("   `senate cmd people --arg letters_root=<root> --arg persona=" + iPersona
+            aOut.Add("   `senate cmd people --arg persona=" + iPersona
                      + " --arg target=" + aTarget + "`");
             if (iPending.Count > 1)
             {
@@ -237,7 +237,7 @@ namespace SCP.Core.Cmd
                 }
                 aOut.Add("4. **required** — **還有 " + aRest.Count + " 位**："
                          + string.Join(" / ", aRest));
-                aOut.Add("   ⇒ 折完這位就再跑一次：`senate cmd portrait-next --arg letters_root=<root>"
+                aOut.Add("   ⇒ 折完這位就再跑一次：`senate cmd portrait-next"
                          + " --arg persona=" + iPersona
                          + (iWakeRange.Length > 0 ? " --arg wake_range=" + iWakeRange : "") + "`");
                 aOut.Add("   ⚠ **一幅也折**（Tim 2026-09-01 拍板）—— 清單空掉才算折完，"

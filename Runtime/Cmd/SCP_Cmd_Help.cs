@@ -67,9 +67,11 @@ namespace SCP.Core.Cmd
                 var aLine = new StringBuilder("  ").Append(aCmd.Name.PadRight(aWidth)).Append("  ").Append(aCmd.Summary);
 
                 // 必填參數直接列在清單上 —— 那是「這支能不能現在就跑」唯一要知道的事。
+                // ⚠ 宿主補的那幾格不列：列了就是在叫人手給一個宿主會擋下的值。
                 var aRequired = new List<string>();
                 foreach (SCP_CmdArgSpec aSpec in aCmd.ArgSpecs)
-                    if (aSpec.Required || aSpec.PresenceRequired) aRequired.Add(aSpec.Name);
+                    if ((aSpec.Required || aSpec.PresenceRequired) && !SCP_CmdRegistry.HostFilledArgs.Contains(aSpec.Name))
+                        aRequired.Add(aSpec.Name);
                 if (aRequired.Count > 0) aLine.Append("　［必填：").Append(string.Join(" , ", aRequired)).Append("］");
 
                 // 執行位置擺在**行尾**而不是行首：Native 是多數，讓多數那群保持乾淨，

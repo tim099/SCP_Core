@@ -44,7 +44,7 @@ namespace SCP.Core.Cmd
             + "  「照段序排過」與「照 seq 排的舊章」必須在產物上分得出來。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("watch --arg data_root=<AgentCommands> --arg op=export"
+            SCP_CmdRegistry.Invoke("watch --arg op=export"
                                    + " --arg from_session=<場次 id> --arg title=<章名>");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

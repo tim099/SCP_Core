@@ -52,7 +52,7 @@ namespace SCP.Core.Cmd
             + "⚠ `region` 不給時 `agent`（帳號 id）欄會缺席 —— 那是**沒人告訴我區域**，不是「這人沒帳號」。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("persona --arg letters_root=D:/Unity/LY/AgentCommands/ChatTavern/baton/letters"
+            SCP_CmdRegistry.Invoke("persona"
                                    + " --arg persona=Template --arg field=email");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]

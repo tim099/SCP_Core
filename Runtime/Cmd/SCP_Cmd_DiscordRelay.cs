@@ -247,7 +247,7 @@ namespace SCP.Core.Cmd
 
         static SCP_CmdResult Avatars(string iRoot, string iLetters, bool iCheck)
         {
-            if (iLetters.Length == 0 || !Directory.Exists(iLetters)) return SCP_CmdResult.Fail(2, $"✗ 要 `--arg letters_root=<persona 信件夾根>`（收到 '{iLetters}'）");
+            if (iLetters.Length == 0 || !Directory.Exists(iLetters)) return SCP_CmdResult.Fail(2, $"✗ 找不到 persona 信件夾根（收到 '{iLetters}'）—— 路徑跟著 Senate 後台設定走（CLI 自動帶入），請檢查後台設定");
             string aT = SCP_DiscordConfigStore.Load(iRoot).AvatarUrlTemplate;
             var aR = SCP_CmdResult.Success($"# persona 的 Discord 頭像網址（範本：{aT}）");
             int aBad = 0;

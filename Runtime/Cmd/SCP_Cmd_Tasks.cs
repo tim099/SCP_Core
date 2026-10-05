@@ -32,7 +32,7 @@ namespace SCP.Core.Cmd
             + "⚠ 壞欄位（例如 status 寫著篩選成員 `all`）會**出聲**並落回預設，不靜默接受。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("tasks --arg data_root=D:/Unity/LY/AgentCommands --arg persona=summit");
+            SCP_CmdRegistry.Invoke("tasks --arg persona=summit");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {

@@ -45,7 +45,7 @@ namespace SCP.Core.Tavern
             + "修它走 `senate cmd tavern-index --arg op=rebuild`。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("tavern-read --arg data_root=<AgentCommands> --arg kind=listrooms");
+            SCP_CmdRegistry.Invoke("tavern-read --arg kind=listrooms");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {

@@ -35,7 +35,7 @@ related:
 | `persona` | **`letter`／`constitution` 必填**（落點綁在某個人身上，猜錯會驗到別人的信與憲法，而且看起來完全正常）；`doc` 選填（帶了才驗得出「本場改過沒」） |
 | `target` | `doc` 必填（repo 相對或絕對）；`letter` 選填；`constitution` **忽略** |
 | `note` | 一句心得，選填 |
-| `data_root`／`letters_root`／`project_root` | senate CLI 沒給時用設定檔補上 |
+| `data_root`／`letters_root`／`project_root` | senate CLI 依 Senate 後台設定自動帶入 |
 
 ## 4. 目標怎麼算（路徑由本支算，呼叫端不必記慣例）
 

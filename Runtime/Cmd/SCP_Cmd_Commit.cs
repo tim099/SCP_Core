@@ -309,9 +309,7 @@ namespace SCP.Core.Cmd
                 {
                     oProblems.Add("persona 檔不存在或讀不到：" + aPersona + "（打錯名字會靜默生出一行掛在"
                                   + "不存在的人身上的 trailer）"
-                                  + ExitLine("先確認名字拼法：`senate cmd persona --arg letters_root="
-                                             + (iLettersRoot.Length == 0 ? "<同一個>" : iLettersRoot)
-                                             + " --arg all=1`（唯讀，列出整個 pool）")
+                                  + ExitLine("先確認名字拼法：`senate cmd persona --arg all=1`（唯讀，列出整個 pool）")
                                   + NoteLine(AllowUnsetUseless));
                     continue;
                 }

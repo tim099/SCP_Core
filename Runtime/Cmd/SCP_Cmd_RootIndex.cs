@@ -22,7 +22,7 @@ namespace SCP.Core.Cmd
             + "⚠ 與 python `awakening.py root-index` 逐字同形；兩支目前並存。";
 
         public override string Example =>
-            SCP_CmdRegistry.Invoke("root-index --arg letters_root=D:/Unity/LY/AgentCommands/ChatTavern/baton/letters"
+            SCP_CmdRegistry.Invoke("root-index"
                                    + " --arg persona=Template");
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
