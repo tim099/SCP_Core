@@ -82,8 +82,7 @@ namespace SCP.Core.Tavern
                 iDefault: ""),
         };
 
-        // Editor 側 `UCL_ChatTavernSettings` 的三個預設值。⚠ 抄值不抄來源 ⇒ 那邊改了這邊不會知道，
-        //   所以它們在下面的輸出上**看得見**（筆數印在標題裡），⛔ 不是靜默生效。
+        // 三個預設筆數（沒給 tail／limit 時用）。它們在下面的輸出上**看得見**（筆數印在標題裡），⛔ 不是靜默生效。
         const int ReadTailCount = 30;
         const int SearchLimit = 50;
         const int SinceLimit = 100;
