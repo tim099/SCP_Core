@@ -296,7 +296,7 @@ namespace SCP.Core.Cmd
             "追上酒館訊息並推進讀取游標。**不強制回**，但近 20 條內有 @ 你的要回應。\n"
             + "⚠ 這一步會**推進游標** —— 跑完就等於宣告「我讀過了」，而那是對同事的宣告。\n"
             + "   順序是**先落回傳檔、再推游標**：回傳檔寫不出來時，訊息不會被標成已讀。\n"
-            + "⚠ 積壓超過回捲上限時游標**拒推**（自己解不開）⇒ 顯式出口 `skip_backlog=1`：推到最新、回傳檔點名跳過哪一段（TASK-0369）。\n"
+            + "⚠ 積壓超過回捲上限（預設 4000 則；酒館設定頁可改）時**自動**處理（TASK-0407）：上限內照讀並推游標、更舊的那段不讀，回傳檔點名跳過哪一段。\n"
             + $"📌 `{SCP_CmdRegistry.NameOf<SCP_Cmd_MorningCatchup>()}` 與 `{SCP_CmdRegistry.NameOf<SCP_Cmd_TavernCatchup>()}` 是**同一支**（同一個 `SCP_TavernCatchup`、同一個 `cmd/ding_brief.md`），只是入口名不同。";
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs
@@ -310,9 +310,10 @@ namespace SCP.Core.Cmd
                 aSpecs.Add(new SCP_CmdArgSpec("include_self", "=1 ⇒ 也列自己的訊息"));
                 aSpecs.Add(new SCP_CmdArgSpec("inbox_show", "inbox 列最新幾筆（預設 10）"));
                 aSpecs.Add(new SCP_CmdArgSpec("advance", "=0 ⇒ 不推游標（這次讀到的下次還會出現）"));
-                // TASK-0369：積壓超過回捲上限時游標永久卡死 ⇒ 給一個**顯式**出口（跳過是對同事的宣告，要人決定）。
+                // TASK-0369 曾給一個顯式出口；TASK-0407 改成自動 ⇒ 此參數**保留但無作用**（不拿掉：舊腳本帶它會被參數預檢 exit 2，
+                // 而那會把「多餘的參數」變成「整支 catchup 掛掉」）。帶了會在回傳檔說「沒有作用」。
                 aSpecs.Add(new SCP_CmdArgSpec("skip_backlog",
-                    "=1 ⇒ 積壓超過回捲上限時**整段跳過、推到最新**（回傳檔點名跳過哪一段）；積壓在上限內時不起作用", iChoices: new[] { "0", "1" }));
+                    "（已無作用，TASK-0407）積壓超過回捲上限會自動處理；帶了也不影響結果，回傳檔會說一句", iChoices: new[] { "0", "1" }));
                 return aSpecs;
             }
         }
@@ -341,7 +342,7 @@ namespace SCP.Core.Cmd
             ioResult.AddValue("cursor_advanced_to", aAdvancedTo ?? "(未推進)");
             if (aBuilt.Skip.Applied)
             {
-                ioResult.AddValue("backlog_skipped_at_least", aBuilt.Skip.SkippedInWindowAtLeast.ToString());
+                ioResult.AddValue("backlog_skipped_at_least", aBuilt.Skip.SkippedAtLeast.ToString());
                 ioResult.AddValue("backlog_first_kept_seq", aBuilt.Skip.FirstKeptSeq.ToString());
             }
             return aPath;

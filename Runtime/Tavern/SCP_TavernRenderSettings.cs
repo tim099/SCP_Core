@@ -4,6 +4,8 @@
 //          寫入端：Senate 後台「酒館設定」頁（SCP_GuiTavernSettingsPage）。
 //          這份檔跟著資料根走（全專案共用），⛔ 不放進 senate.local.json（那是每台機器各自一份）。
 // 數值影響：0 ＝ 不截斷；其餘合法值 80–4000。
+//   另有第三格「回捲上限」（catchup 最多往回捲幾則找已讀邊界，TASK-0407）：合法值 200–20000，預設 4000。
+//   · 跟截斷那兩格**讀取規則不同**：值不合法 ⇒ **照預設 4000 跑並說出來**（⛔ 不夾值 —— 夾成 200 或 20000 都是使用者沒打過的數字）。
 //   · 讀取寬容：檔不存在／讀不了／值不合法 ⇒ 用預設值，原因放在 oError（只影響顯示長度，⛔ 不讓 catchup 失敗）。
 //   · 寫入嚴格：不合法就不寫（⛔ 不悄悄夾值 —— 夾了之後畫面顯示的不是你打的數字，而沒有人會喊）。
 //   · 寫入只改這兩格，檔裡其他鍵原樣保留。
@@ -27,15 +29,23 @@ namespace SCP.Core.Tavern
         public const int DefaultBodyClipMentioned = 1500;
         public const int MinBodyClip = 80;
         public const int MaxBodyClip = 4000;
+        public const string KeyBacklogCap = "backlog_scan_cap";
+        public const int DefaultBacklogCap = SCP_TavernCursor.BACKLOG_SCAN_CAP;
+        public const int MinBacklogCap = 200;
+        public const int MaxBacklogCap = 20000;
 
         /// <summary>一般未讀訊息的內文截斷（字元；0 ＝ 不截斷）。</summary>
         public int BodyClip = DefaultBodyClip;
         /// <summary>@ 到自己的訊息的內文截斷（字元；0 ＝ 不截斷）。</summary>
         public int BodyClipMentioned = DefaultBodyClipMentioned;
+        /// <summary>catchup 回捲上限（則）。積壓超過它時，更舊的那段不讀、並在回傳檔點名跳過（TASK-0407）。</summary>
+        public int BacklogCap = DefaultBacklogCap;
+        /// <summary>true ＝ 這個值是預設（沒設過，或設的值不合法所以照預設）—— 回傳檔據此說「用預設值」。</summary>
+        public bool BacklogCapIsDefault = true;
 
         public SCP_TavernRenderSettings Clone() => (SCP_TavernRenderSettings)MemberwiseClone();
 
-        public bool SameAs(SCP_TavernRenderSettings o) => BodyClip == o.BodyClip && BodyClipMentioned == o.BodyClipMentioned;
+        public bool SameAs(SCP_TavernRenderSettings o) => BodyClip == o.BodyClip && BodyClipMentioned == o.BodyClipMentioned && BacklogCap == o.BacklogCap;
 
         public static string PathOf(string iDataRoot) => Path.Combine(iDataRoot, "ChatTavern", FileName);
 
@@ -49,6 +59,8 @@ namespace SCP.Core.Tavern
             var aBad = new List<string>();
             if (!IsValid(iS.BodyClip)) aBad.Add($"一般訊息截斷 {iS.BodyClip} 不合法（0 或 {MinBodyClip}–{MaxBodyClip}）");
             if (!IsValid(iS.BodyClipMentioned)) aBad.Add($"@ 到自己的訊息截斷 {iS.BodyClipMentioned} 不合法（0 或 {MinBodyClip}–{MaxBodyClip}）");
+            if (iS.BacklogCap < MinBacklogCap || iS.BacklogCap > MaxBacklogCap)
+                aBad.Add($"回捲上限 {iS.BacklogCap} 不合法（{MinBacklogCap}–{MaxBacklogCap}）");
             return aBad;
         }
 
@@ -78,6 +90,18 @@ namespace SCP.Core.Tavern
                 aOut.BodyClipMentioned = ClampForRead(aMention);
                 if (aOut.BodyClip != aClip || aOut.BodyClipMentioned != aMention)
                     oError = $"有值不合法，已夾回 0 或 {MinBodyClip}–{MaxBodyClip}（檔裡寫 {aClip}／{aMention}）：{aPath}";
+                if (aJd.Contains(KeyBacklogCap))
+                {
+                    // 不是數字（字串／布林／物件…）⇒ 一律當不合法（-1），⛔ 不讓 AsInt 丟例外被外層吞成「讀不了」—— 那會把原因講成別的。
+                    SCP_JsonData aCapNode = aJd[KeyBacklogCap];
+                    int aCap = (aCapNode.IsString || aCapNode.IsArray || aCapNode.IsObject || aCapNode.IsNull) ? -1 : aCapNode.AsInt();
+                    if (aCap >= MinBacklogCap && aCap <= MaxBacklogCap) { aOut.BacklogCap = aCap; aOut.BacklogCapIsDefault = false; }
+                    else
+                    {
+                        string aMsg = $"回捲上限不合法（檔裡寫 {aCap}；合法 {MinBacklogCap}–{MaxBacklogCap}）⇒ 照預設 {DefaultBacklogCap} 跑：{aPath}";
+                        oError = oError == null ? aMsg : oError + "；" + aMsg;
+                    }
+                }
             }
             catch (Exception e)
             {
@@ -123,6 +147,9 @@ namespace SCP.Core.Tavern
             }
             aJd.Set(KeyBodyClip, SCP_JsonData.NewNumber(iS.BodyClip));
             aJd.Set(KeyBodyClipMentioned, SCP_JsonData.NewNumber(iS.BodyClipMentioned));
+            // 預設值而且檔裡本來沒有這格 ⇒ 不寫（讓「沒設過」維持沒設過；之後預設值變了才跟得上）
+            if (iS.BacklogCap != DefaultBacklogCap || aJd.Contains(KeyBacklogCap))
+                aJd.Set(KeyBacklogCap, SCP_JsonData.NewNumber(iS.BacklogCap));
 
             try
             {
@@ -138,7 +165,7 @@ namespace SCP.Core.Tavern
             if (aReadErr != null) { oError = "✗ 寫完回讀失敗：" + aReadErr; return false; }
             if (!aBack.SameAs(iS))
             {
-                oError = $"✗ 寫完回讀對不上：寫 {iS.BodyClip}／{iS.BodyClipMentioned}、讀回 {aBack.BodyClip}／{aBack.BodyClipMentioned}";
+                oError = $"✗ 寫完回讀對不上：寫 {iS.BodyClip}／{iS.BodyClipMentioned}／{iS.BacklogCap}、讀回 {aBack.BodyClip}／{aBack.BodyClipMentioned}／{aBack.BacklogCap}";
                 return false;
             }
             return true;

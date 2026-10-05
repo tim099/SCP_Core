@@ -1,4 +1,4 @@
-// 區塊職責：**酒館顯示設定**的後台頁 —— 未讀訊息內文截斷（一般訊息／@ 到自己的訊息）。
+// 區塊職責：**酒館顯示設定**的後台頁 —— 未讀訊息內文截斷（一般訊息／@ 到自己的訊息）＋ catchup 回捲上限（TASK-0407）。
 // 物理意義：真相源是 `<資料根>/ChatTavern/render_settings.json`（SCP_TavernRenderSettings），本頁只是它的編輯器。
 //          讀的人是叮 catchup 與自由時間的配對簡報；改完**下一次**它們跑的時候生效（每次呼叫讀一次，沒有快取）。
 // 數值影響：畫面純讀；唯一的寫入是「儲存」（驗證 → 暫存檔換檔 → 回讀），寫完重讀磁碟 —— 印 ✓ 不算數，讀回來才算。
@@ -74,7 +74,7 @@ namespace SCP.Core.Gui
 
             g.Note("設定檔：`" + SCP_TavernRenderSettings.PathOf(m_Data.Value) + "`");
             if (m_ReadError != null)
-                g.Note("⚠ 設定檔**讀不了或有值不合法**：" + m_ReadError + "　—— 存一次會用畫面上的值覆寫這兩格。");
+                g.Note("⚠ 設定檔**讀不了或有值不合法**：" + m_ReadError + "　—— 存一次會用畫面上的值覆寫這幾格。");
             else if (!m_FileExists)
                 g.Note("・設定檔不存在 ⇒ 目前用預設值（一般 " + SCP_TavernRenderSettings.DefaultBodyClip
                        + "、@ 到自己 " + SCP_TavernRenderSettings.DefaultBodyClipMentioned + "）。存一次就會建立。");
@@ -85,6 +85,11 @@ namespace SCP.Core.Gui
             string k = $"tavern-settings/{m_Gen}";
             m_Draft.BodyClip = IntField(g, "一般未讀訊息", m_Draft.BodyClip, k + "/clip");
             m_Draft.BodyClipMentioned = IntField(g, "@ 到自己的訊息", m_Draft.BodyClipMentioned, k + "/clip-mention");
+
+            g.Note($"catchup 回捲上限（則）：未讀積壓超過它時，**上限內照讀、更舊的那段不讀**（回傳檔會點名跳過哪一段）。"
+                   + $"合法 {SCP_TavernRenderSettings.MinBacklogCap}–{SCP_TavernRenderSettings.MaxBacklogCap}，預設 {SCP_TavernRenderSettings.DefaultBacklogCap}"
+                   + (m_Disk.BacklogCapIsDefault ? "（目前用預設值）。" : "。") + "改完下一次 catchup 就生效。");
+            m_Draft.BacklogCap = IntField(g, "回捲上限", m_Draft.BacklogCap, k + "/backlog-cap");
 
             List<string> aInvalid = SCP_TavernRenderSettings.Validate(m_Draft);
             foreach (string w in aInvalid) g.Note("✗ 不能存：" + w);

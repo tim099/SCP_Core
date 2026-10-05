@@ -22,8 +22,8 @@ namespace SCP.Core.Tavern
         /// <summary>一次交付的未讀**批量**（不是「只看得到這麼多」）。與 Editor 端同值。</summary>
         public const int SCAN_LIMIT = 60;
 
-        /// <summary>為了找出「最舊的那則未讀」最多往回捲多少則 —— **成本上限，不是正確性上限**：
-        /// 捲不到底時 oNewestTs 回 null（拒推游標）。與 Editor 端同值。</summary>
+        /// <summary>回捲上限的**預設值**（則）。實際值讀 `render_settings.json` 的 `backlog_scan_cap`（酒館設定頁可改）。
+        /// 積壓超過它時更舊的那段不讀、由 catchup 點名（TASK-0407）。</summary>
         public const int BACKLOG_SCAN_CAP = 4000;
 
         public static string CursorPath(string iDataRoot, string iPersona)
@@ -79,17 +79,19 @@ namespace SCP.Core.Tavern
         /// </summary>
         public static List<SCP_TavernMessage> ReadUnread(string iDataRoot, string iPersona, string iRoom,
                                                          out string? oNewestTs, out bool oTruncated)
-            => ReadUnread(iDataRoot, iPersona, iRoom, false, out oNewestTs, out oTruncated, out _);
+            => ReadUnread(iDataRoot, iPersona, iRoom, SCP_TavernRenderSettings.ReadOrDefault(iDataRoot).BacklogCap,
+                          out oNewestTs, out oTruncated, out _);
 
         /// <summary>
-        /// 同上，多一個**顯式出口**：<paramref name="iSkipBacklog"/>＝true 且積壓超過 <see cref="BACKLOG_SCAN_CAP"/> 時，
-        /// 改交**最新**的 SCAN_LIMIT 則、水位推到最新，並在 <paramref name="oSkip"/> 回報跳過了哪一段（TASK-0369）。
-        /// <para>🩸 為什麼要有出口：捲不到底就拒推是對的，但它**解不開** —— 之後每天的新訊息只會讓積壓更大，
-        /// 2026-10-01 實測 6 個 persona 的游標卡在 9/16～9/23（kotoko 卡在 6/13），catchup 每天交同一批舊訊息。</para>
-        /// <para>⚠ 只在**真的捲不到底**時生效；積壓在上限內照舊由舊到新交付（<paramref name="oSkip"/>.Applied＝false）。
-        /// ⛔ 不自動：跳過是對同事宣告「我沒讀那段」，要人顯式決定（不帶時照舊拒推）。</para>
+        /// 同上，回捲上限由呼叫端給（<paramref name="iBacklogCap"/>），並回報有沒有跳過太舊的那段（TASK-0407）。
+        /// <para>積壓超過回捲上限時：<b>上限內照常由舊到新交付</b>（游標跟著批次往前），上限之外更舊的那段<b>不讀</b>，
+        /// 並在 <paramref name="oSkip"/> 回報從哪個游標起、到哪一則之前、至少幾則。⛔ 不需要任何顯式參數。</para>
+        /// <para>🩸 為什麼改成自動（TASK-0369 當時選了顯式參數）：跳過等於宣告「那段我沒讀」，但「拒推」讓游標每天更舊、
+        /// 照預設跑<b>永遠解不開</b>（Template 的游標停在 08-31 不動）；Tim 2026-10-05 把那個選擇翻掉。
+        /// 宣告改由回傳檔承擔：跳過的那段照實點名，⛔ 不靜默。</para>
+        /// <para>⚠ 積壓<b>剛好</b>落在上限內（更舊的那端沒有比游標新的訊息）⇒ 什麼都沒跳，<paramref name="oSkip"/>.Applied＝false。</para>
         /// </summary>
-        public static List<SCP_TavernMessage> ReadUnread(string iDataRoot, string iPersona, string iRoom, bool iSkipBacklog,
+        public static List<SCP_TavernMessage> ReadUnread(string iDataRoot, string iPersona, string iRoom, int iBacklogCap,
                                                          out string? oNewestTs, out bool oTruncated,
                                                          out SCP_TavernBacklogSkip oSkip)
         {
@@ -111,6 +113,7 @@ namespace SCP.Core.Tavern
             }
 
             // 往回捲到「窗口最舊的那則已經讀過」為止 —— 只有這個條件成立，才證明最舊的未讀在窗口內。
+            int aCap = Math.Max(SCAN_LIMIT, iBacklogCap);
             int aWindow = SCAN_LIMIT;
             List<SCP_TavernMessage> aScan;
             bool aReachedOldest = false;
@@ -126,8 +129,20 @@ namespace SCP.Core.Tavern
                     break;
                 }
                 if (aOldestTs == null || string.CompareOrdinal(aOldestTs, aCursor) <= 0) { aReachedOldest = true; break; }
-                if (aWindow >= BACKLOG_SCAN_CAP) break;
-                aWindow = Math.Min(aWindow * 4, BACKLOG_SCAN_CAP);
+                if (aWindow >= aCap) break;
+                aWindow = Math.Min(aWindow * 4, aCap);
+            }
+
+            // 捲到上限仍沒碰到已讀邊界：窗口（最新 aCap 則）整個都比游標新。窗口**外**還有沒有比游標新的？
+            //   多撈 SCAN_LIMIT 則探一下 —— 有 ⇒ 那是「太舊、不讀」的一段（至少這麼多則）；一則都沒有 ⇒ 未讀剛好全在窗口內，什麼都沒跳。
+            int aOutsideAtLeast = 0;
+            if (!aReachedOldest)
+            {
+                List<SCP_TavernMessage> aProbe = SCP_TavernRead.Tail(iDataRoot, iRoom, aCap + SCAN_LIMIT);
+                int aOutside = Math.Max(0, aProbe.Count - aScan.Count);
+                for (int i = 0; i < aOutside; i++)
+                    if (!string.IsNullOrEmpty(aProbe[i].Ts) && string.CompareOrdinal(aProbe[i].Ts, aCursor) > 0) ++aOutsideAtLeast;
+                if (aOutsideAtLeast == 0) aReachedOldest = true;
             }
 
             var aUnread = new List<SCP_TavernMessage>();
@@ -138,27 +153,9 @@ namespace SCP.Core.Tavern
                 aUnread.Add(aMsg);
             }
 
-            if (!aReachedOldest && iSkipBacklog)
-            {
-                // 顯式出口：交最新那一批、水位推到最新。被跳過的 ＝ 窗口內沒交付的 ＋ 窗口外更舊的（後者數不到）。
-                int aKeepFrom = Math.Max(0, aUnread.Count - SCAN_LIMIT);
-                for (int i = aKeepFrom; i < aUnread.Count; i++)
-                {
-                    aResult.Add(aUnread[i]);
-                    if (oNewestTs == null || string.CompareOrdinal(aUnread[i].Ts, oNewestTs) > 0) oNewestTs = aUnread[i].Ts;
-                }
-                oSkip = new SCP_TavernBacklogSkip(true, aKeepFrom, aCursor!,
-                                                  aResult.Count > 0 ? aResult[0].Seq : 0);
-                return aResult;
-            }
-
+            // 太舊的那段被跳過 ⇒ 點名：游標之後、窗口第一則之前（交付從窗口第一則起，由舊到新，跟平常一樣分批）。
             if (!aReachedOldest)
-            {
-                // 捲到上限仍沒碰到已讀邊界 ⇒ 最舊的未讀不在手上 ⇒ 任何推進都會跳過它們，拒推。
-                oTruncated = true;
-                for (int i = 0; i < aUnread.Count && i < SCAN_LIMIT; i++) aResult.Add(aUnread[i]);
-                return aResult;
-            }
+                oSkip = new SCP_TavernBacklogSkip(true, aOutsideAtLeast, aCursor!, aUnread.Count > 0 ? aUnread[0].Seq : 0);
 
             int aTake = Math.Min(aUnread.Count, SCAN_LIMIT);
             for (int i = 0; i < aTake; i++)
@@ -172,23 +169,23 @@ namespace SCP.Core.Tavern
     }
 
     /// <summary>
-    /// 「跳過積壓」那個出口實際跳過了什麼（TASK-0369）。<see cref="Applied"/>＝false ⇒ 沒有跳（沒要求，或積壓在上限內）。
-    /// <para>⚠ <see cref="SkippedInWindowAtLeast"/> 是**下限**：窗口外更舊的那段數不到（數得到的話就不會走這個出口了）。</para>
+    /// 「太舊的那段不讀」實際跳過了什麼（TASK-0369／0407）。<see cref="Applied"/>＝false ⇒ 沒有跳（積壓在上限內）。
+    /// <para>⚠ <see cref="SkippedAtLeast"/> 是**下限**：只往窗口外多探了 SCAN_LIMIT 則，更舊的沒數到。</para>
     /// </summary>
     public readonly struct SCP_TavernBacklogSkip
     {
         public readonly bool Applied;
-        /// <summary>回捲窗口內被跳過的筆數（**至少**這麼多 —— 窗口外還有沒數到的）。</summary>
-        public readonly int SkippedInWindowAtLeast;
+        /// <summary>回捲窗口**外**、比游標新而被跳過的筆數（**至少**這麼多 —— 更舊的沒數到）。</summary>
+        public readonly int SkippedAtLeast;
         /// <summary>跳過那段的起點 ＝ 本次之前的游標（嚴格大於它的才是未讀）。</summary>
         public readonly string FromCursorTs;
         /// <summary>交付出去的第一則 seq ⇒ 被跳過的是「游標之後、這一則之前」。0 ＝ 沒交付任何一則。</summary>
         public readonly int FirstKeptSeq;
 
-        public SCP_TavernBacklogSkip(bool iApplied, int iSkippedInWindowAtLeast, string iFromCursorTs, int iFirstKeptSeq)
+        public SCP_TavernBacklogSkip(bool iApplied, int iSkippedAtLeast, string iFromCursorTs, int iFirstKeptSeq)
         {
             Applied = iApplied;
-            SkippedInWindowAtLeast = iSkippedInWindowAtLeast;
+            SkippedAtLeast = iSkippedAtLeast;
             FromCursorTs = iFromCursorTs ?? "";
             FirstKeptSeq = iFirstKeptSeq;
         }

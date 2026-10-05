@@ -29,9 +29,9 @@ namespace SCP.Core.Tavern
         /// <summary>可安全推進到的水位；null＝不得推進（0 筆未讀／積壓超過回捲上限）。</summary>
         public string? NewestTs;
         public bool Truncated;
-        /// <summary>帶了 skip_backlog 時實際跳過了什麼（TASK-0369）；沒跳 ⇒ Applied＝false。</summary>
+        /// <summary>積壓超過回捲上限時，太舊而不讀的那段（TASK-0407）；沒跳 ⇒ Applied＝false。</summary>
         public SCP_TavernBacklogSkip Skip;
-        /// <summary>有要求跳過積壓（不論實際有沒有跳）—— 用來說「這次帶了但用不到」。</summary>
+        /// <summary>呼叫端還帶了已經沒有作用的 skip_backlog —— 用來說「這個參數不需要了」。</summary>
         public bool SkipRequested;
     }
 
@@ -55,10 +55,16 @@ namespace SCP.Core.Tavern
             sb.AppendLine($"- 游標（本次之前）：{(string.IsNullOrEmpty(cursorBefore) ? "**（從未設過）** —— 下面會是最近 " + minCount + " 筆，不是全庫" : "`" + cursorBefore + "`")}");
             sb.AppendLine();
 
+            // 回捲上限：每次呼叫讀設定（改完下一次就生效）。沒設過 ⇒ 預設並明說；不合法 ⇒ 照預設跑並說出原因。
+            SCP_TavernRenderSettings aSet = SCP_TavernRenderSettings.Read(iDataRoot, out _, out string? aSetErr);
+            sb.AppendLine($"- 回捲上限：**{aSet.BacklogCap}** 則（{(aSet.BacklogCapIsDefault ? "用預設值" : "設定檔 render_settings.json")}；酒館設定頁可改）"
+                + (aSetErr != null ? $"　⚠ {aSetErr}" : ""));
+            sb.AppendLine();
+
             AppendOnline(sb, iLettersRoot, iPersona);
 
             // ── 未讀 ──
-            var unread = SCP_TavernCursor.ReadUnread(iDataRoot, iPersona, room, iSkipBacklog,
+            var unread = SCP_TavernCursor.ReadUnread(iDataRoot, iPersona, room, aSet.BacklogCap,
                                                      out string? newestTs, out bool truncated, out SCP_TavernBacklogSkip skip);
             aOut.Skip = skip;
             aOut.SkipRequested = iSkipBacklog;
@@ -97,13 +103,13 @@ namespace SCP.Core.Tavern
             if (skip.Applied)
             {
                 // ⚠ 跳過的那段要**點名**：從哪個游標起、到哪一則之前、至少幾則 —— 並給回讀的路。
-                sb.AppendLine("⏭ **已跳過積壓**（`skip_backlog=1`）—— 下面是**最新**的那批，不是最舊的。");
+                sb.AppendLine($"⏭ **已跳過太舊的那段**（積壓超過回捲上限 {aSet.BacklogCap} 則，TASK-0407）—— 上限內照常由舊到新交付，更舊的不讀。");
                 sb.AppendLine($"   跳過的是：游標 `{skip.FromCursorTs}` 之後、**seq {skip.FirstKeptSeq} 之前**的訊息，"
-                    + $"**至少 {skip.SkippedInWindowAtLeast} 則**（回捲上限 {SCP_TavernCursor.BACKLOG_SCAN_CAP} 則之外更舊的沒數到）。");
+                    + $"**至少 {skip.SkippedAtLeast} 則**（只往窗口外多探了 {SCP_TavernCursor.SCAN_LIMIT} 則，更舊的沒數到）。");
                 sb.AppendLine($"   要回頭看：`{SCP.Core.Cmd.SCP_CmdRegistry.InvokeOf<SCP_Cmd_TavernQuery>("--arg kind=seq --arg from=1 --arg to=" + Math.Max(1, skip.FirstKeptSeq - 1) + " --arg grep=@" + iPersona)}`（先撈 @ 你的）");
             }
-            else if (iSkipBacklog && !truncated)
-                sb.AppendLine("· 帶了 `skip_backlog=1`，但積壓在回捲上限內 ⇒ **沒有跳過任何一則**，照舊由舊到新交付。");
+            if (iSkipBacklog)
+                sb.AppendLine("· `skip_backlog` 已不需要（TASK-0407：積壓超過回捲上限會自動處理）⇒ 這次帶了**沒有作用**。");
             if (truncated)
                 sb.AppendLine("⚠ **未讀一次交付不完** —— 這批是**最舊的**那段；更新的還留在未讀裡，"
                     + "再跑一次 catchup 會接著給（不會遺失）。");
@@ -136,15 +142,12 @@ namespace SCP.Core.Tavern
             if (!iAdvance)
                 return ("- 游標：**未推進**（`advance=0`）—— 這次讀到的下次還會再出現。", null);
             if (string.IsNullOrEmpty(iBuilt.NewestTs))
-                return (iBuilt.Truncated
-                    ? "- 游標：**未推進**（積壓超過回捲上限 —— 最舊的未讀還沒進到窗口）"
-                      + " ⇒ 推了就會永久跳過它們。要整段跳過、推到最新：再跑一次並帶 `--arg skip_backlog=1`（會點名跳過哪一段）。"
-                    : "- 游標：**未推進**（本次 0 筆未讀）—— 沒有讀數就不該移動水位。", null);
+                return ("- 游標：**未推進**（本次 0 筆未讀）—— 沒有讀數就不該移動水位。", null);
             string? aErr = SCP_TavernCursor.WriteCursor(iDataRoot, iPersona, iBuilt.NewestTs!);
             string? readBack = SCP_TavernCursor.ReadCursor(iDataRoot, iPersona);
             string aLine = readBack == iBuilt.NewestTs
                 ? $"- ✓ 游標已推進到 `{readBack}`（寫入後讀回確認）"
-                  + (iBuilt.Skip.Applied ? $"　⏭ 跳過了 seq {iBuilt.Skip.FirstKeptSeq} 之前至少 {iBuilt.Skip.SkippedInWindowAtLeast} 則（見上面那段）" : "")
+                  + (iBuilt.Skip.Applied ? $"　⏭ 跳過了 seq {iBuilt.Skip.FirstKeptSeq} 之前至少 {iBuilt.Skip.SkippedAtLeast} 則（見上面那段）" : "")
                 : $"- ✗ 游標寫入後讀回不符：期望 `{iBuilt.NewestTs}`、實際 `{readBack}` —— 下次會重讀這一段"
                   + (aErr != null ? $"（寫入丟了：{aErr}）" : "");
             return (aLine, readBack);
