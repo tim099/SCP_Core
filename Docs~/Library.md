@@ -75,9 +75,27 @@ senate cmd library --arg op=share --arg persona=<persona> --arg media_id=<media-
 
 ## 頁面
 
-Senate「閱讀心得」頁（`senate ui`，群組「閱讀」）：全庫瀏覽（媒材 → 作品 → persona）、作品入口搜尋（正本／Archive 分開計數）、追回檢視（可切全文）與「產生追回檔」。資料與 `library` 同源。
+`senate ui`，群組「閱讀」底下三頁，資料都與對應的指令同源（頁面不存路徑、不自己解析檔案欄位）：
 
-`scan` 產出審計報告，疑似同作品由人確認；`show_migrated=1` 包含已遷移項目。
+| 頁 | key | 做什麼 |
+|---|---|---|
+| 閱讀心得 | `reading` | 全庫瀏覽（媒材 → 作品 → persona）、作品入口搜尋（正本／Archive 分開計數）、追回檢視（可切全文）與「產生追回檔」 |
+| 漫畫庫 | `comics` | 外部漫畫庫作品清單（🟢已建檔／🟡來源失聯／⚪未建檔）、卷話明細、開資料夾；未建檔的可「初始化 Library media」（**先預覽、確認才寫**；署名 persona 由工具列明確選，期待度固定 3）。路徑設定只住路徑管理頁 |
+| 書店 | `bookshop` | 藏書架（依系列，可依 kind 篩選）、全文書庫（含「編輯書籍」→ `bookedit` 頁）、捐贈簿、捐贈表單（**先預覽、確認才扣款**）、推薦書單 |
+
+## 書店（`senate cmd book`）的藏書架與分類
+
+```bash
+senate cmd book --arg op=shelf [--arg kind=original|external|watch-log|tavern-history]   # 藏書總覽（一列一個系列，單書自成一系列）
+senate cmd book --arg op=series [--arg series=<id>]                                       # 不帶 series＝所有已註冊系列；帶＝該系列書單（含閱讀用 id）
+senate cmd book --arg op=classify --arg book=<id> [--arg kind=…] [--arg series=<id>] [--arg volume=N] \
+  [--arg series_title=<顯示名>] [--arg parent_series=<id> --arg parent_series_title=<顯示名>] [--arg series_note=…]
+```
+
+`shelf`／`series` 純讀；`classify` 是唯一的分類寫入通道，只改 `_donation.json` 的 kind／series／volume（補寫 origin）與 `Books/_series.json`，**不動錢**。
+- `series`／`parent_series` **顯式傳空字串＝脫離系列／上位**，跟沒傳是兩件事。
+- 系列首次使用必須帶 `series_title`（不自動拿 id 當名字 —— 打錯字會長出一個看起來正常的新系列）；上位系列同理。
+- **版面照原檔**：磁碟上 `_donation.json` 同時有 tab 縮排（舊 writer）與 2 空格兩種，結尾換行有無也不一致；`classify` 寫回時保留原檔的版面與結尾換行，`_series.json` 用舊 writer 版面且不補結尾換行。對一本書做「不改任何值」的 classify，兩種版面的檔案都位元組不變。
 
 `scan` 產出審計報告，疑似同作品由人確認；`show_migrated=1` 包含已遷移項目。
 `authored_diff` 帶 book 與 work_id 對拍寫書資料；`authored_migrate` 預設 dry-run，帶 `confirm=1` 才寫入。

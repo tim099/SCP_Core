@@ -77,6 +77,8 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("op", "add（建一本新書）｜log-chapter（記一章）｜arc（記階段大綱）"
                                + "｜writing（列出寫到一半的書，**純讀**）"
                                + "｜donations（共享圖書館捐贈簿，純讀）｜tips（打賞簿，純讀）"
+                               + "｜shelf（藏書架總覽，純讀）｜series（系列清單／某系列書單，純讀）"
+                               + "｜classify（設定某本書的 kind／series／volume，**只改分類、不動錢**）"
                                + "｜**donate／publish／tip／retry-tips（會動錢；需要宿主裝上書店閘）**"
                                + " —— 預設 writing，⭐ 純讀的那個當預設"),
             new SCP_CmdArgSpec("bank", "錢包／帳戶身分（donate／publish／tip 必填 —— 錢從誰的帳出不能猜）"),
@@ -85,6 +87,14 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("actual_agent", "實際承載的桌面工具（選填，記錄用）"),
             new SCP_CmdArgSpec("persona", "op=writing 用：只看這位作者的書（省略＝全部作者）"),
             new SCP_CmdArgSpec("book_filter", "op=tips 用：只看這一本的打賞（省略＝全部）"),
+            new SCP_CmdArgSpec("kind", "original｜external｜watch-log｜tavern-history —— op=classify 選填；op=shelf 當篩選"),
+            new SCP_CmdArgSpec("series", "系列 id —— op=series 查某系列書單（省略＝列所有已註冊系列）；"
+                                         + "op=classify 設定（⚠ 顯式傳空字串＝脫離系列，跟「沒傳」是兩件事）"),
+            new SCP_CmdArgSpec("volume", "op=classify 用：冊次整數（0＝未指定）"),
+            new SCP_CmdArgSpec("series_title", "op=classify 用：系列顯示名（首次使用某系列時必填 —— 不自動拿 id 當名字）"),
+            new SCP_CmdArgSpec("parent_series", "op=classify 用：上位系列 id（做巢狀：世界觀 › 三部曲；顯式空字串＝脫離上位）"),
+            new SCP_CmdArgSpec("parent_series_title", "op=classify 用：上位系列顯示名（parent_series 首次使用時必填）"),
+            new SCP_CmdArgSpec("series_note", "op=classify 用：系列一句話說明"),
             new SCP_CmdArgSpec("book", "op=log-chapter／arc 用：書本 slug（必填）"),
             new SCP_CmdArgSpec("chapter", "op=log-chapter 用：章號，整數（必填）"),
             new SCP_CmdArgSpec("slug", "op=log-chapter 用：章節檔名 slug（省略＝由 title 生成，再省略＝ch<N>）"),
@@ -125,13 +135,16 @@ namespace SCP.Core.Cmd
                 "writing" => OpWriting(aDataRoot, iArgs),
                 "donations" => OpDonations(aDataRoot),
                 "tips" => OpTips(aDataRoot, iArgs),
+                "shelf" => Emit(SCP_BooksShelf.RenderShelf(aDataRoot, iArgs.Get("kind").Trim())),
+                "series" => Emit(SCP_BooksShelf.RenderSeries(aDataRoot, iArgs.Get("series").Trim())),
+                "classify" => OpClassify(aDataRoot, iArgs),
                 // ⚠ 底下四支**會動錢** —— 它們要宿主裝上書店閘（`SCP_BooksGatewayHost.Factory`）。
                 "donate" => OpMoney(aDataRoot, iArgs, "donate"),
                 "publish" => OpMoney(aDataRoot, iArgs, "publish"),
                 "tip" => OpMoney(aDataRoot, iArgs, "tip"),
                 "retry-tips" => OpMoney(aDataRoot, iArgs, "retry-tips"),
                 _ => SCP_CmdResult.Fail(2,
-                    $"✗ 不認得的 op：`{aOp}`（吃的是 add｜log-chapter｜arc｜writing｜donations｜tips"
+                    $"✗ 不認得的 op：`{aOp}`（吃的是 add｜log-chapter｜arc｜writing｜donations｜tips｜shelf｜series｜classify"
                     + "｜donate｜publish｜tip｜retry-tips）"),
             };
         }
@@ -262,6 +275,28 @@ namespace SCP.Core.Cmd
 
         static SCP_CmdResult OpTips(string iDataRoot, SCP_CmdArgs iArgs)
             => Emit(SCP_BooksDonations.RenderTips(iDataRoot, iArgs.Get("book_filter").Trim()));
+
+        // ── op=classify ───────────────────────────────────────────────────────
+        // 區塊職責：設定某本書的 kind／series／volume（唯一的分類寫入通道；TASK-0403）。**只改分類欄位，不動錢。**
+        // ⚠ `series`／`parent_series` 用 IsExplicit 判斷「有沒有傳」而不是判空字串：
+        //   傳空字串是「脫離系列」的唯一表達方式，跟沒傳是兩件事（Unity 版用 args.ContainsKey，同一個判準）。
+        static SCP_CmdResult OpClassify(string iDataRoot, SCP_CmdArgs iArgs)
+        {
+            string aBook = iArgs.Get("book").Trim();
+            if (aBook.Length == 0) return SCP_CmdResult.Fail(2, "✗ 缺 `book`（書本 slug）");
+            string? aLog = SCP_BooksShelf.Classify(iDataRoot, aBook,
+                iArgs.Get("kind").Trim(),
+                iArgs.IsExplicit("series") ? iArgs.Get("series").Trim() : null,
+                iArgs.Get("volume").Trim(),
+                iArgs.Get("series_title").Trim(),
+                iArgs.IsExplicit("parent_series") ? iArgs.Get("parent_series").Trim() : null,
+                iArgs.Get("parent_series_title").Trim(),
+                iArgs.Get("series_note").Trim(),
+                out string? aError);
+            if (aLog == null) return SCP_CmdResult.Fail(1, "✗ classify：" + (aError ?? "（沒有給理由）"));
+            var aResult = Emit("# 🏷 Books classify\n\n" + aLog);
+            return aResult;
+        }
 
         /// <summary>把報表整段逐行放進結果 —— ⚠ 尾端空行**不吃掉**（吃掉就跟 Editor 那側差一格）。</summary>
         static SCP_CmdResult Emit(string iText)

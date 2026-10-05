@@ -370,7 +370,7 @@ namespace SCP.Core.Books
             SaveJson(aPath, iEntry);
         }
 
-        static void Stamp(SCP_JsonData ioEntry, SCP_BookOrigin iOrigin, SCP_BookKind iKind,
+        internal static void Stamp(SCP_JsonData ioEntry, SCP_BookOrigin iOrigin, SCP_BookKind iKind,
                           string iSeries, int iVolume)
         {
             ioEntry.Set(SCP_BooksClassification.Key_Origin,
@@ -381,23 +381,23 @@ namespace SCP.Core.Books
             ioEntry.Set(SCP_BooksClassification.Key_Volume, SCP_JsonData.NewNumber(iVolume));
         }
 
-        static SCP_BookOrigin OriginOf(SCP_JsonData? iEntry, string iSlug)
+        internal static SCP_BookOrigin OriginOf(SCP_JsonData? iEntry, string iSlug)
             => SCP_BooksClassification.DeriveOrigin(
                 iEntry?.GetString(SCP_BooksClassification.Key_Origin, ""),
                 iEntry?.GetString(SCP_BooksClassification.Key_Source, ""));
 
-        static SCP_BookKind KindOf(SCP_JsonData? iEntry, string iSlug)
+        internal static SCP_BookKind KindOf(SCP_JsonData? iEntry, string iSlug)
             => SCP_BooksClassification.DeriveKind(
                 iEntry?.GetString(SCP_BooksClassification.Key_Kind, ""),
                 iEntry?.GetString(SCP_BooksClassification.Key_Source, ""),
                 iEntry?.GetString(SCP_BooksClassification.Key_Origin, ""),
                 iSlug);
 
-        static string SeriesOf(SCP_JsonData? iEntry, string iSlug)
+        internal static string SeriesOf(SCP_JsonData? iEntry, string iSlug)
             => SCP_BooksClassification.DeriveSeries(
                 iEntry?.GetString(SCP_BooksClassification.Key_Series, ""), iSlug);
 
-        static int VolumeOf(SCP_JsonData? iEntry)
+        internal static int VolumeOf(SCP_JsonData? iEntry)
             => iEntry?.GetInt(SCP_BooksClassification.Key_Volume, 0) ?? 0;
 
         static string Today() => DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -412,7 +412,7 @@ namespace SCP.Core.Books
             return aOut.Length > 40 ? aOut.Substring(0, 40) : (aOut.Length == 0 ? "unknown" : aOut);
         }
 
-        static SCP_JsonData? LoadJson(string iPath, out string? oError)
+        internal static SCP_JsonData? LoadJson(string iPath, out string? oError)
         {
             oError = null;
             if (!File.Exists(iPath)) { oError = $"檔案不存在：{iPath}"; return null; }
@@ -426,7 +426,7 @@ namespace SCP.Core.Books
         }
 
         // ⚠ 判準④：正典格式由**這一支** writer 決定。
-        static void SaveJson(string iPath, SCP_JsonData iData)
+        internal static void SaveJson(string iPath, SCP_JsonData iData)
             => SCP_TextFile.WriteCrLf(iPath, SCP_JsonWriter.Write(iData, iIndented: true, iIndent: "  ") + "\n");
     }
 }
