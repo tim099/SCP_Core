@@ -12,6 +12,7 @@
 // 🩸 寫入端的兩個版面（TASK-0234 basecamp 2026-09-17 的警告：「registry 被兩個序列化器輪流整檔重寫，
 //   逐鍵相同、逐位元組不同，而整批翻紅時沒有一層會喊」）：
 //   · `_donation.json`：與 `SCP_BooksOps` 同一支 `SaveJson`（2 空格／冒號後有空格／CRLF）—— 不在這裡再寫第二份。
+//     （Tim 2026-10-05：統一成這個版面；舊 writer 的 tab 版面用 `op=normalize_donations` 一次轉掉。）
 //   · `_series.json`：舊 writer 是 tab 縮排／冒號後無空格／陣列 `[` 自己佔一行（＝ `SCP_JsonStyle.UclLegacy`）。
 //   · 改寫 `_series.json` 時**改的是解析出來的原樹**（不是 typed 重建）⇒ 未知鍵與鍵序原樣保留（SCP_Json 規則③）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
@@ -291,7 +292,6 @@ namespace SCP.Core.Books
                 oError = $"《{iBook}》不在登記簿（{aDPath} 不存在）—— 先 publish / donate 才能分類";
                 return null;
             }
-            string aOrigText = SafeReadText(aDPath);
             SCP_JsonData? aD = SCP_BooksOps.LoadJson(aDPath, out string? aErr);
             if (aD == null) { oError = $"讀取 _donation.json 失敗：{aErr}"; return null; }
 
@@ -380,7 +380,7 @@ namespace SCP.Core.Books
             }
 
             SCP_BooksOps.Stamp(aD, aOrigin, aKind, aNewSeries, aVolume);
-            SaveDonationKeepingStyle(aDPath, aD, aOrigText);
+            SCP_BooksOps.SaveJson(aDPath, aD);   // 正典版面（Tim 2026-10-05：_donation.json 統一新格式）
 
             // 印 ✓ 不算數 —— 回讀落地的檔案再報
             SCP_JsonData? aBack = SCP_BooksOps.LoadJson(aDPath, out _);
@@ -403,23 +403,60 @@ namespace SCP.Core.Books
             catch (UnauthorizedAccessException) { return ""; }
         }
 
-        // 區塊職責：把 `_donation.json` 寫回去，**版面照原檔**。
-        // 物理意義：磁碟上同時有兩種 writer 的沉積 —— tab 縮排／冒號後無空格／結尾無換行（Unity 舊 writer，
-        //          =`SCP_JsonStyle.UclLegacy`，量到 14 份）與 2 空格／冒號後有空格（Senate／python，量到 29 份），
-        //          結尾換行有無也不一致。classify 只該改四個分類欄位，⛔ 不該順手把整份檔換一種版面。
-        // 🩸 血證（2026-10-05，TASK-0403 第一次實跑）：對 `farseer-trilogy_01` 做「不改任何值」的 classify，
-        //   `_donation.json` 被 2 空格版面整檔重寫 ⇒ 內容逐鍵相同、位元組不同；這正是 TASK-0234 警告的 BUG-6 形狀。
-        // 數值影響：原檔含 tab 縮排的鍵行 ⇒ 用 UclLegacy；否則沿用 `SCP_BooksOps.SaveJson` 的 2 空格。
-        //          結尾換行有無照原檔；原檔讀不到（空字串）⇒ 走 `SCP_BooksOps.SaveJson` 預設。
-        static void SaveDonationKeepingStyle(string iPath, SCP_JsonData iData, string iOrigText)
+        // ===========================================================
+        // op=normalize_donations —— 把全部 `_donation.json` 統一成正典版面（Tim 2026-10-05）。
+        // 物理意義：磁碟上同時有兩種 writer 的沉積 —— tab 縮排／冒號後無空格／結尾無換行（Unity 舊 writer，量到 14 份）與
+        //          2 空格／冒號後有空格／結尾換行（`SCP_BooksOps.SaveJson`，Senate 的正典）。
+        //          🩸 第一次實跑 classify 就撞到（2026-10-05）：兩種版面並存時，任何一支 writer 動一本書都會把它整檔換版面
+        //          （內容逐鍵相同、位元組不同 —— TASK-0234 警告的 BUG-6 形狀）。統一之後 writer 只有一種版面。
+        // 數值影響：**預設 dry-run（零寫入）**，iConfirm 才寫。只動版面，不動任何值：
+        //          寫前先驗「新版面文字 parse 回來 ＝ 原檔 parse 結果」（compact 比對），不等就整本跳過並列為失敗；
+        //          寫後再讀回驗位元組等於預期。已是正典版面的檔**不碰**（連 mtime 都不動）。
+        // ===========================================================
+        public static string NormalizeDonations(string iDataRoot, bool iConfirm, out int oChanged, out int oFailed)
         {
-            if (iOrigText.Length == 0) { SCP_BooksOps.SaveJson(iPath, iData); return; }
-            bool aLegacy = iOrigText.Contains("\n\t\"");
-            bool aTrailingNewline = iOrigText.EndsWith("\n", StringComparison.Ordinal);
-            string aBody = aLegacy
-                ? SCP_JsonWriter.Write(iData, SCP_JsonStyle.UclLegacy)
-                : SCP_JsonWriter.Write(iData, iIndented: true, iIndent: "  ");
-            SCP_TextFile.WriteCrLf(iPath, aBody + (aTrailingNewline ? "\n" : ""));
+            oChanged = 0;
+            oFailed = 0;
+            var aSb = new StringBuilder();
+            var aDirs = SCP_BooksDonations.DonationDirs(iDataRoot);
+            int aAlready = 0;
+            foreach (string aDir in aDirs)
+            {
+                string aSlug = Path.GetFileName(aDir);
+                string aPath = Path.Combine(aDir, SCP_BooksDonations.DonationFileName);
+                string aOrig;
+                SCP_JsonData aData;
+                try
+                {
+                    aOrig = File.ReadAllText(aPath, Encoding.UTF8);
+                    aData = SCP_JsonData.Parse(aOrig);
+                    if (!aData.IsObject) throw new InvalidOperationException("不是 JSON 物件");
+                }
+                catch (Exception e) { oFailed++; aSb.AppendLine($"✗ `{aSlug}`：讀不了（{e.Message}）—— 未動"); continue; }
+
+                // 正典文字（與 SCP_BooksOps.SaveJson 同一個式子；CRLF 由 WriteCrLf 統一）
+                string aWant = (SCP_JsonWriter.Write(aData, iIndented: true, iIndent: "  ") + "\n")
+                               .Replace("\r\n", "\n").Replace("\n", "\r\n");
+                if (aOrig == aWant) { aAlready++; continue; }
+
+                // 寫前驗：新版面文字 parse 回來必須等於原檔 parse 結果
+                string aBefore = aData.ToJson(false);
+                string aAfterParse;
+                try { aAfterParse = SCP_JsonData.Parse(aWant).ToJson(false); }
+                catch (Exception e) { oFailed++; aSb.AppendLine($"✗ `{aSlug}`：新版面 parse 不回來（{e.Message}）—— 未動"); continue; }
+                if (aBefore != aAfterParse) { oFailed++; aSb.AppendLine($"✗ `{aSlug}`：版面轉換會改變內容 —— 未動"); continue; }
+
+                string aKind = aOrig.Contains("\n\t\"") ? "tab 舊版面" : "版面/結尾換行不同";
+                if (!iConfirm) { oChanged++; aSb.AppendLine($"・`{aSlug}`：會轉換（{aKind}）"); continue; }
+
+                SCP_BooksOps.SaveJson(aPath, aData);
+                string aRead = SafeReadText(aPath);
+                if (aRead != aWant) { oFailed++; aSb.AppendLine($"✗ `{aSlug}`：已寫入但讀回與預期不一致 —— 請人工檢查"); continue; }
+                oChanged++;
+                aSb.AppendLine($"✓ `{aSlug}`：已轉換（{aKind}，讀回確認）");
+            }
+            string aHead = $"{(iConfirm ? "🧹 已轉換" : "🔎 dry-run：會轉換")} {oChanged} 份／已是正典版面 {aAlready} 份／失敗 {oFailed} 份（共 {aDirs.Count} 本）";
+            return aHead + "\n" + aSb.ToString();
         }
 
         static SCP_JsonData? FindEntry(SCP_JsonData iArr, string iId)

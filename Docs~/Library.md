@@ -95,7 +95,16 @@ senate cmd book --arg op=classify --arg book=<id> [--arg kind=…] [--arg series
 `shelf`／`series` 純讀；`classify` 是唯一的分類寫入通道，只改 `_donation.json` 的 kind／series／volume（補寫 origin）與 `Books/_series.json`，**不動錢**。
 - `series`／`parent_series` **顯式傳空字串＝脫離系列／上位**，跟沒傳是兩件事。
 - 系列首次使用必須帶 `series_title`（不自動拿 id 當名字 —— 打錯字會長出一個看起來正常的新系列）；上位系列同理。
-- **版面照原檔**：磁碟上 `_donation.json` 同時有 tab 縮排（舊 writer）與 2 空格兩種，結尾換行有無也不一致；`classify` 寫回時保留原檔的版面與結尾換行，`_series.json` 用舊 writer 版面且不補結尾換行。對一本書做「不改任何值」的 classify，兩種版面的檔案都位元組不變。
+- **`_donation.json` 只有一種正典版面**（2 空格／冒號後有空格／CRLF／結尾換行，`SCP_BooksOps.SaveJson`；Tim 2026-10-05 拍板統一）。`classify` 一律以它寫回；對一本書做「不改任何值」的 classify，檔案位元組不變。`Books/_series.json` 仍是舊 writer 版面（tab／冒號後無空格／**不補結尾換行**），改它時只在真的有變動才寫、且改的是解析出來的原樹（未知鍵與鍵序保留）。
+
+### 統一版面：`op=normalize_donations`
+
+```bash
+senate cmd book --arg op=normalize_donations                 # dry-run：列出會轉換的書（零寫入）
+senate cmd book --arg op=normalize_donations --arg confirm=1  # 真的寫
+```
+
+只動版面不動值：寫前驗「新版面文字 parse 回來 ＝ 原檔 parse 結果」（不等就整本跳過、列為失敗、exit 1），寫後讀回驗位元組；已是正典版面的檔不碰。冪等 —— 轉完再跑是 0 份。（2026-10-05 已對 LY 跑過：16 份轉換／27 份本來就是正典／0 失敗；去掉空白後內容與轉換前逐份相同。）
 
 `scan` 產出審計報告，疑似同作品由人確認；`show_migrated=1` 包含已遷移項目。
 `authored_diff` 帶 book 與 work_id 對拍寫書資料；`authored_migrate` 預設 dry-run，帶 `confirm=1` 才寫入。

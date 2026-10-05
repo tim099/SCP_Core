@@ -79,6 +79,7 @@ namespace SCP.Core.Cmd
                                + "｜donations（共享圖書館捐贈簿，純讀）｜tips（打賞簿，純讀）"
                                + "｜shelf（藏書架總覽，純讀）｜series（系列清單／某系列書單，純讀）"
                                + "｜classify（設定某本書的 kind／series／volume，**只改分類、不動錢**）"
+                               + "｜normalize_donations（把全部 `_donation.json` 統一成正典版面；**預設 dry-run**，`confirm=1` 才寫）"
                                + "｜**donate／publish／tip／retry-tips（會動錢；需要宿主裝上書店閘）**"
                                + " —— 預設 writing，⭐ 純讀的那個當預設"),
             new SCP_CmdArgSpec("bank", "錢包／帳戶身分（donate／publish／tip 必填 —— 錢從誰的帳出不能猜）"),
@@ -87,6 +88,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("actual_agent", "實際承載的桌面工具（選填，記錄用）"),
             new SCP_CmdArgSpec("persona", "op=writing 用：只看這位作者的書（省略＝全部作者）"),
             new SCP_CmdArgSpec("book_filter", "op=tips 用：只看這一本的打賞（省略＝全部）"),
+            new SCP_CmdArgSpec("confirm", "op=normalize_donations 用：=1 才真的寫（預設 dry-run，零寫入）"),
             new SCP_CmdArgSpec("kind", "original｜external｜watch-log｜tavern-history —— op=classify 選填；op=shelf 當篩選"),
             new SCP_CmdArgSpec("series", "系列 id —— op=series 查某系列書單（省略＝列所有已註冊系列）；"
                                          + "op=classify 設定（⚠ 顯式傳空字串＝脫離系列，跟「沒傳」是兩件事）"),
@@ -138,13 +140,14 @@ namespace SCP.Core.Cmd
                 "shelf" => Emit(SCP_BooksShelf.RenderShelf(aDataRoot, iArgs.Get("kind").Trim())),
                 "series" => Emit(SCP_BooksShelf.RenderSeries(aDataRoot, iArgs.Get("series").Trim())),
                 "classify" => OpClassify(aDataRoot, iArgs),
+                "normalize_donations" => OpNormalizeDonations(aDataRoot, iArgs),
                 // ⚠ 底下四支**會動錢** —— 它們要宿主裝上書店閘（`SCP_BooksGatewayHost.Factory`）。
                 "donate" => OpMoney(aDataRoot, iArgs, "donate"),
                 "publish" => OpMoney(aDataRoot, iArgs, "publish"),
                 "tip" => OpMoney(aDataRoot, iArgs, "tip"),
                 "retry-tips" => OpMoney(aDataRoot, iArgs, "retry-tips"),
                 _ => SCP_CmdResult.Fail(2,
-                    $"✗ 不認得的 op：`{aOp}`（吃的是 add｜log-chapter｜arc｜writing｜donations｜tips｜shelf｜series｜classify"
+                    $"✗ 不認得的 op：`{aOp}`（吃的是 add｜log-chapter｜arc｜writing｜donations｜tips｜shelf｜series｜classify｜normalize_donations"
                     + "｜donate｜publish｜tip｜retry-tips）"),
             };
         }
@@ -275,6 +278,21 @@ namespace SCP.Core.Cmd
 
         static SCP_CmdResult OpTips(string iDataRoot, SCP_CmdArgs iArgs)
             => Emit(SCP_BooksDonations.RenderTips(iDataRoot, iArgs.Get("book_filter").Trim()));
+
+        // ── op=normalize_donations（預設 dry-run）──────────────────────────────
+        // 區塊職責：把 `Books/*/_donation.json` 統一成正典版面（Tim 2026-10-05）。只動版面不動值，寫前寫後都驗。
+        static SCP_CmdResult OpNormalizeDonations(string iDataRoot, SCP_CmdArgs iArgs)
+        {
+            bool aConfirm = iArgs.Get("confirm").Trim() == "1";
+            string aText = SCP_BooksShelf.NormalizeDonations(iDataRoot, aConfirm, out int aChanged, out int aFailed);
+            SCP_CmdResult aR = Emit(aText);
+            aR.AddValue("changed", aChanged.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("failed", aFailed.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("confirmed", aConfirm ? "1" : "0");
+            // 有失敗 ⇒ 非零（其餘照常已處理）：失敗那幾本沒動，要人看
+            if (aFailed > 0) aR.ExitCode = 1;
+            return aR;
+        }
 
         // ── op=classify ───────────────────────────────────────────────────────
         // 區塊職責：設定某本書的 kind／series／volume（唯一的分類寫入通道；TASK-0403）。**只改分類欄位，不動錢。**
