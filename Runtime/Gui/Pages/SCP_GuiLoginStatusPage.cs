@@ -47,7 +47,7 @@ namespace SCP.Core.Gui
         public override string Key { get { return PageKey; } }
         public const string PageKey = "login";
         public override string Title { get { return "登入狀態"; } }
-        public override string? MenuGroup { get { return "診斷"; } }
+        public override string? MenuGroup { get { return "管理"; } }
 
         /// <summary>讀檔在 OnPush 不在建構子 —— 頁面目錄會建一次實例只為了讀標題（同專案關聯頁）。</summary>
         public override void OnPush() { base.OnPush(); Load(); }
