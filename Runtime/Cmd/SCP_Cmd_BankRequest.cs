@@ -24,6 +24,10 @@ namespace SCP.Core.Cmd
             "單據：`<data_root>/Bank/requests/<日>/*__request.json`、`Bank/transfer_requests/<日>/*__transfer.json`（跟 Unity 版同格式、同位置）。\n"
             + "· `op=request --arg target_bank=<收款帳號> --arg amount=N --arg-file reason=<檔> [--arg source_kind=...] [--arg source_ref=SHA/seq/單號] [--arg funding=central|mint]`\n"
             + "    funding 沒給：`source_kind=work_post_backfill`（補薪）⇒ mint；其他 ⇒ 留空，審批端用央行撥款。\n"
+            + "    ⚠ `source_kind`／`source_ref` **只記在這張請款單上，不會進帳本**：核准後帳本一律寫 `kind=payout_request`、`ref=<請款單號>`（TASK-0396）。\n"
+            + "      ⇒ 帳本上認不出這筆是哪一則發文的補薪；`bank-reconcile` 仍會把它列在差集。補發文領薪的漏帳走 `bank-reconcile --arg op=apply`（逐則帶 ref 的 work_post），\n"
+            + "         或把已付的逐則 ref 登記進 `Bank/payroll_settled.json`，⛔ 不要只靠這兩個參數期待對帳認得。\n"
+            + "      `source_kind` 在請款單上只有兩個效果：`work_post_backfill` ⇒ funding 預設 mint；薪資稽核用它辨認「單子自稱是補發文領薪」。\n"
             + "· `op=transfer --arg from_bank=<出款帳號> --arg to_bank=<收款帳號> --arg amount=N --arg-file reason=<檔> [--arg kind=...]`（守恆 A→B；常見用途是歸戶）\n"
             + "· `op=cancel --arg request_id=<單號> [--arg note=...]`：撤回 pending 的單（請款與轉帳都行；已批就撤不了）\n"
             + "· `op=list [--arg pending_only=0] [--arg max=N]`：列請款單（新到舊）。待審的請款＋轉帳一起看 ⇒ `bank --arg op=requests`。\n"
@@ -44,8 +48,8 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("to_bank", "op=transfer：收款帳號 id", iDefault: ""),
             new SCP_CmdArgSpec("amount", "金額（正整數）", iDefault: "0"),
             new SCP_CmdArgSpec("reason", "為什麼（必填；長文走 --arg-file）", iDefault: ""),
-            new SCP_CmdArgSpec("source_kind", "op=request：核准後寫進帳本的 source_kind（預設 manual_request）", iDefault: ""),
-            new SCP_CmdArgSpec("source_ref", "op=request：憑證（SHA／seq／單號）", iDefault: ""),
+            new SCP_CmdArgSpec("source_kind", "op=request：記在**請款單上**的分類（預設 manual_request）。⚠ 不會進帳本 —— 核准後帳本一律是 payout_request＋單號；效果只有 work_post_backfill ⇒ funding 預設 mint、薪資稽核據此辨認補發", iDefault: ""),
+            new SCP_CmdArgSpec("source_ref", "op=request：憑證（SHA／seq／單號），**只記在請款單上、不進帳本**", iDefault: ""),
             new SCP_CmdArgSpec("funding", "op=request：central（央行撥款）／mint（增發）；空＝未宣告", iDefault: ""),
             new SCP_CmdArgSpec("kind", "op=transfer：分類（預設 manual_transfer）", iDefault: ""),
             new SCP_CmdArgSpec("currency", "幣別", iDefault: "tavern_token"),
@@ -99,6 +103,12 @@ namespace SCP.Core.Cmd
                     $"- 開單人：{r.RequesterAgent}@{r.RequesterPersona}",
                     $"- 狀態：**{r.Status}** —— 錢還沒動。審批：`senate cmd bank --arg op=approve --arg request_id={r.RequestId} --arg confirm=1`",
                     $"落點：{r.Path}");
+                // 🔴 TASK-0396：source_kind／source_ref 只記在單上，核准端（BankAdminPage.ApprovePayoutCore／Cmd_Bank）寫死 payout_request＋單號。
+                //   給了而從來沒被讀的形狀是「安靜給錯」—— 所以給了就當場說，不等對帳差集才發現。
+                bool aGaveKind = iArgs.Get("source_kind").Trim().Length > 0, aGaveRef = iArgs.Get("source_ref").Trim().Length > 0;
+                if (aGaveKind || aGaveRef)
+                    aR.Lines.Add($"⚠ source_kind／source_ref 只記在這張請款單上，**不會進帳本**：核准後帳本寫的是 kind=payout_request、ref={r.RequestId}。"
+                               + "對帳（bank-reconcile）認不出它是哪一則發文的補薪；補發請走 `bank-reconcile --arg op=apply`，或把已付的逐則 ref 登記進 Bank/payroll_settled.json。");
                 aR.AddValue("request_id", r.RequestId);
                 aR.AddValue("path", r.Path);
                 return aR;
