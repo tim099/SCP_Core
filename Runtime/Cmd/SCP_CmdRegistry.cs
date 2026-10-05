@@ -45,6 +45,43 @@ namespace SCP.Core.Cmd
         public static string Invoke(string iTail)
             => (string.IsNullOrWhiteSpace(InvocationHint) ? "" : InvocationHint + " ") + iTail;
 
+        /// <summary>
+        /// 組一句「照著打就會動」的指令，**指令名取自 <typeparamref name="T"/> 這支 Cmd 現在的 <see cref="SCP_Cmd.Name"/>**。
+        /// <para>TASK-0406（Tim 2026-10-05）：回傳文字提示下一步時「在 Code 內動態組而非寫死，避免指令修改後過時」。
+        /// 手寫的 `"morning-brief --arg …"` 在指令改名後會繼續說舊名字，而那不會報錯；型別參數打錯則是編譯錯誤。</para>
+        /// <para>⚠ 找不到已登記的 <typeparamref name="T"/> ⇒ 回一句**大聲的** ⚠（含型別名），⛔ 不退回猜一個名字 ——
+        /// 「印出一個不存在的指令」跟「印出對的指令」在畫面上長得一樣。</para>
+        /// </summary>
+        public static string InvokeOf<T>(string iArgs = "") where T : SCP_Cmd
+        {
+            Discover();
+            foreach (SCP_Cmd aCmd in s_Commands.Values)
+                if (aCmd.GetType() == typeof(T))
+                    return Invoke(iArgs.Length > 0 ? aCmd.Name + " " + iArgs : aCmd.Name);
+            return $"⚠〔沒有登記 `{typeof(T).Name}` 這支指令 —— 下一步無法提示，請回報〕";
+        }
+
+        /// <summary>只取 <typeparamref name="T"/> 現在的指令名（說明文字裡提到另一支時用）。找不到 ⇒ 帶型別名的 ⚠。</summary>
+        public static string NameOf<T>() where T : SCP_Cmd
+        {
+            Discover();
+            foreach (SCP_Cmd aCmd in s_Commands.Values)
+                if (aCmd.GetType() == typeof(T)) return aCmd.Name;
+            return $"⚠〔沒有登記 {typeof(T).Name}〕";
+        }
+
+        /// <summary>
+        /// 跨層的退路：指令住在**呼叫端參照不到的那一層**（例：SCP_Core 要提示 Senate.Core 的 `glossary`）時，以名字查一次。
+        /// <para>⚠ 名字仍是字串 —— 但**執行時驗過**：查不到 ⇒ 大聲的 ⚠，⛔ 不印一個不存在的指令。
+        /// 能用 <see cref="InvokeOf{T}"/> 就用它；這支只給跨層、而且那支 Cmd 還沒搬過來的情況（TASK-0406）。</para>
+        /// </summary>
+        public static string InvokeNamed(string iName, string iArgs = "")
+        {
+            SCP_Cmd? aCmd = Find(iName);
+            if (aCmd == null) return $"⚠〔找不到 `{iName}` 這支指令（改名或退場了？）—— 下一步無法提示，請回報〕";
+            return Invoke(iArgs.Length > 0 ? aCmd.Name + " " + iArgs : aCmd.Name);
+        }
+
         static readonly Dictionary<string, SCP_Cmd> s_Commands =
             new Dictionary<string, SCP_Cmd>(StringComparer.OrdinalIgnoreCase);
         static bool s_Discovered;

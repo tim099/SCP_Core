@@ -25,6 +25,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using SCP.Core.Bank;
+using SCP.Core.Cmd;
 using SCP.Core.Io;
 using SCP.Core.Json;
 using SCP.Core.Paths;
@@ -149,7 +150,7 @@ namespace SCP.Core.Letters
                 aR.AppendLine($"- lock: session_key={aLock.SessionKey} pid={aLock.Pid} locked_at={aLock.LockedAt}");
                 aR.AppendLine("- exits:");
                 aR.AppendLine("  - 讓它先下線：Senate 登入狀態頁手動登出（`senate ui`），或該 session 跑 goodnight，再重跑本步");
-                aR.AppendLine("  - brief 沒生出來（morning 中途被砍）→ senate cmd morning-brief --arg persona=" + iPersona);
+                aR.AppendLine("  - brief 沒生出來（morning 中途被砍）→ " + SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningBrief>("--arg persona=" + iPersona));
                 aR.AppendLine("  - lock 在但 token 丟了 → awakening.py reissue-token --persona " + iPersona);
                 aR.AppendLine("  - 晚安後想續線 → awakening.py relogin --persona " + iPersona);
                 aR.AppendLine("- ⚠ 不要改用別的 persona 名繞過去 —— 那是製造分身，比停下來糟");
@@ -270,8 +271,8 @@ namespace SCP.Core.Letters
             aR.AppendLine($"- 在線 persona: {string.Join(", ", OnlinePersonas(iR))}");
             aR.AppendLine("## next");
             int aStepNo = 1;
-            aR.AppendLine($"{aStepNo++}. **required** — 生成 brief：senate cmd morning-brief --arg persona={iPersona}");
-            aR.AppendLine($"{aStepNo++}. **required** — Read brief（路徑由 morning-brief 回傳；接回身分，這步不自動化）");
+            aR.AppendLine($"{aStepNo++}. **required** — 生成 brief：{SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningBrief>("--arg persona=" + iPersona)}");
+            aR.AppendLine($"{aStepNo++}. **required** — Read brief（路徑由上一步回傳；接回身分，這步不自動化）");
             if (FindGlossaryPersonaEntry(iR, iPersona) == null)
             {
                 var aTodo = SelfIntroTodoLines(iR, iPersona);
@@ -281,8 +282,7 @@ namespace SCP.Core.Letters
             foreach (string aLine in IntroNextLines(iPersona, ref aStepNo)) aR.AppendLine(aLine);
             if (aGap >= CONSOLIDATE_GAP_THRESHOLD)
             {
-                aR.AppendLine($"{aStepNo++}. 見林 OVERDUE → senate cmd consolidate "
-                              + $"--arg persona={iPersona}");
+                aR.AppendLine($"{aStepNo++}. 見林 OVERDUE → {SCP_CmdRegistry.InvokeOf<SCP_Cmd_Consolidate>("--arg persona=" + iPersona)}");
                 aR.AppendLine("   （不帶 digest_body ＝ 只列狀態與待濃縮信件；寫入時長內文走 --arg-file digest_body=<檔>）");
             }
             aRes.Ok = true;
@@ -295,7 +295,7 @@ namespace SCP.Core.Letters
         {
             var a = new List<string>
             {
-                $"{ioStepNo++}. **required** — 上線自介：senate cmd morning-intro --arg persona={iPersona} --arg-file body=<檔> ＜<body> 親筆，長文一律走檔案、不經過 shell＞",
+                $"{ioStepNo++}. **required** — 上線自介：{SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningIntro>("--arg persona=" + iPersona + " --arg-file body=<檔>")} ＜<body> 親筆，長文一律走檔案、不經過 shell＞",
                 "   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。",
                 "   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。",
             };
@@ -360,7 +360,7 @@ namespace SCP.Core.Letters
         {
             SCP_PersonaStatus? aLock = SCP_PersonaLetters.ReadPersonaLock(iR.LettersRoot, iPersona);
             if (aLock == null)
-                return (false, $"'{iPersona}' 不在線（無 lock）—— intro 前必須先跑 morning-wake", null, null, 0);
+                return (false, $"'{iPersona}' 不在線（無 lock）—— intro 前必須先跑 {SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningWake>("--arg persona=" + iPersona)}", null, null, 0);
             if (aLock.Online != SCP_PersonaOnline.Online)
                 return (false, $"'{iPersona}' 的 lock 讀不了（{aLock.LockError}）—— 不以壞 lock 的身分發言", aLock, null, 0);
             if (FindGlossaryPersonaEntry(iR, iPersona) == null)
@@ -370,7 +370,7 @@ namespace SCP.Core.Letters
                     + "\n  補完重跑本步即過（參考 Constitution_Workflow §5）。", aLock, null, 0);
             string aBrief = BriefPath(iR, iPersona);
             if (!File.Exists(aBrief))
-                return (false, $"brief 不存在：`{aBrief}` —— 先跑 morning-brief（一個沒有記憶的殼不該上線開口）", aLock, null, 0);
+                return (false, $"brief 不存在：`{aBrief}` —— 先跑 {SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningBrief>("--arg persona=" + iPersona)}（一個沒有記憶的殼不該上線開口）", aLock, null, 0);
             int aLines;
             try { aLines = File.ReadAllLines(aBrief).Length; }
             catch (Exception e) { return (false, $"brief 讀取失敗: {e.Message}", aLock, aBrief, 0); }
@@ -379,7 +379,7 @@ namespace SCP.Core.Letters
             if (DateTime.TryParse(aAt.Substring(0, Math.Min(19, aAt.Length)), CultureInfo.InvariantCulture,
                     DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime aLockedAt)
                 && File.GetLastWriteTimeUtc(aBrief) < aLockedAt.AddSeconds(-1))
-                return (false, "brief 比本次 lock 舊（brief mtime < locked_at）—— 是上一次醒來的殘留，先跑 morning-brief 重生成", aLock, aBrief, aLines);
+                return (false, "brief 比本次 lock 舊（brief mtime < locked_at）—— 是上一次醒來的殘留，先重生成：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningBrief>("--arg persona=" + iPersona), aLock, aBrief, aLines);
             return (true, null, aLock, aBrief, aLines);
         }
 
@@ -583,10 +583,10 @@ namespace SCP.Core.Letters
             }
             return new List<string>
             {
-                $"補**自我介紹**（出生證明）：`Docs/Glossary/personas/{iPersona}.md` 不存在 —— 沒有它 morning-intro 會被擋。",
+                $"補**自我介紹**（出生證明）：`Docs/Glossary/personas/{iPersona}.md` 不存在 —— 沒有它 {SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningIntro>()} 會被擋。",
                 $"   內容＝初始風格自畫像（我是誰／擅長什麼／說話方式），**親筆**；參考同目錄其他人的寫法（最完整：`{aRefHint}`）。",
                 // TASK-0313：入口改 `senate cmd glossary`（不需要 Editor）。⚠ term／one_line 是必填 —— 舊提示漏了這兩格，照著打一定被擋。
-                $"   寫法：senate cmd glossary --arg op=register --arg slug={iPersona} --arg term=\"{iPersona} 大小姐\" --arg category=persona --arg one_line=<一句話> --arg-file body=<檔>",
+                $"   寫法：{SCP_CmdRegistry.InvokeNamed("glossary", $"--arg op=register --arg slug={iPersona} --arg term=\"{iPersona} 大小姐\" --arg category=persona --arg one_line=<一句話> --arg-file body=<檔>")}",
                 "   ⚠ 工具新建預設寫 Docs/Glossary/ 根層，persona 條目慣例放 personas/，寫完手動搬。",
             };
         }

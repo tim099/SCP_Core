@@ -100,7 +100,7 @@ namespace SCP.Core.Tavern
                 sb.AppendLine("⏭ **已跳過積壓**（`skip_backlog=1`）—— 下面是**最新**的那批，不是最舊的。");
                 sb.AppendLine($"   跳過的是：游標 `{skip.FromCursorTs}` 之後、**seq {skip.FirstKeptSeq} 之前**的訊息，"
                     + $"**至少 {skip.SkippedInWindowAtLeast} 則**（回捲上限 {SCP_TavernCursor.BACKLOG_SCAN_CAP} 則之外更舊的沒數到）。");
-                sb.AppendLine($"   要回頭看：`{SCP.Core.Cmd.SCP_CmdRegistry.Invoke("tavern-query --arg kind=seq --arg from=1 --arg to=" + Math.Max(1, skip.FirstKeptSeq - 1) + " --arg grep=@" + iPersona)}`（先撈 @ 你的）");
+                sb.AppendLine($"   要回頭看：`{SCP.Core.Cmd.SCP_CmdRegistry.InvokeOf<SCP_Cmd_TavernQuery>("--arg kind=seq --arg from=1 --arg to=" + Math.Max(1, skip.FirstKeptSeq - 1) + " --arg grep=@" + iPersona)}`（先撈 @ 你的）");
             }
             else if (iSkipBacklog && !truncated)
                 sb.AppendLine("· 帶了 `skip_backlog=1`，但積壓在回捲上限內 ⇒ **沒有跳過任何一則**，照舊由舊到新交付。");

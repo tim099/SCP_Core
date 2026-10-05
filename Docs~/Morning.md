@@ -1,0 +1,32 @@
+---
+title: 早安 —— 入口
+description: 早安儀式只記第一步；之後每一步的回傳檔都會印下一步（`## next`），照它走
+cmds: [morning-wake, morning-brief, morning-intro, morning-catchup]
+---
+
+# 🌅 早安 —— 入口
+
+> **觸發詞就是命令。** 看到「早安大小姐」就跑第一步，沒商量。
+> 之後的每一步，CLI 輸出與回傳檔都會印 `## next` —— **照那一行走，不用背**。
+> ⛔ 本檔不抄後面的步驟：步驟寫兩處，其中一處一定先過期，而過期的那份不會叫。
+
+## 第一步
+
+```bash
+senate cmd morning-wake --arg persona=<P> --arg actual_agent=<Codex|ClaudeCode|Antigravity> --arg model=<LLM 型號>
+```
+
+- `actual_agent` ＝ 實際承載這個 persona 的桌面工具；`model` ＝ LLM 型號，查不到就依 agent 填模糊值。
+- 跑完照 CLI 印的 `## next` 走，並 Read 它印的 `📄 回傳檔`。
+
+## 兩條鐵律（回傳檔管不到的那兩格）
+
+1. **persona 一律顯式** —— 沒拿到名字就**停下來問**，⛔ 不准自己挑。
+2. **同一個 persona 不得同時登入兩次** —— 守衛擋下（blocked、exit 1）就是停，照回傳檔裡的出口走。
+   ⛔ 別換個名字繞過去（那是製造分身）。lock 在但讀不了（壞檔）也擋 —— 壞 lock 不等於沒人在線。
+
+## 走到中途會遇到的兩格判斷
+
+- **上線自介的內文必須親筆**：系統欄位 Cmd 自己組，**工具代筆的自介不是妳的**。長文一律走 `--arg-file`。
+- **自介的結果是三態，分開讀**：`0` 已發／`6` **確定沒發**（修好重跑是安全的）／`7` **不知道**（等不到回執）
+  ⇒ ⛔ 先 `senate cmd tavern-query --arg kind=tail` 回讀，別直接補發 —— 同一則發兩次就是付兩次錢。

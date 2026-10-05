@@ -87,7 +87,7 @@ namespace SCP.Core.Skills
             string aInstallRoot = iTarget.SkillsDir(iProjectRoot);
 
             foreach (string aName in aSource)
-                aOut.Add(One(Path.Combine(iSkillsRoot, aName), Path.Combine(aInstallRoot, aName), aName));
+                aOut.Add(One(Path.Combine(iSkillsRoot, aName), Path.Combine(aInstallRoot, aName), aName, iTarget));
 
             // 已裝端有、源端沒有 ⇒ Orphan / Unmanaged。
             // 📌 這一段是刻意的：以源端為基準逐一列出的清單，**結構上不可能**出現這種目錄，
@@ -125,7 +125,7 @@ namespace SCP.Core.Skills
             return aOut;
         }
 
-        static SCP_SkillStatus One(string iSrcDir, string iDstDir, string iName)
+        static SCP_SkillStatus One(string iSrcDir, string iDstDir, string iName, SCP_SkillTarget iTarget)
         {
             var aOut = new SCP_SkillStatus { Name = iName };
             if (!Directory.Exists(iDstDir))
@@ -135,24 +135,56 @@ namespace SCP.Core.Skills
                 return aOut;
             }
 
+            Dictionary<string, byte[]> aWant = Expected(iSrcDir, iName, iTarget, out bool aEntry);
             int aDiff = 0;
-            foreach (string aSrc in EnumerateFiles(iSrcDir))
+            foreach (KeyValuePair<string, byte[]> kv in aWant)
             {
-                string aRel = Rel(iSrcDir, aSrc);
-                string aDst = Path.Combine(iDstDir, aRel);
-                if (!File.Exists(aDst) || !SameBytes(aSrc, aDst)) aDiff++;
+                string aDst = Path.Combine(iDstDir, kv.Key);
+                if (!File.Exists(aDst) || !SameBytes(kv.Value, aDst)) aDiff++;
             }
             // 已裝端多出來的檔也算差異（源端刪掉的殘檔）—— 標記檔本身不算
             foreach (string aDst in EnumerateFiles(iDstDir))
             {
                 string aRel = Rel(iDstDir, aDst);
                 if (aRel == SCP_SkillSource.MarkerFileName || aRel == LegacyMarkerFileName) continue;
-                if (!File.Exists(Path.Combine(iSrcDir, aRel))) aDiff++;
+                if (!aWant.ContainsKey(aRel)) aDiff++;
             }
 
             aOut.DiffFiles = aDiff;
             aOut.State = aDiff == 0 ? SCP_SkillState.Synced : SCP_SkillState.Stale;
-            aOut.Detail = aDiff == 0 ? "逐檔內容相同" : $"{aDiff} 個檔與源端不同（安裝端是純鏡像，同步會覆蓋）";
+            string aMode = aEntry ? "入口模式（只裝一支 SKILL.md）" : "鏡像模式";
+            aOut.Detail = aDiff == 0 ? $"逐檔內容相同〔{aMode}〕" : $"{aDiff} 個檔與該落地的內容不同（{aMode}，同步會覆蓋）";
+            return aOut;
+        }
+
+        /// <summary>
+        /// 某個 skill 在某個 target **該落地的全部檔**（相對路徑 → 位元組）——**比對與寫入共用這一份**。
+        /// <para>入口模式（源檔 frontmatter 有 `docs:`）：只有 SKILL.md，由 <see cref="SCP_SkillEntry.RenderEntry"/> 產生。
+        /// 鏡像模式：源目錄每一個檔原樣。兩種模式下 Antigravity 的 SKILL.md 都注入 `trigger:`（python 同規則）。</para>
+        /// <para>🩸 為什麼要先算「該落地的位元組」：UCL python 踩過「比對用一把尺、寫入用另一把」——
+        /// 檢查看不見自己造成的差異，於是壞掉的那份永遠被跳過（見檔頭）。</para>
+        /// </summary>
+        static Dictionary<string, byte[]> Expected(string iSrcDir, string iSkill, SCP_SkillTarget iTarget, out bool oEntry)
+        {
+            var aOut = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            string aSkillFile = Path.Combine(iSrcDir, SCP_SkillSource.SkillFileName);
+            byte[] aSkillBytes = File.ReadAllBytes(aSkillFile);
+            oEntry = SCP_SkillEntry.ParseDocs(Encoding.UTF8.GetString(aSkillBytes)) != null;
+            bool aAg = iTarget == SCP_SkillTarget.Antigravity;
+
+            if (oEntry)
+            {
+                aOut[SCP_SkillSource.SkillFileName] = SCP_SkillEntry.SkillFileBytes(aSkillBytes, iSkill, true, aAg);
+                return aOut;
+            }
+            foreach (string aSrc in EnumerateFiles(iSrcDir))
+            {
+                string aRel = Rel(iSrcDir, aSrc);
+                byte[] aBytes = File.ReadAllBytes(aSrc);
+                if (aAg && string.Equals(aRel, SCP_SkillSource.SkillFileName, StringComparison.OrdinalIgnoreCase))
+                    aBytes = SCP_SkillEntry.SkillFileBytes(aBytes, iSkill, false, true);
+                aOut[aRel] = aBytes;
+            }
             return aOut;
         }
 
@@ -174,28 +206,26 @@ namespace SCP.Core.Skills
             try
             {
                 Directory.CreateDirectory(aDstDir);
-                var aSrcRel = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, byte[]> aWant = Expected(aSrcDir, iSkill, iTarget, out _);
 
-                foreach (string aSrc in EnumerateFiles(aSrcDir))
+                foreach (KeyValuePair<string, byte[]> kv in aWant)
                 {
-                    string aRel = Rel(aSrcDir, aSrc);
-                    aSrcRel.Add(aRel);
-                    string aDst = Path.Combine(aDstDir, aRel);
-                    if (File.Exists(aDst) && SameBytes(aSrc, aDst)) continue;   // 已經一樣就不寫
+                    string aDst = Path.Combine(aDstDir, kv.Key);
+                    if (File.Exists(aDst) && SameBytes(kv.Value, aDst)) continue;   // 已經一樣就不寫
 
                     string? aDir = Path.GetDirectoryName(aDst);
                     if (!string.IsNullOrEmpty(aDir)) Directory.CreateDirectory(aDir!);
-                    // ⚠ 走 bytes：行尾跟隨源檔（見檔頭三筆血證）
-                    File.WriteAllBytes(aDst, File.ReadAllBytes(aSrc));
+                    // ⚠ 走 bytes：行尾跟隨源檔（見檔頭三筆血證）；與比對的是同一份
+                    File.WriteAllBytes(aDst, kv.Value);
                     aRes.Copied++;
                 }
 
-                // 孤兒檔（源端刪掉／改名後的殘留）—— 標記檔留著
+                // 孤兒檔（源端刪掉／改名後的殘留，或從鏡像改成入口模式後多出來的檔）—— 標記檔留著
                 foreach (string aDst in EnumerateFiles(aDstDir))
                 {
                     string aRel = Rel(aDstDir, aDst);
                     if (aRel == SCP_SkillSource.MarkerFileName || aRel == LegacyMarkerFileName) continue;
-                    if (aSrcRel.Contains(aRel)) continue;
+                    if (aWant.ContainsKey(aRel)) continue;
                     File.Delete(aDst);
                     aRes.RemovedOrphanFiles++;
                 }
@@ -276,16 +306,13 @@ namespace SCP.Core.Skills
         static string Rel(string iRoot, string iPath)
             => iPath.Substring(iRoot.Length).TrimStart('/', '\\').Replace('\\', '/');
 
-        static bool SameBytes(string iA, string iB)
+        static bool SameBytes(byte[] iWant, string iFile)
         {
             try
             {
-                var a = new FileInfo(iA);
-                var b = new FileInfo(iB);
-                if (a.Length != b.Length) return false;
-                byte[] ba = File.ReadAllBytes(iA);
-                byte[] bb = File.ReadAllBytes(iB);
-                for (int i = 0; i < ba.Length; i++) if (ba[i] != bb[i]) return false;
+                if (new FileInfo(iFile).Length != iWant.Length) return false;
+                byte[] bb = File.ReadAllBytes(iFile);
+                for (int i = 0; i < iWant.Length; i++) if (iWant[i] != bb[i]) return false;
                 return true;
             }
             catch { return false; }
