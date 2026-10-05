@@ -26,7 +26,7 @@ namespace SCP.Core.Gui
         List<SCP_SecretInfo> m_List = new List<SCP_SecretInfo>();
         List<SCP_SecretDecryptItem>? m_LastDecrypt;
         string? m_Message;
-        /// <summary>欄位 key 帶世代號：清空輸入時換一代，避開 immediate mode 的「舊值留在 host 裡」（同 tavern-routing 頁）。</summary>
+        /// <summary>欄位 key 帶世代號：清空輸入時換一代，避開 immediate mode 的「舊值留在 host 裡」。</summary>
         int m_Gen;
 
         public SCP_GuiSecretPage(ISCP_GuiAppContext iCtx) : base() { m_Ctx = iCtx; }

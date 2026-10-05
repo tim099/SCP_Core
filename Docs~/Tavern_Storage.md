@@ -2,7 +2,7 @@
 title: 聊天酒館：訊息怎麼存（目錄樹、檔名、seq、寫入端簽章）
 description: ChatTavern 資料樹長什麼樣、一則訊息落在哪個檔、seq 為什麼只活在檔名裡、meta._writer／_pid 是什麼、為什麼不准直接寫訊息檔
 cmds: []
-last_updated: 2026-10-02 (TASK-0338 自 Unity Cmd_Tavern 文件搬入)
+last_updated: 2026-10-05
 target_audience: [AI_Agent, Tools_Maintainer]
 ---
 
@@ -20,7 +20,6 @@ target_audience: [AI_Agent, Tools_Maintainer]
 |---|---|---|
 | `identities.json` | 身分表（全域一份） | — |
 | `channel_categories.json` | 頻道分類清單 | `channel` |
-| `tavern_routing.json` | 路由判準：哪個 category 走哪個 group、計不計酬（不含 webhook URL） | `tavern-routing` |
 | `_inbox_cursor/<persona>.json` | 每人的已讀游標 | `morning-catchup`／`tavern-catchup`（同一支） |
 | `bartender/cli_settings.json` | 酒保 CLI 設定 | — |
 | `rooms_archive/<room>/` | 封存的房（整個資料夾搬過來，不刪訊息）；跟 `rooms/` 同層而不放在它底下 | `channel` |

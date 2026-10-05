@@ -30,7 +30,7 @@ namespace SCP.Core.Cmd
             + "**判決**：`alarm`（有一堆應計酬而帳上 0 筆）／`warn`（有缺口）／`clean`／\n"
             + "`no_sample`（那天沒訊息 —— ⛔ 不是「沒問題」）／`unmeasurable`（比對關係壞了 —— ⛔ 不是「全漏」）。\n"
             + "⭐ 計不計酬逐則問發薪那支純函式（`SCP_TavernPayroll.Plan`）：規則本來就不付的（非真實 agent／工具廣播／\n"
-            + "  不計酬頻道／出資方）先扣掉、列在「依發薪規則不付」；判準讀不了的那些則**不扣**（量不到 ≠ 不付）。\n"
+            + "  出資方）先扣掉、列在「依發薪規則不付」。\n"
             + "⚠ 沒有 `region`（或信件夾根沒帶到）⇒ 「persona 解析不到」那些則**扣不掉**，報告會明說它沒扣。";
 
         public override string Example =>

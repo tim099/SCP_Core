@@ -287,21 +287,11 @@ namespace SCP.Core.FreeTime
             return "??:??:??";
         }
 
-        // 顯示截斷（與 SCP_TavernCatchup／Editor UCL_ChatTavernSettings 同鍵同預設同夾值；那支是 private，這裡照抄讀法）。
+        // 顯示截斷 —— 讀法只有一份：SCP_TavernRenderSettings（與叮 catchup 同一支）。讀不到就用預設（只影響顯示長度）。
         static void ReadClips(string iDataRoot, out int oNormal, out int oMention)
         {
-            oNormal = 600; oMention = 1500;
-            try
-            {
-                string aPath = Path.Combine(iDataRoot, "ChatTavern", "render_settings.json");
-                if (!SCP_AtomicFileRead.TryReadAllText(aPath, out string aText, out _)) return;
-                var aJd = SCP_JsonData.Parse(aText);
-                oNormal = Clip(aJd.GetInt("message_body_clip", 600));
-                oMention = Clip(aJd.GetInt("message_body_clip_mentioned", 1500));
-            }
-            catch (Exception) { /* 只影響顯示長度，讀不到就用預設 */ }
+            SCP_TavernRenderSettings aS = SCP_TavernRenderSettings.ReadOrDefault(iDataRoot);
+            oNormal = aS.BodyClip; oMention = aS.BodyClipMentioned;
         }
-
-        static int Clip(int v) => v <= 0 ? 0 : Math.Max(80, Math.Min(4000, v));
     }
 }

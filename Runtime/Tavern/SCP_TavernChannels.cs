@@ -4,7 +4,7 @@
 //   · 頻道設定：`<房間資料夾>/channel.json`（category／archived_at）。
 //     ⛔ **不寫進房間的 `meta.json`**：Unity `UCL_ChatTavernIO.SaveRoomMeta` 用 JsonUtility 整份重寫那個檔，
 //       不認得的欄位會被靜默丟掉（createroom 補 owner_agent／mirror_kinds 時就會觸發）。
-//   · 頻道分類 ≠ 訊息分類：`tavern_routing.json` 看的是**每則訊息**的 category；這裡是**頻道本身**的分類，
+//   · 頻道分類是**頻道本身**的分類（不是每則訊息的 category），
 //     給 TASK-0316 Outbound 依頻道路由用（Tim 2026-09-28）。
 //   · 封存 ＝ 把整個房間資料夾搬到 `ChatTavern/rooms_archive/<room>/`（Tim 2026-09-28）；**不刪**任何訊息，
 //     取消封存就搬回 `rooms/`。封存狀態＝**資料夾在哪一邊**（⛔ 不另存旗標：兩份真相會漂）。

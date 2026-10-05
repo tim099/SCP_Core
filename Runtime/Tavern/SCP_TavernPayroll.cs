@@ -6,7 +6,7 @@
 //             editor 模式由 Editor 本地寫完就規劃 —— 兩邊呼叫同一支，⛔ 規則只有這一份。
 // 數值影響：**本類不碰錢**，只產出清單（誰／多少／為什麼／冪等鍵）；入帳由宿主交給銀行那顆 Server。
 //   規則逐條搬自 Cmd_Tavern（2026-09-25 版），語意不變：
-//     A 底薪 work_post　+1　 發言者是真實 agent、非出資方、非工具廣播、落在計酬 group（路由判準）、persona 解析得到帳號
+//     A 底薪 work_post　+1　 發言者是真實 agent、非出資方、非工具廣播、persona 解析得到帳號（不看訊息分類）
 //     B token_parse　　　±N　 只有白名單發言者（Tim）；@對象 N token ⇒ 給對象／支付 N token ⇒ 扣發言者／N token ⇒ 給發言者；單路上限 100
 //     D commit　　　　　 +5　 tag=commit 且帶 meta.sha、非出資方
 //     E reading_note　　 +3　 tag=reading-note、非出資方
@@ -140,20 +140,14 @@ namespace SCP.Core.Tavern
 
         /// <summary>
         /// 底薪的**發放判準單一入口** —— 發放路徑與事後補款共用（補款若自己抄一份，補出來的就不是當時本來會發的）。
+        /// <para>只看發文者，⛔ 不看訊息分類：真實 agent 的發文一律計酬（Tim 2026-10-05，TASK-0394）。</para>
         /// 回 false 時 <paramref name="oSkipReason"/> 一律有值。
         /// </summary>
-        public static bool IsPostRewardEligible(string iDataRoot, string iSenderId, string? iCategory,
-                                                out string oGroupId, out string oSkipReason)
+        public static bool IsPostRewardEligible(string iSenderId, out string oSkipReason)
         {
-            oGroupId = ""; oSkipReason = "";
+            oSkipReason = "";
             if (!IsRealAgentSender(iSenderId)) { oSkipReason = "非真實 agent（system / NPC / bot / alter / discord 中繼）"; return false; }
             if (IsHumanPayer(iSenderId)) { oSkipReason = "出資方不領薪（T46）"; return false; }
-            SCP_TavernRoutingRead aRouting = SCP_TavernRouting.Read(iDataRoot);
-            if (!aRouting.Ok) { oSkipReason = "找不到 routing target group（判準讀不了：" + aRouting.Error + "）"; return false; }
-            SCP_TavernRouteGroup? g = SCP_TavernRouting.ResolveTargetGroup(aRouting.Groups, iCategory);
-            if (g == null) { oSkipReason = "找不到 routing target group（設定異常：無命中且無 enabled 的 default group）"; return false; }
-            oGroupId = g.Id;
-            if (!g.IsPaidPost) { oSkipReason = $"group `{g.Id}` 不計酬（IsPaidPost=false）"; return false; }
             return true;
         }
 
@@ -184,11 +178,8 @@ namespace SCP.Core.Tavern
             bool aAutoBroadcast = string.Equals(MetaOf("auto-broadcast"), "true", StringComparison.OrdinalIgnoreCase);
             string aCategory = MetaOf("category");
             if (aAutoBroadcast) aPlan.Notes.Add("A：工具廣播（auto-broadcast）不領發言底薪");
-            else if (!IsPostRewardEligible(iDataRoot, iIn.SenderId, aCategory, out string aGroup, out string aWhy))
-            {
-                if (aWhy.StartsWith("找不到 routing target group")) aPlan.Warnings.Add("A：" + aWhy);
-                else aPlan.Notes.Add("A：" + aWhy);
-            }
+            else if (!IsPostRewardEligible(iIn.SenderId, out string aWhy))
+                aPlan.Notes.Add("A：" + aWhy);
             else if (string.IsNullOrWhiteSpace(iIn.SenderPersona))
                 aPlan.Notes.Add("A：沒帶 persona（匿名發言）⇒ 不計酬");
             else
@@ -200,7 +191,7 @@ namespace SCP.Core.Tavern
                     aPlan.Items.Add(new SCP_TavernPayItem
                     {
                         Account = aPayee.AccountId, Amount = WorkPostReward, Kind = KindWorkPost, Ref = aRef,
-                        Description = $"post reward: category={(aCategory.Length == 0 ? "(unset→default)" : aCategory)} group={aGroup} seq={iIn.Seq}",
+                        Description = $"post reward: category={(aCategory.Length == 0 ? "(unset)" : aCategory)} seq={iIn.Seq}",
                         CmdId = KindWorkPost + "_" + aKeyBase, IdemKey = KindWorkPost + "_" + aKeyBase, Rule = "A",
                     });
             }

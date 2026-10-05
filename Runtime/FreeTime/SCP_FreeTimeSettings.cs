@@ -166,7 +166,7 @@ namespace SCP.Core.FreeTime
         }
 
         /// <summary>
-        /// 寫設定：驗 → 暫存檔 → 換檔 → **讀回比對**（照 <c>SCP_TavernRouting.Write</c> 的形狀）。
+        /// 寫設定：驗 → 暫存檔 → 換檔 → **讀回比對**。
         /// <para>⛔ 不拿「沒丟例外」當落盤的證據 —— 讀回來每一格都對得上才回 true。</para>
         /// </summary>
         public static bool Write(string iDataRoot, SCP_FreeTimeSettings iS, out string? oError)

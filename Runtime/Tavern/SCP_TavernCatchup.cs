@@ -186,23 +186,12 @@ namespace SCP.Core.Tavern
             return "??:??:??";
         }
 
-        // 顯示截斷（`ChatTavern/render_settings.json`，與 Editor `UCL_ChatTavernSettings` 同鍵同預設同夾值）。
+        // 顯示截斷（`ChatTavern/render_settings.json`）—— 讀法只有一份：SCP_TavernRenderSettings。讀不到就用預設（只影響顯示長度）。
         static void ReadClips(string iDataRoot, out int oNormal, out int oMention)
         {
-            oNormal = 600; oMention = 1500;
-            try
-            {
-                string aPath = Path.Combine(iDataRoot, "ChatTavern", "render_settings.json");
-                // TASK-0265：Editor 後台頁以 Delete→Move 換這顆檔 ⇒ 重試跨過那一瞬間（只影響顯示長度）。
-                if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aText, out _)) return;
-                var aJd = SCP_JsonData.Parse(aText);
-                oNormal = Clip(aJd.GetInt("message_body_clip", 600));
-                oMention = Clip(aJd.GetInt("message_body_clip_mentioned", 1500));
-            }
-            catch (Exception) { /* 只影響顯示長度，讀不到就用預設 */ }
+            SCP_TavernRenderSettings aS = SCP_TavernRenderSettings.ReadOrDefault(iDataRoot);
+            oNormal = aS.BodyClip; oMention = aS.BodyClipMentioned;
         }
-
-        static int Clip(int v) => v <= 0 ? 0 : Math.Max(80, Math.Min(4000, v));
 
         // ⚠ 空清單**不是**「沒有人在線」，是「查不到 lock」—— 兩者必須長得不一樣。
         static void AppendOnline(StringBuilder sb, string iLettersRoot, string iMe)

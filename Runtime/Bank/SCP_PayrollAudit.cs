@@ -17,11 +17,8 @@
 //   ⇒ 偵測成因的守衛，明天會被第四種成因繞過去。差集不會 —— 它量的是**結果**。
 //
 // ⚠ 射程（本層量不到的，⛔ 不假裝量得到）：
-//   · category 計不計酬 —— ✅ 2026-09-28 起**量得到**：判準自 TASK-0296 搬到資料根 `tavern_routing.json`，
-//     本層逐則問發薪那支純函式 `SCP_TavernPayroll.Plan`「這則有沒有 work_post」，規則不付的先扣掉（`NotPaidByRule`）。
-//     🩸 這一格原本寫「規則在 Unity 的 routing 設定裡，本層讀不到」—— 寫下時為真，搬家之後沒有人回來改，
-//       於是 09-25（chitchat 探針）與 09-27（alter 探針）各報一次假缺口。
-//     ⚠ 判準讀不了時 Plan 會帶 `A：` 警告 ⇒ 那些則**不扣**、照舊進候選（量不到 ≠ 不付）。
+//   · 計不計酬 —— 本層逐則問發薪那支純函式 `SCP_TavernPayroll.Plan`「這則有沒有 work_post」，規則不付的先扣掉（`NotPaidByRule`）。
+//     ⛔ 不在本層另抄一份規則：抄的那份會在規則改了之後繼續報假缺口。
 //     差集仍按 category 分組印出來 —— 剩下的才是規則說該付而帳上沒有的。
 //   · persona 解析不到的那些則**先扣掉**（那是②，合法跳過）——
 //     扣得掉的前提是本層拿得到 `lettersRoot` 與 `region`；拿不到就說「未扣」，⛔ 不當成 0。
@@ -53,9 +50,8 @@ namespace SCP.Core.Bank
         public string DayKey = "";
         public int Messages;                 // 該日全部訊息
         public int WithoutPersona;           // 沒有 sender_persona ⇒ 結構上不計酬
-        // 有 persona、而**發薪規則本來就不付底薪**的（非真實 agent／工具廣播／不計酬頻道／出資方）。
-        // 🩸 2026-09-27 差 2：demo#213／215 的 sender_id＝`Template-alter`；2026-09-25 差 2：demo#196／201
-        //   的 category＝chitchat（`is_paid_post=false`）。兩天發薪那側都照規則沒付，而本層只看 persona ⇒ 報成缺口。
+        // 有 persona、而**發薪規則本來就不付底薪**的（非真實 agent／工具廣播／出資方）。
+        // 🩸 2026-09-27 差 2：demo#213／215 的 sender_id＝`Template-alter` —— 發薪那側照規則沒付，而本層只看 persona ⇒ 報成缺口。
         // ⚠ 判準**直接問** `SCP_TavernPayroll.Plan`（發薪真正跑的那支純函式）有沒有 `work_post` 項 ——
         //   ⛔ 抄一份到這裡就是第二份規則，而兩份漂開時差集會安靜地錯。
         public int NotPaidByRule;
