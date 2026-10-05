@@ -217,13 +217,16 @@ namespace SCP.Core.Gui
                 if (ShowHomeButton && iUi.Button("⌂ 首頁", HomeButtonId)) aAction = 2;
 
                 string key = NeedsClassInHint? $"{Key}({SourceClassName})":Key;
+
+                iUi.Label(key);
+
                 // 「這一頁的碼在哪」—— UCL 那顆 Help 鈕的同一格（位置也一樣：導覽鈕之後、自訂鈕之前）。
                 // ⚠ 標籤刻意是純文字不是 📁：那顆 emoji 在不在字型的 glyph 範圍內是另一回事，
                 //   而缺字**不報錯**，只會變成一個方塊（SenateFonts 的血證就是這一族）。
-                if (ShowSourceButton && iUi.Button($"原始碼({key})", SourceButtonId)) aAction = 3;
-                else if (ShowCopyClassButton && iUi.Button($"複製類別名({SourceClassName})", CopyClassButtonId)) aAction = 4;
-                // 兩顆鈕都不畫時，類別名只剩這一條路（TASK-0357：舊的 page key 尾巴拿掉後這格掉在地上）
-                else if (NeedsClassInHint) iUi.Label(key);
+                if (ShowSourceButton && iUi.Button($"📂", SourceButtonId)) aAction = 3;
+                //if (ShowCopyClassButton && iUi.Button($"複製類別名", CopyClassButtonId)) aAction = 4;
+
+                if(iUi.Button($"📋", SourceButtonId)) aAction = 4;
 
                 // ⚠ 這裡刻意**不 try/catch**：工具列的按鈕炸掉是程式錯誤，
                 //   吞掉它只會讓「那顆鈕沒反應」變成沒有人查得到的事（UCL 那側有 Debug.LogException
