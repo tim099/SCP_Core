@@ -226,7 +226,8 @@ namespace SCP.Core.Gui
                 if (ShowSourceButton && iUi.Button($"📂", SourceButtonId)) aAction = 3;
                 //if (ShowCopyClassButton && iUi.Button($"複製類別名", CopyClassButtonId)) aAction = 4;
 
-                if(iUi.Button($"📋", SourceButtonId)) aAction = 4;
+                // ⚠ id 要跟 📂 分開：共用同一個 id 時，按任何一顆都會被認成同一顆（immediate mode 靠 id 認鈕）。
+                if(iUi.Button($"📋", CopyClassButtonId)) aAction = 4;
 
                 // ⚠ 這裡刻意**不 try/catch**：工具列的按鈕炸掉是程式錯誤，
                 //   吞掉它只會讓「那顆鈕沒反應」變成沒有人查得到的事（UCL 那側有 Debug.LogException
