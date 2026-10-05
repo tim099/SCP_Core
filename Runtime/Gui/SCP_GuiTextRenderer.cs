@@ -71,6 +71,16 @@ namespace SCP.Core.Gui
                     oSb.Append(pad).Append(Inline(iNode)).Append('\n');
                     break;
 
+                case SCP_GuiNodeKind.TextField when iNode.Lines > 0 && !iNode.Masked:
+                {
+                    // 多行（SCP_Ui.TextArea）：逐行加 `│` 前綴印全文 —— 擠進一個 ⟨…⟩ 的話換行會把版面打散，
+                    // 而且「最後一行是空的」跟「沒有最後一行」看不出差別。
+                    string[] aLines = iNode.Value.Split('\n');
+                    oSb.Append(pad).Append(iNode.Text.Length > 0 ? iNode.Text : "編輯區").Append(": （多行，").Append(aLines.Length).Append(" 行）\n");
+                    foreach (string l in aLines) oSb.Append(pad).Append("  │ ").Append(l.TrimEnd('\r')).Append('\n');
+                    break;
+                }
+
                 case SCP_GuiNodeKind.Toggle:
                 case SCP_GuiNodeKind.TextField:
                 case SCP_GuiNodeKind.Slider:

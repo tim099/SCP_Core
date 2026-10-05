@@ -124,6 +124,13 @@ namespace SCP.Core.Gui
         /// </summary>
         public bool Wrap { get; init; }
 
+        /// <summary>
+        /// TextField 的**可見行數**：0 ＝ 單行（<see cref="SCP_Ui.TextField"/>）；&gt;0 ＝ 多行（<see cref="SCP_Ui.TextArea"/>）。
+        /// <para>⚠ 多行仍是 <see cref="SCP_GuiNodeKind.TextField"/> —— 值住同一份 Fields、CLI 一樣 `--set`，
+        /// 不另開一種節點（另開就要每個消費端各補一格 switch，漏補的那個會安靜地不畫）。</para>
+        /// </summary>
+        public int Lines { get; init; }
+
         /// <summary>Slider 的下限（含）；其他 Kind 不使用。</summary>
         public double SliderMin { get; init; }
 

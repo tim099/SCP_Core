@@ -270,6 +270,19 @@ namespace SCP.Core.Gui
             return aVal;
         }
 
+        /// <summary>
+        /// 多行輸入（純文字編輯區）。回傳這一輪之後的值。
+        /// <para>⚠ key 必填：內容通常很長，自動 id 跟著標籤漂的話，換個標籤就把正在編的整份丟掉。</para>
+        /// <para>⚠ 換行一律是 <c>\n</c>（ImGui 輸入框只產 \n）—— 要寫回原檔的呼叫端自己還原行尾。</para>
+        /// </summary>
+        public string TextArea(string iLabel, string iValue, string iKey, int iLines = 20)
+        {
+            string aId = m_Ids.MakeExplicit(iKey);
+            string aVal = m_Input.Fields.TryGetValue(aId, out string? v) ? v : iValue;
+            Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.TextField, Id = aId, Text = iLabel, Value = aVal, Lines = Math.Max(1, iLines) });
+            return aVal;
+        }
+
         // ===========================================================
         // 區塊職責：數值滑桿（TASK-0377）—— 值住在**跟 TextField 同一份欄位狀態**（invariant 字串）。
         // 物理意義：同一份狀態 ⇒ session 落盤、CLI `--set id=值`、常駐窗 set 請求全都不用另開一條路。
