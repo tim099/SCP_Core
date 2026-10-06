@@ -8,7 +8,7 @@ related:
   - ucl_core:Docs~/{lang}/FreeTime/Activities/doc-reflection.md | doc-reflection | 自由時間活動（kind=doc）
   - ucl_core:Docs~/{lang}/FreeTime/Activities/letter-to-self.md | letter-to-self | 自由時間活動（kind=letter）
   - ucl_core:Docs~/{lang}/FreeTime/Activities/constitution.md | constitution | 自由時間活動（kind=constitution）
-  - ucl_core:Docs~/{lang}/Workflows/Constitution_Workflow.md | 修憲流程 | 改完憲法之後跑本支
+  - Constitution.md | 立憲與修憲 | 改完憲法之後跑本支
 ---
 
 # 📝 doc-edit —— 「改完一份 .md」之後跑它

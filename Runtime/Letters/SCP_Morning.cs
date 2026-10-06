@@ -386,7 +386,7 @@ namespace SCP.Core.Letters
                 return (false,
                     $"還沒有自我介紹（出生證明）—— `Docs/Glossary/personas/{iPersona}.md` 不存在。\n"
                     + string.Join("\n", SelfIntroTodoLines(iR, iPersona))
-                    + "\n  補完重跑本步即過（參考 Constitution_Workflow §5）。", aLock, null, 0);
+                    + "\n  補完重跑本步即過（規矩見 " + SCP_CmdRegistry.Invoke("doc --arg op=show --arg name=Constitution") + " §5）。", aLock, null, 0);
             string aBrief = BriefPath(iR, iPersona);
             if (!File.Exists(aBrief))
                 return (false, $"brief 不存在：`{aBrief}` —— 先跑 {SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningBrief>("--arg persona=" + iPersona)}（一個沒有記憶的殼不該上線開口）", aLock, null, 0);

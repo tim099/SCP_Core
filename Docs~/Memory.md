@@ -1,7 +1,7 @@
 ---
 title: 個人記憶與集體潛意識 —— 回憶、記一筆、見根、折人
-description: 非工作類記憶怎麼用：三層怎麼分、回憶用 senate cmd kb 寫成一句話查、分數帶怎麼讀、碎片怎麼寫、root-index 重建見根、升到 Alaya、維護（整合／關聯／回填）、見林前的折人（portrait-next → portrait-fold，people 看讀數）
-cmds: [root-index, portrait-next, portrait-fold, people]
+description: 非工作類記憶怎麼用：三層怎麼分、回憶用 senate cmd kb 寫成一句話查、分數帶怎麼讀、碎片怎麼寫、root-index 重建見根、升到 Alaya、維護（整合／關聯／回填）、見林前的折人（portrait-next → portrait-fold，people 看讀數）、見叢、回溯補抽
+cmds: [root-index, consolidate, keys, portrait-next, portrait-fold, people]
 target_audience: [AI_Agent]
 ---
 
@@ -129,6 +129,54 @@ Alaya 沒有機械索引，靠 `--target alaya` 檢索發現。帶「我」才�
 - 把文件整段貼進碎片 —— 碎片是 key 與現場摘要，寫路徑指過去。
 - 手改機械產物（`_root_index.md`、`cmd/wake_brief.md`）—— 下次生成就覆寫，要改去改碎片。
 - 全部設 `open` —— 設 `internalized` 要舉得出「最近一次我自動做對了」。
+
+## 見林檔名的編號
+
+`longterm/wake_<起>-<迄>.md` 的數字是 **wake 序號**：本次 wake ＝ `wakes/` 收尾信數 ＋ 1（推導值，不存欄位）。
+`consolidate` 不給 `span_start`／`span_end` ⇒ 起＝既有見林最大的迄 ＋ 1、迄＝本次 wake；brief §6 的 gap ＝ 本次 wake − 最後一份見林的迄（**直接從檔名算**）。
+⇒ 不手給 `wake`／`span_*`，編號就不會漂。
+
+舊見林的檔名若對不上它實際涵蓋的信（拿 frontmatter `consolidated_at` 對 `wakes/` 檔名裡的時戳；標題的日期範圍不可靠），手動校正：
+
+1. letters repo 裡 `git mv` 改檔名（保留 `git log --follow`）；同區間的 `keys/wake_N-M.md` 一起改。
+2. 改內文：frontmatter `span_wake`、H1、文末「下一段從 wake N 起」。只改檔名不改內文 ⇒ 兩邊都不能信。
+3. 改引用：`grep -rl '<舊檔名>' <letters>/<我>` —— 主要是碎片 `origins` 的 `source:`、舊信、`longterm/_index.md`（`_index.md` 下次見林寫入會整份重建，手改也行）。
+4. 驗收：`senate cmd wake-brief --arg persona=<我> --arg out_dir=<letters>/<我>/cmd`，§4 見林是新檔名、§6 gap 只在改到**最後一份**的迄時才變。
+5. 照 `Commit` 提交（自己 stage）。
+
+## 見叢
+
+`<信件庫根>/<persona>/_keys_open.md`：給明天的自己**執行**的代辦，一行一條 checkbox。隨時 append，不等晚安 —— 斷線最常發生在還沒走到任何儀式的時候。
+
+```bash
+senate cmd keys --arg persona=<我> --arg add="<一句話>"   # 加一條
+senate cmd keys --arg persona=<我>                         # 列未完／已完
+senate cmd keys --arg persona=<我> --arg done_index=2,3    # 勾銷（或 done=<唯一命中的片段>）
+```
+
+- 勾銷只把 `- [ ]` 換成 `- [x]`，不刪行不改字。
+- 跟專案有關的開 Task，不放這裡；抒發寫信，不寫這裡。
+- 見林寫入時整份歸檔並清空（交接閘見「折人」節末）。
+
+## 回溯補抽（一次性）
+
+醒了很多次、見根卻還很薄 ⇒ 舊見林與舊信裡的關鍵記憶不會固定回來（brief 只帶見森、最新一份見林、最近幾封信，外加抽樣一封舊信）。跑一次，抽成碎片，之後由見根帶進每次 brief。
+
+1. **盤點**：`senate cmd consolidate --arg persona=<我>`（不給 `digest_body` ＝ 只看狀態）列出未進見林的信。
+   讀**全部見林**（`longterm/wake_*.md`）＋**未進見林的收尾信**（`wakes/`）；更早的散信精華已在見林裡，不重讀。
+2. **挑**：逐份讀完，問四題 ——
+   踩過兩次以上的坑 → `lesson`；跨過一段見林還沒解的線 → `unsolved`；
+   對 Tim／同事穩定成立的理解 → `relation`；自我認知的轉折、收斂出的信念 → `identity`／`philosophy`。
+   單次事件細節、已解掉的一次性 bug、當天情緒不抽（留在信裡）。
+3. **寫**：每一條走「記一筆」（先搜 → 寫檔 → `root-index`）。跨 persona 撞到同一條：互相 `links`，各自保留 origins。
+   還活著的 `unsolved` 同時丟一條進見叢。
+4. **驗收**：
+   - 打開 `fragments/_root_index.md`：「必讀」筆數 ＝ 你寫的 `status: open` 數；最上面是 `recurrence` 最高的那條，不是最新的。
+   - 每個 `lesson` 都有「可行動守則」，每筆 origin 都有 `source`。
+   - 抽一筆已知碎片，用一句自然問法查 `frag_<我>`，它要進前 3；沒進就照「維護 → 回填」補。
+   - 下次 morning 的 `cmd/wake_brief.md` 見根段落會列出它們（brief 直接讀碎片，不讀 `_root_index.md`）。
+
+跑完回到常規：之後每次見林順手抽新碎片（見「維護」）。
 
 ## 折人（見林的第一步）
 

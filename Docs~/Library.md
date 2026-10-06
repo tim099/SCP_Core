@@ -109,30 +109,15 @@ senate cmd library --arg op=share --arg persona=<persona> --arg media_id=<media-
 | 漫畫庫 | `comics` | 外部漫畫庫作品清單（🟢已建檔／🟡來源失聯／⚪未建檔）、卷話明細、開資料夾；未建檔的可「初始化 Library media」（**先預覽、確認才寫**；署名 persona 由工具列明確選，期待度固定 3）。路徑設定只住路徑管理頁 |
 | 書店 | `bookshop` | 藏書架（依系列，可依 kind 篩選）、全文書庫（含「編輯書籍」→ `bookedit` 頁）、捐贈簿、捐贈表單（**先預覽、確認才扣款**）、推薦書單 |
 
-## 書店（`senate cmd book`）的藏書架與分類
+## 書店（`senate cmd book`）
 
-```bash
-senate cmd book --arg op=shelf [--arg kind=original|external|watch-log|tavern-history]   # 藏書總覽（一列一個系列，單書自成一系列）
-senate cmd book --arg op=series [--arg series=<id>]                                       # 不帶 series＝所有已註冊系列；帶＝該系列書單（含閱讀用 id）
-senate cmd book --arg op=classify --arg book=<id> [--arg kind=…] [--arg series=<id>] [--arg volume=N] \
-  [--arg series_title=<顯示名>] [--arg parent_series=<id> --arg parent_series_title=<顯示名>] [--arg series_note=…]
-```
+藏書架、系列、分類與 `_donation.json` 正典版面見 `senate cmd doc --arg op=show --arg name=Book`。
 
-`shelf`／`series` 純讀；`classify` 是唯一的分類寫入通道，只改 `_donation.json` 的 kind／series／volume（補寫 origin）與 `Books/_series.json`，**不動錢**。
-- `series`／`parent_series` **顯式傳空字串＝脫離系列／上位**，跟沒傳是兩件事。
-- 系列首次使用必須帶 `series_title`（不自動拿 id 當名字 —— 打錯字會長出一個看起來正常的新系列）；上位系列同理。
-- **`_donation.json` 只有一種正典版面**（2 空格／冒號後有空格／CRLF／結尾換行，`SCP_BooksOps.SaveJson`）。`classify` 一律以它寫回；對一本書做「不改任何值」的 classify，檔案位元組不變。`Books/_series.json` 仍是舊 writer 版面（tab／冒號後無空格／**不補結尾換行**），改它時只在真的有變動才寫、且改的是解析出來的原樹（未知鍵與鍵序保留）。
+## Archive（舊格式，只供人工遷移）
 
-### 統一版面：`op=normalize_donations`
+`<資料根>/BookNotes/Archive/<slug>/`（`book.json`、`chapters/chNN_*.md`、`characters/<id>/`）是舊閱讀紀錄，**唯讀**：⛔ 不寫入、不改名、不加標記，日常閱讀不讀它。
+遷移由原讀者人工搬進 Library；裁決只記在 `BookNotes/_migration/registry.json`（`migrated`＝已進正本、`kept_archive`＝刻意不遷、`born_new`＝新流程直接建），`scan` 依它隱藏已遷移項（`show_migrated=1` 連同列出；`kept_archive` 不隱藏、標已裁決），疑似同作品由人確認。
+舊 `book.json` 缺 `reader_persona` 就記 `unknown`，不從內容猜；舊 `chapter: N` 可能重複，不能直接當 `chapter_id`。
 
-```bash
-senate cmd book --arg op=normalize_donations                 # dry-run：列出會轉換的書（零寫入）
-senate cmd book --arg op=normalize_donations --arg confirm=1  # 真的寫
-```
-
-只動版面不動值：寫前驗「新版面文字 parse 回來 ＝ 原檔 parse 結果」（不等就整本跳過、列為失敗、exit 1），寫後讀回驗位元組；已是正典版面的檔不碰。冪等 —— 轉完再跑是 0 份。
-
-`scan` 產出審計報告，疑似同作品由人確認；`show_migrated=1` 包含已遷移項目。
 `authored_diff` 帶 book 與 work_id 對拍寫書資料；`authored_migrate` 預設 dry-run，帶 `confirm=1` 才寫入。
-
-完整參數：`senate cmd help library`。日常內容以 Library 為來源，Archive 只供人工遷移。
+完整參數：`senate cmd help library`。

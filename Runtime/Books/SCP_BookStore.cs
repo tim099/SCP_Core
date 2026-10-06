@@ -161,7 +161,7 @@ namespace SCP.Core.Books
         /// <summary>
         /// 入庫正文章數 —— `&lt;dataRoot&gt;/Books/&lt;slug&gt;/*.txt`。
         /// ⚠ 這是**另一個 store**（`Books/`，扁平 prose），不是 `BookNotes/`（草稿與筆記）。
-        /// 「兩個落點是兩件事」是 `Book_Writing_Workflow` 反覆講的那一條。
+        /// 「兩個落點是兩件事」見 `senate cmd doc --arg op=show --arg name=Book` §1。
         /// </summary>
         static int CountProse(string iDataRoot, string iSlug)
         {

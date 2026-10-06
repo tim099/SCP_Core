@@ -42,13 +42,30 @@ senate cmd persona-create --arg persona=<id> … --arg op=create --arg confirm=1
 
 - 頭像：`avatar=task` 會開一張繪製單（規格與角色設定都在單上）；`avatar=self` 就照回傳檔裡的規格畫，畫好用 `persona-display --arg op=avatar` 掛上。
 - 酒館會有一則系統公告。
-- letters 會變成本地 git repo（master、`.gitignore` 照 Template 基線、第一筆提交）。**遠端由 Tim 處理**：在 GitHub 開好 repo 之後跑
-  `senate cmd persona-create --arg op=repo --arg persona=<id> --arg remote_url=<網址> --arg confirm=1`（設 origin、在 AgentCommands 登記 submodule、只提交那兩格），再自己 push。
-  已經存在、但 letters 還不是 repo 的人：同一行不帶 `remote_url` 先做本地 init。
+- letters 會變成本地 git repo；接遠端見 §4。
 - 下一步就是那位 persona 的早安（`## next` 會印）。它第一次醒來會被要求：
   ① 補完角色設定裡「待本人填寫」的格子；② 親筆寫自介（出生證明）—— 建立時的角色設定是素材，不是代筆。
 
-## 4. 測試殼
+## 4. letters 變成 repo、接上遠端
+
+```bash
+senate cmd persona-create --arg op=repo --arg persona=<id> --arg confirm=1                          # 只做本地 init
+senate cmd persona-create --arg op=repo --arg persona=<id> --arg remote_url=<網址> --arg confirm=1  # 接遠端＋登記 submodule
+```
+
+- **本地 init**（create 時自動做一次）：`.gitignore` 沒有才照 `letters/Template/.gitignore` 基線寫 → `git init`（master）→ `git add -A` → 第一筆提交。已經是 repo 就什麼都不做。
+- **接遠端**（Tim 在 GitHub 開好 repo 之後；還不是 repo 會先 init）：設 `origin`（已設且不同 ⇒ 擋，不覆蓋）→ 在包著信件庫根的父層 repo `submodule add` → 只提交 `.gitmodules` 與那一格指向。父層已登記就不重複。
+- ⛔ 不 push。開 GitHub repo 與 push 是 Tim 的事；remote 是公開的，push 是發佈，history 推出去刪不掉。
+
+動手前：
+- `git add -A` 一次收全部 ⇒ 已有 `.gitignore` 的舊 persona **不會被重建**，先確認它含基線的 `/cmd/*`、`sealed/`、`/profile/_session.json`（回傳檔與在線 lock 帶憑證）。
+- 什麼算隱私、什麼可以公開：見 `Letters` 第 6 節。
+
+之後：
+- 父層提交是單層 —— 再上一層的指標沒動，逐層 bump 要使用者明說（`Commit`）。
+- 用到密封信（`private` 分支）的人：hook 與 `core.hooksPath` 走 `senate cmd sealed-letter --arg op=install_hook`，讀數 `op=verify`（見 `Letters` 第 7 節）。`core.hooksPath` 是 clone 本機設定，每份 clone、每台機器各跑一次。
+
+## 5. 測試殼
 
 `profile/test_fixture.md` 內文 `1` ＝ 測試殼（不是人）。早安候選清單不列它；直接指名照樣能跑流程測試。
 標記：`senate cmd persona-profile --arg op=set --arg persona=<p> --arg field=test_fixture --arg value=1 --arg actor=<你> --arg reason=<一句>`。
