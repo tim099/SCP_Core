@@ -8,8 +8,8 @@ using SCP.Core.Json;
 // 區塊職責：新 Library store 的**資料鍵、JSON/文字讀寫、以及讀取端**（reader.json 載入與章節分類）。
 // 物理意義：這是 `UCL_ReadingLibraryIO` 移進 SCP_Core 的第二刀。第一刀（`SCP_LibraryStore`）只回答
 //          「路徑在哪」，本層回答「那個檔裡有什麼、讀不讀得動、讀出來算第幾章」。
-//          ⛔ **寫入端（media_init / note_chapter / bookmark / add_character / revise_view）還沒搬**；
-//          但它們落地要用的**版面**已經對齊舊 writer（見 SaveJson 的 remarks）。
+//          寫入端（media_init / note_chapter / bookmark / …）後來也搬了（`SCP_LibraryInit` 等，入口 `senate cmd library`）；
+//          它們落地用的**版面**對齊舊 writer（見 SaveJson 的 remarks）。
 // 數值影響：`LoadJson` 讀不動一律回 null ＋ error（⛔ 不回空物件 —— 那會讓下一次寫入把壞檔
 //          覆蓋成「乾淨」，原始資料連救都救不回來）。寫檔一律 UTF-8 無 BOM ＋ **CRLF**
 //          —— 那段手勢與它的血證住 `SCP.Core.Io.SCP_TextFile.WriteCrLf`（2026-09-11 提取，TASK-0200）。
@@ -192,9 +192,8 @@ namespace SCP.Core.Library
         // 🩸 TASK-0137（2026-09-05 summit）：三支 op 全回「檔案不存在：…/reader.json」，
         //   她讀不出出口於是沒寫成接續點 —— 而場次結算 exit 0、公告照發
         //   ⇒ **場次帳是綠的、記憶帳是空的**。那是窄報，不是拒絕。
-        // ⚠ 指令字面暫時保留 `ucmd run Library` 的形狀 —— **那條現在還活著**，
-        //   而 `senate cmd library` 這一刀還沒建出來。⛔ 指路牌不指向還沒出生的路；
-        //   Cmd 殼落地那一刀要回來改這裡（本註解就是那筆待辦的錨）。
+        // ⚠ 出口指 `senate cmd library`（Cmd 殼已落地；TASK-0435 回來改掉舊的 Editor 入口形狀）。
+        //   期待度範圍跟 help 同一句（0-5，預設 3）—— 兩處寫不一樣，照提示打的人會被擋。
         static string NotAReaderYetMessage(string iDataRoot, string iMediaId, string iPersona,
                                            string iReaderPath)
         {
@@ -212,9 +211,9 @@ namespace SCP.Core.Library
             return
                 "你還不是 `" + iMediaId + "` 的 reader —— `reader.json` 不存在：" + iReaderPath + "\n" +
                 "⇒ 出口（**這一支就是登記入口**，不是只給新作品用的）：\n" +
-                "   Library op=media_init --arg persona=" + iPersona + " --arg media_id=" + iMediaId +
+                "   senate cmd library --arg op=media_init --arg persona=" + iPersona + " --arg media_id=" + iMediaId +
                 " --arg work_id=" + aWorkId + " --arg media_kind=" + aMediaKind + " --arg title=" + aTitle +
-                " --arg anticipation=<1-5 期待度>\n" +
+                " --arg anticipation=<0-5 期待度，預設 3>\n" +
                 "⚠ 它的名字只說了一半：media 已存在時 **work.json / media.json 一律不覆寫**，" +
                 "只補建你自己的 reader.json（既有讀者的進度不受影響）。";
         }

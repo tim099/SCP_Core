@@ -326,7 +326,7 @@ namespace SCP.Core.Letters
         //   🩸 erina（第一個真的 create）只是一個未追蹤目錄 ⇒ 晚安提交收尾信沒有 repo 可提交。
         //   ⇒ 本地：git init（master）＋ 同步格式的 .gitignore ＋ 第一筆提交。
         //     有 remote_url（Tim 開好遠端之後）：設 origin、在父層 submodule add、只提交 .gitmodules 與那一格指向。⛔ 不 push。
-        // ⚠ .gitignore 的格式從現有檔反推（同步工具 sync_letters_gitignore.py 已隨 python 退場刪除）：
+        // ⚠ .gitignore 的格式從現有檔反推（python 版的同步工具已隨 python 退場刪除）：
         //   檔頭 4 行 ＋ 基線（`letters/Template/.gitignore`）全文 ＋ END 標記 ＋ 本 persona 自訂區；
         //   `baseline_sha256` ＝ 基線**換行正規化成 LF** 後的 sha256（對 kotoko 現有檔驗過：d3e78f72…）。
         // ==========================================================
@@ -348,8 +348,8 @@ namespace SCP.Core.Letters
             }
             var aOut = new StringBuilder();
             aOut.Append("# ╔═══ BASELINE — 由 letters/Template/.gitignore 同步，勿在本區編輯 ═══╗\n");
-            aOut.Append("# 要改共用規則：改基線檔，再跑 sync_letters_gitignore.py（--check 只報漂移）。\n");
-            aOut.Append("# 自訂規則寫在檔尾「本 persona 自訂」區 —— 那一區同步工具不動。\n");
+            aOut.Append("# 要改共用規則：改基線檔，再把本區照抄成新基線（同步工具已退場、目前沒有替代；baseline_sha256 對得上＝已同步）。\n");
+            aOut.Append("# 自訂規則寫在檔尾「本 persona 自訂」區 —— 同步基線時不要動那一區。\n");
             aOut.Append("# baseline_sha256: " + aSha + "\n");
             aOut.Append(aBase.TrimEnd('\n') + "\n");
             aOut.Append("# ╚═══ BASELINE END ═══╝\n\n");

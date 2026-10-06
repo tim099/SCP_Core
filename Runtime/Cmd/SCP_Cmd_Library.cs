@@ -194,6 +194,9 @@ namespace SCP.Core.Cmd
             string aRaw = iArgs.Get("anticipation").Trim();
             if (aRaw.Length > 0 && !int.TryParse(aRaw, out aAnticipation))
                 return SCP_CmdResult.Fail(2, $"✗ anticipation 不是整數：`{aRaw}`");
+            // TASK-0435：範圍跟 help 同一句（0-5）。⛔ 不夾成 5 —— 夾了就是替人改了一個他說出口的數字，而且不會叫。
+            if (aAnticipation < 0 || aAnticipation > 5)
+                return SCP_CmdResult.Fail(2, $"✗ anticipation 要在 0-5 之間（收到 `{aRaw}`）—— 沒有寫入任何檔");
 
             string aLog = SCP_LibraryInit.MediaInit(iLetters, iDataRoot, aWorkId, iMediaId, aKind, iPersona,
                 aTitle, iArgs.Get("title_original"), iArgs.Get("author"), aAnticipation,

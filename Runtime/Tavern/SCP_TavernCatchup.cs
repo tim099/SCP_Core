@@ -52,7 +52,7 @@ namespace SCP.Core.Tavern
             string? cursorBefore = SCP_TavernCursor.ReadCursor(iDataRoot, iPersona);
             sb.AppendLine($"# 📬 叮 catchup — {iPersona}　`{room}`");
             sb.AppendLine();
-            sb.AppendLine($"- 游標（本次之前）：{(string.IsNullOrEmpty(cursorBefore) ? "**（從未設過）** —— 下面會是最近 " + minCount + " 筆，不是全庫" : "`" + cursorBefore + "`")}");
+            sb.AppendLine($"- 游標（本次之前）：{(string.IsNullOrEmpty(cursorBefore) ? "**（從未設過）** —— 下面是酒館最新 " + SCP_TavernCursor.SCAN_LIMIT + " 則（沒有游標時的掃描窗），不是全庫" : "`" + cursorBefore + "`")}");
             sb.AppendLine();
 
             // 回捲上限：每次呼叫讀設定（改完下一次就生效）。沒設過 ⇒ 預設並明說；不合法 ⇒ 照預設跑並說出原因。
