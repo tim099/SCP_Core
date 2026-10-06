@@ -142,6 +142,13 @@ namespace SCP.Core.Tavern
                 aPool = SCP_TavernRead.Range(iDataRoot, aRoom, iFrom, iTo, oStat);
                 aScope = $"seq {iFrom}-{iTo}";
             }
+            else if (iFrom > 0 && iTo <= 0)
+            {
+                // 只給 from ＝「從這裡到最新」。🩸 舊版把它靜默丟掉、回成最後 4000 則，標頭照樣像答案（TASK-0422）。
+                //   只給 to／to < from／seq 與 from、to 並給 ⇒ 由 Cmd 入口 exit 2 擋下，不會走到這裡。
+                aPool = SCP_TavernRead.Range(iDataRoot, aRoom, iFrom, int.MaxValue, oStat);
+                aScope = $"seq {iFrom}-{oStat.Total}（只給 from ⇒ 到最新）";
+            }
             else
             {
                 aPool = SCP_TavernRead.Tail(iDataRoot, aRoom, SCAN_PER_ROOM, oStat);

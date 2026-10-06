@@ -264,34 +264,7 @@ namespace SCP.Core.Tavern
                 sb.AppendLine("## 📥 inbox：（空）");
                 return;
             }
-            // 條目判準是標題行 `## [seq=…]`（⛔ 不能用 SCP_TavernInbox.SplitEntries —— 它切任何 `## `，body 裡的小標會被切開）
-            var lines = raw.Replace("\r", "").Split('\n');
-            var titles = new List<string>();
-            var snippets = new List<string>();
-            var atLines = new List<string>();
-            string? curTitle = null, curFirstBody = null, curAt = null;
-            foreach (var ln in lines)
-            {
-                if (ln.StartsWith("## [seq=", StringComparison.Ordinal))
-                {
-                    if (curTitle != null) { titles.Add(curTitle); snippets.Add(curFirstBody ?? ""); atLines.Add(curAt ?? ""); }
-                    curTitle = ln.Substring(3).Trim();
-                    curFirstBody = null;
-                    curAt = null;
-                }
-                else if (curTitle != null && ln.TrimStart().StartsWith("_at ", StringComparison.Ordinal))
-                {
-                    curAt = ln.Trim();
-                }
-                else if (curTitle != null && curFirstBody == null)
-                {
-                    string t = ln.Trim();
-                    if (t.Length > 0 && !t.StartsWith("_at ", StringComparison.Ordinal)
-                        && !t.StartsWith(">", StringComparison.Ordinal) && !t.StartsWith("---", StringComparison.Ordinal))
-                        curFirstBody = t.Length > 90 ? t.Substring(0, 90) + "…" : t;
-                }
-            }
-            if (curTitle != null) { titles.Add(curTitle); snippets.Add(curFirstBody ?? ""); atLines.Add(curAt ?? ""); }
+            var (titles, snippets, atLines) = ParseInboxEntries(raw);
 
             var nowUtc = DateTime.UtcNow;
             var fresh = new List<int>();
@@ -315,6 +288,46 @@ namespace SCP.Core.Tavern
             sb.AppendLine();
             sb.AppendLine("　↳ 處理完才歸檔（ack ＝ **已處理**，不是已看過）：`"
                 + SCP.Core.Cmd.SCP_CmdRegistry.InvokeOf<SCP_Cmd_TavernInboxAck>("--arg owner=" + iPersona) + "`");
+        }
+
+        /// <summary>
+        /// inbox 原文 → 每筆條目的（標題、預覽、`_at` 行）。純函式，catchup 與自測共用同一支。
+        /// 條目判準是標題行 `## [seq=…]`（⛔ 不能用 SCP_TavernInbox.SplitEntries —— 它切任何 `## `，body 裡的小標會被切開）
+        /// </summary>
+        public static (List<string> Titles, List<string> Snippets, List<string> AtLines) ParseInboxEntries(string iRaw)
+        {
+            var lines = iRaw.Replace("\r", "").Split('\n');
+            var titles = new List<string>();
+            var snippets = new List<string>();
+            var atLines = new List<string>();
+            string? curTitle = null, curFirstBody = null, curAt = null;
+            foreach (var ln in lines)
+            {
+                if (ln.StartsWith("## [seq=", StringComparison.Ordinal))
+                {
+                    if (curTitle != null) { titles.Add(curTitle); snippets.Add(curFirstBody ?? ""); atLines.Add(curAt ?? ""); }
+                    curTitle = ln.Substring(3).Trim();
+                    curFirstBody = null;
+                    curAt = null;
+                }
+                else if (curTitle != null && ln.TrimStart().StartsWith("_at ", StringComparison.Ordinal))
+                {
+                    curAt = ln.Trim();
+                }
+                else if (curTitle != null && curFirstBody == null)
+                {
+                    // 🩸 寫入端（SCP_TavernMentions）把本文寫成 `> {本文}` —— 只有**第一行**帶 `>`。
+                    //   舊版跳過 `>` 行 ⇒ 永遠丟掉本文第一行，預覽抓到的是後面的「📖 本回提到的新詞」或「建議前往」（TASK-0417）。
+                    //   ⇒ 剝掉引文前綴、取它當預覽。檔頭與 truncated 告示也是 `>` 行，但都在第一個 `## [seq=` 之前，碰不到這裡。
+                    string t = ln.Trim();
+                    if (t.StartsWith(">", StringComparison.Ordinal)) t = t.Substring(1).Trim();
+                    if (t.Length > 0 && !t.StartsWith("_at ", StringComparison.Ordinal)
+                        && !t.StartsWith("---", StringComparison.Ordinal))
+                        curFirstBody = t.Length > 90 ? t.Substring(0, 90) + "…" : t;
+                }
+            }
+            if (curTitle != null) { titles.Add(curTitle); snippets.Add(curFirstBody ?? ""); atLines.Add(curAt ?? ""); }
+            return (titles, snippets, atLines);
         }
     }
 }

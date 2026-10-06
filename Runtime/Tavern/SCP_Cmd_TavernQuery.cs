@@ -31,7 +31,8 @@ namespace SCP.Core.Tavern
 
         public override string Details =>
             "· `kind=tail`：單房最後 N 則。\n"
-            + "· `kind=seq`：指定 `seq`、或 `from`+`to` 區間、或不給（＝最後 4000 則內）再套篩選\n"
+            + "· `kind=seq`：指定 `seq`、或 `from`+`to` 區間、或只給 `from`（＝到最新）、或都不給（＝最後 4000 則內）再套篩選\n"
+            + "  ⛔ 只給 `to`／`to` < `from`／`seq` 與 `from`、`to` 並給 ⇒ exit 2（不會退回最後 4000 則）。\n"
             + "  （`sender_persona` / `sender` / `tag` / `grep` / `full`）。\n"
             + "⭐ 輸出格式**逐字對齊** Editor 側 `run Tavern --arg op=query`（驗收④要逐筆對拍）。\n"
             + "⚠ 唯一刻意差異：落盤沒有 `sender_name` 時本側降級印 `sender_id`，**並把降級筆數印在頁尾**\n"
@@ -59,8 +60,8 @@ namespace SCP.Core.Tavern
             new SCP_CmdArgSpec("limit", "`tail` 要幾則（≤0 ⇒ 20）", iDefault: "20"),
             new SCP_CmdArgSpec("clip", "正文截斷字數（0 ＝ 不截）", iDefault: "200"),
             new SCP_CmdArgSpec("seq", "`seq`：單一 seq", iDefault: "0"),
-            new SCP_CmdArgSpec("from", "`seq`：區間起（含）", iDefault: "0"),
-            new SCP_CmdArgSpec("to", "`seq`：區間迄（含）", iDefault: "0"),
+            new SCP_CmdArgSpec("from", "`seq`：區間起（含）。只給它 ＝ 到最新", iDefault: "0"),
+            new SCP_CmdArgSpec("to", "`seq`：區間迄（含）。⛔ 不能單獨給（要配 `from`）", iDefault: "0"),
             new SCP_CmdArgSpec("last", "`seq`：只列最後幾筆（**顯示上限，不是命中數**）", iDefault: "0"),
             new SCP_CmdArgSpec("sender_persona", "`seq`：精確比對 persona", iDefault: ""),
             new SCP_CmdArgSpec("sender", "`seq`：sender_id 子字串", iDefault: ""),
@@ -89,6 +90,20 @@ namespace SCP.Core.Tavern
                 // ⚠ 這一格與「這一房是空的」刻意不同形：房間不存在是**參數錯**，不是一個空結果。
                 return SCP_CmdResult.Fail(1, "✗ 這一房沒有 messages 目錄：" + aMsgDir,
                                           "  ⛔ 這是「房間不存在」，不是「這一房沒有訊息」");
+
+            if (aKind == "seq")
+            {
+                // 區間參數組不起來就 exit 2 —— 🩸 舊版一律退回「最後 4000 則」，exit 0、標頭格式正常，
+                //   讀的人會把它當成自己問的那一段（TASK-0422）。只給 from ＝ 到最新，由 SCP_TavernQuery.Seq 處理。
+                int aSeq = ParseInt(iArgs, "seq", 0), aFrom = ParseInt(iArgs, "from", 0), aTo = ParseInt(iArgs, "to", 0);
+                if (aSeq > 0 && (aFrom > 0 || aTo > 0))
+                    return SCP_CmdResult.Fail(2, $"✗ `seq` 與 `from`／`to` 擇一（給了 seq={aSeq}、from={aFrom}、to={aTo}）");
+                if (aTo > 0 && aFrom <= 0)
+                    return SCP_CmdResult.Fail(2, $"✗ 只給 `to`={aTo}：不知道從哪一則起 ⇒ 補 `from`",
+                                              "  要最新的幾則走 `kind=tail --arg limit=<N>`");
+                if (aFrom > 0 && aTo > 0 && aTo < aFrom)
+                    return SCP_CmdResult.Fail(2, $"✗ `to`={aTo} 小於 `from`={aFrom}");
+            }
 
             var aWatch = Stopwatch.StartNew();
             string aBody;

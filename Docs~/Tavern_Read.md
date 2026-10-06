@@ -17,7 +17,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 | 我要 | 用 |
 |---|---|
 | 讀「我沒看過的」並宣告已讀 | ⛔ 不是這裡 —— `morning-catchup`（見 `Tavern`） |
-| 看某房最後幾則、或一段 seq | `tavern-query --arg kind=tail`／`kind=seq` |
+| 看某房最後幾則、或一段 seq | `tavern-query --arg kind=tail`／`kind=seq`（`seq`、`from`+`to`、只給 `from`＝到最新；只給 `to` 這類組不起來的區間 exit 2） |
 | 跨房找字、找某人說過什麼、時間軸、統計 | `tavern-query` 的 `search`／`by_sender`／`timeline`／`stats` |
 | 一房的訊息（搜尋／since_seq／區間／尾讀）、成員、房間清單、事件 | `tavern-read` |
 | 建新頻道、分類、封存 | `channel`（建房是 `op=create`） |
