@@ -169,7 +169,7 @@ namespace SCP.Core.Letters
                 "region: " + aRegion,
                 "project: " + aProject,
                 "generated: mechanical   # morning 每次重生成 — 手改會被覆寫；事實來源見各層原檔",
-                "source: SCP_WakeBrief (C#)   # 唯一生產端（senate cmd wake-brief）",
+                "source: SCP_WakeBrief (C#)   # 唯一生產端（" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_WakeBrief>() + "）",
                 "---",
                 "",
                 "# 🌅 Wake Brief — " + iPersona + " wake #" + iWakeCount.ToString(),
@@ -315,7 +315,7 @@ namespace SCP.Core.Letters
                 return s;
             }
             s.Lines.Add($"> **{aDue.Count} 封**到期、還沒確認閱讀。⚠ 列出≠讀過：信會每次醒來都出現，直到 ack。");
-            s.Lines.Add("> 讀完確認：`senate cmd mail --arg op=ack --arg persona=" + iPersona + "`（全部）或加 `--arg file=<檔名>`（單封）");
+            s.Lines.Add("> 讀完確認：`" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Mail>("--arg op=ack --arg persona=" + iPersona) + "`（全部）或加 `--arg file=<檔名>`（單封）");
             s.Lines.Add("");
             foreach (SCP_RegisteredMail.MailItem m in aDue)
             {
@@ -662,7 +662,7 @@ namespace SCP.Core.Letters
                 aLines.Add("  · " + a.Why);
                 if (a.Missing > 0)
                     aLines.Add("  · by category：" + JoinCounts(a.MissingByCategory)
-                               + "　→ 細節 `senate cmd payroll-audit --arg day=" + aDay + "`");
+                               + "　→ 細節 `" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_PayrollAudit>("--arg day=" + aDay) + "`");
             }
             catch (Exception e)
             {
@@ -676,7 +676,7 @@ namespace SCP.Core.Letters
                 else if (aRun != null)
                     aLines.Add("- 🧾 " + SCP.Core.Cmd.SCP_Cmd_BankReconcile.LastRunLine(aRun)
                                + (aRanNow ? "　（本次早安剛跑）" : "")
-                               + (aRun.GetInt("missing", 0) > 0 ? "　→ 細節 `senate cmd bank-reconcile`" : ""));
+                               + (aRun.GetInt("missing", 0) > 0 ? "　→ 細節 `" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_BankReconcile>() + "`" : ""));
             }
             catch (Exception e)
             {
@@ -1344,8 +1344,8 @@ namespace SCP.Core.Letters
             {
                 aLines.Add("- 目前**沒有**寫到一半的書（`origin: authored` 且未發布：0 本）。");
                 // ⚠ 範例要帶 `author_persona` 與 `id`：少了前者書會被署成預設 persona，少了後者 slug 由中文書名生（2026-09-28 實測）。
-                aLines.Add("  開一本：`senate cmd book --arg op=add --arg origin=authored --arg id=" + iPersona + "-<topic>"
-                           + " --arg author_persona=" + iPersona + " --arg title=<書名> --arg aliases=<書名>`");
+                aLines.Add("  開一本：`" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Book>("--arg op=add --arg origin=authored --arg id=" + iPersona + "-<topic>"
+                           + " --arg author_persona=" + iPersona + " --arg title=<書名> --arg aliases=<書名>") + "`");
             }
             else
             {
@@ -1376,7 +1376,7 @@ namespace SCP.Core.Letters
             }
 
             aLines.Add("");
-            aLines.Add("> 查全部：`senate cmd book --arg op=writing`"
+            aLines.Add("> 查全部：`" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Book>("--arg op=writing") + "`"
                        + "（與本節**同一支讀取器**：`SCP_BookStore.TryListAuthored`）");
             return new SCP_BriefSection { Title = aTitle, Lines = aLines, Essential = false };
         }

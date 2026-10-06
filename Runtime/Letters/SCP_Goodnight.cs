@@ -137,7 +137,7 @@ namespace SCP.Core.Letters
             aR.AppendLine("   ▸ 完整規格與範例：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Doc>("--arg op=show --arg name=Letters") + "（§4 密文區）");
             aR.AppendLine("   ▸（自願）把**明文答案**封起來、明早自己對帳：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_SealedLetter>($"--arg op=seal_cipher --arg persona={iPersona} --arg-file cipher=<密文> --arg-file plain=<明文> --arg wake=<N>"));
             aR.AppendLine("     答案只進 private 分支（不上公開 GitHub）；明早 brief §5 見樹會再讀到這段密文 —— 想解就解，沒人擋妳。");
-            aR.AppendLine($"   （手動登出 / cleanup 不寫信 → 直接 senate cmd goodnight-logout --arg persona={iPersona}，不偽造心得信）");
+            aR.AppendLine("   （手動登出 / cleanup 不寫信 → 直接 " + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightLogout>($"--arg persona={iPersona}") + "，不偽造心得信）");
             return Ok(aR);
         }
 
@@ -263,8 +263,8 @@ namespace SCP.Core.Letters
                 aR.AppendLine("## blocked");
                 aR.AppendLine("- reason: 要投遞畫像需要 about ＋ body（親筆公開層）；本步驟不生成內容 —— 工具代筆的畫像不是妳的。");
                 aR.AppendLine("- exits:");
-                aR.AppendLine($"  · 畫一幅：senate cmd goodnight-portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<一句話標題> --arg-file body=<公開層檔> [--arg-file private_body=<私層檔>] [--arg affinity=<如 11/在意>]");
-                aR.AppendLine($"  · 今夜不畫：senate cmd goodnight-portrait --arg persona={iPersona} --arg skip_reason=<為什麼今晚沒有人值得畫>");
+                aR.AppendLine("  · 畫一幅：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightPortrait>($"--arg persona={iPersona} --arg about=<同事> --arg headline=<一句話標題> --arg-file body=<公開層檔> [--arg-file private_body=<私層檔>] [--arg affinity=<如 11/在意>]"));
+                aR.AppendLine("  · 今夜不畫：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightPortrait>($"--arg persona={iPersona} --arg skip_reason=<為什麼今晚沒有人值得畫>"));
                 return Blocked(aR);
             }
 
@@ -321,8 +321,8 @@ namespace SCP.Core.Letters
                 aR.AppendLine("- reason: 今天還沒投遞畫像，也沒有顯式跳過的理由 —— 畫像是 brief §6.5「我認識誰」的唯一來源，");
                 aR.AppendLine("  漏掉不會有人喊，只會讓未來的自己醒來時少一整層。");
                 aR.AppendLine("- exits（二擇一，都會放行 letter）:");
-                aR.AppendLine($"  · 畫一幅：senate cmd goodnight-portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>");
-                aR.AppendLine($"  · 今夜不畫：senate cmd goodnight-portrait --arg persona={iPersona} --arg skip_reason=<理由>");
+                aR.AppendLine("  · 畫一幅：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightPortrait>($"--arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>"));
+                aR.AppendLine("  · 今夜不畫：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightPortrait>($"--arg persona={iPersona} --arg skip_reason=<理由>"));
                 aR.AppendLine("- ⚠ 這不是要妳每晚交作業 —— 想不出理由的時候，妳就會發現自己其實有人可以畫。");
                 return Blocked(aR);
             }
@@ -347,7 +347,7 @@ namespace SCP.Core.Letters
             aR.AppendLine($"- _latest.md 指標: `{aLatest}`（mtime 已更新={File.GetLastWriteTimeUtc(aLatest) > DateTime.UtcNow.AddMinutes(-1)}）");
             aR.AppendLine($"- wake_count（由 wakes/ 信數推導）→ {SCP_Consolidate.WakeLetterCount(iR.LettersRoot, iPersona)}");
             aR.AppendLine("## next");
-            aR.AppendLine($"1. **required** — 下線：senate cmd goodnight-sleep --arg persona={iPersona} [--arg-file summary=<檔>]");
+            aR.AppendLine("1. **required** — 下線：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightSleep>($"--arg persona={iPersona} [--arg-file summary=<檔>]"));
             aR.AppendLine("   <summary>＝**親筆**公開睡前心得（廣播給同事/Tim 看的部分；私密的已在信裡，不用重複）。");
             return Ok(aR);
         }
@@ -454,7 +454,7 @@ namespace SCP.Core.Letters
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: lock 在但讀不了（{aLock.LockError}）—— 讀不到本次的 wake_expected，收尾信閘判不了");
-                aR.AppendLine($"- exits: 確認後走 senate cmd goodnight-logout --arg persona={iPersona}（會刪掉這顆壞 lock 並在廣播標明未留信）");
+                aR.AppendLine("- exits: 確認後走 " + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightLogout>($"--arg persona={iPersona}") + "（會刪掉這顆壞 lock 並在廣播標明未留信）");
                 aOut.Blocked = true; aOut.Report = aR.ToString(); return aOut;
             }
 
@@ -590,7 +590,7 @@ namespace SCP.Core.Letters
             if (s == null || !s.active) return "- 🎬 活動 session：**無進行中 session**（不是沒查 —— 查了，沒有）";
             if (s.kind == SCP_ActivitySessionKind.StreamWatch)
                 return $"- 🎬 活動 session：⚠ **觀影場 `{s.session_id}` 沒關** —— 結算需要 Unity Editor；"
-                    + $"到期後它成為殘留，下次 StreamWatch start 或 `senate cmd sessions --arg op=close --arg target_persona={iPersona} --arg confirm=1` 會補結算";
+                    + "到期後它成為殘留，下次 StreamWatch start 或 `" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Sessions>($"--arg op=close --arg target_persona={iPersona} --arg confirm=1") + "` 會補結算";
             string aTag = iNoLetter ? "goodnight-logout" : "goodnight-sleep";
             bool aClosed;
             try { aClosed = SCP_ActivitySessionStore.Close(aRoot, iPersona, s, aTag); }
