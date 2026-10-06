@@ -357,6 +357,36 @@ namespace SCP.Core.Letters
             return aOut.ToString().Replace("\n", "\r\n");
         }
 
+        // 區塊職責：`git add -A` 之前的外洩防線（TASK-0432）。
+        // 物理意義：已有 .gitignore 的舊 persona 不會被重建 ⇒ 缺了這幾格，回傳檔（含憑證）、在線 lock（session token）、密封信會一起進第一筆提交，
+        //   而 letters remote 是公開的 —— push 之後刪不掉。判準是「這一格有沒有被某一行蓋到」，不比對整份基線（各人自訂區合法地不同）。
+        static readonly (string Need, string[] AnyOf)[] s_PrivateIgnores =
+        {
+            ("sealed/",                new[] { "sealed/", "/sealed/", "sealed" }),
+            ("/profile/_session.json", new[] { "/profile/_session.json", "profile/_session.json", "_session.json" }),
+            ("/cmd/*",                 new[] { "/cmd/*", "/cmd/", "cmd/", "/cmd" }),
+        };
+
+        /// <summary>這份 .gitignore 缺了哪幾格私密規則（空清單＝齊全）。只看非註解、非否定行的字面。</summary>
+        public static List<string> MissingPrivateIgnores(string iGitignore)
+        {
+            var aLines = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string aRaw in iGitignore.Replace("\r\n", "\n").Split('\n'))
+            {
+                string t = aRaw.Trim();
+                if (t.Length == 0 || t.StartsWith("#", StringComparison.Ordinal) || t.StartsWith("!", StringComparison.Ordinal)) continue;
+                aLines.Add(t);
+            }
+            var aMissing = new List<string>();
+            foreach (var (aNeed, aAnyOf) in s_PrivateIgnores)
+            {
+                bool aHit = false;
+                foreach (string c in aAnyOf) if (aLines.Contains(c)) { aHit = true; break; }
+                if (!aHit) aMissing.Add(aNeed);
+            }
+            return aMissing;
+        }
+
         public static bool IsLettersRepo(string iLettersRoot, string iPersona)
         {
             string d = SCP_LettersPaths.PersonaDir(new SCP_LettersRoot(iLettersRoot), iPersona);
@@ -373,12 +403,19 @@ namespace SCP.Core.Letters
             if (!Directory.Exists(d)) { oError = "letters 資料夾不存在：" + d; return false; }
             if (IsLettersRepo(iLettersRoot, iPersona)) { ioLines.Add($"· letters/{iPersona} 已經是 git repo（沒有重新 init）"); return true; }
             string aIgnore = Path.Combine(d, ".gitignore");
-            if (!File.Exists(aIgnore))
+            bool aExisting = File.Exists(aIgnore);
+            string? g = aExisting ? File.ReadAllText(aIgnore, Encoding.UTF8) : BuildLettersGitignore(iLettersRoot, out oError);
+            if (g == null) return false;
+            // ⛔ 先驗再寫、再 init：擋下時磁碟零變動（沒有 .gitignore 落檔、沒有 .git）。
+            List<string> aMissing = MissingPrivateIgnores(g);
+            if (aMissing.Count > 0)
             {
-                string? g = BuildLettersGitignore(iLettersRoot, out oError);
-                if (g == null) return false;
-                File.WriteAllText(aIgnore, g, new UTF8Encoding(false));
+                oError = (aExisting ? $"letters/{iPersona}/.gitignore" : $"基線 letters/{GitignoreBaselinePersona}/.gitignore")
+                         + " 缺私密規則：" + string.Join("、", aMissing)
+                         + " —— `git add -A` 會把它們一起提交（letters remote 是公開的）。補上這幾行再重跑；什麼都沒寫。";
+                return false;
             }
+            if (!aExisting) File.WriteAllText(aIgnore, g, new UTF8Encoding(false));
             SCP.Core.Git.SCP_GitResult r = SCP.Core.Git.SCP_Git.Run(d, "init");
             if (!r.Ok) { oError = "git init 失敗：" + r.FirstLine; return false; }
             r = SCP.Core.Git.SCP_Git.Run(d, "symbolic-ref", "HEAD", "refs/heads/master");
@@ -415,13 +452,37 @@ namespace SCP.Core.Letters
             string aParent = aTop.StdOut.Trim();
             string aRel = Path.GetFullPath(d).Replace('\\', '/').Substring(Path.GetFullPath(aParent).Replace('\\', '/').TrimEnd('/').Length + 1);
             SCP.Core.Git.SCP_GitResult aKnown = SCP.Core.Git.SCP_Git.Run(aParent, "config", "-f", ".gitmodules", "--get", "submodule." + aRel + ".url");
-            if (aKnown.Ok) { ioLines.Add($"· 父層已經登記這個 submodule（{aKnown.StdOut.Trim()}）—— 沒有重複登記"); return true; }
+            if (aKnown.Ok)
+            {
+                ioLines.Add($"· 父層已經登記這個 submodule（{aKnown.StdOut.Trim()}）—— 沒有重複登記");
+                return AbsorbGitDir(aParent, aRel, d, ioLines, out oError);
+            }
             r = SCP.Core.Git.SCP_Git.Run(aParent, "submodule", "add", iRemoteUrl, aRel);
             if (!r.Ok) { oError = "父層 submodule add 失敗：" + r.FirstLine; return false; }
             r = SCP.Core.Git.SCP_Git.Run(aParent, "commit", "-m", $"letters: 掛上 {iPersona} 的信件庫（persona-create，TASK-0428）", "--", ".gitmodules", aRel);
             if (!r.Ok) { oError = "父層提交失敗（.gitmodules 與指向已 stage，沒提交）：" + r.FirstLine; return false; }
             SCP.Core.Git.SCP_GitResult aHead = SCP.Core.Git.SCP_Git.Run(aParent, "rev-parse", "--short", "HEAD");
             ioLines.Add($"✓ 父層登記 submodule `{aRel}`，提交 {aHead.StdOut.Trim()}（只含 .gitmodules 與這一格指向；⛔ 沒有 push）");
+            return AbsorbGitDir(aParent, aRel, d, ioLines, out oError);
+        }
+
+        // 區塊職責：把信件庫的 git 目錄收進父層 `.git/modules/…`，工作樹留指標檔 —— 跟其他 persona 同形（TASK-0432）。
+        // 物理意義：本地 init 在先、submodule add 在後 ⇒ git 走「Adding existing repo」，`.git` 留在工作樹是**目錄**；
+        //   那份工作副本上 `git clean -ffdx` 或刪掉資料夾，歷史就跟著消失（其他 persona 的還在 modules 裡）。🩸 erina 2026-10-06 現場。
+        // ⚠ Windows：fsmonitor daemon 與開著這個 repo 的 GUI（Fork…）會鎖住 `.git`，搬移失敗 ⇒ 先停 daemon；
+        //   還是失敗就回報、要人關掉 GUI 後重跑 op=repo（走「已經登記」那條，只補這一步）。
+        static bool AbsorbGitDir(string iParent, string iRel, string iDir, List<string> ioLines, out string oError)
+        {
+            oError = "";
+            if (File.Exists(Path.Combine(iDir, ".git"))) { ioLines.Add("· git 目錄已在父層 modules（`.git` 是指標檔）"); return true; }
+            SCP.Core.Git.SCP_Git.Run(iDir, "fsmonitor--daemon", "stop");   // 沒在跑也無妨
+            SCP.Core.Git.SCP_GitResult r = SCP.Core.Git.SCP_Git.Run(iParent, "submodule", "absorbgitdirs", "--", iRel);
+            if (!r.Ok || !File.Exists(Path.Combine(iDir, ".git")))
+            {
+                oError = "已登記 submodule，但 git 目錄沒收進父層（" + r.FirstLine + "）—— 關掉開著這個 repo 的工具（Fork 等）後重跑 op=repo，只會補這一步";
+                return false;
+            }
+            ioLines.Add("✓ git 目錄收進父層 modules，工作樹的 `.git` 改成指標檔");
             return true;
         }
 

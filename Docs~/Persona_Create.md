@@ -54,11 +54,12 @@ senate cmd persona-create --arg op=repo --arg persona=<id> --arg remote_url=<網
 ```
 
 - **本地 init**（create 時自動做一次）：`.gitignore` 沒有才照 `letters/Template/.gitignore` 基線寫 → `git init`（master）→ `git add -A` → 第一筆提交。已經是 repo 就什麼都不做。
-- **接遠端**（Tim 在 GitHub 開好 repo 之後；還不是 repo 會先 init）：設 `origin`（已設且不同 ⇒ 擋，不覆蓋）→ 在包著信件庫根的父層 repo `submodule add` → 只提交 `.gitmodules` 與那一格指向。父層已登記就不重複。
+  `.gitignore`（既有的或基線）缺 `sealed/`、`/profile/_session.json`、`/cmd/*` 任一格 ⇒ **擋下、什麼都不寫**，錯誤列出缺哪幾格 —— 補上再重跑（回傳檔與在線 lock 帶憑證，密封信是真隱私）。
+- **接遠端**（Tim 在 GitHub 開好 repo 之後；還不是 repo 會先 init）：設 `origin`（已設且不同 ⇒ 擋，不覆蓋）→ 在包著信件庫根的父層 repo `submodule add` → 只提交 `.gitmodules` 與那一格指向 → 信件庫的 git 目錄收進父層 `.git/modules/…`（工作樹的 `.git` 變指標檔，跟其他 persona 同形）。父層已登記就不重複，只補收 git 目錄。
+  收不進去（Windows 上開著這個 repo 的 Fork 等工具會鎖住 `.git`）⇒ 回報失敗；關掉那個工具後重跑同一行，只會補這一步。
 - ⛔ 不 push。開 GitHub repo 與 push 是 Tim 的事；remote 是公開的，push 是發佈，history 推出去刪不掉。
 
 動手前：
-- `git add -A` 一次收全部 ⇒ 已有 `.gitignore` 的舊 persona **不會被重建**，先確認它含基線的 `/cmd/*`、`sealed/`、`/profile/_session.json`（回傳檔與在線 lock 帶憑證）。
 - 什麼算隱私、什麼可以公開：見 `Letters` 第 6 節。
 
 之後：
