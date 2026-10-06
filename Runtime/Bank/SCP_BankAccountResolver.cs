@@ -90,10 +90,41 @@ namespace SCP.Core.Bank
         // 已銷戶：帳號（原拼法）→ 理由
         static readonly Dictionary<string, string> s_Closed = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        /// <summary>丟掉快取。改過 registry／綁定檔之後**必須**叫一次。</summary>
+        /// <summary>丟掉**本 process** 的快取。⚠ 別的 process（常駐 Server）看不到這一下 —— 跨 process 走 <see cref="Touch"/>。</summary>
         public static void Invalidate()
         {
             lock (s_Lock) { s_Loaded = false; s_LoadedKey = ""; }
+        }
+
+        // ==========================================================
+        // 區塊職責：綁定戳記 —— 讓**別的 process** 的快取知道「綁定變了」（TASK-0428）。
+        // 物理意義：快取鍵原本只有三個根 ⇒ 常駐 Server 一旦載好就用到重啟為止。
+        //   🩸 2026-10-06：erina 13:25 建立（綁定 cc），酒館 Server 12:06 起 ⇒ 她的自介（seq 21991）發薪時
+        //     「解析不到正式帳號 ⇒ 不計酬」；同一刻新起的 CLI 去查是 cc（早安那邊對）。兩邊都照自己的快取答，沒有一層會叫。
+        //   ⇒ 寫入端（建 persona／set_bank／unbind／新開 agent／銷戶）碰一下戳記；EnsureLoaded 把戳記時間放進快取鍵
+        //     ⇒ 下一次查詢就重載。成本：每次查詢多一次 stat。
+        // ⚠ Touch 失敗不擋寫入（綁定已經寫好了），但要回報 —— 沒碰到戳記的樣子就是上面那個病。
+        // ==========================================================
+        public static string StampPath(string iDataRoot) => Path.Combine(iDataRoot, "AwakenInit", "_bank_binding.stamp");
+
+        /// <summary>碰一下綁定戳記（並清本 process 的快取）。回空字串＝成功；否則是原因。</summary>
+        public static string Touch(string iDataRoot)
+        {
+            Invalidate();
+            try
+            {
+                string p = StampPath(iDataRoot);
+                Directory.CreateDirectory(Path.GetDirectoryName(p)!);
+                File.WriteAllText(p, DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture) + "\n", new UTF8Encoding(false));
+                return "";
+            }
+            catch (Exception e) { return "綁定戳記沒碰到（別的 process 的帳號快取不會更新，要重啟 Server 才看得到）：" + e.Message; }
+        }
+
+        static long StampTicks(string iDataRoot)
+        {
+            try { string p = StampPath(iDataRoot); return File.Exists(p) ? File.GetLastWriteTimeUtc(p).Ticks : 0; }
+            catch (Exception) { return -1; }
         }
 
         static string RegistryPath(string iDataRoot)
@@ -106,7 +137,7 @@ namespace SCP.Core.Bank
         // ==========================================================
         static void EnsureLoaded_NoLock(string iLettersRoot, string iDataRoot, string iRegion)
         {
-            string aKey = iLettersRoot + "|" + iDataRoot + "|" + iRegion;
+            string aKey = iLettersRoot + "|" + iDataRoot + "|" + iRegion + "|" + StampTicks(iDataRoot);
             if (s_Loaded && string.Equals(s_LoadedKey, aKey, StringComparison.Ordinal)) return;
 
             s_PersonaToAccount.Clear(); s_AccountToPersonas.Clear(); s_UnreadablePersonas.Clear();
@@ -392,7 +423,7 @@ namespace SCP.Core.Bank
                 if (File.Exists(aRegistry)) File.Delete(aRegistry);
                 File.Move(aTmp, aRegistry);
 
-                Invalidate();
+                Touch(iDataRoot);   // TASK-0428：Invalidate 只清本 process；銷戶要讓常駐 Server 也看得到
                 // 讀回複驗 —— **寫入成功不等於解析器看得到它**。
                 if (!IsClosed(iLettersRoot, iDataRoot, iRegion, iAccountId, out string _))
                 { oError = "寫入後讀回不符：該帳號仍未被判定為已銷戶"; return false; }

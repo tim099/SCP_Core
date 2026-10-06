@@ -308,6 +308,9 @@ namespace SCP.Core.Letters
                     File.WriteAllText(aTmp, aOut, new UTF8Encoding(false));
                     SCP_TextFile.ReplaceOrMove(aTmp, aPath);
                 }
+                // agent_banks 變了 ⇒ 常駐 Server 的帳號快取要重載（TASK-0428）
+                string aStamp = SCP.Core.Bank.SCP_BankAccountResolver.Touch(iDataRoot);
+                if (aStamp.Length > 0) { oError = "agent 已登記，但" + aStamp; return false; }
                 // 讀回
                 foreach (var kv in AgentBanks(iDataRoot))
                     if (kv.Key == iAgent && kv.Value == iAccount) return true;

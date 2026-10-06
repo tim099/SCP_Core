@@ -278,6 +278,11 @@ namespace SCP.Core.Letters
                 aR.AppendLine("   寫回：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_PersonaProfile>(
                     $"--arg op=set --arg persona={iPersona} --arg field=character --arg-file value=<檔> --arg actor={iPersona} --arg reason=補完角色設定"));
             }
+            // 主題色是**顯示資料**（profile/color.md，persona-display 寫），不是身分欄 —— 寫進 character.md 不會生效（2026-10-06 erina 實跑撞到）。
+            if (File.Exists(Path.Combine(SCP_LettersPaths.ProfileDir(iR.Letters, iPersona), "character.md"))
+                && !File.Exists(Path.Combine(SCP_LettersPaths.ProfileDir(iR.Letters, iPersona), "color.md")))
+                aR.AppendLine($"{aStepNo++}. 選好主題色（頭像服裝主色）就寫進顯示資料 —— ⚠ 只寫在 character.md 不會生效："
+                    + SCP_CmdRegistry.InvokeOf<SCP_Cmd_PersonaDisplay>($"--arg op=color --arg persona={iPersona} --arg color=#RRGGBB"));
             if (FindGlossaryPersonaEntry(iR, iPersona) == null)
             {
                 var aTodo = SelfIntroTodoLines(iR, iPersona);
@@ -651,7 +656,7 @@ namespace SCP.Core.Letters
                     ? $"   素材：建立時的角色設定 `profile/character.md`（起點不是定稿；自介用自己的話寫）。"
                     : "   （沒有建立時的角色設定檔 —— 全憑自己寫）",
                 // TASK-0313：入口改 `senate cmd glossary`（不需要 Editor）。⚠ term／one_line 是必填 —— 舊提示漏了這兩格，照著打一定被擋。
-                $"   寫法：{SCP_CmdRegistry.InvokeNamed("glossary", $"--arg op=register --arg slug={iPersona} --arg term=\"{iPersona} 大小姐\" --arg category=persona --arg one_line=<一句話> --arg-file body=<檔>")}",
+                $"   寫法：{SCP_CmdRegistry.InvokeNamed("glossary", $"--arg op=register --arg persona={iPersona} --arg slug={iPersona} --arg term=\"{iPersona} 大小姐\" --arg category=persona --arg one_line=<一句話> --arg-file body=<檔>")}",
                 "   ⚠ 工具新建預設寫 Docs/Glossary/ 根層，persona 條目慣例放 personas/，寫完手動搬。",
             };
         }

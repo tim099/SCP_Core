@@ -125,7 +125,10 @@ namespace SCP.Core.Letters
             {
                 oError = iField == "agent"
                     ? "`agent`（＝帳號 id）不由本入口寫 —— 走 `op=set_bank`（一區一檔的綁定，有自己的審計與跨區借用判準）。"
-                    : $"`{iField}` 是推導欄（真相源在 wakes/ 信件數、lock、longterm/ 檔名），不接受寫入 —— 要改就去改那個既成事實。";
+                    // 顯示資料（顏色／頭像）不是身分欄 —— 舊版這裡一律說「推導欄」，指錯了路（2026-10-06 erina 實跑撞到）。
+                    : (iField == "color" || iField == "avatar" || iField == "avatar_url")
+                        ? $"`{iField}` 是顯示資料（不是身分欄），走 `senate cmd persona-display --arg op={(iField == "avatar_url" ? "avatar-url" : iField)} --arg persona={iPersona} …`。"
+                        : $"`{iField}` 是推導欄（真相源在 wakes/ 信件數、lock、longterm/ 檔名），不接受寫入 —— 要改就去改那個既成事實。";
                 return false;
             }
             if (!NeedActorReason(iActor, iReason, out oError)) return false;
@@ -262,6 +265,9 @@ namespace SCP.Core.Letters
             try { WriteAtomic(BankFieldPath(iLettersRoot, iPersona, iRegion), aAccount + "\n"); }
             catch (Exception e) { oError = e.Message; return false; }
             oAuditWarn = AppendAudit(iDataRoot, iPersona, "bank/" + iRegion, iActor, iReason);
+            // TASK-0428：綁定變了 ⇒ 碰戳記，常駐 Server 的帳號快取下一次查詢就重載（不然新人／換綁要等 Server 重啟才領得到薪）
+            string aStamp = SCP.Core.Bank.SCP_BankAccountResolver.Touch(iDataRoot);
+            if (aStamp.Length > 0) oAuditWarn = (oAuditWarn.Length > 0 ? oAuditWarn + "；" : "") + aStamp;
             return true;
         }
 
@@ -281,6 +287,8 @@ namespace SCP.Core.Letters
             }
             catch (Exception e) { oError = e.Message; return false; }
             oAuditWarn = AppendAudit(iDataRoot, iPersona, "bank/" + iRegion + " (deleted)", iActor, iReason);
+            string aStamp = SCP.Core.Bank.SCP_BankAccountResolver.Touch(iDataRoot);   // 同 WriteBankBinding（TASK-0428）
+            if (aStamp.Length > 0) oAuditWarn = (oAuditWarn.Length > 0 ? oAuditWarn + "；" : "") + aStamp;
             return true;
         }
 
