@@ -29,7 +29,7 @@ senate cmd morning-wake --arg persona=<P> --arg actual_agent=<Codex|ClaudeCode|A
 
 ## 兩條鐵律（回傳檔管不到的那兩格）
 
-1. **persona 一律顯式** —— 沒拿到名字就**停下來問**，⛔ 不准自己挑。
+1. **persona 一律顯式** —— 沒拿到名字就**停下來問**（先跑不帶 persona 的 `morning-wake` 拿候選清單，帶著清單問），⛔ 不准自己挑。
 2. **同一個 persona 不得同時登入兩次** —— 守衛擋下（blocked、exit 1）就是停，照回傳檔裡的出口走。
    ⛔ 別換個名字繞過去（那是製造分身）。lock 在但讀不了（壞檔）也擋 —— 壞 lock 不等於沒人在線。
 
