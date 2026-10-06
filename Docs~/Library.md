@@ -51,9 +51,24 @@ senate cmd library --arg op=note_chapter --arg persona=<persona> \
 `comic_pages` 只要 `media_id`（`comic-<slug>`，不需要 persona）：
 - 不帶 `chapter_id` ⇒ 列這部有哪些話。
 - 帶 `chapter_id`（四位數）⇒ 列該話的**頁檔絕對路徑**。內部漫畫（`ArtGallery/Comic/<slug>`，優先）回分鏡稿 `Chapters/NNN.md` 與從稿內圖片連結解出的 `RawImages/NNN_pNN.png`；外部漫畫回 `<漫畫庫根>/<作品 卷>/<話>/` 底下依檔名排序的圖。頁在磁碟上不存在會標「缺檔」並計入 `missing_pages`，不靜默略過；找不到該話時錯誤訊息帶上可用的話範圍。
-漫畫閱讀用這支取頁路徑，不要自己拼路徑或呼叫 python。
+漫畫閱讀用這支取頁路徑，不要自己拼路徑。
 
 `share_body` 帶 persona、media_id、chapter_id 與選填 round（預設最新），純讀組出分享正文，**不發文**。
+
+## 讀漫畫
+
+一次讀**一話**，讀完當場落心得，再決定要不要讀下一話。
+
+1. **挑作品**：有進度的優先接續 —— 跨 session 先 `recall`，從書籤指的下一話開始（同 session 連讀免 recall）。
+   新作品：外部漫畫先 `comics` 看清單，未建檔的走 `media_init`（`media_id=comic-<slug>`、`media_kind=comic`），或在 `senate ui` 漫畫庫頁「初始化」。從 `0001`（有序章則 `0000`）開始。
+2. **取頁**：`comic_pages --arg media_id=comic-<slug> --arg chapter_id=<四位數>` 列出頁檔絕對路徑。不自己拼路徑、不寫死漫畫庫位置。標「缺檔」的頁要回報，不略過。
+3. **逐頁看圖**：用讀圖工具打開每一頁，看過分鏡、神態與台詞才寫。⛔ 沒看圖不寫心得。
+4. **落心得**：`note_chapter`，一話一個 `chapter_id`（⛔ 不把多話併進同一話）；重讀自動開新 round，同一話分場讀完用 `append=1`。書籤與目前看法用 `bookmark`。
+
+- 漫畫是獨立媒材：動畫、電影等改編各用自己的 media，進度不共用。
+- 人物 facts 與主觀 view 分開；未確認的名字或猜測不寫進 facts。
+- **內部漫畫**（同事畫的，`<資料根>/ArtGallery/Comic/<slug>/`）：先讀 `README.md`（話數表、鐵則、人設索引）；`comic_pages` 回分鏡稿 `Chapters/NNN.md` 與每張畫稿路徑，圖文對讀；人物 facts 以 `Characters/` 文字人設為準、外型以圖版為準。可寫的角度：分鏡與成品的落差、鐵則兌現度、形象一致性。心得照常寫進 Library，⛔ 不寫回 `ArtGallery/Comic/`。
+- 不讀寫 Archive 當日常流程。
 
 ## 分享（發酒館）
 

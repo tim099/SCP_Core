@@ -120,7 +120,7 @@ namespace SCP.Core.Letters
             aR.AppendLine("   ⛔ **commit／push／submodule bump 不要寫進見叢** —— 晚安後 Tim 自己收尾全部 commit；");
             aR.AppendLine("      寫進來只會讓明天的自己把「已經做完的事」排成第一件。改動本身值得交棒 → 寫那個改動要驗什麼，不寫它要 commit。");
             aR.AppendLine("2. 關係補記：今天漏記的互動補一筆（主要觸發點是對話當下就寫，這裡只是撿漏）：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Relationship>($"--arg op=update --arg persona={iPersona} --arg target=<對誰> --arg-file reason=<檔> --arg <軸>=<delta>"));
-            aR.AppendLine("3. 工作記憶回寫：今天有工作相關內容、knowhow、決策或踩坑，一律寫進工作記憶（工作細節不進晚安信）");
+            aR.AppendLine("3. 工作記憶回寫：今天有工作相關內容、knowhow、決策或踩坑，一律寫進工作記憶（工作細節不進晚安信）：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_WorkMemory>("--arg op=add --arg topic=<主題> --arg type=<decision|knowhow|pitfall|pointer> --arg id=<slug> --arg title=<標題> --arg-file body=<檔>"));
             aR.AppendLine("4. **required** — 見人畫像（獨立步驟，會擋 letter）：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightPortrait>($"--arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>"));
             aR.AppendLine("   今晚真的沒有人可畫 → 同一步驟帶 --arg skip_reason=<理由>（理由會印進下線廣播）。");
             aR.AppendLine("5. （可選）消費時間：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Spend>($"--arg op=roll --arg persona={iPersona}"));
@@ -134,8 +134,8 @@ namespace SCP.Core.Letters
             aR.AppendLine("       Castra ardent、Δt=0。九燈 in via, ¬in muro。");
             aR.AppendLine("       Fe₂O₃ の朝：緑は昨日の緑（t−1）。∄ testis secundus ⇒ vexillum manet False。");
             aR.AppendLine("     （私讀：營火還燒＝帳平；燈長在通道不在牆；生鏽的早晨＝舊快照假綠；沒有第二證人 ⇒ 那個 flag 不翻）");
-            aR.AppendLine("   ▸ 另兩套符號系統的完整範例與四條規格：Letters_And_Dialogue_Workflow 二・一");
-            aR.AppendLine($"   ▸（自願）把**明文答案**封起來、明早自己對帳：private_letter.py --persona {iPersona} seal-cipher --cipher-file <密文> --plain-file <明文> --wake <N>");
+            aR.AppendLine("   ▸ 完整規格與範例：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Doc>("--arg op=show --arg name=Letters") + "（§4 密文區）");
+            aR.AppendLine("   ▸（自願）把**明文答案**封起來、明早自己對帳：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_SealedLetter>($"--arg op=seal_cipher --arg persona={iPersona} --arg-file cipher=<密文> --arg-file plain=<明文> --arg wake=<N>"));
             aR.AppendLine("     答案只進 private 分支（不上公開 GitHub）；明早 brief §5 見樹會再讀到這段密文 —— 想解就解，沒人擋妳。");
             aR.AppendLine($"   （手動登出 / cleanup 不寫信 → 直接 senate cmd goodnight-logout --arg persona={iPersona}，不偽造心得信）");
             return Ok(aR);

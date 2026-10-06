@@ -161,6 +161,13 @@ namespace SCP.Core.Git
 
         /// <summary>同 <see cref="Run"/>，但自訂逾時（走網路的指令用 <see cref="NetworkTimeoutMs"/>）。</summary>
         public static SCP_GitResult RunTimeout(string iWorkDir, int iTimeoutMs, params string[] iArgs)
+            => RunCore(iWorkDir, iTimeoutMs, null, iArgs);
+
+        /// <summary>同 <see cref="RunTimeout"/>，另帶環境變數（例：plumbing 用的 `GIT_INDEX_FILE`）。</summary>
+        public static SCP_GitResult RunWithEnv(string iWorkDir, int iTimeoutMs, IReadOnlyDictionary<string, string> iEnv, params string[] iArgs)
+            => RunCore(iWorkDir, iTimeoutMs, iEnv, iArgs);
+
+        static SCP_GitResult RunCore(string iWorkDir, int iTimeoutMs, IReadOnlyDictionary<string, string>? iEnv, string[] iArgs)
         {
             var aInfo = new ProcessStartInfo("git");
             aInfo.WorkingDirectory = iWorkDir;
@@ -181,6 +188,7 @@ namespace SCP.Core.Git
             }
             // 護欄②：沒有終端可以輸入密碼，所以不要停在那裡等。
             aInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+            if (iEnv != null) foreach (KeyValuePair<string, string> kv in iEnv) aInfo.Environment[kv.Key] = kv.Value;
 
             Action<string>? aTrace = Trace;
             if (aTrace != null) aTrace("git " + string.Join(" ", iArgs) + "  @ " + iWorkDir);

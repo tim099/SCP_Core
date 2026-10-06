@@ -7,7 +7,7 @@
 // ⚠ 本檔**不做**三件要等別的 process 的事 —— 它們在持鎖的 Server 裡做會卡住所有寫入，
 //   ⇒ 由呼叫端（`senate cmd task`，CLI 那一側）在寫完之後做，本檔只把「要做什麼」交回去：
 //   ① 酒館通知 ⇒ `SCP_TaskOpResult.Notices`（訊息本體在這裡組好，發文走 `SCP_ITavernPostGateway`）
-//   ② 工作記憶（wrapup 的 `why`）⇒ `SCP_TaskOpResult.Memory`（代跑 `work_memory.py`：記憶側唯一寫入端是 python）
+//   ② 工作記憶（wrapup 的 `why`）⇒ `SCP_TaskOpResult.Memory`（呼叫端寫進工作記憶，`SCP_WorkMemory`）
 //   ③ Coding 場（claim 的 `scope`）⇒ 呼叫端在**寫單之前**開場（開不了就不認領），寫不成再回捲
 // 數值影響：每個 op 至多寫一張單（link 兩張、sweep N 張）；回報是一份 markdown（落 `letters/<P>/cmd/task_<op>.md`）。
 // ⚠ 方言限制：C# 9 / netstandard2.1。
@@ -1086,7 +1086,7 @@ namespace SCP.Core.Tasks
 
         // ===========================================================
         // 區塊職責：收工（「我今天不做了」）—— progress 進留言、`last_wrapup_at` 與 `updated_at` 同一次寫入；
-        //   why ⇒ 交回呼叫端代跑 work_memory.py（契約①：記憶側唯一寫入端是 python）。**不改 status。**
+        //   why ⇒ 交回呼叫端寫進工作記憶（`SCP_WorkMemory`）。**不改 status。**
         // ⚠ 等號陷阱（TASK-0036）：`last_wrapup_at` 與 `Touch` 共用同一個 aNow ⇒ 寫完當下必然相等（晚安閘用嚴格大於）。
         // ===========================================================
         static void OpWrapup(Ctx c)
