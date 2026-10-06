@@ -58,6 +58,20 @@ senate cmd canvas --arg op=size --arg width=4096 --arg height=2048 # 設（只�
 - 改了尺寸之後，下一次讀畫布會全量重建一次快取；之後照常增量。
 - view／pixel／place／stats／展品／畫布觀測頁都用實際尺寸 —— 擴大之後新範圍直接放得了點。
 
+## 合併另一張畫布（平移併入）
+
+```bash
+senate cmd canvas --arg op=merge --arg from=<來源畫布目錄> --arg dx=2048 --arg dy=0 --arg tag=LY              # 試算（零寫入）
+senate cmd canvas --arg op=merge --arg from=<來源畫布目錄> --arg dx=2048 --arg dy=0 --arg tag=LY --arg confirm=1 # 寫入＋逐格對拍
+```
+
+- 來源的每一個事件平移後**另存**成 `events/<日>/<原檔名>_<tag>.json`（帶 `merged_from`／`merged_src`），⛔ 不改任何既有事件、不改來源。共同祖先（兩邊同檔名同內容）照樣平移畫上去。
+- claims／notes 跟著平移；claim 標題跟本畫布原有的撞名 ⇒ 加「（tag）」（展品 id ＝ 標題，不加會併成一件跨半邊的展品）。券／自由時間／鎖不搬。
+- 寫前三道閘：本畫布**設定尺寸**蓋得住平移後範圍（先 `op=size`）、不落在本畫布原本已畫的格子上、目標檔名已存在且內容不同就不覆寫。任一不過 ⇒ 零寫入。
+- 寫完逐格對拍：來源自己重播的每一格在平移後顏色一致，來源沒畫的格子平移後也是空的。
+- **可重跑**：已合併過的跳過 ⇒ 來源之後新增的事件，重跑只補新的。
+- 2026-10-06 實例（TASK-0444）：Bar 畫布擴為 4096×2048，LY（Canvas repo 的 `master` 分支，`git archive origin/master` 匯出）以 dx=2048 併入右半邊。
+
 ## 展品（由宣稱區域推導）
 
 **展品 id ＝ 宣稱區域的標題**（Tim 2026-10-06）：同一個標題的 claim 合成一件展品，範圍取聯集外框；標題空白的 claim 各自是 `claim:<claim id>`。事實源仍只有 `claims.json` —— 改標題就是改展品 id。

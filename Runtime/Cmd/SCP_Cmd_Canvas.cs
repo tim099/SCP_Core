@@ -49,7 +49,12 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("op", "要做什麼", iRequired: true,
-                iChoices: new[] { "view", "pixel", "stats", "cache", "snapshot", "note", "claim", "exhibit", "size", "gateway", "place" }),
+                iChoices: new[] { "view", "pixel", "stats", "cache", "snapshot", "note", "claim", "exhibit", "size", "merge", "gateway", "place" }),
+            new SCP_CmdArgSpec("from", "merge：來源畫布目錄（含 events/ 的那一層，絕對路徑）"),
+            new SCP_CmdArgSpec("dx", "merge：來源 x 平移量", iDefault: "0"),
+            new SCP_CmdArgSpec("dy", "merge：來源 y 平移量", iDefault: "0"),
+            new SCP_CmdArgSpec("tag", "merge：來源標記（進檔名 `_<tag>` 與 merged_from；例 LY）"),
+            new SCP_CmdArgSpec("confirm", "merge：1 ＝ 真的寫（預設試算、零寫入）"),
             new SCP_CmdArgSpec("width", "size：新的畫布寬（不給 width／height ＝ 只看）"),
             new SCP_CmdArgSpec("height", "size：新的畫布高"),
             new SCP_CmdArgSpec("region", "x,y,w,h（view/note/claim 用）"),
@@ -96,6 +101,7 @@ namespace SCP.Core.Cmd
                 case "claim": return OpClaim(iArgs, aPaths);
                 case "exhibit": return OpExhibit(iArgs, aPaths);
                 case "size": return OpSize(iArgs, aPaths);
+                case "merge": return OpMerge(iArgs, aPaths);
                 case "gateway": return OpGateway(iArgs, aDataRoot);
                 case "place": return OpPlace(iArgs, aPaths, aDataRoot);
                 default: return SCP_CmdResult.Fail(2, "✗ 不認得的 op：" + aOp);
@@ -601,6 +607,63 @@ namespace SCP.Core.Cmd
             aResult.AddOutput(iPaths.Settings);
             AddSizeValues(aResult, aAfter);
             return aResult;
+        }
+
+        // ───────────────────────────── merge（TASK-0444）─────────────────────────────
+        // 區塊職責：把另一張畫布平移後併進本畫布。**預設試算**（零寫入），`confirm=1` 才寫，寫完逐格對拍。
+        // ⚠ 可重跑：已合併過的事件跳過 ⇒ 來源之後新增的事件，重跑只補新的。
+        static SCP_CmdResult OpMerge(SCP_CmdArgs iArgs, SCP_CanvasPaths iPaths)
+        {
+            string aFrom = iArgs.Get("from").Trim();
+            string aTag = iArgs.Get("tag").Trim();
+            if (aFrom.Length == 0 || !Directory.Exists(aFrom))
+                return SCP_CmdResult.Fail(2, "✗ merge 要 `--arg from=<來源畫布目錄>`（含 events/ 的那一層）：" + aFrom);
+            if (aTag.Length == 0 || aTag.IndexOfAny(new[] { '/', '\\', '.', ' ' }) >= 0)
+                return SCP_CmdResult.Fail(2, "✗ merge 要 `--arg tag=<來源標記>`（例 LY；不含 / \\ . 空白）");
+            if (!int.TryParse(iArgs.Get("dx"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int aDx)
+                || !int.TryParse(iArgs.Get("dy"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int aDy))
+                return SCP_CmdResult.Fail(2, "✗ dx／dy 要是整數");
+            var aSrc = new SCP_CanvasPaths(aFrom);
+            if (string.Equals(Path.GetFullPath(aSrc.Root), Path.GetFullPath(iPaths.Root), StringComparison.OrdinalIgnoreCase))
+                return SCP_CmdResult.Fail(2, "✗ 來源就是目標畫布本身");
+
+            SCP_CanvasMergePlan p = SCP_CanvasMerge.Plan(aSrc, iPaths, aDx, aDy, aTag);
+            bool aConfirm = Truthy(iArgs.Get("confirm"));
+            var aR = new SCP_CmdResult();
+            aR.Lines.Add("# 🧩 畫布合併" + (aConfirm ? "" : "（試算 —— 零寫入；`confirm=1` 才寫）") + "：" + aSrc.Root + " → " + iPaths.Root);
+            aR.Lines.Add("  平移   : dx=" + aDx + " dy=" + aDy + "　tag=" + aTag);
+            aR.Lines.Add("  事件   : 來源 " + p.SourceEvents + "／要寫 " + p.ToWrite + "／先前已合併 " + p.AlreadyMerged + "（像素 " + p.ShiftedPixels + "）");
+            aR.Lines.Add("  範圍   : 來源已畫 " + p.SourceExtent + " ⇒ 平移後 " + p.ShiftedExtent + "／目標設定 " + p.TargetConfigured);
+            aR.Lines.Add("  重疊   : 平移後落在目標原本已畫格子上 " + p.OverlapCells + " 次");
+            aR.Lines.Add("  claims : 新增 " + p.ClaimsAdded + "／先前已合併 " + p.ClaimsSkipped);
+            foreach (string t in p.RenamedTitles) aR.Lines.Add("    標題撞名加標記：" + t);
+            aR.Lines.Add("  notes  : 新增 " + p.NotesAdded + "／先前已合併 " + p.NotesSkipped);
+            aR.AddValue("to_write", p.ToWrite.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("already_merged", p.AlreadyMerged.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("overlap_cells", p.OverlapCells.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("claims_added", p.ClaimsAdded.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("notes_added", p.NotesAdded.ToString(CultureInfo.InvariantCulture));
+            if (!p.Ok)
+            {
+                foreach (string x in p.Problems) aR.Lines.Add("  ✗ " + x);
+                aR.Lines.Add("⇒ 有問題 ⇒ **沒有寫入任何檔**");
+                aR.ExitCode = 2;
+                return aR;
+            }
+            if (!aConfirm)
+            {
+                aR.Lines.Add("⇒ 試算通過。寫入：同一行加 `--arg confirm=1`");
+                return aR;
+            }
+            if (!SCP_CanvasMerge.Apply(iPaths, p, out string aWhy))
+                return SCP_CmdResult.Fail(1, "✗ 寫入失敗：" + aWhy);
+            int aBad = SCP_CanvasMerge.VerifyShifted(aSrc, iPaths, aDx, aDy, out int aChecked, out List<string> aSamples);
+            aR.Lines.Add("✓ 已寫入：事件 " + p.ToWrite + "、claims " + p.ClaimsAdded + "、notes " + p.NotesAdded);
+            aR.Lines.Add("  對拍   : 來源已畫 " + aChecked + " 格，平移後顏色不一致 " + aBad + " 格" + (aSamples.Count > 0 ? "（例 " + string.Join("、", aSamples) + "）" : ""));
+            aR.AddValue("verified_cells", aChecked.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("mismatch_cells", aBad.ToString(CultureInfo.InvariantCulture));
+            if (aBad > 0) { aR.Lines.Add("✗ 對拍不一致 —— 事件已寫入（append-only），請回報"); aR.ExitCode = 1; }
+            return aR;
         }
 
         static void AddSizeValues(SCP_CmdResult ioR, SCP_CanvasSizeInfo iInfo)
