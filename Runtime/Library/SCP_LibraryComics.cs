@@ -128,18 +128,6 @@ namespace SCP.Core.Library
                     ParseSeriesAndVolume(aFolderName, out string aSeriesName, out string aVolumeLabel);
                     if (string.IsNullOrEmpty(aSeriesName)) continue;
 
-                    if (!aSeriesMap.TryGetValue(aSeriesName, out SCP_ExternalComicSeries? aSeries))
-                    {
-                        string aSlug = NormalizeSeriesSlug(aSeriesName);
-                        aSeries = new SCP_ExternalComicSeries
-                        {
-                            SeriesName = aSeriesName,
-                            Slug = aSlug,
-                            MediaId = "comic-" + aSlug,
-                        };
-                        aSeriesMap[aSeriesName] = aSeries;
-                    }
-
                     var aVol = new SCP_ExternalComicVolume
                     {
                         FolderName = aFolderName,
@@ -153,16 +141,22 @@ namespace SCP.Core.Library
                         Array.Sort(aChapterDirs, StringComparer.OrdinalIgnoreCase);
                         foreach (string aChDir in aChapterDirs)
                         {
-                            aVol.Chapters.Add(Path.GetFileName(aChDir));
+                            if (Path.GetFileName(aChDir).StartsWith(".", StringComparison.Ordinal)) continue;
                             try
                             {
+                                int aPages = 0;
                                 foreach (string aFile in Directory.GetFiles(aChDir))
-                                    if (s_ImageExts.Contains(Path.GetExtension(aFile))) aVol.PageCount++;
+                                    if (s_ImageExts.Contains(Path.GetExtension(aFile))) aPages++;
+                                if (aPages > 0)
+                                {
+                                    aVol.Chapters.Add(Path.GetFileName(aChDir));
+                                    aVol.PageCount += aPages;
+                                }
                             }
                             catch { }
                         }
                     }
-                    else
+                    if (aVol.Chapters.Count == 0)
                     {
                         // 根目錄直接放圖（單章）
                         try
@@ -174,6 +168,19 @@ namespace SCP.Core.Library
                         catch { }
                     }
 
+                    // TASK-0411：先證明有頁面才登記作品；工具、快取、空卷不因名稱成為漫畫。
+                    if (aVol.PageCount == 0) continue;
+                    if (!aSeriesMap.TryGetValue(aSeriesName, out SCP_ExternalComicSeries? aSeries))
+                    {
+                        string aSlug = NormalizeSeriesSlug(aSeriesName);
+                        aSeries = new SCP_ExternalComicSeries
+                        {
+                            SeriesName = aSeriesName,
+                            Slug = aSlug,
+                            MediaId = "comic-" + aSlug,
+                        };
+                        aSeriesMap[aSeriesName] = aSeries;
+                    }
                     aSeries.Volumes.Add(aVol);
                 }
             }
@@ -378,7 +385,8 @@ namespace SCP.Core.Library
 
                 // 章資料夾存在就用它；否則是「根目錄直接放圖（單章）」那種卷
                 string aChDir = System.IO.Path.Combine(v.FolderPath, iChapterId);
-                string aDir = Directory.Exists(aChDir) ? aChDir : v.FolderPath;
+                string aDir = Directory.Exists(aChDir) && Array.Exists(Directory.GetFiles(aChDir),
+                    f => s_ImageExts.Contains(System.IO.Path.GetExtension(f))) ? aChDir : v.FolderPath;
                 var aOut = new SCP_ComicChapterPages { Source = "external", ChapterId = iChapterId, ChapterPath = aDir.Replace('\\', '/') };
                 var aFiles = new List<string>();
                 foreach (string f in Directory.GetFiles(aDir))
