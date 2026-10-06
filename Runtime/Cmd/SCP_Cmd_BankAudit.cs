@@ -15,7 +15,11 @@
 //
 // 數值影響：**純唯讀**。五種狀況分開報（處置不同，合成一個數字等於沒報）：
 //   ① no_binding    本區與別區都沒有綁定      ⇒ 這個人的錢無處可去
-//   ② borrowed      只有別區宣告（跨區借用）  ⇒ 標示，**不是錯**
+//   ② borrowed      只有別區宣告（跨區借用）  ⇒ 標示，**不是錯** —— 前提是借來的帳號**本區有開戶**
+//   ②b borrowed_unopened 借別區、而借來的帳號本區帳本沒開戶 ⇒ 🔴 **計入問題**（TASK-0440）
+//      🩸 新銀行「沒開戶的帳號不能收付」，而收付走的是**本區**的帳本 ⇒ 借來的那個帳號在這裡收不到錢。
+//         erina 2026-10-06 在 Bar（BTC）第一次醒來：綁定借自 Florin＝`cc`，BTC 的 `Bank/accounts/` 沒有 cc；
+//         早安回傳檔寫著「帳本裡查無此帳戶」，而本 Cmd 同一時間把她算成「不是錯」、不計入問題。
 //   ③ unmaterialized 綁定只靠合一成立、還沒有實體 ⇒ **不是錯**，是「這個帳戶沒被後台開過」的唯一讀數
 //
 //   🩸 ③ 為什麼從「錯」降級成「狀態」（kaguya 2026-09-08，TASK-0173，同族第三次）：
@@ -66,7 +70,8 @@ namespace SCP.Core.Cmd
             "唯一權威＝`letters/<persona>/bank/<region>.md`（Tim 2026-09-07 拍板）。\n"
             + "⚠ **必須給 region** —— `bank/` 是 per-region 的，沒有區域定語算出來的覆蓋率是形狀正確的錯答案。\n"
             + "· 五格分開報：`no_binding` / `borrowed` / `unknown_acct` / `closed_acct` / `stale_reverse`。\n"
-            + "· `borrowed`（只有別區宣告）**不算錯**，它只是要看得見。\n"
+            + "· `borrowed`（只有別區宣告）**不算錯**，它只是要看得見 ——\n"
+            + "  但借來的帳號**本區沒開戶** ⇒ `borrowed_unopened`，計入問題（沒開戶的帳號不能收付）。\n"
             + "· exit 0＝沒有任何一格是問題（`borrowed` 不計）；exit 5＝有。\n"
             + "⛔ 本 Cmd 不寫任何檔；綁定是錢的歸屬，改它要走有審計的寫入端。";
 
@@ -151,6 +156,7 @@ namespace SCP.Core.Cmd
             var aUnreadable = new List<string>();
             var aBorrowed = new List<string>();
             var aBorrowedSet = new HashSet<string>(StringComparer.Ordinal);
+            var aBorrowedFrom = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (string aName in aPool)
             {
                 string aAcc = SCP_PersonaProfile.GetBankAccount(aLettersRoot, aName, aRegion,
@@ -159,7 +165,7 @@ namespace SCP.Core.Cmd
                 if (aSrc == SCP_PersonaProfile.BankSourceUnreadable) { aUnreadable.Add(aName); continue; }
                 if (aAcc.Length == 0) { aNoBinding.Add(aName); continue; }
                 if (!string.Equals(aSrc, aRegion, StringComparison.Ordinal))
-                { aBorrowed.Add(aName + "（宣告在 " + aSrc + "＝" + aAcc + "）"); aBorrowedSet.Add(aName); }
+                { aBorrowed.Add(aName + "（宣告在 " + aSrc + "＝" + aAcc + "）"); aBorrowedSet.Add(aName); aBorrowedFrom[aName] = aSrc; }
                 aBinding[aName] = aAcc;
             }
 
@@ -175,6 +181,7 @@ namespace SCP.Core.Cmd
 
             var aUnmaterialized = new List<string>();
             var aClosedHit = new List<string>();
+            var aBorrowedUnopened = new List<string>();
             foreach (KeyValuePair<string, string> aKv in aBinding)
             {
                 if (aClosed.ContainsKey(aKv.Value))
@@ -183,7 +190,18 @@ namespace SCP.Core.Cmd
                 //   在這裡查一定查不到。第一版沒排除它，於是 kaguya 天天被報成
                 //   「指向不存在的帳戶」。⇒ **一個天天紅的格子，等於沒有那個格子**
                 //   （人會學會忽略它，然後真的那一天也一起忽略）。它已經由 ② 說明了。
-                if (aBorrowedSet.Contains(aKv.Key)) continue;
+                //   ⚠ 但「不查」只對**本區有開戶**的那一半成立（TASK-0440）：收付走本區帳本，
+                //     借來的帳號在這裡沒開戶 ⇒ 錢收不進來。判準只看**帳戶檔**（開過戶才能收付），
+                //     ⛔ 不看 registry 宣告或合一 —— 那兩者都不會替它開戶。
+                if (aBorrowedSet.Contains(aKv.Key))
+                {
+                    if (!aAccountFiles.Contains(aKv.Value))
+                        aBorrowedUnopened.Add(aKv.Key + " → `" + aKv.Value + "`（借自 " + aBorrowedFrom[aKv.Key]
+                                              + "；本區 `Bank/accounts/` 沒有這個戶 ⇒ 收不到錢）"
+                                              + "　⇒ 在本區綁一個有開戶的帳號：`senate cmd persona-profile --arg op=set_bank --arg persona="
+                                              + aKv.Key + " --arg account=<帳號> --arg actor=<你> --arg reason=<理由>`");
+                    continue;
+                }
                 // 合一之後這裡問的不再是「存不存在」（綁定值天生存在），而是「有沒有實體」：
                 // 帳戶檔／system_accounts／agent_banks 三處都沒有 ⇒ 它只活在綁定檔上。
                 // 錢會正確入帳（resolver 認得它），但後台從沒替它開過戶 —— 那是狀態，不是缺陷。
@@ -224,7 +242,8 @@ namespace SCP.Core.Cmd
             aR.Lines.Add("");
             Section(aR, "⓪ unreadable　綁定檔這一瞬間讀不了（換檔中／被鎖）⇒ **重跑一次**，⛔ 不是沒有綁定", aUnreadable);
             Section(aR, "① no_binding　連別區都沒有宣告　⇒ 這個人的錢無處可去", aNoBinding);
-            Section(aR, "② borrowed　只有別區宣告　⇒ **不是錯**，只是要看得見", aBorrowed);
+            Section(aR, "② borrowed　只有別區宣告　⇒ **不是錯**，只是要看得見（前提：借來的帳號本區有開戶）", aBorrowed);
+            Section(aR, "②b borrowed_unopened　借別區、但借來的帳號**本區沒開戶**　⇒ 🔴 收不到錢", aBorrowedUnopened);
             Section(aR, "③ unmaterialized　只靠合一成立、後台還沒開過戶　⇒ **不是錯**，錢會正確入帳", aUnmaterialized);
             Section(aR, "④ closed_acct　綁定指向**已銷戶**帳戶　⇒ 🔴 最貴的一格", aClosedHit);
             Section(aR, "⑤ stale_reverse　`bank_personas` 殘留（已不參與解析）", aStale);
@@ -236,6 +255,7 @@ namespace SCP.Core.Cmd
             aR.AddValue("unreadable", aUnreadable.Count.ToString());
             aR.AddValue("no_binding", aNoBinding.Count.ToString());
             aR.AddValue("borrowed", aBorrowed.Count.ToString());
+            aR.AddValue("borrowed_unopened", aBorrowedUnopened.Count.ToString());
             aR.AddValue("unmaterialized", aUnmaterialized.Count.ToString());
             aR.AddValue("closed_acct", aClosedHit.Count.ToString());
             aR.AddValue("stale_reverse", aStale.Count.ToString());
@@ -245,14 +265,15 @@ namespace SCP.Core.Cmd
             //   🩸 `unmaterialized` 正是這樣被抓到的：它以 `unknown_acct` 之名紅了很久，
             //      紅的內容是「錢會進一個沒有登記的地方」—— 而錢一直進對地方。
             // ⚠ `unreadable` 計入：讀不了的那幾位**沒被檢查到**，這一次不能宣稱「沒有問題」。
-            int aBad = aUnreadable.Count + aNoBinding.Count + aClosedHit.Count + aStale.Count;
+            // ⚠ `borrowed_unopened` 計入（TASK-0440）：它不是狀態，是「錢收不進來」。
+            int aBad = aUnreadable.Count + aNoBinding.Count + aBorrowedUnopened.Count + aClosedHit.Count + aStale.Count;
             aR.Lines.Add("");
             if (aBad > 0)
             {
                 aR.ExitCode = 5;
-                aR.Lines.Add("⇒ 共 **" + aBad + "** 項要處理（exit 5；`borrowed` 不計）。⛔ 本 Cmd 只報不改。");
+                aR.Lines.Add("⇒ 共 **" + aBad + "** 項要處理（exit 5；`borrowed` 不計，`borrowed_unopened` 計）。⛔ 本 Cmd 只報不改。");
             }
-            else aR.Lines.Add("✅ 計入問題的三格皆 0 —— 每位的綁定都指向一個未銷戶的帳戶，反向表也清乾淨了。"
+            else aR.Lines.Add("✅ 計入問題的各格皆 0 —— 每位的綁定都指向一個未銷戶的帳戶（借別區的也在本區有開戶），反向表也清乾淨了。"
                               + "（`borrowed` 與 `unmaterialized` 是狀態，各自的數字在上面。）");
             return aR;
         }
