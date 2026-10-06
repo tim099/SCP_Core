@@ -390,8 +390,8 @@ namespace SCP.Core.Books
             => SCP_BooksClassification.DeriveKind(
                 iEntry?.GetString(SCP_BooksClassification.Key_Kind, ""),
                 iEntry?.GetString(SCP_BooksClassification.Key_Source, ""),
-                iEntry?.GetString(SCP_BooksClassification.Key_Origin, ""),
-                iSlug);
+                iSlug,
+                iEntry?.GetString(SCP_BooksClassification.Key_Origin, ""));
 
         internal static string SeriesOf(SCP_JsonData? iEntry, string iSlug)
             => SCP_BooksClassification.DeriveSeries(
