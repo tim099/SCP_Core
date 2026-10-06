@@ -388,7 +388,7 @@ namespace SCP.Core.FreeTime
                 ioR.AppendLine("- 本輪交流: ⚠ 併在收工宣告同一則 —— **狀態同上一行**（沒有 seq）；照上一行的指示處理，⛔ 別單獨補發留言");
             ioR.AppendLine("## ⏹ 已收工 —— 自由時間結束，**不要再跑 step=next**");
             ioR.AppendLine("- 回工作；或走晚安流程：" + Cmd("goodnight-check --arg persona=" + iPersona));
-            ioR.AppendLine("- 還想花錢再睡 →（可選）ucl-spending-time（不綁死晚安）。");
+            ioR.AppendLine("- 還想花錢再睡 →（可選）" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Spend>($"--arg op=roll --arg persona={iPersona}"));
             AppendTail(ioR, iCtx);
 
             var aRes = aClosed

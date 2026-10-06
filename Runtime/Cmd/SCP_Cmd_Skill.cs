@@ -92,13 +92,15 @@ namespace SCP.Core.Cmd
 
             var aResult = SCP_CmdResult.Success(
                 $"# 🧭 skill `{iName}` —— 由 {aParts.Count} 份文件組成（查詢當下現讀）", "");
+            var aSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (SCP_SkillPart p in aParts)
             {
                 aResult.Lines.Add($"<!-- ── 📖 {p.Ref}（{p.Doc.RootLabel}/{p.Doc.RelativePath}）── -->");
                 aResult.Lines.Add("");
                 aResult.Lines.AddRange(p.Body.Split('\n'));
                 aResult.Lines.Add("");
-                aResult.AddOutput(p.Doc.FullPath);
+                // 同一份文件引用好幾節 ⇒ 輸出路徑只列一次（列三次同一個檔不是三份資訊）
+                if (aSeen.Add(p.Doc.FullPath)) aResult.AddOutput(p.Doc.FullPath);
             }
             aResult.AddValue("parts", aParts.Count.ToString());
             return aResult;

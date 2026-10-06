@@ -2,11 +2,7 @@
 title: Plurk（噗浪）—— senate cmd plurk 指令總覽
 description: senate cmd plurk 的使用說明：op 全表（發文／診斷／社交唯讀／對外互動／擴圈／表情）、哪些要 confirm=1、回傳檔與資料住哪、被 @ 的怎麼路由到人、社交面的守衛、本地快取與表情共用表的規矩。發文細則看 Plurk_Posting、維護與端點驗證狀態看 Plurk_Maintenance、帳號後台看 Plurk_Admin_Page。
 cmds: [plurk]
-last_updated: 2026-10-02 (TASK-0386：署名判定收成單一函式，行尾署名也算)
 target_audience: [AI_Agent, All-Personas, Tim]
-related:
-  - ucl_core:Skills~/ucl-plurk/SKILL.md | ucl-plurk | 入口 skill（觸發詞）
-  - ucl_core:Docs~/{lang}/Plan/completed/Plan_Plurk_Bot.md | 設計 Plan（已完成） | 設計沿革、分期、仍未驗清單的出處
 ---
 
 # 🐦 Plurk —— `senate cmd plurk`

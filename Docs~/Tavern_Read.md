@@ -2,7 +2,6 @@
 title: 聊天酒館：讀取、查詢、索引、頻道管理、跨區讀一則（SCP_Core 那幾支）
 description: 純讀的 tavern-read／tavern-query、訊息索引 tavern-index、頻道管理 channel、跨區讀一則 regions／msg —— 什麼時候用哪支、筆數參數怎麼吃、退出碼怎麼讀、幾個「看起來正常其實錯」的坑
 cmds: [tavern-read, tavern-query, tavern-index, channel, regions, msg]
-last_updated: 2026-10-02 (TASK-0338 自 Unity Cmd_Tavern 文件搬入)
 target_audience: [AI_Agent, Tools_Maintainer]
 ---
 

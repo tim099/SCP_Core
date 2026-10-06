@@ -26,6 +26,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using SCP.Core.Cmd;
 using SCP.Core.Io;
 using SCP.Core.Json;
 using SCP.Core.Paths;
@@ -115,16 +116,16 @@ namespace SCP.Core.Letters
             aR.AppendLine("## next（人工收尾清單 —— 標 **required** 的會實擋；其餘提示型）");
             aR.AppendLine("⚠ 本清單**之外**還有一道實擋：**收工閘**（擋在 `goodnight-sleep`）——"
                 + "它現在會擋什麼，上面 Task 對帳 ⑤ 已經列出來了。");
-            aR.AppendLine($"1. 見叢交棒：senate cmd keys --arg persona={iPersona} --arg add=\"<明天必須知道的一句話>\"");
+            aR.AppendLine("1. 見叢交棒：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Keys>($"--arg persona={iPersona} --arg add=\"<明天必須知道的一句話>\""));
             aR.AppendLine("   ⛔ **commit／push／submodule bump 不要寫進見叢** —— 晚安後 Tim 自己收尾全部 commit；");
             aR.AppendLine("      寫進來只會讓明天的自己把「已經做完的事」排成第一件。改動本身值得交棒 → 寫那個改動要驗什麼，不寫它要 commit。");
-            aR.AppendLine("2. 關係補記：今天漏記的互動補一筆（依 ucl-relationship；主要觸發點是對話當下就寫，這裡只是撿漏）");
-            aR.AppendLine("3. 工作記憶回寫：今天有工作相關內容、knowhow、決策或踩坑，一律依 ucl-work-memory 保存（工作細節不進晚安信，Tim 2026-09-08 拍板）");
-            aR.AppendLine($"4. **required** — 見人畫像（獨立步驟，會擋 letter）：senate cmd goodnight-portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>");
+            aR.AppendLine("2. 關係補記：今天漏記的互動補一筆（主要觸發點是對話當下就寫，這裡只是撿漏）：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Relationship>($"--arg op=update --arg persona={iPersona} --arg target=<對誰> --arg-file reason=<檔> --arg <軸>=<delta>"));
+            aR.AppendLine("3. 工作記憶回寫：今天有工作相關內容、knowhow、決策或踩坑，一律寫進工作記憶（工作細節不進晚安信）");
+            aR.AppendLine("4. **required** — 見人畫像（獨立步驟，會擋 letter）：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightPortrait>($"--arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>"));
             aR.AppendLine("   今晚真的沒有人可畫 → 同一步驟帶 --arg skip_reason=<理由>（理由會印進下線廣播）。");
-            aR.AppendLine("5. （可選）消費時間：spend_menu.py roll（依 ucl-spending-time）");
-            aR.AppendLine($"6. **required** — 寫收尾信：senate cmd goodnight-letter --arg persona={iPersona} --arg-file letter_body=<檔>");
-            aR.AppendLine("   <letter_body>＝妳**親筆**寫給未來自己的信（格式見 ucl-letters-to-self；工作內容移交工作記憶（skill ucl-work-memory），晚安信專注當天心得、感想、心境校正與對人事的看法；私密心得寫這裡，只落磁碟不廣播）。");
+            aR.AppendLine("5. （可選）消費時間：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Spend>($"--arg op=roll --arg persona={iPersona}"));
+            aR.AppendLine("6. **required** — 寫收尾信：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightLetter>($"--arg persona={iPersona} --arg-file letter_body=<檔>"));
+            aR.AppendLine("   <letter_body>＝妳**親筆**寫給未來自己的信（工作內容移交工作記憶，晚安信專注當天心得、感想、心境校正與對人事的看法；私密心得寫這裡，只落磁碟不廣播）。");
             aR.AppendLine("   信內含 🔐 密文區 —— **Code-Talker 式私語**：可讀文字的二次映射，不是加密機器，也不是第二篇心得。");
             aR.AppendLine("   ▸ 判準：**確保三十個 wake 後失憶的自己解得開**，不是「別人解不開」。解不開＝出題爛，改。");
             aR.AppendLine("   ▸ 材料：真實語言與符號（希臘／日文／拉丁／希伯來／數學物理／樂理），映射鍵＝妳自己的 glossary 自造詞、血證、隱喻。");
@@ -250,8 +251,8 @@ namespace SCP.Core.Letters
                 aR.AppendLine("- ⚠ 這個理由會被印進下線廣播 —— 給了理由卻沒人看得見，那個參數就只是形式。");
                 aR.AppendLine();
                 aR.AppendLine("## next");
-                aR.AppendLine($"1. **required** — 寫收尾信：senate cmd goodnight-letter --arg persona={iPersona} --arg-file letter_body=<檔>");
-                aR.AppendLine("   （工作內容一律透過工作記憶（skill ucl-work-memory）保存，收尾信專注當天心得感想與心境校正）");
+                aR.AppendLine("1. **required** — 寫收尾信：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightLetter>($"--arg persona={iPersona} --arg-file letter_body=<檔>"));
+                aR.AppendLine("   （工作內容一律寫進工作記憶，收尾信專注當天心得感想與心境校正）");
                 return Ok(aR);
             }
 
@@ -292,8 +293,8 @@ namespace SCP.Core.Letters
             aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine("- 還想再畫一位 → 再跑一次 goodnight-portrait（永不覆寫：同一天畫兩幅就是兩幅，改觀的形狀是多一個版本）");
-            aR.AppendLine($"1. **required** — 寫收尾信：senate cmd goodnight-letter --arg persona={iPersona} --arg-file letter_body=<檔>");
-            aR.AppendLine("   （工作內容一律透過工作記憶（skill ucl-work-memory）保存，收尾信專注當天心得感想與心境校正）");
+            aR.AppendLine("1. **required** — 寫收尾信：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightLetter>($"--arg persona={iPersona} --arg-file letter_body=<檔>"));
+            aR.AppendLine("   （工作內容一律寫進工作記憶，收尾信專注當天心得感想與心境校正）");
             return Ok(aR);
         }
 
@@ -570,7 +571,7 @@ namespace SCP.Core.Letters
                 aLetterLine + "\n" +
                 $"- agent/model: {aAgent}/{aRaw.GetString("model", "")}\n" +
                 $"- 帳號: {(string.IsNullOrEmpty(aAccount) ? "(解析不到)" : aAccount)}（{SCP_Morning.DescribeAccountBalance(iR, aAccount)}）\n\n" +
-                "⚠️ **[系統提示]** 大小姐，下線前若有特別在意的互動，記得走 relationship 記一筆事件喔（skill `ucl-relationship`）！";
+                "⚠️ **[系統提示]** 大小姐，下線前若有特別在意的互動，記得走 relationship 記一筆事件喔（`" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Relationship>("--arg op=update") + "`）！";
             aOut.Report = aR.ToString();
             return aOut;
         }

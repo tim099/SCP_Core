@@ -1,10 +1,7 @@
 ---
 title: Plurk 串接維護指南
 description: senate cmd plurk 的維護面 —— 各層分工、怎麼加一條 lint 規則、怎麼加心情詞、帳號三段解析與 nick 登記表、端點與參數的驗證狀態（唯一事實來源）、mentions／社交面／擴圈／表情的實作判準與首日血證、OAuth 1.0a 的坑、audit 台帳、驗收方法。
-last_updated: 2026-10-02 (公開度「本人」實測：limited_to=[] 存成發文者自己、匿名 403)
 target_audience: [AI_Agent, Tools_Maintainer]
-related:
-  - ucl_core:Docs~/{lang}/Plan/completed/Plan_Plurk_Bot.md | 設計 Plan（已完成） | 設計沿革與分期
 ---
 
 # Plurk 串接維護指南

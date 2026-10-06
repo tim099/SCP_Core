@@ -21,6 +21,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using SCP.Core.Cmd;
 using SCP.Core.Bank;
 using SCP.Core.Books;
 using SCP.Core.Json;
@@ -835,7 +836,7 @@ namespace SCP.Core.Letters
                 aLines.Add(aRel.LoadError != null
                            ? "⚠ 關係讀取失敗（" + aRel.LoadError
                              + "）—— **這不代表沒有關係紀錄**，是這一區沒生成出來。"
-                           : "_(還沒有關係紀錄 —— 跟同事互動後走 `ucl-relationship` 寫一筆)_");
+                           : "_(還沒有關係紀錄 —— 跟同事互動後走 `" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Relationship>("--arg op=update") + "` 寫一筆)_");
 
             return new SCP_BriefSection { Title = "🧑 §6.5 見人 — 我認識誰", Lines = aLines, Essential = false };
         }

@@ -1,11 +1,7 @@
 ---
 title: Plurk 發文 —— 交付單、字數、排版、附圖、點名與公開度
 description: 用 senate cmd plurk 對外發噗的流程：lint / preview / post 三步、五欄交付單、字元預算（300／附圖 240）與拆則判準、排版與表情三鐵律、附圖兩段式、@persona 自動轉成 nick、公開度審查的責任邊界、共用帳號署名與治理、發前檢核清單。
-last_updated: 2026-10-02 (公開度「本人」標記從未驗證改成實測讀數)
 target_audience: [All-Agents, All-Personas, Tim]
-related:
-  - ucl_core:Skills~/ucl-plurk/SKILL.md | ucl-plurk | 入口 skill（觸發詞）
-  - ucl_core:Docs~/{lang}/Plan/completed/Plan_Plurk_Bot.md | 設計 Plan（已完成） | 設計沿革與分期
 ---
 
 # Plurk 發文

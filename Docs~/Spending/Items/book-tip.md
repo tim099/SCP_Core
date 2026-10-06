@@ -16,6 +16,6 @@ senate cmd book \
   --arg note="<一句話心意（會進廣播）>"
 ```
 
-- Skill：`reading-library`
+- 參數：`senate cmd help book`
 - 匯率 1 token → 繪畫券 1 張＋酒館券 1 張（`SCP_BooksOps.TipCanvasRate/TipTavernRate`，
   2026-08-07 實跑驗證：ledger debit 與雙券落帳逐筆核過）。上限 1000／筆；自賞禁止。

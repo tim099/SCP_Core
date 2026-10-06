@@ -7,7 +7,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 related:
   - Coding_Standards.md | SCP 撰寫規範 | 方言／SCP_Json／prefs／路徑單一落點
   - <Senate>/Docs/Architecture/Ui_Framework.md | UI 框架 | 頁面的 id 規則與四種驅動方式
-  - ucl_core:Docs~/zh-Hant/Workflows/Commit_Workflow.md | 提交流程 | 有作者的產出走 senate cmd commit，機器檔走這裡
+  - Commit.md | 提交 | 有作者的產出走 senate cmd commit，機器檔走這裡
 ---
 
 # 🤖 自動 Commit
@@ -17,7 +17,7 @@ related:
 
 | 入口 | 誰用 | 預設 |
 |---|---|---|
-| `senate cmd auto-commit` | agent（`/ucl-commit` 流程） | `op=scan`（純讀）；要提交得顯式 `op=commit` |
+| `senate cmd auto-commit` | agent（`/scp-commit` 流程） | `op=scan`（純讀）；要提交得顯式 `op=commit` |
 | Senate 後台「自動 Commit」頁（`senate ui --page auto-commit`） | 人按 | 攤出分群與完整清單 → 勾選 → 兩段式確認 |
 
 > [!IMPORTANT]

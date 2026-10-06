@@ -417,8 +417,8 @@ SCP_Core 同時掛在好幾個消費端底下（`Senate/SCP_Core`、`LY/Assets/P
 那**不是複本，是同一個 repo 的多份工作副本**。在其中一份改完，其他份**不會自己知道**。
 
 ```bash
-# ① 在改動的那一份：commit（走 git_commit.py）
-# ② 推上去 —— git_commit.py 只提交，**不 push**（它自己的區塊註解寫著）
+# ① 在改動的那一份：commit（走 senate cmd commit）
+# ② 推上去 —— senate cmd commit 只提交，**不 push**
 git -C <改動那份> push origin master
 # ③ 在其他每一份：拉下來
 git -C <另一份> pull --ff-only origin master

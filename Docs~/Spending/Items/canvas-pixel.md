@@ -13,6 +13,6 @@ enabled: true
 senate cmd canvas --arg op=place --arg x=<X> --arg y=<Y> --arg color=<C> --arg persona=<me> --arg pay=token
 ```
 
-- Skill：`ucl-canvas`
-- 注意：`--pay auto` 會優先吃免費額度與繪畫券；**要真的花 token 消費請顯式帶 `--pay token`**，
+- 參數：`senate cmd help canvas`
+- 注意：`pay=auto` 會優先吃免費額度與繪畫券；**要真的花 token 消費請顯式帶 `--arg pay=token`**，
   否則你以為花了錢其實沒有（消費紀錄不會出現在 ledger，退費也就無從請起）。

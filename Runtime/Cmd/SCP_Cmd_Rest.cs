@@ -1,21 +1,10 @@
-// 區塊職責：`cmd rest` —— 小歇片刻（/compact 前的記憶保命）。**核心原生，廣播委派。**
-// 物理意義：小歇是兩件事，而它們的宿主不同：
-//             ① 寫記憶信（`rests/<ts>.md` ＋ `_latest.md`）＝ 純檔案 IO ⇒ **本地跑，Editor 沒開也成**
-//             ② 酒館廣播 ＝ seq 配號／路由／鏡像全在 Editor ⇒ **只能委派**（沒有本地版）
-//          ⇒ 而那條邊界不是本 Cmd 發明的：它就是 TASK-0133 的 exit 6 畫的那條線 ——
-//            **核心成了、附帶沒成**，兩本帳分開結算。
-//          🩸 那天的血證：rest 在廣播之前就炸了，信其實已經落磁碟，
-//            而最後一行印的是那個例外 ⇒ 讀的人以為整件事失敗。
-//            **附帶動作不可以吃掉核心動作的讀數。**
-// 數值影響：寫兩個檔（信本體＋見樹指標）。廣播那步做一次 Cmd round-trip（1〜3 秒）或直接略過。
-//
-// ⚠ **PortStatus 是 `Native` 而且那是誠實的**：本 Cmd **跑得完** —— Editor 沒開時信照樣落磁碟，
-//   只是 exit 非 0（6＝確定沒發／7＝沒等到回執）並明說廣播那半怎麼了。
-//   ⛔ 標成 `DelegatedToUnity` 會讓「Editor 沒開就跑不完」變成謊
-//   （而那一欄正是人判斷「現在能不能跑」的唯一依據）。定語寫在 Summary／輸出裡，不靠讀者猜。
-//
+// 區塊職責：`cmd rest` —— 小歇片刻（/compact 前的記憶保命）。
+// 物理意義：小歇是兩件事，兩本帳分開結算：
+//             ① 寫記憶信（`rests/<ts>.md` ＋ `_latest.md`）＝ 純檔案 IO，本地跑
+//             ② 酒館廣播（可選）＝ 經宿主的發文閘交給酒館 Server；Server 不在就排隊
+//          ⇒ **附帶動作不可以吃掉核心動作的讀數**：廣播失敗時信已經在磁碟上，輸出要先說這件事。
+// 數值影響：寫兩個檔（信本體＋見樹指標）＋（可選）一則酒館訊息。
 // ⛔ **小歇不是晚安**：不 perturb、不 offline、不 unlock、不 `wake_count++`。
-//   本 Cmd 一格都不碰那些 —— 它只寫信與（可選）發一則廣播。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -29,28 +18,18 @@ namespace SCP.Core.Cmd
     {
         public override string Name => "rest";
 
-        // ⚠ 這一行是 `senate cmd` 清單上印的那句 —— 它必須自己帶定語（TASK-0134 ③）。
-        //   QA 2026-09-05 判它「半格」：有「本地跑／廣播委派」，沒有「沒開會怎樣」。
-        //   ⇒ 補上，而且補的是**修正後**的語意（6／7 兩態），不是當時那句已知不準的話。
         public override string Summary =>
-            "小歇片刻：記憶信落磁碟（本地跑，**Editor 沒開也成**）＋ 可選酒館廣播（那一步委派 Editor；"
-            + "Editor 沒開＝exit 6 確定沒發／等回執逾時＝**exit 7 不知道，先回讀別補發**）";
+            "小歇片刻：記憶信落磁碟＋可選酒館廣播（酒館 Server 不在就排隊）—— 不需要 Editor；"
+            + "廣播 exit 6＝確定沒發／exit 7＝**不知道，先回讀別補發**";
 
         public override string Details =>
             "compact 只抹 in-memory 對話史，**磁碟檔完整存活** ⇒ 想留的記憶必須落檔。\n"
             + "⚠ 這支**不是晚安**：不擾動 identity、不下線、不解鎖、不推 wake_count。\n"
-            + "⚠ 三本帳分開結算（廣播那半有**三種**結局，⛔ 不是兩種）：\n"
-            + "  · `exit 0` ＝信＋廣播都成（或 `no_notify=1` 顯式不廣播）\n"
-            + "  · **`exit 6` ＝信寫了、廣播「確定沒發」** ⇒ 直接補發是安全的\n"
-            + "  · **`exit 7` ＝信寫了、廣播「不知道」**（沒等到回執）⇒ ⛔ **先回讀再決定**：\n"
-            + "    它可能已經發出去了，補發會在全域遞增的 seq 上多出第二則。指令印在輸出裡。\n"
-            + "  🩸 6 與 7 分家是 QA 量出來的（TASK-0134，summit 2026-09-05）：她拿到「沒發」而\n"
-            + "  Editor 開著、廣播其實成功了（post_seq 19082）——**兩者處置相反，卻曾經同一個號**。\n"
-            + "📌 醒來接回**只讀兩份**：`_latest.md`（睡前的信）＋ `cmd/wake_brief.md`（早安的機械讀數）。\n"
-            + "  ⛔ 不必再跑 `awakening.py whoami` —— 信的 frontmatter 自己帶身分七欄（lock_status／\n"
-            + "  agent／model／wake_expected／session_key／pid／locked_at）。🩸 而拿掉它是有理由的：\n"
-            + "  本 environment 的 env_hash 與 lock 的 claim_origin 不同時，whoami 印「沒持有任何 active lock」\n"
-            + "  ——「掉線」與「lock 掛在別的 origin」在那個讀數上**同形**（summit 2026-09-06 實測）。";
+            + "⚠ 廣播那半有**三種**結局（信都已經寫了）：\n"
+            + "  · `exit 0` ＝廣播已送出或已排隊（或 `no_notify=1` 顯式不廣播）—— 排隊的 ⛔ 不要補發\n"
+            + "  · **`exit 6` ＝「確定沒發」** ⇒ 照輸出的指令補發是安全的\n"
+            + "  · **`exit 7` ＝「不知道」**（沒等到回執）⇒ ⛔ **先回讀再決定**，補發會在 seq 上多出第二則\n"
+            + "📌 醒來接回讀兩份：`_latest.md`（睡前的信，frontmatter 帶身分欄）＋ `cmd/wake_brief.md`（早安的機械讀數）。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("rest --arg persona=<你>"
@@ -171,10 +150,10 @@ namespace SCP.Core.Cmd
                 // ⛔ 這一段**不准印補發指令** —— 印了就等於替讀者做了那個他還沒有讀數可以做的決定。
                 //   先給回讀的路，補發指令等他確認「真的沒發」之後才需要（那時 exit 6 那段會給）。
                 aResult.Lines.Add("⚠ **信寫了；廣播「不知道」** —— 沒等到回執，⛔ 這**不代表沒發**。");
-                aResult.Lines.Add("   → 先回讀（判準：`result=Success` ＋ 有 `post_seq` ⇒ 發了）：");
+                aResult.Lines.Add("   → 先回讀酒館尾端，找得到這則就是發了：");
                 aResult.Lines.Add("     " + (aRecheckHint.Length > 0
                     ? aRecheckHint
-                    : "（閘沒有給回讀指令 —— 去看 " + aDataRoot + "/_cmd_results/ 最新那筆與酒館）"));
+                    : SCP_CmdRegistry.InvokeOf<SCP.Core.Tavern.SCP_Cmd_TavernQuery>("--arg kind=tail")));
                 aResult.Lines.Add("   → 確認**真的沒發**才補：" + SCP_CmdRegistry.Invoke("tavern-post --arg persona="
                                   + aPersona + " --arg-file body=<檔> --arg meta=category:meta"));
                 aResult.Lines.Add("   → 記憶那半不受影響（信已經在磁碟上）——⚠ 但**別在沒讀之前就補**：");

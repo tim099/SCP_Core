@@ -2,7 +2,6 @@
 title: 閱讀庫（senate cmd library）
 description: 依設定與 persona 解析讀寫落點，管理作品、媒材、讀者、章節 round、角色看法與投影。
 cmds: [library]
-last_updated: 2026-10-05
 target_audience: [AI_Agent, Tools_Maintainer]
 ---
 
@@ -17,8 +16,6 @@ target_audience: [AI_Agent, Tools_Maintainer]
 | 外部漫畫庫 | 唯一啟用專案的 `comicRoot`（`SCP_PathId.ComicRoot`，路徑管理頁「外部漫畫庫根」；空白＝沒有外部漫畫庫） | `op=comics`／`comic_pages` 的外部來源 |
 
 資料根與信件庫根可獨立設定；`auto` 由共同 registry 推導；漫畫庫根沒有上游可推導，空白是合法值。根必須是已存在的絕對路徑，persona 必須有 `profile/`。設定缺失、無法解析或根不存在回 exit 3；參數或 persona 不合法回 exit 2。檢查不建立目錄，錯誤在寫入前返回。漫畫庫只在 `comics`／`comic_pages`（外部來源）驗證，**不擋內部漫畫與其他閱讀操作**。
-
-⚠ 舊的 `<專案根>/.comic_root.local` 快照（Unity 閱讀心得管理頁寫的）**不再被讀**。`comicRoot` 空白而快照有值時，`op=comics` 會明說「舊快照有值、本格沒有」，不會靜默採用——把那個值填進路徑管理頁即可。
 
 ## 查路徑與續讀
 
@@ -39,9 +36,11 @@ senate cmd library --arg op=note_chapter --arg persona=<persona> \
   --arg media_id=<media-id> --arg chapter_id=0001 --arg-file body=<UTF-8 心得檔>
 ```
 
-媒材為 `comic`、`anim`、`film`、`series`、`stream` 或 `book`，media_id 使用相同前綴。`register_reader` 登記既有媒材的新讀者。章號四位數，`0000` 為序章；重读建立新 round，同章分場續寫用 `append=1`，選填 `append_round=N`（預設最新）。
+模型是 `work → media → reader`：同一作品的漫畫、小說、動畫是各自的 media，進度與心得分開存；`reader.json` 是進度與看法的正本，閱讀卡與追回檔是可重建的投影。建檔前先確認作品身分 —— media_id 與 persona 不猜、不借別人的 reader root。
 
-`bookmark` 更新進度、看法與狀態；`add_character` 登记 facts 與 view，`revise_view` 新增觀點版本與 change_reason。長文字走 UTF-8 檔案與 `--arg-file`。
+媒材為 `comic`、`anim`、`film`、`series`、`stream` 或 `book`，media_id 使用相同前綴。`register_reader` 登記既有媒材的新讀者。章號四位數，`0000` 為序章；重讀建立新 round，同章分場續寫用 `append=1`，選填 `append_round=N`（預設最新）。
+
+`bookmark` 更新進度、看法與狀態；`add_character` 登記 facts 與 view，`revise_view` 新增觀點版本與 change_reason。長文字走 UTF-8 檔案與 `--arg-file`。
 
 共同服務在 `SCP.Core.Library`。原始資料在 reader root，寫入同步該媒材閱讀卡、信件庫副本與追回檔。`sync_shelf` 重建閱讀卡；投影不可手改作為原始資料來源。
 
@@ -95,7 +94,7 @@ senate cmd book --arg op=classify --arg book=<id> [--arg kind=…] [--arg series
 `shelf`／`series` 純讀；`classify` 是唯一的分類寫入通道，只改 `_donation.json` 的 kind／series／volume（補寫 origin）與 `Books/_series.json`，**不動錢**。
 - `series`／`parent_series` **顯式傳空字串＝脫離系列／上位**，跟沒傳是兩件事。
 - 系列首次使用必須帶 `series_title`（不自動拿 id 當名字 —— 打錯字會長出一個看起來正常的新系列）；上位系列同理。
-- **`_donation.json` 只有一種正典版面**（2 空格／冒號後有空格／CRLF／結尾換行，`SCP_BooksOps.SaveJson`；Tim 2026-10-05 拍板統一）。`classify` 一律以它寫回；對一本書做「不改任何值」的 classify，檔案位元組不變。`Books/_series.json` 仍是舊 writer 版面（tab／冒號後無空格／**不補結尾換行**），改它時只在真的有變動才寫、且改的是解析出來的原樹（未知鍵與鍵序保留）。
+- **`_donation.json` 只有一種正典版面**（2 空格／冒號後有空格／CRLF／結尾換行，`SCP_BooksOps.SaveJson`）。`classify` 一律以它寫回；對一本書做「不改任何值」的 classify，檔案位元組不變。`Books/_series.json` 仍是舊 writer 版面（tab／冒號後無空格／**不補結尾換行**），改它時只在真的有變動才寫、且改的是解析出來的原樹（未知鍵與鍵序保留）。
 
 ### 統一版面：`op=normalize_donations`
 
@@ -104,9 +103,9 @@ senate cmd book --arg op=normalize_donations                 # dry-run：列出�
 senate cmd book --arg op=normalize_donations --arg confirm=1  # 真的寫
 ```
 
-只動版面不動值：寫前驗「新版面文字 parse 回來 ＝ 原檔 parse 結果」（不等就整本跳過、列為失敗、exit 1），寫後讀回驗位元組；已是正典版面的檔不碰。冪等 —— 轉完再跑是 0 份。（2026-10-05 已對 LY 跑過：16 份轉換／27 份本來就是正典／0 失敗；去掉空白後內容與轉換前逐份相同。）
+只動版面不動值：寫前驗「新版面文字 parse 回來 ＝ 原檔 parse 結果」（不等就整本跳過、列為失敗、exit 1），寫後讀回驗位元組；已是正典版面的檔不碰。冪等 —— 轉完再跑是 0 份。
 
 `scan` 產出審計報告，疑似同作品由人確認；`show_migrated=1` 包含已遷移項目。
 `authored_diff` 帶 book 與 work_id 對拍寫書資料；`authored_migrate` 預設 dry-run，帶 `confirm=1` 才寫入。
 
-完整參數：`senate cmd library --help`。閱讀步驟使用 `reading-library`／`reading-manga` skill；日常內容以 Library 為來源，Archive 僅作人工遷移。
+完整參數：`senate cmd help library`。日常內容以 Library 為來源，Archive 只供人工遷移。

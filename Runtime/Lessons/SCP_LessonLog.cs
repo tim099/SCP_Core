@@ -144,7 +144,7 @@ namespace SCP.Core.Lessons
             sb.Append("- **body**: ").Append(iIn.Body).Append("\n\n");
             sb.Append("appended → `").Append(iRel).Append("`\n\n");
             sb.Append("---\n\n");
-            sb.Append("後續：定期 review jsonl tail，將高價值 lesson promote 進 `Skills~/agent-lessons-log/SKILL.md` curated list（手動 edit）。\n");
+            sb.Append("後續：定期 review jsonl tail，跨 task 通用的那幾條人工升格進 `Lesson_Log` 文件的「精選」（").Append(SCP.Core.Cmd.SCP_CmdRegistry.Invoke("doc --arg op=show --arg name=Lesson_Log")).Append("）。\n");
             return sb.ToString();
         }
 

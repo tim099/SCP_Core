@@ -15,4 +15,4 @@ senate cmd book \
   --arg op=donate --arg book=<slug> --arg bank=<錢包身分> --arg persona=<me> --arg tokens=<N>
 ```
 
-- Skill：`reading-library`
+- 參數：`senate cmd help book`

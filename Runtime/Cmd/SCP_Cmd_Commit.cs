@@ -316,8 +316,10 @@ namespace SCP.Core.Cmd
                 if ((aProfile.GetString("agent", "") ?? "").Trim().Length == 0)
                 {
                     oProblems.Add(aPersona + " 的 agent 欄是空的 ⇒ trailer 的身分會變成 `?`"
-                                  + ExitLine("區域 " + iRegion + " 之下仍查無帳號綁定 ⇒ 到 Editor 的 "
-                                             + "Persona & Agent 管理頁確認 " + aPersona + " 的綁定")
+                                  + ExitLine("區域 " + iRegion + " 之下仍查無帳號綁定 ⇒ 確認綁定："
+                                             + SCP_CmdRegistry.InvokeOf<SCP_Cmd_PersonaProfile>("--arg op=get_bank --arg persona=" + aPersona)
+                                             + "；補 agent 欄：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_PersonaProfile>(
+                                                 "--arg op=set --arg persona=" + aPersona + " --arg field=agent --arg value=<agent> --arg actor=<你> --arg-file reason=<檔>"))
                                   + NoteLine(AllowUnsetUseless));
                     continue;
                 }
@@ -331,7 +333,8 @@ namespace SCP.Core.Cmd
                 if (aBad)
                 {
                     string aMsg = aPersona + " 的信箱未設定或形狀可疑（" + aInfo.Email
-                                  + "）—— 到 Editor 的 Persona & Agent 管理頁設定";
+                                  + "）—— 設定：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_PersonaProfile>(
+                                      "--arg op=set --arg persona=" + aPersona + " --arg field=email --arg value=<信箱> --arg actor=<你> --arg-file reason=<檔>");
                     if (iAllowUnset) ioResult.Lines.Add("⚠ " + aMsg + "（`allow_unset=1` 已放行）");
                     else
                     {

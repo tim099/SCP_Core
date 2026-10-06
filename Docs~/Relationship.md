@@ -2,11 +2,7 @@
 title: Relationship（好感度）—— 8 軸情感向量、事件帳本、寫入與維護
 description: senate cmd relationship 的使用說明：資料在哪（events／opinions／_current 投影）、8 軸與分數公式、update／add-opinion／show／list／rebuild 五個 op、什麼時候寫、trigger → axis_deltas 經驗值對照、維護流程與不要做的事。
 cmds: [relationship]
-last_updated: 2026-10-01 (TASK-0354：寫入從 UCL `ucmd run Relationship` 搬到 Senate CLI；舊文件 UCL_Core Mechanics/Relationship_System.md 同一筆刪除)
 target_audience: [AI_Agent, Developer]
-related:
-  - ucl_core:Skills~/ucl-relationship/SKILL.md | ucl-relationship | 入口 skill（觸發詞）
-  - ucl_core:Docs~/{lang}/Plan/Plan_Relationship_System.md | 設計 Plan | 架構決策與遷移沿革
 ---
 
 # 💞 Relationship（好感度）

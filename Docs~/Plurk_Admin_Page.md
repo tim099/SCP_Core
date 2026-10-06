@@ -1,10 +1,7 @@
 ---
 title: Plurk 帳號管理頁（senate ui --page plurk）
 description: Senate 後台的 Plurk 帳號頁：只分共用（公用）與個人兩種帳號；三塊面板 —— 共用帳號下拉、產生憑證（四欄直接加密成 .enc、明文不落地）、persona 對照表（個人 override）。帳號三段解析、為什麼「共用與否」是數人頭、帳號 id 與 secrets 資料夾、憑證檔契約與兩條安裝路、驗收讀數。
-last_updated: 2026-10-01 (TASK-0362：從 UCL ucmd run Plurk 搬到 Senate CLI)
 target_audience: [AI_Agent, Tools_User, Tim]
-related:
-  - ucl_core:Docs~/{lang}/Plan/completed/Plan_Plurk_Bot.md | 設計 Plan（已完成） | 帳號層的設計沿革
 ---
 
 # 🐦 Plurk 帳號管理頁
