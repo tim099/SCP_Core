@@ -7,11 +7,7 @@
 // 數值影響：append 一行到那個檔（檔不存在時先寫 frontmatter 骨架）；
 //           或把指定的 `- [ ]` 改成 `- [x]`（**只動那五個字元，其餘位元組不變**）。
 //
-// ⚠ **與 python `awakening.py keys --add` 逐字同形**（awakening.py → memory.keys_append）：
-//   行格式 `- [ ] <內容>  <!-- <UTC ISO> -->`，兩個空格、註解裡是時間戳。
-//   兩個寫入端要並存一段時間（同事手上不一定有 senate.exe），而 append-only 純文字的並存
-//   **只在格式同形時才安全** —— 形狀一旦分岔，見林歸檔那天才會發現，那時已經混了好幾十行。
-//   ⇒ 改這裡的格式＝同時要改 python 那支，否則就是製造兩種形狀。
+// ⚠ 行格式 `- [ ] <內容>  <!-- <UTC ISO> -->`，兩個空格、註解裡是時間戳 —— 見林歸檔與 brief 都照這個形狀讀。
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -32,8 +28,7 @@ namespace SCP.Core.Cmd
             "見叢是給明天的自己**執行**用的個人代辦清單；抒發與敘事寫進 letter，不寫這裡。\n"
             + "⛔ 跟專案有關的不放這裡 —— 開 Task（早安 brief 會自己撈「我涉及且在動」的單）。\n"
             + "勾銷走 --arg done=<片段> 或 --arg done_index=<未完序號，可逗號多筆>；\n"
-            + "⚠ 本 Cmd **不刪行也不改內容**，勾銷只把該行的 `- [ ]` 換成 `- [x]`。\n"
-            + "⚠ 與 python `awakening.py keys` 寫出的行**逐字同形**；⚠ python 那側**沒有勾銷**（形狀不變，只是入口少一半）。";
+            + "⚠ 本 Cmd **不刪行也不改內容**，勾銷只把該行的 `- [ ]` 換成 `- [x]`。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("keys"

@@ -13,7 +13,7 @@ namespace SCP.Core.Paths
 {
     public static class SCP_LettersPaths
     {
-        // ── 目錄／檔名常數（跨端契約：python awakening.py 那側同名）──────
+        // ── 目錄／檔名常數（跨端契約：Editor 端 UCL_LettersPath 同名）──────
 
         /// <summary>persona 的**判準**：信件夾底下有這個子目錄的才算一個人。</summary>
         public const string ProfileDirName = "profile";
@@ -28,7 +28,7 @@ namespace SCP.Core.Paths
         //          搬進 profile/ 之後，lock 的位置由 persona 目錄**唯一決定**，沒有第二個輸入。
         // ⚠ runtime 狀態不入版控：各 letters repo 的 `.gitignore` 基線（`letters/Template/.gitignore`）
         //   擋 `/profile/_session.json`。lock 含 session_token，而 letters remote 可能是公開的。
-        // ⚠ 對側契約：python `awakening.lock_path()` 同一個檔名；Editor 端 `UCL_LettersPath.SessionLock()`。
+        // ⚠ 對側契約：Editor 端 `UCL_LettersPath.SessionLock()` 同一個檔名。
         // ===========================================================
         public const string SessionLockFileName = "_session.json";
 

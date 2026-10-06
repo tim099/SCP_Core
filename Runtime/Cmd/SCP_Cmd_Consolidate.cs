@@ -36,9 +36,7 @@ namespace SCP.Core.Cmd
             + "   當期見叢還有 `- [ ]` ⇒ 擋，並列出全部未完；逐條判斷後二選一（可同時給）：\n"
             + "   `--arg-file keys_carry=<檔>`：還活著的，整理／合併後一行一條 ⇒ 歸檔後寫進新的當期見叢；\n"
             + "   `--arg keys_drop_reason=<理由>`：一條都不帶的理由（理由會留名在歸檔檔尾端）。\n"
-            + "⛔ 本 Cmd **不寫任何 registry／profile 欄位** —— 書籤是掃磁碟算出來的（最大 span_end）。\n"
-            + "   python 那支（awakening.py consolidate）2026-09-02 起也不再寫 registry，\n"
-            + "   原本「檔寫成功卻 exit=1」那條死路已拆掉；本 Cmd 仍是主入口（且不需要 Editor）。";
+            + "⛔ 本 Cmd **不寫任何 registry／profile 欄位** —— 書籤是掃磁碟算出來的（最大 span_end）。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("consolidate"

@@ -18,8 +18,7 @@ namespace SCP.Core.Cmd
         public override string Details =>
             "索引是**視圖**，事實來源是每個 fragment 檔自己的 frontmatter ⇒ 隨時可重建、可 diff 驗證。\n"
             + "排序＝踩過次數降冪 → 型別群組 → id。status=closed 不列但不刪檔。\n"
-            + "⚠ 顯示上限 " + SCP_Fragments.RootIndexShowLimit + " 筆，其餘**明說隱藏筆數**（不靜默截斷）。\n"
-            + "⚠ 與 python `awakening.py root-index` 逐字同形；兩支目前並存。";
+            + "⚠ 顯示上限 " + SCP_Fragments.RootIndexShowLimit + " 筆，其餘**明說隱藏筆數**（不靜默截斷）。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("root-index"

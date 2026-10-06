@@ -329,7 +329,7 @@ namespace SCP.Core.Letters
             if (SCP_Morning.LettersMigrationPending(iR, iPersona))
             {
                 aR.AppendLine("## blocked\n- reason: 收尾信版面尚未遷移 —— 此時寫信會把編號寫錯（第 N 次 wake 被編成 000001）");
-                aR.AppendLine("- exits: 後台「🗄 維護」區跑 migration，或 python awakening.py migrate-letters --all --apply");
+                aR.AppendLine($"- exits: 回報 Tim（附 `{SCP_LettersPaths.PersonaDir(iR.Letters, iPersona)}` 頂層那幾封的檔名）—— ⛔ 不要自己搬檔或改號");
                 return Blocked(aR);
             }
             string aRegion = iR.Region;

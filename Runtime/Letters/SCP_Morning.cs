@@ -160,7 +160,7 @@ namespace SCP.Core.Letters
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine("- reason: 收尾信版面尚未遷移（頂層有未複製進 wakes/ 的收尾信）——此時推導 wake_count 會算錯歲數");
-                aR.AppendLine("- exits: 後台「🗄 維護」區跑 migration（試跑→執行），或 python awakening.py migrate-letters --all --apply");
+                aR.AppendLine($"- exits: 回報 Tim（附 `{SCP_LettersPaths.PersonaDir(iR.Letters, iPersona)}` 頂層那幾封的檔名）—— ⛔ 不要自己搬檔或改號");
                 return Blocked(aRes, aR);
             }
 
