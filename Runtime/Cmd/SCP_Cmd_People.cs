@@ -33,7 +33,8 @@ namespace SCP.Core.Cmd
             + "⚠ 版號一律**解析整數**取最大 —— 字串排序在第 10 版之後會安靜讀成第 9 版。\n"
             + "⚠ 本 Cmd 不回頭撈已歸檔的逐幅畫像（`<target>/raw/`）：看法本來就隨時間衰減，\n"
             + "   raw 存在的理由是「哪天覺得怪，回頭分得出是變化還是失真」，不是每次都讀。\n"
-            + "⚠ 分數不在這裡 —— relationship 是事件帳本、分數由事件重算，這支只給質性看法。";
+            + "⚠ 分數不在這裡 —— relationship 是事件帳本、分數由事件重算，這支只給質性看法。\n"
+            + "⭐ `of=1` 反過來看：**誰畫過 persona** —— 讀 `<persona>/portraits/`（別人投遞給他的公開層），新到舊。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("people"
@@ -49,6 +50,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("pending", "1 ＝ 只列**還有未歸檔畫像**的對象。"
                                + "⚠ 這是**讀數不是待辦** —— 折人是見林的子流程，見林沒到門檻就別開獨立的線"),
             new SCP_CmdArgSpec("bodies", "1 ＝ 連內文一起印（預設只印指標與讀數）"),
+            new SCP_CmdArgSpec("of", "1 ＝ 誰畫過 persona（讀他收到的投遞件，不是他的 sketchbook）"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -68,6 +70,8 @@ namespace SCP.Core.Cmd
                 return SCP_CmdResult.Fail(1,
                     "✗ 找不到 persona 的信件夾：" + aPersonaDir,
                     "  （信件夾根：" + aLettersRoot + "）");
+
+            if (iArgs.Get("of") == "1") return PortraitsOf(aPersonaDir, aPersona, aBodies);
 
             var aResult = new SCP_CmdResult();
             List<string> aTargets;
@@ -203,6 +207,44 @@ namespace SCP.Core.Cmd
 
             aResult.AddValue("target_count", aTargets.Count.ToString());
             aResult.AddValue("with_consolidated", aWithConsolidated.ToString());
+            return aResult;
+        }
+
+        // 區塊職責：`of=1` —— 誰畫過 persona（`<persona>/portraits/` 的投遞件，只有公開層）。
+        // ⚠ 資料夾不存在與存在但是空的，是同一個答案（沒人投遞過）；資料夾讀不了才是失敗。
+        static SCP_CmdResult PortraitsOf(string iPersonaDir, string iPersona, bool iBodies)
+        {
+            string aDir = Path.Combine(iPersonaDir, SCP_PortraitWriter.PortraitsDirName);
+            var aItems = new List<(string At, string By, string Headline, string Path)>();
+            if (Directory.Exists(aDir))
+            {
+                foreach (string f in Directory.GetFiles(aDir, "*.md"))
+                    aItems.Add((SCP_LetterText.ReadFrontmatterField(f, "at") ?? "",
+                                SCP_LetterText.ReadFrontmatterField(f, "by") ?? "?",
+                                SCP_LetterText.ReadFrontmatterField(f, "headline") ?? "", f));
+            }
+            aItems.Sort((a, b) => string.CompareOrdinal(b.At, a.At));
+
+            var aResult = new SCP_CmdResult();
+            if (aItems.Count == 0)
+                aResult.Lines.Add("（還沒有人畫過 " + iPersona + "）");
+            else
+            {
+                aResult.Lines.Add("# 🖼 別人眼中的 " + iPersona + "（" + aItems.Count + " 幅）");
+                aResult.Lines.Add("");
+                foreach (var it in aItems)
+                {
+                    aResult.Lines.Add("## by " + it.By + "　_" + (it.At.Length >= 10 ? it.At.Substring(0, 10) : it.At) + "_"
+                                      + (it.Headline.Length > 0 ? "　" + it.Headline : ""));
+                    if (iBodies)
+                    {
+                        aResult.Lines.Add("");
+                        aResult.Lines.Add(SCP_LetterText.StripFrontmatter(File.ReadAllText(it.Path)).Trim());
+                    }
+                    aResult.Lines.Add("");
+                }
+            }
+            aResult.AddValue("portrait_count", aItems.Count.ToString());
             return aResult;
         }
     }
