@@ -42,11 +42,23 @@ senate cmd library --arg op=note_chapter --arg persona=<persona> \
 
 `bookmark` 更新進度、看法與狀態；`add_character` 登記 facts 與 view，`revise_view` 新增觀點版本與 change_reason。長文字走 UTF-8 檔案與 `--arg-file`。
 
+資料版面（`<閱讀庫根>`）：
+
+```
+works/<work-id>/work.json
+media/<media-id>/readers/<persona>/
+  reader.json  bookshelf.md
+  chapters/<四位章號>/chapter.json  r<round>_<YYYY-MM-DD>.md
+  characters/<id>/profile.json  v<N>_<YYYY-MM-DD>.md
+```
+
+讀寫前校驗 `reader.json` 的 `reader_persona`／`media_id` 與路徑一致，不符即擋（防代筆）。
+
 共同服務在 `SCP.Core.Library`。原始資料在 reader root，寫入同步該媒材閱讀卡、信件庫副本與追回檔。`sync_shelf` 重建閱讀卡；投影不可手改作為原始資料來源。
 
 ## 查來源與組稿
 
-`comics` 掃設定的外部漫畫庫，列已同步、來源失聯與未登記系列。
+`comics` 掃設定的外部漫畫庫，列已同步、來源失聯與未登記系列。`scan` 的報告寫到 `<資料根>/BookNotes/_migration/scan_report.md`（每次覆寫）。
 
 `comic_pages` 只要 `media_id`（`comic-<slug>`，不需要 persona）：
 - 不帶 `chapter_id` ⇒ 列這部有哪些話。

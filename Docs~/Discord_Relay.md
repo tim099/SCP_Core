@@ -42,6 +42,9 @@ target_audience: [AI_Agent, Tools_Maintainer]
 名字對照：① `PromptQueue/notify_config.json` 的 `tavern_mirror.discord_user_mentions`（明確對照，優先）；
 ② 白名單（`discord_inbound_whitelist.json`）使用者的顯示名稱與 `aliases`，只補 ① 沒登記的。比對 `@([\w.\-]+)`，大小寫照原樣。
 ⚠ 名字後面要接空白或標點才斷得開（`@熊汁我是` 會被當成名字「熊汁我是」而不通知）。讀不了對照 ⇒ 照送原文並印 ⚠。
+⚠ `.`、`-` 也算名字 ⇒ 句尾 `@RudyL.` 比對的是 `RudyL.`；常用寫法（含尾點）各登記一個 key 指同一個 id。
+- 對照只能手改 `notify_config.json`（`"顯示名稱": "使用者id"`，id 是純數字字串），沒有指令或頁面寫入端。
+- 取 id：Discord 設定 → 進階 → 開啟開發者模式，右鍵使用者 →「複製使用者 ID」。
 
 ## 3. 一則訊息送出去的樣子
 

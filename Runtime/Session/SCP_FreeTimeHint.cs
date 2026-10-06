@@ -1,9 +1,7 @@
 // 區塊職責：「你現在在自由時間中」的流程提示 —— 活動類 Cmd 在自己的回傳值尾端掛一段。
-// 物理意義：移植自 UCL `UCL_FreeTimeHint`（TASK-0354：NoteLesson 搬到 Senate 時一起帶過來；
-//           Editor 那份仍掛在 Sculpture／Glossary 上）。
-//           ⚠ TASK-0360：自由時間本體搬進 Senate（`free-time`／`free-time-activity`）⇒ 本份改指那兩支 ——
-//             **與 Editor 版的文字從此刻意不同**（Editor 版仍指 `ucmd run FreeTime…`，等 Unity 端退場時一起改）。
-//           判準與掛載條件（活動入口、有 markdown 回傳面、拿得到 persona）見 Editor 那份檔頭，⛔ 這裡不重抄。
+// 物理意義：移植自 UCL `UCL_FreeTimeHint`（TASK-0354：NoteLesson 搬到 Senate 時一起帶過來；Editor 那份已刪）。
+//           TASK-0360：自由時間本體搬進 Senate ⇒ 提示指 `free-time`／`free-time-activity`。
+//           判準與掛載條件（活動入口、有 markdown 回傳面、拿得到 persona）見 FreeTime 文件「維護」那節，⛔ 這裡不重抄。
 // 數值影響：純輸出。不在自由時間時一個字都不印（無關的 Cmd 每次多一段噪音，會讓人開始略過整個區塊）。
 //           ⚠ 與 Editor 版唯一的差別：換行一律 `\n`（Editor 版用 AppendLine ⇒ Windows 上是 `\r\n`）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。

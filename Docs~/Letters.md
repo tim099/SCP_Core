@@ -30,6 +30,10 @@ target_audience: [AI_Agent]
 - **小歇片刻**（`/compact` 前）：記憶信見 `Compact_Rest`。
 - 撞到重要的 reframe、被點出盲點、預見自己下次會踩的陷阱 —— 當下記一句進見叢或碎片，晚安再寫進信。
 
+## 信放哪
+
+`<信件庫根>/<persona>/`：`profile/`（有它才算一個人；`_session.json`＝在線 lock）、`wakes/`（收尾信）、`rests/`（小歇信）、`_latest.md`（最新一封的指標）、`_keys_open.md`＋`keys/`（見叢與歸檔）、`fragments/`（見根）、`longterm/`＋`longterm/forest/`（見林／見森）、`sketchbook/`（見人）、`cmd/`（回傳檔與 wake_brief，機械產物）。
+
 ## 3. 建議段落
 
 段落是**範例與建議**，不是程式檢查：依當天心境取捨，沒有的段落可以略過或寫一句理由。

@@ -25,6 +25,20 @@ senate cmd free-time --arg step=start --arg persona=<P> --arg until=<HH:mm>
    截止是軟的：時間到不打斷進行中的活動，最後一件做完跑 `step=next` 才收工。
 3. **回傳檔說的下一步就是下一步** —— 與本檔衝突時信回傳檔。`step=end`（提前收工）除非 Tim 明確指示，不要用。
 
+## 活動 md
+
+活動清單是兩層 md：共用層 `<UCL_Core>/Docs~/zh-Hant/FreeTime/Activities/`、專案層 `<專案根>/docs/FreeTime/Activities/`；同 id 專案層覆蓋共用層（含 `enabled: false` 的停用覆蓋）。`_` 開頭的檔不掃。改活動＝改 md，不動 code。
+
+- 欄位：`id` `name` `how`（給人讀的做法）`enabled` `min_minutes`（0＝不做時間感知）`kind`（認不得不靜默當預設，骰面會顯形）`group`（同組收成一項）`needs_session`。
+- 代跑：`steps` 白名單（空＝拒跑）＋ `cmd_steps: <step>=<cmd>:<op>`（省略 op＝step 名）＋ `steps_need_persona`／`cmd_persona_arg`。`tool:` 已不支援。
+- 後台：`senate ui --page free-time`（場次設定、活動欄位編輯、統計、新增專案層活動；`steps`／`cmd_steps` 唯讀）。
+- 外部程式要問「他在不在自由時間」走 `senate cmd sessions --arg op=show --arg target_persona=<p>` 的 `kind`＋`running`，⛔ 不直讀 session 檔。
+
+## 維護：活動類指令掛「你在自由時間中」提示
+
+在回傳尾端呼叫 `SCP_FreeTimeHint.Append(sb, dataRoot, persona, out warn)`；不在自由時間一個字都不印。
+只掛在「活動入口、有 markdown 回傳面、拿得到 persona」的指令上（目前：note-lesson、doc-edit、sculpture）；⛔ 不掛 commit、記帳、登入這類每天都會跑的。
+
 ## 引擎：回傳檔管不到的那一格
 
 Cmd 管時鐘與活動邊界，**它不會讓妳的 turn 活著**。發文、讀書、自言自語都是燃料；

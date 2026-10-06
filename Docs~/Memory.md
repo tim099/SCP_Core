@@ -24,7 +24,8 @@ target_audience: [AI_Agent]
 ```
 
 不確定就先寫個人記憶。同一件事常同時放兩層：通用守則放 Alaya、自己怎麼栽的放個人，兩邊 `links` 互指。
-撞坑當下的原始流水帳走 `note-lesson`（`Lesson_Log`）；反覆出現的那條再整理成 Alaya 碎片。
+撞坑當下的原始流水帳走 `note-lesson`（`Lesson_Log`）；反覆出現的那條再整理成 Alaya 碎片，`origins.source` 標明來自哪幾筆 lesson。
+某本書／劇的內容 → 閱讀庫（`Library`）；某支指令的參數坑 → 工作記憶或 `note-lesson`。
 
 ## 回憶
 
@@ -74,14 +75,14 @@ senate cmd kb --arg op=search --arg target=all --arg query="<同上>" --arg topk
    title: <中文標題>
    type: lesson | unsolved | relation | identity | philosophy | howto | practice
    status: open | internalized | closed
-   visibility: shared | private # private 不進共用索引
+   visibility: shared | private # 標示用；kb 索引目前不分 visibility，private 一樣搜得到
    persona: <persona>           # Alaya 改用 authors: [..]
    created_at: <YYYY-MM-DD>
    recurrence: 1                # 踩過／確認過幾次
    origins:                     # 一次一筆，只追加不改寫
      - { by: <persona>, at: <date>, source: <檔名或 tavern:seq>, note: "當次一句話" }
-   tags: [英文分類詞, 中文查詢詞]
-   links: [<同層 id>, <persona>/<id>, alaya/<id>]
+   tags: [分類詞]                # 給人與 grep 看；kb 只吃 title 與正文，tags 不進索引
+   links: [<同層 id>, <persona>/<id>, alaya/<id>, workmem:<topic>]
    ---
    ```
 
@@ -100,11 +101,12 @@ senate cmd kb --arg op=search --arg target=all --arg query="<同上>" --arg topk
 ## 升到 Alaya
 
 門檻只有一個：你判斷它「沒有我也成立、且不綁任何工作」—— 一個人認為就整理，不必等第二個人栽。
-`recurrence` 是權重不是入場券：撈到另一位當事人時 `recurrence` +1、`links` 加上對方的個人碎片。
+`recurrence` 是權重不是入場券：Alaya 的 `recurrence` ＝ 幾位 persona 栽過／確認過，撈到另一位當事人時 +1、`links` 加上對方的個人碎片 —— `links` 那份清單就是普遍性的證據。
 檢索排序不讀 `recurrence`，分數相近時由人以 recurrence 高者優先。
 
 Alaya 檔：`<資料根>/Alaya/fragments/<type>_<slug>.md`，schema 同上，差異是 `authors: [...]` 取代 `persona`、`visibility` 一律 `shared`。
 Alaya 沒有機械索引，靠 `--target alaya` 檢索發現。帶「我」才成立的、綁具體工作的，留在原層。
+降級：發現某筆 Alaya 其實只有一位當事人 ⇒ 改 `status: closed`、links 指向留下的個人碎片，不刪檔（外部可能已引用）。降級麻煩，拿不定就先寫個人層。
 
 ## 維護
 
@@ -120,10 +122,11 @@ Alaya 沒有機械索引，靠 `--target alaya` 檢索發現。帶「我」才�
 - **整合**：多筆合成一筆原則。舊 id 留一個 `status: closed` 的殼並 link 到新的，外部引用才不會斷。
 - **關聯**：link 比新增有價值 —— 一次檢索命中一整族。
 - **回填**：用一句話查一件確定存在的事，正解落在灰帶且排名 > 3（先確認不是 target 圈錯層）⇒ 把當時那句查詢補進該碎片**正文**
-  （開一段 `**會這樣問**：` 列 2–3 句自然問法），`tags` 再補中文查詢詞。只加 `tags` 不夠。回填後同一句再查，確認進前 3 —— 沒複驗的回填等於沒做。
+  （開一段 `**會這樣問**：` 列 2–3 句自然問法）。只加 `tags` 沒有用 —— 索引只吃 `title` 與正文。回填後同一句再查，確認進前 3 —— 沒複驗的回填等於沒做。
 
 ⛔ 不要：
 - 改寫舊碎片正文 —— 更新認知走改 `status`、追加 `origins`、或 fork 新檔並 link。
+- 把文件整段貼進碎片 —— 碎片是 key 與現場摘要，寫路徑指過去。
 - 手改機械產物（`_root_index.md`、`cmd/wake_brief.md`）—— 下次生成就覆寫，要改去改碎片。
 - 全部設 `open` —— 設 `internalized` 要舉得出「最近一次我自動做對了」。
 

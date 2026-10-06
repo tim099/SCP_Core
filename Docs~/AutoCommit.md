@@ -110,6 +110,9 @@ ephemeral（永遠不進候選）：`*.log`、`*.tmp`、`_last_op.md`、`_last_v
 
 - ⚠ `Enabled` **欄位缺席＝啟用**（相容舊檔）；新建一律顯式 `false`（「選了一個 submodule」不等於「同意開始自動 commit 它」）。
 - 編輯：Senate 頁的「⚙ Submodule 自動提交設定」區（inspector 反射繪製，加欄位頁面不用改）。
+- **該不該加入**：repo 裡有機器生成、沒有作者的檔才加。有作者的產出走 `senate cmd commit`；同一個 repo 可以兩種並存 —— 沒命中任何群的落 `__other`，永不自動收（設定檔本身就是這種）。
+- 欄位：`Name` 空＝目錄名；`Message` 尾巴自動補 `[N files]`；`DefaultOn=false`＝沒指定 `groups=` 時不做；`Groups` 順序即優先序（窄前綴放前面）；前綴比對大小寫敏感。
+- ⚠ 拼錯的鍵名會被當成未知欄位原樣保留、不報錯 ⇒ 加入後放一個探針檔到某群前綴下跑 `op=scan`，看到它落進那一群才算通，驗完刪探針。
 
 ## 4. 四道硬擋
 
@@ -148,6 +151,7 @@ ephemeral（永遠不進候選）：`*.log`、`*.tmp`、`_last_op.md`、`_last_v
 - 對帳式：`candidate_files − other_files − other_untracked_files − subptr_files` ＝ 現在可自動收的檔數。
 - 有群失敗或對帳不符 ⇒ **exit 1**（已成功的那幾群是真的，SHA 在 `shas`；這不是回滾，是拒絕把部分成功說成完成）。
 - ⛔ 不重試、不刪 lock（刪別人的 lock 會讓那個 process 寫壞 index）。
+- `disabled_repos` ＝ `Enabled=false`，不算 `blocked_repos`。加了設定檔 `repos` 卻沒多 1 ⇒ 設定檔不在 repo 根，或那個 repo 不在資料根的 `.gitmodules`。
 
 ## 7. Senate 頁面
 
@@ -156,6 +160,7 @@ ephemeral（永遠不進候選）：`*.log`、`*.tmp`、`_last_op.md`、`_last_v
   特殊群的一次性勾選用完即棄；具名群的預設由存檔值重新給。
 - 「儲存預設勾選」只存**跟規則預設不同**的那幾格（`<repo>:<群>`），寫 `senate.pages.local.json` 的 `auto-commit` 區塊；特殊群永不持久化。
 - 提交：「Commit 勾選群組」→ 攤出每一筆 commit 的訊息 →「⚠ 確定 Commit」／「取消」。
+- 設定區列各 submodule 狀態（✅ 已啟用／⏸ 停用／— 尚無設定檔／⛔ 設定壞掉），信件庫不列；不合法不畫存檔鈕，存檔成功自動重掃；「↩ 放棄改動」＝從磁碟重讀。
 
 ## 8. 血證（本次下沉）
 
