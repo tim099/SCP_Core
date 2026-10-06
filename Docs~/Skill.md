@@ -34,6 +34,7 @@ docs:
 - `name` 與資料夾同名，前綴 `scp-`。
 - `description` 是 agent 決定要不要載這個 skill 的唯一依據：寫清楚**什麼時候用**。
 - **「觸發詞：」那一行**：Antigravity 的 `trigger:` 由它推出來（`/` 分隔）；沒有它就退成 `always_on`（每次都載）。
+  ⚠ 推導抓的是 frontmatter 裡**第一個**「觸發詞…：」⇒ description 其他地方別出現「觸發詞」三個字（例：「name／觸發詞／docs:」會讓它從 `docs:` 的冒號後面開始抓）。裝完看 `.agents/skills/<名>/SKILL.md` 的 `trigger:` 是不是你寫的那些詞。
 - `docs:` 依序合併；`文件名#前綴` 取標題文字以前綴開頭的那一節（到下一個同級或更高級標題為止，程式碼區塊裡的 `#` 不算）。
 - 沒有 `docs:` 的 skill 走舊的鏡像模式（整個資料夾照抄）—— 新 skill 一律用 `docs:`。
 
