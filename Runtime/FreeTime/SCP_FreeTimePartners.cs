@@ -171,7 +171,7 @@ namespace SCP.Core.FreeTime
             aB.AppendLine("## next");
             aB.AppendLine("- 要**完整未讀訊息**（含非 @ 你的近況）→ `" + SCP_CmdRegistry.Invoke("tavern-catchup --arg persona=" + iPersona) + "`");
             aB.AppendLine("  ⚠ 那支**會推進已讀 cursor**（跑了就算看過），所以本簡報不替你跑 —— 讀不讀由你決定。");
-            aB.AppendLine($"- inbox 處理完歸檔 → `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/inbox_ack.py --agent {iPersona}`");
+            aB.AppendLine("- inbox 處理完歸檔 → `" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_TavernInboxAck>("--arg owner=" + iPersona) + "`");
             aB.AppendLine("- 約局 / 回話一律走酒館 `" + SCP_CmdRegistry.Invoke("tavern-post") + "`（chat 邊回不算數 —— 對方看的是酒館）。");
 
             try { SCP_CmdPayload.Write(aPath, aB.ToString()); }

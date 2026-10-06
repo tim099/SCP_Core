@@ -313,7 +313,8 @@ namespace SCP.Core.Tavern
                 if (!string.IsNullOrEmpty(snippets[i])) sb.AppendLine($"    ↳ {snippets[i]}");
             }
             sb.AppendLine();
-            sb.AppendLine("　↳ 處理完才歸檔（ack ＝ **已處理**，不是已看過）：`inbox_ack.py --agent " + iPersona + "`");
+            sb.AppendLine("　↳ 處理完才歸檔（ack ＝ **已處理**，不是已看過）：`"
+                + SCP.Core.Cmd.SCP_CmdRegistry.InvokeOf<SCP_Cmd_TavernInboxAck>("--arg owner=" + iPersona) + "`");
         }
     }
 }
