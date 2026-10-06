@@ -27,11 +27,13 @@ namespace SCP.Core.Cmd
         public override string Name => "canvas";
         public override string Category => SCP_CmdCategory.Game;
 
-        public override string Summary => "共用像素畫布：放點／看圖／查點／統計／快取／快照／筆記／宣稱區域／閘探針";
+        public override string Summary => "共用像素畫布：放點／看圖／查點／統計／快取／快照／筆記／宣稱區域／展品／閘探針";
 
         public override string Details =>
             "2048×2048 全社群共用畫布，事實源是 `<資料根>/Canvas/events/` 的 append-only 事件。\n"
-            + "唯讀 op（view／pixel／stats／cache／snapshot／note／claim）**在本 process 跑完，Editor 沒開也行**。\n"
+            + "唯讀 op（view／pixel／stats／cache／snapshot／note／claim／exhibit）**在本 process 跑完，Editor 沒開也行**。\n"
+            + "⭐ 展品（TASK-0443）＝ 同一個**標題**的宣稱區域合成一件，範圍取聯集外框；`op=exhibit` 列出，"
+            + "`op=view --arg exhibit=<標題>` 直接看那件（不用自己算 region）。\n"
             + "⚠ 只有 `op=place` 會動錢：付款（限時券→永久券→酒館券→token）走 Senate Server、自由時間資格就地讀 session 檔；"
             + "分享（帶圖發到酒館）走酒館發文閘 —— 整支都不需要 Editor。\n"
             + "⚠ index 255 同時是「純白」與「沒人畫過」—— 透明變體的判定靠 painted-mask，不看顏色；\n"
@@ -45,9 +47,11 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("op", "要做什麼", iRequired: true,
-                iChoices: new[] { "view", "pixel", "stats", "cache", "snapshot", "note", "claim", "gateway", "place" }),
+                iChoices: new[] { "view", "pixel", "stats", "cache", "snapshot", "note", "claim", "exhibit", "gateway", "place" }),
             new SCP_CmdArgSpec("region", "x,y,w,h（view/note/claim 用）"),
             new SCP_CmdArgSpec("scale", "view 放大倍率（整數，預設 1；一律最近鄰）", iDefault: "1"),
+            new SCP_CmdArgSpec("exhibit", "展品 id ＝ 宣稱區域的**標題**（view：用那件的範圍，跟 region 二擇一；exhibit：只看那一件）"),
+            new SCP_CmdArgSpec("pad", "view exhibit 時外框往外留幾格（預設 0）", iDefault: "0"),
             new SCP_CmdArgSpec("x", "pixel 的 x"),
             new SCP_CmdArgSpec("y", "pixel 的 y"),
             new SCP_CmdArgSpec("no_cache", "1 ＝ 強制全 replay（對拍驗證用）"),
@@ -86,6 +90,7 @@ namespace SCP.Core.Cmd
                 case "snapshot": return OpSnapshot(aPaths);
                 case "note": return OpNote(iArgs, aPaths);
                 case "claim": return OpClaim(iArgs, aPaths);
+                case "exhibit": return OpExhibit(iArgs, aPaths);
                 case "gateway": return OpGateway(iArgs, aDataRoot);
                 case "place": return OpPlace(iArgs, aPaths, aDataRoot);
                 default: return SCP_CmdResult.Fail(2, "✗ 不認得的 op：" + aOp);
@@ -113,8 +118,24 @@ namespace SCP.Core.Cmd
                 : SCP_DataPaths.Letters(new SCP_DataRoot(iDataRoot));
             string aDir = SCP_LettersPaths.CmdDir(aLettersRoot, aPersona);
             string aPngPath = aDir + "/" + ViewPngName, aPngTPath = aDir + "/" + ViewTransparentPngName;
-            if (!TryRegion(iArgs.Get("region"), out int aX, out int aY, out int aW, out int aH,
-                           out string aWhy))
+            string aExhibitId = iArgs.Get("exhibit").Trim();
+            int aX, aY, aW, aH;
+            SCP_CanvasExhibit? aExhibit = null;
+            if (aExhibitId.Length > 0)
+            {
+                // ⛔ region 與 exhibit 同時給 ⇒ 擋：兩個範圍選一個是呼叫端的事，⛔ 不替他挑。
+                if (iArgs.Get("region").Trim().Length > 0)
+                    return SCP_CmdResult.Fail(2, "✗ region 與 exhibit 只能給一個");
+                if (!SCP_CanvasExhibits.TryLoad(iPaths, out List<SCP_CanvasExhibit> aList, out string aErr))
+                    return SCP_CmdResult.Fail(1, "✗ " + aErr);
+                aExhibit = SCP_CanvasExhibits.Find(aList, aExhibitId);
+                if (aExhibit == null)
+                    return SCP_CmdResult.Fail(2, "✗ 找不到展品：`" + aExhibitId + "`（展品 id ＝ 宣稱區域的標題；清單：`op=exhibit`）");
+                if (!int.TryParse(iArgs.Get("pad"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int aPad) || aPad < 0)
+                    return SCP_CmdResult.Fail(2, "✗ pad 要是 ≥0 的整數：" + iArgs.Get("pad"));
+                SCP_CanvasExhibits.Padded(aExhibit, aPad, out aX, out aY, out aW, out aH);
+            }
+            else if (!TryRegion(iArgs.Get("region"), out aX, out aY, out aW, out aH, out string aWhy))
                 return SCP_CmdResult.Fail(2, "✗ " + aWhy);
             if (!TryScale(iArgs.Get("scale"), out int aScale, out string aScaleWhy))
                 return SCP_CmdResult.Fail(2, "✗ " + aScaleWhy);
@@ -130,6 +151,13 @@ namespace SCP.Core.Cmd
 
             var aResult = new SCP_CmdResult();
             aResult.Lines.Add("# 🖼 view rendered");
+            if (aExhibit != null)
+            {
+                aResult.Lines.Add("  exhibit: " + aExhibit.Id + "（" + aExhibit.ClaimIds.Count + " 筆宣稱；"
+                                  + string.Join("、", aExhibit.Personas) + "）region " + aX + "," + aY + "," + aW + "," + aH);
+                aResult.AddValue("exhibit", aExhibit.Id);
+                aResult.AddValue("region", aX + "," + aY + "," + aW + "," + aH);
+            }
             aResult.Lines.Add("  size  : " + (aW * aScale) + "x" + (aH * aScale)
                               + (aScale > 1 ? "（原 " + aW + "x" + aH + " ×" + aScale + "）" : ""));
             aResult.Lines.Add("  path  : " + aPngPath);
@@ -493,6 +521,40 @@ namespace SCP.Core.Cmd
             }
 
             return SCP_CmdResult.Fail(2, "✗ claim 的 sub 只有 add｜list｜done：" + aSub);
+        }
+
+        // ───────────────────────────── exhibit（純讀）─────────────────────────────
+        // 區塊職責：列出展品（同標題的宣稱區域合成一件），或給 exhibit=<標題> 只看那一件的明細。
+        static SCP_CmdResult OpExhibit(SCP_CmdArgs iArgs, SCP_CanvasPaths iPaths)
+        {
+            if (!SCP_CanvasExhibits.TryLoad(iPaths, out List<SCP_CanvasExhibit> aList, out string aErr))
+                return SCP_CmdResult.Fail(1, "✗ " + aErr);
+            var aResult = new SCP_CmdResult();
+            string aId = iArgs.Get("exhibit").Trim();
+            if (aId.Length > 0)
+            {
+                SCP_CanvasExhibit? e = SCP_CanvasExhibits.Find(aList, aId);
+                if (e == null) return SCP_CmdResult.Fail(2, "✗ 找不到展品：`" + aId + "`（展品 id ＝ 宣稱區域的標題）");
+                aResult.Lines.Add("# 🖼 展品：" + e.Id);
+                aResult.Lines.Add("  作者  : " + string.Join("、", e.Personas));
+                aResult.Lines.Add("  狀態  : " + e.StatusText + "（任一筆宣稱還 active ⇒ active）");
+                aResult.Lines.Add("  範圍  : " + e.RegionText + "（" + e.ClaimIds.Count + " 筆宣稱的聯集外框）");
+                aResult.Lines.Add("  宣稱  : " + string.Join("、", e.ClaimIds));
+                aResult.Lines.Add("  看圖  : " + SCP_CmdRegistry.Invoke("canvas --arg op=view --arg persona=<你> --arg exhibit=\"" + e.Id + "\""));
+                aResult.AddValue("exhibit", e.Id);
+                aResult.AddValue("region", e.RegionText);
+                aResult.AddValue("claim_count", e.ClaimIds.Count.ToString(CultureInfo.InvariantCulture));
+                return aResult;
+            }
+            int aActive = 0;
+            foreach (SCP_CanvasExhibit e in aList) if (e.AnyActive) aActive++;
+            aResult.Lines.Add("# 🖼 展品（" + aList.Count + " 件；active " + aActive + "）—— 展品 id ＝ 宣稱區域的標題，同標題合成一件");
+            foreach (SCP_CanvasExhibit e in aList)
+                aResult.Lines.Add("  [" + e.StatusText + "] " + e.Id + "　｜" + string.Join("、", e.Personas)
+                                  + "　@ " + e.RegionText + (e.ClaimIds.Count > 1 ? "（" + e.ClaimIds.Count + " 筆宣稱）" : ""));
+            aResult.AddValue("exhibit_total", aList.Count.ToString(CultureInfo.InvariantCulture));
+            aResult.AddValue("exhibit_active", aActive.ToString(CultureInfo.InvariantCulture));
+            return aResult;
         }
 
         // ───────────────────────────── place（③：唯一會動錢的 op）─────────────────────────────

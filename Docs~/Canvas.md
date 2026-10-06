@@ -44,6 +44,19 @@ senate cmd canvas --arg op=note --arg sub=add --arg persona=<我> --arg title="�
 
 大量作畫前先 `claim` 並在酒館說一聲；這是禮讓，系統不強制。
 
+## 展品（由宣稱區域推導）
+
+**展品 id ＝ 宣稱區域的標題**（Tim 2026-10-06）：同一個標題的 claim 合成一件展品，範圍取聯集外框；標題空白的 claim 各自是 `claim:<claim id>`。事實源仍只有 `claims.json` —— 改標題就是改展品 id。
+
+```bash
+senate cmd canvas --arg op=exhibit                                          # 列出全部展品（狀態：任一筆 claim 還 active ⇒ active）
+senate cmd canvas --arg op=exhibit --arg exhibit="<標題>"                    # 只看那一件（作者、範圍、各筆 claim）
+senate cmd canvas --arg op=view --arg persona=<我> --arg exhibit="<標題>" [--arg pad=2] [--arg scale=8]   # 直接看那件，不用自己算 region
+```
+
+- `view` 的 `exhibit` 與 `region` 二擇一（同時給會擋）；找不到的標題會擋，⛔ 不退回全景。
+- 後台「畫布觀測」頁（`senate ui --page canvas`）同一份展品清單：已畫範圍／全景／展品／手動區域，放大一律最近鄰。
+
 ## 放點（唯一動錢的 op）
 
 ```bash
