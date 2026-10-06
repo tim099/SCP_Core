@@ -1,7 +1,7 @@
 ---
 title: SCP 專案撰寫規範
 description: SCP_Core 與其消費端（Senate / Unity）共用的 C# 撰寫規則 —— 方言限制、JSON 一律走 SCP_Json、設定一律走專案層 prefs、純函式邊界、路徑單一落點（含「決定點包含值存在哪」與「讀取端不准讀原始值」）。
-last_updated: 2026-09-14
+last_updated: 2026-10-06
 target_audience: [AI_Agent, Tools_Maintainer, Backend_Programmer]
 related:
   - ../README.md | SCP_Core README | 兩條規矩的來源（方言 / 邊界）
@@ -21,6 +21,11 @@ related:
 > 症狀都不是編譯錯誤，是**另一邊安靜地少一塊**。
 
 適用範圍：`SCP_Core/**`，以及**將來會搬進 SCP_Core 的**消費端程式碼（判準見 §2.1）。
+
+> [!IMPORTANT]
+> **發現文件過時，就當場更新文件**（這份、架構文件、程式檔頭註解都算）。
+> 改成只寫**目前的規格**，⛔ 不留「此前是…／後來改成…」的歷史紀錄 —— 歷史由 git 記。
+> 過時的說法留在原地，比沒寫更糟：讀的人會照著做，而它不會叫。
 
 > [!NOTE]
 > UCL_Core 的 `Coding_Standards.md` / `Json_Coding_Standards.md` **不完全適用於本專案** ——
@@ -470,6 +475,16 @@ Unity 那一份的語法驗收走該側的重編：**`senate cmd unity-recompile
 在被 import 的那一份上產生建置產物，等於自己塞一顆重複的 assembly 進去。
 
 ---
+
+## §4.8 新增後台頁：自動收頁，不用登記
+
+繼承 `SCP_GuiToolPage`（或 `SCP_GuiPage`）、宣告 `public const string PageKey` ⇒ 宿主啟動時由
+`SCP_GuiPageCatalog.AutoRegister` 掃進目錄，**不用到宿主補 `Register`**。
+
+- 建構子吃宿主 context（`ISCP_GuiAppContext`）或無參，二擇一；形狀不符、缺 `PageKey`、key 撞名都會列進入口頁的診斷。
+- 建構子要便宜（不碰檔案、不跑 git）：目錄會建一次實例讀標題／分組。讀數放 `OnPush` 或按鈕。
+- 不給人開的類別：測試探針貼 `[SCP_PageIgnore("理由")]`；彈窗／只從工具列進去的頁 `MenuGroup => null`；基底頁 `abstract`。
+  四種差別見 `<Senate>/Docs/Architecture/Ui_Framework.md`「頁面目錄」。
 
 ## §5 邊界：純函式優先，服務要有理由
 

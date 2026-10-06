@@ -124,7 +124,7 @@ namespace SCP.Core.Cmd
             if (!aOk) { ioResult.ExitCode = 1; ioResult.Lines.Add("✗ brief 生成失敗 —— 詳見回傳檔"); }
             else
             {
-                ioResult.Lines.Add($"✓ brief：{aBriefPath}（{aLines} 行）");
+                ioResult.Lines.AddRange(SCP_ReadHint.Lines("✓ brief：", aBriefPath!, iRoots.DataRoot));
                 ioResult.AddValue("brief_lines", aLines.ToString());
             }
             return aPath;

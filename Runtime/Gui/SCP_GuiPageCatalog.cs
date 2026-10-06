@@ -1,20 +1,10 @@
 // 區塊職責：page key → 頁面工廠 ＋ 選單用的中繼資料（標題／分組）。
 // 物理意義：入口頁要問三個問題 —— 有哪些頁、它們分幾組、選了之後怎麼生出來。
-//           UCL 那側用**反射掃 assembly** 找 ShowInPageMenu==true 的子類；這裡改成**顯式登記**：
-//           ① 這裡的頁面建構要吃 model（沒有無參 ctor），反射 Activator 生不出來
-//           ② 反射掃出來的清單會隨「哪些 assembly 剛好載入」而變，而那個差異不會報錯 ——
-//              症狀是「同一份程式在別台機器少了兩頁」
-//           ⇒ 顯式登記多打一行，換到的是「清單就是清單，不會因為環境而變形」。
-//
-//           ⭐ 2026-08-30 Tim 拍板補上**混合形狀**（不是推翻上面那兩條，是補它們的洞）：
-//           顯式登記治得了「清單會變形」，治不了「**我忘了登記**」—— 而忘記登記的症狀
-//           跟「本來就沒那頁」一模一樣。⇒ 加一支 <see cref="SCP_GuiPageCatalog.Discover"/>：
-//             · **反射只負責發現**（掃 SCP_GuiToolPage 的非抽象子類）
-//             · **建構仍然只走登記過的 factory**（反射建不出吃 context 的 ctor）
-//             · 掃到了卻沒有 factory ⇒ **列在畫面上標紅**，不是 log 一行然後跳過
-//           📌 最後一條是重點：UCL 那版是 LogWarning + continue，而 log 沒人讀、
-//             清單上少一行也沒人會發現。**要讓「少一頁」變成看得見的字。**
-// 數值影響：純資料 ＋ 一次性的中繼資料探測（見下），零 IO。Discover 另外吃一次反射成本。
+//           **自動收頁**（<see cref="SCP_GuiPageCatalog.AutoRegister"/>）：繼承 SCP_GuiPage、宣告
+//           `public const string PageKey` 的非抽象類別都會被收進來，建構時遞宿主 context 給它 ——
+//           新增一頁不必到宿主補 Register。<see cref="Register"/> 只留給吃 catalog 本身的頁（首頁）。
+//           收不進來的（缺 PageKey／key 撞名／ctor 形狀不符／assembly 掃不全）一律進 <see cref="Diagnostics"/>，由入口頁畫出來。
+// 數值影響：純資料 ＋ 一次性的中繼資料探測（見下），零 IO。AutoRegister 另外吃一次反射成本。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;

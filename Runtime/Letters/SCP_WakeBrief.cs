@@ -6,8 +6,10 @@
 //           跟專案有關的一律開 Task，那一側每天由 §2.5 機械撈取，**不靠人抄單號進見叢**。
 //           每一層的真相源都是 `letters/<persona>/` 底下的原檔，本檔只讀不改（唯一例外是
 //           `_latest.md` 的指標自癒，見 SCP_WakeLetters.SyncLatestPointer）。
-// 數值影響：主檔行數上限 <see cref="BriefLineCap"/>；超出的**非必讀**區塊整段移進續讀檔
+// 數值影響：主檔行數上限（預設 <see cref="BriefLineCap"/>）；超出的**非必讀**區塊整段移進續讀檔
 //           （不砍內容 —— 砍掉的那段沒有人會知道它存在過）。
+//           本檔的 `public const int` 都是**預設值**；實際值由 SCP_WakeBriefSettings 讀 `brief_settings.json`（後台「早安 brief」頁可調）。
+//           主檔與續讀檔的最後一行是 `🔚 本檔結束（共 N 行）`（<see cref="WithEndMarker"/>）。
 //
 // ⚠ **射程（2026-09-01 起是全量）**：§1 見根／§2 見叢／§2.5 見單／§3 見森／§4 見林／§5 見樹／§5.5 回憶／
 //   §6 記憶維護／§6.5 見人／§6.6 見書／§9 動作清單都在這裡，而 `Cmd_GoodMorning` step=brief
@@ -77,8 +79,14 @@ namespace SCP.Core.Letters
         /// <summary>`_latest.md` 這次有沒有被校正。⚠ 有的話呼叫端要說出來，不要靜默。</summary>
         public bool LatestPointerHealed;
 
-        /// <summary>主檔行數（給「有沒有逼近上限」一個可讀的數字）。</summary>
+        /// <summary>主檔行數（給「有沒有逼近上限」一個可讀的數字）。含結尾那一行。</summary>
         public int MainLineCount;
+
+        /// <summary>這次用的主檔行數上限（設定值或預設）。</summary>
+        public int MainLineCap;
+
+        /// <summary>設定檔裡照預設跑的格與原因（空 ＝ 沒問題）。</summary>
+        public List<string> SettingProblems = new List<string>();
 
         /// <summary>被移進續讀檔的區塊標題。</summary>
         public List<string> MovedSections = new List<string>();
@@ -91,7 +99,7 @@ namespace SCP.Core.Letters
 
     public static class SCP_WakeBrief
     {
-        /// <summary>主檔行數上限。對齊 python BRIEF_LINE_CAP。</summary>
+        /// <summary>主檔行數上限的預設值（實際值走 SCP_WakeBriefSettings）。</summary>
         public const int BriefLineCap = 2000;
 
         /// <summary>
@@ -134,10 +142,15 @@ namespace SCP.Core.Letters
         /// 宿主端的 `CurrencyId` 缺值時會回預設 `Ducat`，如果這裡也自己補一個預設，
         /// 兩個沒設定過的專案會印出同一個區域，而那正是這個定語要防的事。
         /// </param>
+        /// <param name="iSettings">可調參數。不給 ＝ 從 <paramref name="iDataRoot"/> 讀 `brief_settings.json`（沒資料根就全預設）。</param>
         public static SCP_WakeBriefResult Build(string iLettersRoot, string iPersona, int iWakeCount,
-                                               string? iDataRoot = null, string? iRegion = null)
+                                               string? iDataRoot = null, string? iRegion = null,
+                                               SCP_WakeBriefSettings? iSettings = null)
         {
             var aResult = new SCP_WakeBriefResult();
+            SCP_WakeBriefSettings aSettings = iSettings ?? SCP_WakeBriefSettings.ReadOrDefault(iDataRoot);
+            aResult.MainLineCap = aSettings.MainLineCap;
+            aResult.SettingProblems.AddRange(aSettings.Problems);
 
             // 見樹的真相源修復要在讀它之前 —— 讀完再修就是拿舊的那份組 brief。
             (string? aPointer, bool aHealed) = SCP_WakeLetters.SyncLatestPointer(iLettersRoot, iPersona);
@@ -177,6 +190,14 @@ namespace SCP.Core.Letters
                 "",
             };
 
+            // 設定檔有格不合法 ⇒ 那幾格照預設跑，而且要在讀的人一定會看到的地方說出來（⛔ 不靜默用預設）。
+            if (aSettings.Problems.Count > 0)
+            {
+                aHead.Add("> ⚠ **brief 設定有問題，下列照預設跑**（後台「早安 brief」頁可修）：");
+                foreach (string aProblem in aSettings.Problems) aHead.Add(">   · " + aProblem);
+                aHead.Add("");
+            }
+
             // 憲法 —— **緊接 header，不走 sections 機制**：sections 會因主檔溢出被移進續讀檔，
             // 而一份會被移走的憲法不算憲法。
             aHead.AddRange(ConstitutionLines(iLettersRoot, iPersona));
@@ -189,14 +210,14 @@ namespace SCP.Core.Letters
                 ActiveTasksSection(iPersona, iDataRoot),
                 ForestSection(iLettersRoot, iPersona),
                 DigestSection(iLettersRoot, iPersona),
-                TreeSection(iLettersRoot, iPersona, aPointer),
-                RecallSection(iLettersRoot, iPersona, iWakeCount),
-                MaintenanceSection(iLettersRoot, iPersona, iWakeCount, iDataRoot),
+                TreeSection(iLettersRoot, iPersona, aPointer, aSettings),
+                RecallSection(iLettersRoot, iPersona, iWakeCount, aSettings),
+                MaintenanceSection(iLettersRoot, iPersona, iWakeCount, iDataRoot, aSettings),
                 PayrollSection(iLettersRoot, iDataRoot, aRegion),
-                PeopleSection(iLettersRoot, iPersona),
+                PeopleSection(iLettersRoot, iPersona, aSettings),
                 BookshelfSection(iLettersRoot, iPersona, iWakeCount, iDataRoot),
                 WritingSection(iDataRoot, iPersona),
-                NextActionsSection(iLettersRoot, iPersona, iWakeCount),
+                NextActionsSection(iLettersRoot, iPersona, iWakeCount, aSettings),
             };
 
             // 組裝 ＋ 上限處理：超出上限的「非必讀」區塊整段移進續讀檔（不砍內容）
@@ -206,7 +227,7 @@ namespace SCP.Core.Letters
             foreach (SCP_BriefSection aSection in aSections)
             {
                 List<string> aBlock = SCP_LetterText.SectionLines(aSection.Title, aSection.Lines);
-                if (aSection.Essential || aUsed + aBlock.Count <= BriefLineCap)
+                if (aSection.Essential || aUsed + aBlock.Count <= aSettings.MainLineCap)
                 {
                     aMain.AddRange(aBlock);
                     aUsed += aBlock.Count;
@@ -227,10 +248,25 @@ namespace SCP.Core.Letters
                 aMain.Add("");
             }
 
-            aResult.Main = string.Join("\n", aMain);
-            aResult.MainLineCount = aMain.Count;
+            aResult.Main = WithEndMarker(string.Join("\n", aMain));
+            aResult.MainLineCount = aMain.Count + 1;
             aResult.Part2 = aOverflow.Count > 0 ? string.Join("\n", aOverflow) : null;
             return aResult;
+        }
+
+        /// <summary>結尾標記那一行的開頭（讀取端／自測用它認）。</summary>
+        public const string EndMarkerPrefix = "🔚 本檔結束（共 ";
+
+        /// <summary>
+        /// 補上最後一行 `🔚 本檔結束（共 N 行）`，N ＝ 補完之後的總行數（含這一行）。
+        /// <para>⚠ 它只標「結尾在哪」，讓讀的人對照自己讀到的最後一行是不是第 N 行。
+        /// ⛔ 不是讀完證明 —— 有的工具截的是中段、頭尾都留著（TASK-0419，Codex 實測）。</para>
+        /// </summary>
+        public static string WithEndMarker(string iText)
+        {
+            int aLines = iText.Length == 0 ? 0 : iText.Split('\n').Length;
+            return iText + "\n" + EndMarkerPrefix + (aLines + 1).ToString(CultureInfo.InvariantCulture)
+                   + " 行）—— 你讀到的最後一行應該就是這一行；它只標結尾，⛔ 不證明中段都讀到了";
         }
 
         /// <summary>生成並落檔。回主檔路徑。</summary>
@@ -255,9 +291,9 @@ namespace SCP.Core.Letters
             string aPart2Path = Path.Combine(iOutDir, "wake_brief_part2.md");
             if (aResult.Part2 != null)
             {
-                File.WriteAllText(aPart2Path,
+                File.WriteAllText(aPart2Path, WithEndMarker(
                     "---\ntype: wake_brief_part2\npersona: " + iPersona
-                    + "\ngenerated_at: " + UtcNowIso() + "\n---\n\n" + aResult.Part2);
+                    + "\ngenerated_at: " + UtcNowIso() + "\n---\n\n" + aResult.Part2));
             }
             else if (File.Exists(aPart2Path))
             {
@@ -495,7 +531,7 @@ namespace SCP.Core.Letters
             };
         }
 
-        static SCP_BriefSection TreeSection(string iLettersRoot, string iPersona, string? iPointer)
+        static SCP_BriefSection TreeSection(string iLettersRoot, string iPersona, string? iPointer, SCP_WakeBriefSettings iS)
         {
             if (iPointer == null || !File.Exists(iPointer))
             {
@@ -515,13 +551,13 @@ namespace SCP.Core.Letters
             List<SCP_LetterRef> aLetters = SCP_WakeLetters.RecentSelfLetters(iLettersRoot, iPersona);
             var aUsed = new List<SCP_LetterRef>();
             int aTotal = 0;
-            if (aLetters.Count > 0 && SCP_LetterText.BodyLineCount(aLetters[0].Path) <= MergeStopLines)
+            if (aLetters.Count > 0 && SCP_LetterText.BodyLineCount(aLetters[0].Path) <= iS.TreeMergeStopLines)
             {
                 aUsed.Add(aLetters[0]);
                 aTotal = SCP_LetterText.BodyLineCount(aLetters[0].Path);
-                for (int i = 1; i < aLetters.Count && i <= MergeMaxExtra; i++)
+                for (int i = 1; i < aLetters.Count && i <= iS.TreeMergeMaxExtra; i++)
                 {
-                    if (aTotal > MergeStopLines) break;      // 已經夠讀了
+                    if (aTotal > iS.TreeMergeStopLines) break;      // 已經夠讀了
                     aUsed.Add(aLetters[i]);
                     aTotal += SCP_LetterText.BodyLineCount(aLetters[i].Path);
                 }
@@ -556,7 +592,7 @@ namespace SCP.Core.Letters
         // 物理意義：見林一單位 = DigestSpan 個 wake ⇒ gap = 本次 wake − 最後一份見林涵蓋到的 wake。
         // 數值影響：只印不改檔；**不替沒有讀數的格子填 0** —— 缺讀數與零是兩件事。
         static SCP_BriefSection MaintenanceSection(string iLettersRoot, string iPersona, int iWakeCount,
-                                                   string? iDataRoot)
+                                                   string? iDataRoot, SCP_WakeBriefSettings iS)
         {
             List<string> aDigests = SCP_WakeLetters.ListDigests(iLettersRoot, iPersona);
             List<string> aForests = SCP_WakeLetters.ListForests(iLettersRoot, iPersona);
@@ -585,8 +621,8 @@ namespace SCP.Core.Letters
             else
             {
                 int aGap = iWakeCount - aCovered;
-                string aMark = aGap >= DigestGapOverdue ? "🔴 **OVERDUE**" : "✓";
-                aLines.Add("- " + aMark + " 見林進度：gap=" + aGap + "/" + DigestGapOverdue
+                string aMark = aGap >= iS.DigestGapOverdue ? "🔴 **OVERDUE**" : "✓";
+                aLines.Add("- " + aMark + " 見林進度：gap=" + aGap + "/" + iS.DigestGapOverdue
                            + "（上次到 wake " + aCovered + "）");
             }
 
@@ -729,7 +765,7 @@ namespace SCP.Core.Letters
         //             是「CLI 說信任、brief 說 65」而兩邊都不紅。
         // 數值影響：非必讀。分數即時讀 relationship，本段**不快照** ——
         //           分數由事件重算，抄一份就是第二個真相源。
-        static SCP_BriefSection PeopleSection(string iLettersRoot, string iPersona)
+        static SCP_BriefSection PeopleSection(string iLettersRoot, string iPersona, SCP_WakeBriefSettings iS)
         {
             var aLines = new List<string>();
             SCP_RelationshipSet aRel = SCP_Relationship.Load(iLettersRoot, iPersona);
@@ -747,7 +783,7 @@ namespace SCP.Core.Letters
             if (aOnline.Count > 0)
             {
                 aLines.Add("**🟢 現在在線（" + aOnline.Count + " 人）**");
-                foreach (string aName in aOnline) aLines.AddRange(PersonBlock(aRel, aName));
+                foreach (string aName in aOnline) aLines.AddRange(PersonBlock(aRel, aName, iS));
                 aLines.Add("");
             }
             else
@@ -771,14 +807,14 @@ namespace SCP.Core.Letters
             aOffline.Sort((a, b) => b.SurfaceScore.CompareTo(a.SurfaceScore));
             if (aOffline.Count > 0)
             {
-                aLines.Add("**⚪ 離線・好感前 " + PeopleOfflineTop + "**");
-                for (int i = 0; i < aOffline.Count && i < PeopleOfflineTop; i++)
-                    aLines.AddRange(PersonBlock(aRel, aOffline[i].Target));
+                aLines.Add("**⚪ 離線・好感前 " + iS.PeopleOfflineTop + "**");
+                for (int i = 0; i < aOffline.Count && i < iS.PeopleOfflineTop; i++)
+                    aLines.AddRange(PersonBlock(aRel, aOffline[i].Target, iS));
                 aLines.Add("");
             }
 
             List<SCP_PortraitItem> aItems = SCP_PortraitView.LatestPerPerson(
-                iLettersRoot, iPersona, PeoplePortraitCount);
+                iLettersRoot, iPersona, iS.PeoplePortraitCount);
             if (aItems.Count > 0)
             {
                 aLines.Add("**🖼 最近印象最深的 " + aItems.Count
@@ -859,7 +895,7 @@ namespace SCP.Core.Letters
             return aEntry == null ? 0 : aEntry.SurfaceScore;
         }
 
-        static List<string> PersonBlock(SCP_RelationshipSet iRel, string iName)
+        static List<string> PersonBlock(SCP_RelationshipSet iRel, string iName, SCP_WakeBriefSettings iS)
         {
             var aOut = new List<string>();
             SCP_RelationshipEntry? aEntry = iRel.Find(iName);
@@ -869,7 +905,7 @@ namespace SCP.Core.Letters
             string aTier = (aEntry != null && aEntry.Tier.Length > 0) ? "（" + aEntry.Tier + "）" : "";
             aOut.Add("- **" + iName + "**　好感 " + aScore + aTier);
             if (aEntry == null) return aOut;
-            int aFrom = Math.Max(0, aEntry.Opinions.Count - PeopleOpinionCount);
+            int aFrom = Math.Max(0, aEntry.Opinions.Count - iS.PeopleOpinionCount);
             for (int i = aFrom; i < aEntry.Opinions.Count; i++)
             {
                 string aText = aEntry.Opinions[i].Replace("\r\n", " ").Replace("\n", " ").Trim();
@@ -888,14 +924,14 @@ namespace SCP.Core.Letters
         // ── §9 今日動作清單 ───────────────────────────────────────
         // 區塊職責：把 §6 的機械判定翻成**當場可執行的一行**。必讀、最短。
         // 物理意義：只列「現在就成立」的動作 —— 不成立的動作寫上去會被當成待辦而永遠躺著。
-        static SCP_BriefSection NextActionsSection(string iLettersRoot, string iPersona, int iWakeCount)
+        static SCP_BriefSection NextActionsSection(string iLettersRoot, string iPersona, int iWakeCount, SCP_WakeBriefSettings iS)
         {
             List<string> aDigests = SCP_WakeLetters.ListDigests(iLettersRoot, iPersona);
             var aLines = new List<string>();
 
             int aCovered = aDigests.Count > 0 ? LastCoveredWake(aDigests[aDigests.Count - 1]) : 0;
             int aGap = aCovered > 0 ? iWakeCount - aCovered : -1;
-            if (aGap >= DigestGapOverdue)
+            if (aGap >= iS.DigestGapOverdue)
                 aLines.Add("- 🔴 **見林 OVERDUE**（gap=" + aGap + "）⇒ `cmd consolidate"
                            + " --arg persona=" + iPersona + "`（不給 digest_body ＝ 只看狀態）");
             else if (aGap < 0)
@@ -909,7 +945,7 @@ namespace SCP.Core.Letters
             //   正是本區塊開頭那句「不成立的動作寫上去會被當成待辦而永遠躺著」在防的形狀。
             // ⚠ 不是把提示拿掉：見林那條必經路上（`SCP_Cmd_Consolidate`）本來就印同一份讀數，
             //   所以折人的提醒在**該做它的那一刻**仍然會出現 —— 這裡刪的是射程外的那一份。
-            if (aGap >= DigestGapOverdue)
+            if (aGap >= iS.DigestGapOverdue)
             {
                 int aFoldTargets = 0;
                 int aFoldPortraits = 0;
@@ -949,10 +985,10 @@ namespace SCP.Core.Letters
         //   .NET 沒有同一顆 PRNG ⇒ 要位元組對拍就得在 C# 重造 python 的抽法。
         //   本檔改採「穩定雜湊取模」（FNV-1a）：同一個 wake 必抽同一封、可複驗、跨端可重算，
         //   而**抽到哪一封本身不是規格的一部分**（回憶的用途是「想起遠方」，不是「想起特定那封」）。
-        static SCP_BriefSection RecallSection(string iLettersRoot, string iPersona, int iWakeCount)
+        static SCP_BriefSection RecallSection(string iLettersRoot, string iPersona, int iWakeCount, SCP_WakeBriefSettings iS)
         {
             var aEmpty = new SCP_BriefSection { Title = "", Lines = new List<string>() };
-            if (iWakeCount <= RecallMinWake) return aEmpty;      // 新生 persona 沒有「遠方」
+            if (iWakeCount <= iS.RecallMinWake) return aEmpty;      // 新生 persona 沒有「遠方」
 
             // 主線池：距今 ≥ RecallMinAgeWakes 的自寫收尾信（下界不是上界 —— 越舊越有資格）
             var aMain = new List<SCP_LetterRef>();
@@ -960,7 +996,7 @@ namespace SCP.Core.Letters
             {
                 int aWake = WakeNoOf(aRef.FileName);
                 if (aWake <= 0) continue;                        // 解不出 wake 編號 ⇒ 算不出距離
-                if (iWakeCount - aWake < RecallMinAgeWakes) continue;
+                if (iWakeCount - aWake < iS.RecallMinAgeWakes) continue;
                 aMain.Add(aRef);
             }
             aMain.Sort((a, b) => string.CompareOrdinal(a.FileName, b.FileName));   // 可複驗要先定序

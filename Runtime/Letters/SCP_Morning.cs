@@ -317,7 +317,8 @@ namespace SCP.Core.Letters
                 string aOutDir = Path.GetDirectoryName(aBriefPath)!;
                 var (aWrittenTo, aBrief) = SCP_WakeBrief.Write(iR.LettersRoot, iPersona, aWake, aOutDir, iR.DataRoot, iR.Region);
                 aSb.AppendLine($"⤷ SCP_WakeBrief（C#，就地執行）persona={iPersona} wake={aWake}");
-                aSb.AppendLine($"· 主檔 {aBrief.MainLineCount} 行 / 上限 {SCP_WakeBrief.BriefLineCap}");
+                aSb.AppendLine($"· 主檔 {aBrief.MainLineCount} 行 / 上限 {aBrief.MainLineCap}");
+                foreach (string aProblem in aBrief.SettingProblems) aSb.AppendLine("⚠ brief 設定照預設跑：" + aProblem);
                 if (aBrief.MovedSections.Count > 0) aSb.AppendLine("· 移進續讀檔：" + string.Join(" / ", aBrief.MovedSections));
                 if (aBrief.LatestPointerHealed) aSb.AppendLine("🔧 `_latest.md` 落後，已校正為目錄內最新的自寫 letter");
                 aSb.AppendLine($"· 寫到：{aWrittenTo}");
@@ -346,10 +347,18 @@ namespace SCP.Core.Letters
             aSb.AppendLine(!aExists
                 ? $"✗ brief 檔不存在：`{aBriefPath}`"
                 : aFresh
-                    ? $"📄 brief: `{aBriefPath}`（{aLines} 行，mtime {aBriefUtc:yyyy-MM-dd HH:mm:ss}Z 晚於本次執行起點）"
+                    ? BriefLineWithMtime(SCP_ReadHint.Lines("📄 brief: ", aBriefPath, iR.DataRoot),
+                                         $"　mtime {aBriefUtc:yyyy-MM-dd HH:mm:ss}Z 晚於本次執行起點")
                     : $"✗ brief 檔存在但**不是本次產生的**：`{aBriefPath}`（{aLines} 行，mtime {aBriefUtc:yyyy-MM-dd HH:mm:ss}Z < 本次起點 {aStartedUtc:yyyy-MM-dd HH:mm:ss}Z）");
             bool aOk = !aThrew && aExists && aLines > 0 && aFresh;
             return (aOk, aSb.ToString(), aExists ? aBriefPath : null, aLines);
+        }
+
+        // mtime 接在路徑那一行（大小之後），大檔提示另起一行 —— 接在提示後面會讀成提示的一部分。
+        static string BriefLineWithMtime(List<string> iHint, string iMtime)
+        {
+            iHint[0] += iMtime;
+            return string.Join(Environment.NewLine, iHint);
         }
 
         // ===========================================================

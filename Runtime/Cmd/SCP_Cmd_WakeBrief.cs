@@ -82,8 +82,9 @@ namespace SCP.Core.Cmd
                 aResult.Lines.Add("🔧 _latest.md 落後，已校正為目錄內最新的自寫 letter（persona=" + aPersona + "）");
 
             aResult.Lines.Add("· 信件夾：" + aPersonaDir);
-            aResult.Lines.Add("· 主檔 " + aBrief.MainLineCount + " 行 / 上限 " + SCP_WakeBrief.BriefLineCap
+            aResult.Lines.Add("· 主檔 " + aBrief.MainLineCount + " 行 / 上限 " + aBrief.MainLineCap
                               + (aBrief.Part2 != null ? "　（有續讀檔）" : ""));
+            foreach (string aProblem in aBrief.SettingProblems) aResult.Lines.Add("⚠ brief 設定照預設跑：" + aProblem);
             if (aBrief.MovedSections.Count > 0)
                 aResult.Lines.Add("· 移進續讀檔：" + string.Join(" , ", aBrief.MovedSections));
             if (aWrittenTo == null)
