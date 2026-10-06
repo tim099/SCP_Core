@@ -68,11 +68,11 @@ namespace SCP.Core.Letters
 
         /// <summary>
         /// 型別排序，同時是「這個系統認得哪幾種記憶」的宣告。
-        /// <para>順序與 python <c>FRAG_TYPE_ORDER</c> 一致 —— 兩邊不同會讓同分的列互換位置，
-        /// 而那在 diff 上長得像有人改了內容。</para>
+        /// <para>不在表上的型別照收（見根照列），只是排序落在最後一格 —— 新型別要進 Memory 文件的 schema 就同時加進這裡。
+        /// `practice`：Memory 文件與現役碎片在用（Sirius），TASK-0433 Tim 2026-10-06 拍板加進來，排在 howto 後面（既有順序不動）。</para>
         /// </summary>
         public static readonly string[] TypeOrder =
-            { "lesson", "unsolved", "relation", "identity", "philosophy", "howto" };
+            { "lesson", "unsolved", "relation", "identity", "philosophy", "howto", "practice" };
 
         static readonly Regex s_Frontmatter = new Regex(@"^---\r?\n(.*?)\r?\n---", RegexOptions.Singleline);
         static readonly Regex s_Field = new Regex(@"^(\w+):\s*(.*)$");
