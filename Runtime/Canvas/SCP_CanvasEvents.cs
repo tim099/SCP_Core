@@ -150,9 +150,11 @@ namespace SCP.Core.Canvas
 
         /// <summary>
         /// 把事件逐像素塗進 buffer/mask（全 replay 與增量共用這一份塗法，不寫第二套）。
-        /// <para>越界座標與解不出來的顏色**跳過** —— 與 python 同形。</para>
+        /// <para>越界座標與解不出來的顏色**跳過**。</para>
+        /// <para>⚠ 尺寸由呼叫端給（TASK-0445）—— 呼叫端的尺寸必須蓋得住已畫範圍（SCP_CanvasBuffer 保證），
+        /// 否則這裡的「跳過」就是讓已畫的點靜默消失。</para>
         /// </summary>
-        public static void Apply(byte[] ioBuffer, byte[] ioMask, List<SCP_JsonData> iEvents)
+        public static void Apply(byte[] ioBuffer, byte[] ioMask, List<SCP_JsonData> iEvents, SCP_CanvasSize iSize)
         {
             foreach (SCP_JsonData aEv in iEvents)
             {
@@ -161,18 +163,28 @@ namespace SCP.Core.Canvas
                 for (int i = 0; i < aPixels.Count; i++)
                 {
                     SCP_JsonData aPx = aPixels[i];
-                    SCP_JsonData aXd = aPx["x"], aYd = aPx["y"];
-                    if (!aXd.Exists || !aYd.Exists) continue;
-                    int aX, aY;
-                    try { aX = aXd.AsInt(); aY = aYd.AsInt(); }
-                    catch (Exception) { continue; }
-                    if (!SCP_CanvasSpec.InBounds(aX, aY)) continue;
+                    if (!TryCoord(aPx, out int aX, out int aY)) continue;
+                    if (!iSize.InBounds(aX, aY)) continue;
                     if (!TryColor(aPx["color"], out int aIdx)) continue;
-                    int aPos = aY * SCP_CanvasSpec.Width + aX;
+                    int aPos = aY * iSize.Width + aX;
                     ioBuffer[aPos] = (byte)aIdx;
                     ioMask[aPos] = 1;
                 }
             }
+        }
+
+        /// <summary>
+        /// 事件像素的座標：x、y 都在而且是整數、≥0、&lt; MaxSide 才算。
+        /// （已畫範圍與重播共用這一份 —— 兩邊判準不同，就會有「算進範圍卻沒畫上去」或反過來的點。）
+        /// </summary>
+        public static bool TryCoord(SCP_JsonData iPx, out int oX, out int oY)
+        {
+            oX = oY = 0;
+            SCP_JsonData aXd = iPx["x"], aYd = iPx["y"];
+            if (!aXd.Exists || !aYd.Exists) return false;
+            try { oX = aXd.AsInt(); oY = aYd.AsInt(); }
+            catch (Exception) { return false; }
+            return oX >= 0 && oY >= 0 && oX < SCP_CanvasSpec.MaxSide && oY < SCP_CanvasSpec.MaxSide;
         }
 
         /// <summary>事件 JSON 裡的 color 欄（數字或字串）→ palette index。</summary>

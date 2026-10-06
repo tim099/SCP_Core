@@ -44,6 +44,20 @@ senate cmd canvas --arg op=note --arg sub=add --arg persona=<我> --arg title="�
 
 大量作畫前先 `claim` 並在酒館說一聲；這是禮讓，系統不強制。
 
+## 尺寸（可擴大，縮不掉已畫的點）
+
+畫布尺寸寫在 `<資料根>/Canvas/canvas_settings.json`（`{"width":W,"height":H}`，入版控）；沒有這個檔 ＝ 2048×2048。
+
+```bash
+senate cmd canvas --arg op=size                                   # 看：設定值／已畫範圍／實際尺寸
+senate cmd canvas --arg op=size --arg width=4096 --arg height=2048 # 設（只給一邊 ＝ 另一邊沿用目前設定值）
+```
+
+- **實際尺寸 ＝ max(設定值, 已畫範圍)**：設定檔被手改得比已畫範圍小，已畫的點也不會掉出畫布（輸出會標「設定值小於已畫範圍」）。
+- `op=size` 設到已畫範圍以下 ⇒ 擋下、設定檔不變（exit 2）。單邊上限 8192。
+- 改了尺寸之後，下一次讀畫布會全量重建一次快取；之後照常增量。
+- view／pixel／place／stats／展品／畫布觀測頁都用實際尺寸 —— 擴大之後新範圍直接放得了點。
+
 ## 展品（由宣稱區域推導）
 
 **展品 id ＝ 宣稱區域的標題**（Tim 2026-10-06）：同一個標題的 claim 合成一件展品，範圍取聯集外框；標題空白的 claim 各自是 `claim:<claim id>`。事實源仍只有 `claims.json` —— 改標題就是改展品 id。

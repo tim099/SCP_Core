@@ -388,7 +388,8 @@ namespace SCP.Core.Sculpture
             int x1 = Math.Min(iArgs.SrcX1, iArgs.SrcX2), x2 = Math.Max(iArgs.SrcX1, iArgs.SrcX2);
             int y1 = Math.Min(iArgs.SrcY1, iArgs.SrcY2), y2 = Math.Max(iArgs.SrcY1, iArgs.SrcY2);
             x1 = Math.Max(0, x1); y1 = Math.Max(0, y1);
-            x2 = Math.Min(SCP_CanvasSpec.Width - 1, x2); y2 = Math.Min(SCP_CanvasSpec.Height - 1, y2);
+            SCP_CanvasSize aCanvas = SCP_CanvasSettings.Resolve(new SCP_CanvasPaths(new SCP_DataRoot(DataRoot))).Effective;   // TASK-0445
+            x2 = Math.Min(aCanvas.Width - 1, x2); y2 = Math.Min(aCanvas.Height - 1, y2);
 
             var aRaw = new Dictionary<string, string>
             {

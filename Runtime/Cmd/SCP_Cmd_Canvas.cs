@@ -30,7 +30,9 @@ namespace SCP.Core.Cmd
         public override string Summary => "共用像素畫布：放點／看圖／查點／統計／快取／快照／筆記／宣稱區域／展品／閘探針";
 
         public override string Details =>
-            "2048×2048 全社群共用畫布，事實源是 `<資料根>/Canvas/events/` 的 append-only 事件。\n"
+            "全社群共用畫布（預設 2048×2048），事實源是 `<資料根>/Canvas/events/` 的 append-only 事件。\n"
+            + "⭐ 尺寸（TASK-0445）：`op=size` 看／設 `Canvas/canvas_settings.json`；實際尺寸 ＝ max(設定值, 已畫範圍) —— "
+            + "設小也不會讓已畫的點掉出畫布，而 `op=size` 寫入時直接擋下縮到已畫範圍以下。\n"
             + "唯讀 op（view／pixel／stats／cache／snapshot／note／claim／exhibit）**在本 process 跑完，Editor 沒開也行**。\n"
             + "⭐ 展品（TASK-0443）＝ 同一個**標題**的宣稱區域合成一件，範圍取聯集外框；`op=exhibit` 列出，"
             + "`op=view --arg exhibit=<標題>` 直接看那件（不用自己算 region）。\n"
@@ -47,7 +49,9 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("op", "要做什麼", iRequired: true,
-                iChoices: new[] { "view", "pixel", "stats", "cache", "snapshot", "note", "claim", "exhibit", "gateway", "place" }),
+                iChoices: new[] { "view", "pixel", "stats", "cache", "snapshot", "note", "claim", "exhibit", "size", "gateway", "place" }),
+            new SCP_CmdArgSpec("width", "size：新的畫布寬（不給 width／height ＝ 只看）"),
+            new SCP_CmdArgSpec("height", "size：新的畫布高"),
             new SCP_CmdArgSpec("region", "x,y,w,h（view/note/claim 用）"),
             new SCP_CmdArgSpec("scale", "view 放大倍率（整數，預設 1；一律最近鄰）", iDefault: "1"),
             new SCP_CmdArgSpec("exhibit", "展品 id ＝ 宣稱區域的**標題**（view：用那件的範圍，跟 region 二擇一；exhibit：只看那一件）"),
@@ -91,6 +95,7 @@ namespace SCP.Core.Cmd
                 case "note": return OpNote(iArgs, aPaths);
                 case "claim": return OpClaim(iArgs, aPaths);
                 case "exhibit": return OpExhibit(iArgs, aPaths);
+                case "size": return OpSize(iArgs, aPaths);
                 case "gateway": return OpGateway(iArgs, aDataRoot);
                 case "place": return OpPlace(iArgs, aPaths, aDataRoot);
                 default: return SCP_CmdResult.Fail(2, "✗ 不認得的 op：" + aOp);
@@ -118,6 +123,7 @@ namespace SCP.Core.Cmd
                 : SCP_DataPaths.Letters(new SCP_DataRoot(iDataRoot));
             string aDir = SCP_LettersPaths.CmdDir(aLettersRoot, aPersona);
             string aPngPath = aDir + "/" + ViewPngName, aPngTPath = aDir + "/" + ViewTransparentPngName;
+            SCP_CanvasSnapshot aSnap = SCP_CanvasBuffer.Build(iPaths, !Truthy(iArgs.Get("no_cache")));
             string aExhibitId = iArgs.Get("exhibit").Trim();
             int aX, aY, aW, aH;
             SCP_CanvasExhibit? aExhibit = null;
@@ -126,25 +132,24 @@ namespace SCP.Core.Cmd
                 // ⛔ region 與 exhibit 同時給 ⇒ 擋：兩個範圍選一個是呼叫端的事，⛔ 不替他挑。
                 if (iArgs.Get("region").Trim().Length > 0)
                     return SCP_CmdResult.Fail(2, "✗ region 與 exhibit 只能給一個");
-                if (!SCP_CanvasExhibits.TryLoad(iPaths, out List<SCP_CanvasExhibit> aList, out string aErr))
+                if (!SCP_CanvasExhibits.TryLoad(iPaths, aSnap.Size, out List<SCP_CanvasExhibit> aList, out string aErr))
                     return SCP_CmdResult.Fail(1, "✗ " + aErr);
                 aExhibit = SCP_CanvasExhibits.Find(aList, aExhibitId);
                 if (aExhibit == null)
                     return SCP_CmdResult.Fail(2, "✗ 找不到展品：`" + aExhibitId + "`（展品 id ＝ 宣稱區域的標題；清單：`op=exhibit`）");
                 if (!int.TryParse(iArgs.Get("pad"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int aPad) || aPad < 0)
                     return SCP_CmdResult.Fail(2, "✗ pad 要是 ≥0 的整數：" + iArgs.Get("pad"));
-                SCP_CanvasExhibits.Padded(aExhibit, aPad, out aX, out aY, out aW, out aH);
+                SCP_CanvasExhibits.Padded(aExhibit, aPad, aSnap.Size, out aX, out aY, out aW, out aH);
             }
-            else if (!TryRegion(iArgs.Get("region"), out aX, out aY, out aW, out aH, out string aWhy))
+            else if (!TryRegion(iArgs.Get("region"), aSnap.Size, out aX, out aY, out aW, out aH, out string aWhy))
                 return SCP_CmdResult.Fail(2, "✗ " + aWhy);
             if (!TryScale(iArgs.Get("scale"), out int aScale, out string aScaleWhy))
                 return SCP_CmdResult.Fail(2, "✗ " + aScaleWhy);
 
-            SCP_CanvasSnapshot aSnap = SCP_CanvasBuffer.Build(iPaths, !Truthy(iArgs.Get("no_cache")));
             byte[] aRgb = SCP_CanvasPng.EncodeRgb(aSnap.Buffer, aX, aY, aW, aH,
-                                                  SCP_CanvasSpec.Width, aScale);
+                                                  aSnap.Width, aScale);
             byte[] aRgba = SCP_CanvasPng.EncodeRgba(aSnap.Buffer, aSnap.Mask, aX, aY, aW, aH,
-                                                    SCP_CanvasSpec.Width, aScale, out int aOpaque);
+                                                    aSnap.Width, aScale, out int aOpaque);
             Directory.CreateDirectory(aDir);
             File.WriteAllBytes(aPngPath, aRgb);
             File.WriteAllBytes(aPngTPath, aRgba);
@@ -179,11 +184,13 @@ namespace SCP.Core.Cmd
         // ───────────────────────────── pixel ─────────────────────────────
         static SCP_CmdResult OpPixel(SCP_CmdArgs iArgs, SCP_CanvasPaths iPaths)
         {
-            if (!int.TryParse(iArgs.Get("x"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int aX)
-                || !int.TryParse(iArgs.Get("y"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int aY)
-                || !SCP_CanvasSpec.InBounds(aX, aY))
-                return SCP_CmdResult.Fail(2, "✗ pixel 座標越界或不是整數 [0," + (SCP_CanvasSpec.Width - 1)
-                                             + "]：(" + iArgs.Get("x") + "," + iArgs.Get("y") + ")");
+            SCP_CanvasSize aSize = SCP_CanvasSettings.Resolve(iPaths).Effective;
+            int aX = 0, aY = 0;
+            if (!int.TryParse(iArgs.Get("x"), NumberStyles.Integer, CultureInfo.InvariantCulture, out aX)
+                || !int.TryParse(iArgs.Get("y"), NumberStyles.Integer, CultureInfo.InvariantCulture, out aY)
+                || !aSize.InBounds(aX, aY))
+                return SCP_CmdResult.Fail(2, "✗ pixel 座標越界或不是整數（畫布 " + aSize + "）：("
+                                             + iArgs.Get("x") + "," + iArgs.Get("y") + ")");
 
             // 逐事件掃該座標的歷史 —— 收據是 history 不是顏色：
             // 「現在是這個色」答不了「這格有沒有人動過」，而後者才是要不要覆蓋的判準。
@@ -251,14 +258,16 @@ namespace SCP.Core.Cmd
                 }
             }
 
-            double aRate = aOccupied.Count * 100.0 / SCP_CanvasSpec.Area;
+            SCP_CanvasSizeInfo aSizeInfo = SCP_CanvasSettings.Resolve(iPaths);
+            double aRate = aOccupied.Count * 100.0 / aSizeInfo.Effective.Area;
             var aResult = new SCP_CmdResult();
             aResult.Lines.Add("# 📊 canvas stats");
             aResult.Lines.Add("  總事件   : " + aEvents);
             aResult.Lines.Add("  總放點   : " + aPixelWrites + "（含覆蓋）");
             aResult.Lines.Add("  唯一座標 : " + aOccupied.Count + "（去重後實際填充）");
             aResult.Lines.Add("  填充率   : " + SCP_CanvasBuffer.Percent(aRate) + "% ("
-                              + aOccupied.Count + "/" + SCP_CanvasSpec.Area + ")");
+                              + aOccupied.Count + "/" + aSizeInfo.Effective.Area + ")");
+            aResult.Lines.Add("  尺寸     : " + aSizeInfo.Describe());
             aResult.Lines.Add("  貢獻者   : " + aContributors.Count + " 位");
             aResult.Lines.Add("  各 persona 放點數:");
             var aRows = new List<KeyValuePair<string, int>>(aPerPersona);
@@ -300,7 +309,7 @@ namespace SCP.Core.Cmd
             if (aSub == "rebuild")
             {
                 SCP_CanvasSnapshot aSnap = SCP_CanvasBuffer.Build(iPaths, false);
-                SCP_CanvasBuffer.SaveCache(iPaths, aSnap.Buffer, aSnap.Mask,
+                SCP_CanvasBuffer.SaveCache(iPaths, aSnap,
                                            SCP_CanvasEvents.ScanManifest(iPaths),
                                            SCP_CanvasEvents.MaxTs(SCP_CanvasEvents.ReadAllEvents(iPaths)));
                 aResult.Lines.Add("# 🗃 cache rebuilt（全 replay " + aSnap.ReplayedEvents + " 筆事件）");
@@ -349,13 +358,13 @@ namespace SCP.Core.Cmd
             string aPath = iPaths.Snapshots + "/canvas_" + aTag + ".png";
             Directory.CreateDirectory(iPaths.Snapshots);
             File.WriteAllBytes(aPath, SCP_CanvasPng.EncodeRgb(aSnap.Buffer, 0, 0,
-                SCP_CanvasSpec.Width, SCP_CanvasSpec.Height, SCP_CanvasSpec.Width));
+                aSnap.Width, aSnap.Height, aSnap.Width));
             // 同步重渲 latest 兩軌（不透明給預覽、透明給 3D 轉繪）
             File.WriteAllBytes(iPaths.LatestPng, SCP_CanvasPng.EncodeRgb(aSnap.Buffer, 0, 0,
-                SCP_CanvasSpec.Width, SCP_CanvasSpec.Height, SCP_CanvasSpec.Width));
+                aSnap.Width, aSnap.Height, aSnap.Width));
             File.WriteAllBytes(iPaths.LatestTransparentPng, SCP_CanvasPng.EncodeRgba(aSnap.Buffer,
-                aSnap.Mask, 0, 0, SCP_CanvasSpec.Width, SCP_CanvasSpec.Height,
-                SCP_CanvasSpec.Width, 1, out int aOpaque));
+                aSnap.Mask, 0, 0, aSnap.Width, aSnap.Height,
+                aSnap.Width, 1, out int aOpaque));
 
             var aResult = new SCP_CmdResult();
             aResult.Lines.Add("# 📸 snapshot");
@@ -527,7 +536,8 @@ namespace SCP.Core.Cmd
         // 區塊職責：列出展品（同標題的宣稱區域合成一件），或給 exhibit=<標題> 只看那一件的明細。
         static SCP_CmdResult OpExhibit(SCP_CmdArgs iArgs, SCP_CanvasPaths iPaths)
         {
-            if (!SCP_CanvasExhibits.TryLoad(iPaths, out List<SCP_CanvasExhibit> aList, out string aErr))
+            if (!SCP_CanvasExhibits.TryLoad(iPaths, SCP_CanvasSettings.Resolve(iPaths).Effective,
+                                            out List<SCP_CanvasExhibit> aList, out string aErr))
                 return SCP_CmdResult.Fail(1, "✗ " + aErr);
             var aResult = new SCP_CmdResult();
             string aId = iArgs.Get("exhibit").Trim();
@@ -557,6 +567,51 @@ namespace SCP.Core.Cmd
             return aResult;
         }
 
+        // ───────────────────────────── size（TASK-0445）─────────────────────────────
+        // 區塊職責：看／設畫布尺寸。不給 width／height ＝ 只看；給了才寫 `Canvas/canvas_settings.json`。
+        // ⛔ 縮到已畫範圍以下 ⇒ 擋下、零寫入（Tim「避免操作失誤」）。就算有人手改設定檔變小，
+        //    實際尺寸仍是 max(設定值, 已畫範圍) —— 那是第一道；這裡是第二道，讓設定檔本身也不說謊。
+        static SCP_CmdResult OpSize(SCP_CmdArgs iArgs, SCP_CanvasPaths iPaths)
+        {
+            SCP_CanvasSizeInfo aBefore = SCP_CanvasSettings.Resolve(iPaths);
+            string aWRaw = iArgs.Get("width").Trim(), aHRaw = iArgs.Get("height").Trim();
+            var aResult = new SCP_CmdResult();
+            if (aWRaw.Length == 0 && aHRaw.Length == 0)
+            {
+                aResult.Lines.Add("# 📐 畫布尺寸");
+                aResult.Lines.Add("  " + aBefore.Describe());
+                aResult.Lines.Add("  設定檔：" + iPaths.Settings + (File.Exists(iPaths.Settings) ? "" : "（不存在 ⇒ 預設）"));
+                AddSizeValues(aResult, aBefore);
+                return aResult;
+            }
+            // 只給一邊 ⇒ 另一邊沿用目前設定值（⛔ 不是沿用實際尺寸：那會把「被已畫範圍撐大」的值悄悄寫成設定）
+            int aW = aBefore.Configured.Width, aH = aBefore.Configured.Height;
+            if (aWRaw.Length > 0 && !int.TryParse(aWRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out aW))
+                return SCP_CmdResult.Fail(2, "✗ width 不是整數：" + aWRaw);
+            if (aHRaw.Length > 0 && !int.TryParse(aHRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out aH))
+                return SCP_CmdResult.Fail(2, "✗ height 不是整數：" + aHRaw);
+            var aNew = new SCP_CanvasSize(aW, aH);
+            if (!SCP_CanvasSettings.TryWrite(iPaths, aNew, aBefore.Extent, out string aWhy))
+                return SCP_CmdResult.Fail(2, "✗ 沒有寫入：" + aWhy, "  目前：" + aBefore.Describe());
+            SCP_CanvasSizeInfo aAfter = SCP_CanvasSettings.Resolve(iPaths);
+            aResult.Lines.Add("# 📐 畫布尺寸已更新：" + aBefore.Configured + " → " + aAfter.Configured);
+            aResult.Lines.Add("  " + aAfter.Describe());
+            aResult.Lines.Add("  設定檔：" + iPaths.Settings + "（讀回）");
+            aResult.Lines.Add("  ⚠ 快取下一次讀畫布時會用新尺寸重建（一次全量 replay）");
+            aResult.AddOutput(iPaths.Settings);
+            AddSizeValues(aResult, aAfter);
+            return aResult;
+        }
+
+        static void AddSizeValues(SCP_CmdResult ioR, SCP_CanvasSizeInfo iInfo)
+        {
+            ioR.AddValue("configured", iInfo.Configured.Width + "x" + iInfo.Configured.Height);
+            ioR.AddValue("extent", iInfo.Extent.Width + "x" + iInfo.Extent.Height);
+            ioR.AddValue("effective", iInfo.Effective.Width + "x" + iInfo.Effective.Height);
+            ioR.AddValue("from_file", iInfo.FromFile ? "1" : "0");
+            ioR.AddValue("clamped_up", iInfo.ClampedUp ? "1" : "0");
+        }
+
         // ───────────────────────────── place（③：唯一會動錢的 op）─────────────────────────────
         // 區塊職責：放點 —— 驗證 → 鎖 → 付款 → 寫事件 → 重渲 → **回讀** → 分享。
         // 物理意義：順序不可換，**先收錢再畫**：畫了卻沒扣到錢等於免費像素，比拒絕嚴重得多。
@@ -573,8 +628,10 @@ namespace SCP.Core.Cmd
             if (aPersona.Length == 0)
                 return SCP_CmdResult.Fail(2, "✗ place 需要 --arg persona=<誰>（錢要記在人頭上）");
 
+            // TASK-0445：座標驗的是**實際尺寸**（設定值 ∨ 已畫範圍）—— 擴大之後新範圍放得了點
+            SCP_CanvasSize aCanvasSize = SCP_CanvasSettings.Resolve(iPaths).Effective;
             if (!SCP_CanvasPlace.TryParsePixels(iArgs.Get("pixels"), iArgs.Get("x"), iArgs.Get("y"),
-                                                iArgs.Get("color"), out List<SCP_CanvasPixel> aPixels,
+                                                iArgs.Get("color"), aCanvasSize, out List<SCP_CanvasPixel> aPixels,
                                                 out string aParseWhy))
                 return SCP_CmdResult.Fail(2, "✗ place 拒絕：" + aParseWhy);
 
@@ -663,17 +720,17 @@ namespace SCP.Core.Cmd
             // 重渲兩軌（增量快取會把剛落的這筆當「最新 ts 的新檔」走路②）
             SCP_CanvasSnapshot aSnap = SCP_CanvasBuffer.Build(iPaths);
             File.WriteAllBytes(iPaths.LatestPng, SCP_CanvasPng.EncodeRgb(aSnap.Buffer, 0, 0,
-                SCP_CanvasSpec.Width, SCP_CanvasSpec.Height, SCP_CanvasSpec.Width));
+                aSnap.Width, aSnap.Height, aSnap.Width));
             File.WriteAllBytes(iPaths.LatestTransparentPng, SCP_CanvasPng.EncodeRgba(aSnap.Buffer,
-                aSnap.Mask, 0, 0, SCP_CanvasSpec.Width, SCP_CanvasSpec.Height,
-                SCP_CanvasSpec.Width, 1, out int aOpaque));
+                aSnap.Mask, 0, 0, aSnap.Width, aSnap.Height,
+                aSnap.Width, 1, out int aOpaque));
 
             // ── 回讀：逐顆比對 buffer 與 mask（憲法⑥ 結果那本帳的憑據）──
             int aVerified = 0;
             var aMismatch = new List<string>();
             foreach (SCP_CanvasPixel aP in aPixels)
             {
-                int aPos = aP.Y * SCP_CanvasSpec.Width + aP.X;
+                int aPos = aP.Y * aSnap.Width + aP.X;
                 if (aSnap.Buffer[aPos] == aP.ColorIndex && aSnap.Mask[aPos] != 0) aVerified++;
                 else aMismatch.Add("(" + aP.X + "," + aP.Y + ") 要 " + aP.ColorIndex
                                    + " 實得 " + aSnap.Buffer[aPos] + " mask=" + aSnap.Mask[aPos]);
@@ -766,15 +823,15 @@ namespace SCP.Core.Cmd
                 const int aMargin = 8;
                 int aX1 = Math.Max(0, oMinX - aMargin);
                 int aY1 = Math.Max(0, oMinY - aMargin);
-                int aX2 = Math.Min(SCP_CanvasSpec.Width, oMaxX + aMargin + 1);
-                int aY2 = Math.Min(SCP_CanvasSpec.Height, oMaxY + aMargin + 1);
+                int aX2 = Math.Min(iSnap.Width, oMaxX + aMargin + 1);
+                int aY2 = Math.Min(iSnap.Height, oMaxY + aMargin + 1);
                 int aW = aX2 - aX1;
                 int aH = aY2 - aY1;
                 if (aW <= 0 || aH <= 0) return null;
 
                 oScale = Math.Max(1, Math.Min(16, 512 / Math.Max(aW, aH)));
                 byte[] aPng = SCP_CanvasPng.EncodeRgb(iSnap.Buffer, aX1, aY1, aW, aH,
-                                                      SCP_CanvasSpec.Width, oScale);
+                                                      iSnap.Width, oScale);
                 Directory.CreateDirectory(iPaths.Previews);
                 string aName = "share_"
                                + DateTime.UtcNow.ToString("yyyyMMddTHHmmss", CultureInfo.InvariantCulture)
@@ -872,17 +929,17 @@ namespace SCP.Core.Cmd
         }
 
         /// <summary>region 解析 ＋ 裁到畫布邊界內；不給 region ＝ 整張。</summary>
-        static bool TryRegion(string iRegion, out int oX, out int oY, out int oW, out int oH, out string oWhy)
+        static bool TryRegion(string iRegion, SCP_CanvasSize iSize, out int oX, out int oY, out int oW, out int oH, out string oWhy)
         {
-            oX = 0; oY = 0; oW = SCP_CanvasSpec.Width; oH = SCP_CanvasSpec.Height; oWhy = "";
+            oX = 0; oY = 0; oW = iSize.Width; oH = iSize.Height; oWhy = "";
             if (iRegion.Length == 0) return true;
             if (!TryRegionRaw(iRegion, out int aX, out int aY, out int aW, out int aH))
             { oWhy = "region 格式需 x,y,w,h：" + iRegion; return false; }
-            if (aW <= 0 || aH <= 0 || !SCP_CanvasSpec.InBounds(aX, aY))
-            { oWhy = "region 越界／非法：" + iRegion; return false; }
+            if (aW <= 0 || aH <= 0 || !iSize.InBounds(aX, aY))
+            { oWhy = "region 越界／非法（畫布 " + iSize + "）：" + iRegion; return false; }
             oX = aX; oY = aY;
-            oW = Math.Min(aX + aW, SCP_CanvasSpec.Width) - aX;
-            oH = Math.Min(aY + aH, SCP_CanvasSpec.Height) - aY;
+            oW = Math.Min(aX + aW, iSize.Width) - aX;
+            oH = Math.Min(aY + aH, iSize.Height) - aY;
             return true;
         }
 

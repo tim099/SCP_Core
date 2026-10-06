@@ -58,7 +58,7 @@ namespace SCP.Core.Canvas
         /// <para>⚠ 任何一顆不合法 ⇒ **整批拒絕**（不挑掉壞的那顆繼續畫：
         /// 那會讓「我放了 10 顆」與「畫上去 9 顆」同時是真的）。</para>
         /// </summary>
-        public static bool TryParsePixels(string iPixelsJson, string iX, string iY, string iColor,
+        public static bool TryParsePixels(string iPixelsJson, string iX, string iY, string iColor, SCP_CanvasSize iSize,
                                           out List<SCP_CanvasPixel> oPixels, out string oWhy)
         {
             oPixels = new List<SCP_CanvasPixel>();
@@ -74,8 +74,8 @@ namespace SCP.Core.Canvas
                     SCP_JsonData aP = aArr[i];
                     int aPx = aP.GetInt("x", int.MinValue);
                     int aPy = aP.GetInt("y", int.MinValue);
-                    if (!SCP_CanvasSpec.InBounds(aPx, aPy))
-                    { oWhy = "第 " + (i + 1) + " 顆座標越界：(" + aPx + "," + aPy + ")"; return false; }
+                    if (!iSize.InBounds(aPx, aPy))
+                    { oWhy = "第 " + (i + 1) + " 顆座標越界：(" + aPx + "," + aPy + ")，畫布 " + iSize; return false; }
                     if (!SCP_CanvasEvents.TryColor(aP["color"], out int aIdx))
                     { oWhy = "第 " + (i + 1) + " 顆的顏色解不出來"; return false; }
                     oPixels.Add(new SCP_CanvasPixel(aPx, aPy, aIdx));
@@ -86,8 +86,8 @@ namespace SCP.Core.Canvas
             if (!int.TryParse(iX.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int aX)
                 || !int.TryParse(iY.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int aY))
             { oWhy = "沒給 pixels 就要給 x 與 y（整數）"; return false; }
-            if (!SCP_CanvasSpec.InBounds(aX, aY))
-            { oWhy = "座標越界：(" + aX + "," + aY + ")"; return false; }
+            if (!iSize.InBounds(aX, aY))
+            { oWhy = "座標越界：(" + aX + "," + aY + ")，畫布 " + iSize; return false; }
             if (!SCP_CanvasPalette.TryParse(iColor, out int aColor, out string aColorWhy))
             { oWhy = aColorWhy; return false; }
             oPixels.Add(new SCP_CanvasPixel(aX, aY, aColor));

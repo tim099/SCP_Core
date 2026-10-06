@@ -34,6 +34,8 @@ namespace SCP.Core.Canvas
         string Sub(string iName) { return Root + "/" + iName; }
 
         public string Meta => Sub("_meta.json");
+        /// <summary>尺寸設定（TASK-0445）。⚠ 是設定不是衍生物 —— 入版控。</summary>
+        public string Settings => Sub(SCP_CanvasSettings.FileName);
         public string Events => Sub("events");
         public string Vouchers => Sub("vouchers");
         public string FreeTime => Sub("freetime");

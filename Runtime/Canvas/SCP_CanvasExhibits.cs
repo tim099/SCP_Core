@@ -40,7 +40,7 @@ namespace SCP.Core.Canvas
         /// 讀 claims.json 推導展品清單（照第一次出現的順序）。檔案不存在 ⇒ 空清單、回 true（還沒有人宣稱過）；
         /// 讀不了／壞 JSON ⇒ 回 false 並說原因（⛔ 不回空清單 —— 「沒有展品」與「讀不到」不可同形）。
         /// </summary>
-        public static bool TryLoad(SCP_CanvasPaths iPaths, out List<SCP_CanvasExhibit> oExhibits, out string oError)
+        public static bool TryLoad(SCP_CanvasPaths iPaths, SCP_CanvasSize iSize, out List<SCP_CanvasExhibit> oExhibits, out string oError)
         {
             oExhibits = new List<SCP_CanvasExhibit>();
             oError = "";
@@ -50,12 +50,12 @@ namespace SCP.Core.Canvas
             catch (Exception e) { oError = "claims.json 讀不了：" + e.GetType().Name + ": " + e.Message; return false; }
             if (!aData.Contains("claims") || !aData["claims"].IsArray)
             { oError = "claims.json 沒有 `claims` 陣列"; return false; }
-            oExhibits = FromClaims(aData["claims"]);
+            oExhibits = FromClaims(aData["claims"], iSize);
             return true;
         }
 
         /// <summary>claims 陣列 → 展品（純函式，測試直接餵）。</summary>
-        public static List<SCP_CanvasExhibit> FromClaims(SCP_JsonData iClaims)
+        public static List<SCP_CanvasExhibit> FromClaims(SCP_JsonData iClaims, SCP_CanvasSize iSize)
         {
             var aOut = new List<SCP_CanvasExhibit>();
             var aById = new Dictionary<string, SCP_CanvasExhibit>(StringComparer.Ordinal);
@@ -68,7 +68,7 @@ namespace SCP.Core.Canvas
                 int x = aR.GetInt("x", -1), y = aR.GetInt("y", -1), w = aR.GetInt("w", 0), h = aR.GetInt("h", 0);
                 if (w <= 0 || h <= 0) continue;
                 int x1 = Math.Max(0, x), y1 = Math.Max(0, y);
-                int x2 = Math.Min(SCP_CanvasSpec.Width, x + w), y2 = Math.Min(SCP_CanvasSpec.Height, y + h);
+                int x2 = Math.Min(iSize.Width, x + w), y2 = Math.Min(iSize.Height, y + h);
                 if (x2 <= x1 || y2 <= y1) continue;   // 整個落在畫布外
 
                 string aClaimId = aC.GetString("id", "?");
@@ -116,12 +116,12 @@ namespace SCP.Core.Canvas
         }
 
         /// <summary>外框往外留 <paramref name="iPad"/> 格（夾進畫布）。</summary>
-        public static void Padded(SCP_CanvasExhibit iEx, int iPad, out int oX, out int oY, out int oW, out int oH)
+        public static void Padded(SCP_CanvasExhibit iEx, int iPad, SCP_CanvasSize iSize, out int oX, out int oY, out int oW, out int oH)
         {
             int aPad = Math.Max(0, iPad);
             int x1 = Math.Max(0, iEx.X - aPad), y1 = Math.Max(0, iEx.Y - aPad);
-            int x2 = Math.Min(SCP_CanvasSpec.Width, iEx.X + iEx.W + aPad);
-            int y2 = Math.Min(SCP_CanvasSpec.Height, iEx.Y + iEx.H + aPad);
+            int x2 = Math.Min(iSize.Width, iEx.X + iEx.W + aPad);
+            int y2 = Math.Min(iSize.Height, iEx.Y + iEx.H + aPad);
             oX = x1; oY = y1; oW = x2 - x1; oH = y2 - y1;
         }
     }

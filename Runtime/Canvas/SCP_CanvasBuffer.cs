@@ -10,9 +10,9 @@
 //           靠檔名游標會把它當成已處理 ⇒ **靜默漏掉**。所以這裡兩道判準都以「不確定就重建」為預設。
 //           已知邊界：內容改了但**大小不變**的事件檔偵測不到 —— append-only 日誌不該發生那種事
 //           （那是改歷史）；真要防得逐檔 hash，成本從 stat 升到讀全檔，現階段不換。
-// 🩸 快取檔格式與 python 逐欄同形（schema／manifest_hash／files／max_ts，bin ＝ zlib(buf+mask)）
-//    —— 兩個寫入端並存期間，格式一分岔就會變成「彼此互相作廢對方的快取」：結果仍然對，
-//    但每次都全重建，而那種退化不會有任何一層喊。
+// ⭐ TASK-0445：尺寸參數化。實際尺寸 ＝ max(設定值, 已畫範圍)（SCP_CanvasSize）——
+//    已畫範圍在這裡算（全重建時從全部事件、增量時從快取 meta ∪ 新事件），所以**已畫的點一定落在 buffer 內**。
+//    快取 schema 2 多記 width／height／extent_w／extent_h；實際尺寸跟快取記的不同 ⇒ 全重建（⛔ 不硬讀舊長度的 blob）。
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -44,12 +44,22 @@ namespace SCP.Core.Canvas
         public int EventFiles;
         /// <summary>走 ③ 時的原因（人讀；Hit／Incremental 為空）。</summary>
         public string RebuildReason = "";
+        /// <summary>尺寸三個數（設定值／已畫範圍／實際）；Buffer 與 Mask 的長度 ＝ SizeInfo.Effective.Area。</summary>
+        public SCP_CanvasSizeInfo SizeInfo = new SCP_CanvasSizeInfo
+        {
+            Configured = SCP_CanvasSize.Default, Effective = SCP_CanvasSize.Default,
+        };
+
+        /// <summary>實際尺寸（＝ buffer 的寬高）。</summary>
+        public SCP_CanvasSize Size => SizeInfo.Effective;
+        public int Width => SizeInfo.Effective.Width;
+        public int Height => SizeInfo.Effective.Height;
     }
 
     public static class SCP_CanvasBuffer
     {
-        /// <summary>快取 schema 版本 —— 與 python CACHE_SCHEMA 同值；換版即作廢舊快取，不猜相容。</summary>
-        public const int CacheSchema = 1;
+        /// <summary>快取 schema 版本；換版即作廢舊快取，不猜相容。2 ＝ TASK-0445 起記尺寸與已畫範圍。</summary>
+        public const int CacheSchema = 2;
 
         /// <summary>
         /// 取得當前畫布。<paramref name="iUseCache"/> false ＝ 強制全 replay（做對拍驗證用）。
@@ -58,18 +68,27 @@ namespace SCP.Core.Canvas
         {
             List<SCP_CanvasEventFile> aEntries = SCP_CanvasEvents.ScanManifest(iPaths);
             var aOut = new SCP_CanvasSnapshot { EventFiles = aEntries.Count };
+            var aInfo = new SCP_CanvasSizeInfo();
+            aInfo.Configured = SCP_CanvasSettings.ReadConfigured(iPaths, out aInfo.FromFile, out aInfo.Warning);
+            aOut.SizeInfo = aInfo;
 
             if (iUseCache)
             {
-                if (TryLoadCache(iPaths, out SCP_JsonData? aMeta, out byte[]? aBuf, out byte[]? aMask)
+                if (TryLoadCache(iPaths, out SCP_JsonData? aMeta, out byte[]? aBuf, out byte[]? aMask,
+                                 out SCP_CanvasSize aCacheSize, out SCP_CanvasSize aCacheExtent)
                     && aMeta != null && aBuf != null && aMask != null)
                 {
                     string aNowHash = SCP_CanvasEvents.ManifestHash(aEntries);
                     if (aMeta.GetString("manifest_hash", "") == aNowHash)
                     {
-                        aOut.Buffer = aBuf; aOut.Mask = aMask;
-                        aOut.Path = SCP_CanvasCachePath.Hit;
-                        return aOut;                                                  // 路 ①
+                        if (aInfo.Configured.Max(aCacheExtent).Equals(aCacheSize))
+                        {
+                            aInfo.Extent = aCacheExtent; aInfo.Effective = aCacheSize;
+                            aOut.Buffer = aBuf; aOut.Mask = aMask;
+                            aOut.Path = SCP_CanvasCachePath.Hit;
+                            return aOut;                                              // 路 ①
+                        }
+                        aOut.RebuildReason = "畫布尺寸變了（快取 " + aCacheSize + " → 設定 " + aInfo.Configured + "）";
                     }
 
                     // 路 ②：舊檔必須**全數原樣**仍在（同名同大小），新檔的 ts 不得早於快取水位
@@ -86,19 +105,25 @@ namespace SCP.Core.Canvas
                             foreach (SCP_JsonData aEv in aNewEvs)
                                 if (SCP_CanvasEvents.ParseIso(aEv.GetString("ts", "")) < aBase) { aOk = false; break; }
                         }
-                        if (aOk)
+                        // 新事件可能撐大已畫範圍（例如合併進來的事件）⇒ 實際尺寸跟著變 ⇒ 那就不能疊在舊 buffer 上
+                        SCP_CanvasSize aNewExtent = aCacheExtent.Max(SCP_CanvasSettings.Extent(aNewEvs));
+                        SCP_CanvasSize aNewEff = aInfo.Configured.Max(aNewExtent);
+                        if (aOk && aNewEff.Equals(aCacheSize))
                         {
-                            SCP_CanvasEvents.Apply(aBuf, aMask, aNewEvs);
+                            aInfo.Extent = aNewExtent; aInfo.Effective = aNewEff;
+                            SCP_CanvasEvents.Apply(aBuf, aMask, aNewEvs, aNewEff);
                             string aMaxTs = SCP_CanvasEvents.MaxTs(aNewEvs);
-                            SaveCache(iPaths, aBuf, aMask, aEntries, aMaxTs.Length > 0 ? aMaxTs : aBaseTs);
                             aOut.Buffer = aBuf; aOut.Mask = aMask;
+                            SaveCache(iPaths, aOut, aEntries, aMaxTs.Length > 0 ? aMaxTs : aBaseTs);
                             aOut.Path = SCP_CanvasCachePath.Incremental;
                             aOut.ReplayedEvents = aNewEvs.Count;
                             return aOut;                                              // 路 ②
                         }
-                        aOut.RebuildReason = "新事件的 ts 早於快取水位（" + aBaseTs + "）⇒ 疊加會塗錯顏色";
+                        aOut.RebuildReason = !aOk
+                            ? "新事件的 ts 早於快取水位（" + aBaseTs + "）⇒ 疊加會塗錯顏色"
+                            : "畫布尺寸變了（快取 " + aCacheSize + " → " + aNewEff + "）";
                     }
-                    else aOut.RebuildReason = aWhyNot;
+                    else if (aOut.RebuildReason.Length == 0) aOut.RebuildReason = aWhyNot;
                 }
                 else if (File.Exists(iPaths.CacheMeta) || File.Exists(iPaths.CacheBin))
                     aOut.RebuildReason = "快取讀不出來（壞檔／schema 換版）";
@@ -106,14 +131,16 @@ namespace SCP.Core.Canvas
             }
             else aOut.RebuildReason = "呼叫端要求不走快取（對拍驗證）";
 
-            // 路 ③：全 replay
-            var aFull = new byte[SCP_CanvasSpec.Area];
-            for (int i = 0; i < aFull.Length; i++) aFull[i] = SCP_CanvasSpec.BlankIndex;
-            var aFullMask = new byte[SCP_CanvasSpec.Area];
+            // 路 ③：全 replay —— 先算已畫範圍再配 buffer（尺寸 ＝ 設定值 ∨ 已畫範圍 ⇒ 沒有任何一點會被 Apply 略過）
             List<SCP_JsonData> aAll = SCP_CanvasEvents.ReadAllEvents(iPaths);
-            SCP_CanvasEvents.Apply(aFull, aFullMask, aAll);
-            if (iUseCache) SaveCache(iPaths, aFull, aFullMask, aEntries, SCP_CanvasEvents.MaxTs(aAll));
+            aInfo.Extent = SCP_CanvasSettings.Extent(aAll);
+            aInfo.Effective = aInfo.Configured.Max(aInfo.Extent);
+            var aFull = new byte[aInfo.Effective.Area];
+            for (int i = 0; i < aFull.Length; i++) aFull[i] = SCP_CanvasSpec.BlankIndex;
+            var aFullMask = new byte[aInfo.Effective.Area];
+            SCP_CanvasEvents.Apply(aFull, aFullMask, aAll, aInfo.Effective);
             aOut.Buffer = aFull; aOut.Mask = aFullMask;
+            if (iUseCache) SaveCache(iPaths, aOut, aEntries, SCP_CanvasEvents.MaxTs(aAll));
             aOut.Path = SCP_CanvasCachePath.FullRebuild;
             aOut.ReplayedEvents = aAll.Count;
             return aOut;
@@ -156,20 +183,21 @@ namespace SCP.Core.Canvas
         }
 
         static bool TryLoadCache(SCP_CanvasPaths iPaths, out SCP_JsonData? oMeta,
-                                 out byte[]? oBuffer, out byte[]? oMask)
+                                 out byte[]? oBuffer, out byte[]? oMask,
+                                 out SCP_CanvasSize oSize, out SCP_CanvasSize oExtent)
         {
-            oMeta = null; oBuffer = null; oMask = null;
+            oMeta = null; oBuffer = null; oMask = null; oSize = default; oExtent = default;
             try
             {
-                if (!File.Exists(iPaths.CacheMeta) || !File.Exists(iPaths.CacheBin)) return false;
-                SCP_JsonData aMeta = SCP_JsonParser.Parse(File.ReadAllText(iPaths.CacheMeta, Encoding.UTF8));
-                if (aMeta.GetInt("schema", -1) != CacheSchema) return false;
+                if (!TryReadCacheMeta(iPaths, out SCP_JsonData? aMeta, out oSize, out oExtent) || aMeta == null) return false;
+                if (!File.Exists(iPaths.CacheBin)) return false;
+                int aArea = oSize.Area;
                 byte[] aBlob = SCP_CanvasDeflate.ZlibDecompress(File.ReadAllBytes(iPaths.CacheBin));
-                if (aBlob.Length != SCP_CanvasSpec.Area * 2) return false;   // 長度不對＝壞檔，不硬讀
-                var aBuf = new byte[SCP_CanvasSpec.Area];
-                var aMask = new byte[SCP_CanvasSpec.Area];
-                Buffer.BlockCopy(aBlob, 0, aBuf, 0, SCP_CanvasSpec.Area);
-                Buffer.BlockCopy(aBlob, SCP_CanvasSpec.Area, aMask, 0, SCP_CanvasSpec.Area);
+                if (aBlob.Length != aArea * 2) return false;   // 長度不對＝壞檔，不硬讀
+                var aBuf = new byte[aArea];
+                var aMask = new byte[aArea];
+                Buffer.BlockCopy(aBlob, 0, aBuf, 0, aArea);
+                Buffer.BlockCopy(aBlob, aArea, aMask, 0, aArea);
                 oMeta = aMeta; oBuffer = aBuf; oMask = aMask;
                 return true;
             }
@@ -180,22 +208,59 @@ namespace SCP.Core.Canvas
             }
         }
 
-        /// <summary>落快取（先寫 .tmp 再 replace —— 半寫的快取比沒有快取更糟）。</summary>
-        public static void SaveCache(SCP_CanvasPaths iPaths, byte[] iBuffer, byte[] iMask,
+        /// <summary>讀快取 meta 的尺寸與已畫範圍（schema 不對／缺欄／不合法 ⇒ false）。</summary>
+        static bool TryReadCacheMeta(SCP_CanvasPaths iPaths, out SCP_JsonData? oMeta,
+                                     out SCP_CanvasSize oSize, out SCP_CanvasSize oExtent)
+        {
+            oMeta = null; oSize = default; oExtent = default;
+            if (!File.Exists(iPaths.CacheMeta)) return false;
+            SCP_JsonData aMeta = SCP_JsonParser.Parse(File.ReadAllText(iPaths.CacheMeta, Encoding.UTF8));
+            if (aMeta.GetInt("schema", -1) != CacheSchema) return false;
+            int w = aMeta.GetInt("width", -1), h = aMeta.GetInt("height", -1);
+            int ew = aMeta.GetInt("extent_w", -1), eh = aMeta.GetInt("extent_h", -1);
+            if (!SCP_CanvasSettings.IsValidSide(w) || !SCP_CanvasSettings.IsValidSide(h) || ew < 0 || eh < 0) return false;
+            oMeta = aMeta; oSize = new SCP_CanvasSize(w, h); oExtent = new SCP_CanvasSize(ew, eh);
+            return true;
+        }
+
+        /// <summary>
+        /// 只讀快取記的已畫範圍（不解 blob）—— 清單指紋要跟現在的事件檔對得上才算數（對不上 ⇒ false，呼叫端自己掃事件）。
+        /// </summary>
+        public static bool TryReadCachedExtent(SCP_CanvasPaths iPaths, out SCP_CanvasSize oExtent)
+        {
+            oExtent = default;
+            try
+            {
+                if (!TryReadCacheMeta(iPaths, out SCP_JsonData? aMeta, out _, out SCP_CanvasSize aExtent) || aMeta == null) return false;
+                string aNow = SCP_CanvasEvents.ManifestHash(SCP_CanvasEvents.ScanManifest(iPaths));
+                if (aMeta.GetString("manifest_hash", "") != aNow) return false;
+                oExtent = aExtent;
+                return true;
+            }
+            catch (Exception) { return false; }
+        }
+
+        /// <summary>落快取（先寫 .tmp 再 replace —— 半寫的快取比沒有快取更糟）。尺寸與已畫範圍取自 snapshot。</summary>
+        public static void SaveCache(SCP_CanvasPaths iPaths, SCP_CanvasSnapshot iSnap,
                                      List<SCP_CanvasEventFile> iEntries, string iMaxTs)
         {
             try
             {
                 Directory.CreateDirectory(iPaths.Root);
-                var aBlob = new byte[SCP_CanvasSpec.Area * 2];
-                Buffer.BlockCopy(iBuffer, 0, aBlob, 0, SCP_CanvasSpec.Area);
-                Buffer.BlockCopy(iMask, 0, aBlob, SCP_CanvasSpec.Area, SCP_CanvasSpec.Area);
+                int aArea = iSnap.Size.Area;
+                var aBlob = new byte[aArea * 2];
+                Buffer.BlockCopy(iSnap.Buffer, 0, aBlob, 0, aArea);
+                Buffer.BlockCopy(iSnap.Mask, 0, aBlob, aArea, aArea);
                 string aTmpBin = iPaths.CacheBin + ".tmp";
                 File.WriteAllBytes(aTmpBin, SCP_CanvasDeflate.ZlibCompress(aBlob));
                 Replace(aTmpBin, iPaths.CacheBin);
 
                 SCP_JsonData aMeta = SCP_JsonData.NewObject();
                 aMeta["schema"] = CacheSchema;
+                aMeta["width"] = iSnap.Width;
+                aMeta["height"] = iSnap.Height;
+                aMeta["extent_w"] = iSnap.SizeInfo.Extent.Width;
+                aMeta["extent_h"] = iSnap.SizeInfo.Extent.Height;
                 aMeta["manifest_hash"] = SCP_CanvasEvents.ManifestHash(iEntries);
                 aMeta["event_count"] = iEntries.Count;
                 aMeta["max_ts"] = iMaxTs;
