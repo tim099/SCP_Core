@@ -117,8 +117,7 @@ namespace SCP.Core.Letters
             foreach (var kv in aMachine) aText.Append(kv.Key).Append(": ").Append(kv.Value).Append('\n');
             foreach (string aLine in aExtra) aText.Append(aLine).Append('\n');
             aText.Append("---\n\n").Append(aBody).Append('\n');
-            // ⚠ 行尾：python 那支用文字模式寫（Windows 上 `\n` → `\r\n`）⇒ 這裡跟著平台走，
-            //   否則同一個資料夾裡兩種行尾，功能全對而 git diff 整段翻動（`SCP_Cmd_Keys` 的同一課）。
+            // ⚠ 行尾跟著平台走（既有的信是平台行尾）—— 同一個資料夾裡兩種行尾，功能全對而 git diff 整段翻動。
             string aOut = aText.ToString().Replace("\n", Environment.NewLine);
 
             string aPath = aRestsDir + "/" + aNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) + ".md";
@@ -212,8 +211,7 @@ namespace SCP.Core.Letters
 
         /// <summary>
         /// 修「作者本來要換行、傳進來卻是兩個字元 backslash+n」的內容。
-        /// <para>⚠ 門檻與 python `escaped_newlines.normalize` 逐格相同：
-        /// 字面序列 &gt;= 2 次**且**真換行 &lt;= 2 個才動手。</para>
+        /// <para>⚠ 門檻：字面序列 &gt;= 2 次**且**真換行 &lt;= 2 個才動手。</para>
         /// <para>🩸 為什麼不無腦替換：`summit/20260512T235620Z.md` 有 32 個真換行、1 個字面 \n，
         /// 而那個 \n 是**內文正在討論的符號本身**。兩個門檻就是為了讓它不被動到。</para>
         /// </summary>
@@ -241,7 +239,7 @@ namespace SCP.Core.Letters
             return aCount;
         }
 
-        /// <summary>frontmatter 的 `written_at` 格式（毫秒 ＋ Z），與 python `utcnow_iso` 同形。</summary>
+        /// <summary>frontmatter 的 `written_at` 格式（毫秒 ＋ Z）。</summary>
         static string IsoMillis(DateTime iUtc)
             => iUtc.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
     }

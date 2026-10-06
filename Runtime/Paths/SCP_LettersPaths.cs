@@ -41,10 +41,10 @@ namespace SCP.Core.Paths
         public const string RestsDirName = "rests";
         public const string CmdDirName = "cmd";
 
-        /// <summary>見根：關鍵記憶碎片目錄（python memory.fragments_dir 同名）。</summary>
+        /// <summary>見根：關鍵記憶碎片目錄。</summary>
         public const string FragmentsDirName = "fragments";
 
-        /// <summary>見人：我畫別人的素描本（python portraits.SKETCHBOOK_DIRNAME 同名）。</summary>
+        /// <summary>見人：我畫別人的素描本。</summary>
         public const string SketchbookDirName = "sketchbook";
 
         /// <summary>
