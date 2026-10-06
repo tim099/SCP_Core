@@ -151,8 +151,6 @@ namespace SCP.Core.Letters
                 aR.AppendLine("- exits:");
                 aR.AppendLine("  - 讓它先下線：Senate 登入狀態頁手動登出（`senate ui`），或該 session 跑 goodnight，再重跑本步");
                 aR.AppendLine("  - brief 沒生出來（morning 中途被砍）→ " + SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningBrief>("--arg persona=" + iPersona));
-                aR.AppendLine("  - lock 在但 token 丟了 → awakening.py reissue-token --persona " + iPersona);
-                aR.AppendLine("  - 晚安後想續線 → awakening.py relogin --persona " + iPersona);
                 aR.AppendLine("- ⚠ 不要改用別的 persona 名繞過去 —— 那是製造分身，比停下來糟");
                 return Blocked(aRes, aR);
             }
@@ -228,10 +226,7 @@ namespace SCP.Core.Letters
                 $"persona: {iPersona}\nagent: {aAgent}\nactual_agent: {aActual}\n" +
                 $"session_token: {aToken}\nissued_at: {NowIso()}\nclaim_origin: {aClaimOrigin}\n" +
                 "---\n\n# Session Token (auto-written by Cmd_GoodMorning step=wake)\n\n" +
-                "## 失憶時怎麼撈回 token\n\n```bash\nawakening.py whoami --token " + aToken + "\n```\n\n" +
-                "## 三層 recovery\n- 輕 (scroll-back 找得到) → whoami --token <X>\n- 中 (compact 後沒了) → 讀本 memo\n" +
-                $"- 重 (memo / lock 都不見) → awakening.py reissue-token --persona {iPersona}\n\n" +
-                $"## Lock file\n`{aLockPath}` 內 session_token 欄是權威來源.\n";
+                $"## 權威來源\n`{aLockPath}` 的 session_token 欄（token 只住 lock，下線隨 lock 刪除）。\n";
             SCP_CmdPayload.WriteAtomic(aMemoPath, aMemoBody);
 
             // 回傳 payload：verify 給可讀回的事實（路徑/值），不給 ✓
@@ -253,7 +248,7 @@ namespace SCP.Core.Letters
                             + "）" + (aFallback ? "　⚠ 非 persona 自訂 —— commit trailer 會掛這個位址" : ""));
             }
             catch (Exception e) { aR.AppendLine($"- mail: 解析失敗（{e.Message}）—— 不以空字串頂替"); }
-            aR.AppendLine($"- session_token: {aToken}（失憶救援 awakening.py whoami --token {aToken}）");
+            aR.AppendLine($"- session_token: {aToken}（只住 lock，見下方 verify 那顆）");
             aR.AppendLine("## verify（讀回的事實，不是 ✓）");
             aR.AppendLine($"- 資料源: `{SCP_LettersPaths.ProfileDir(iR.Letters, iPersona)}` → wake_count={aReadback.GetInt("wake_count", -1)} status={aReadback.GetString("status", "?")}");
             aR.AppendLine($"- lock: `{aLockPath}`（exists={File.Exists(aLockPath)}）");

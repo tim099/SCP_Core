@@ -13,12 +13,9 @@
 //
 // ⚠ **射程（2026-09-01 起是全量）**：§1 見根／§2 見叢／§2.5 見單／§3 見森／§4 見林／§5 見樹／§5.5 回憶／
 //   §6 記憶維護／§6.5 見人／§6.6 見書／§9 動作清單都在這裡，而 `Cmd_GoodMorning` step=brief
-//   已改成就地呼叫本檔（不再 spawn python）。
-//   刻意保留的兩處差異，**都不是漏了**：
-//   ① §5.5／§6.6 的抽籤用穩定雜湊（FNV-1a），python 用 `random.Random(字串種子)`
-//      ⇒ 兩邊抽到的不會是同一封。抽到哪一封不是規格的一部分。
+//   已改成就地呼叫本檔。
+//   ① §5.5／§6.6 的抽籤用穩定雜湊（FNV-1a）：同一次醒來必抽同一封。
 //   ② 缺陷單張數要 `iDataRoot`；沒給就印「未量」——**不印 0**（未量 ≠ 零張）。
-//   ⇒ 所以 `awakening.py brief`（Editor 未開時的備援）產出的仍是**另一份**，不要互相當驗收。
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -172,7 +169,7 @@ namespace SCP.Core.Letters
                 "region: " + aRegion,
                 "project: " + aProject,
                 "generated: mechanical   # morning 每次重生成 — 手改會被覆寫；事實來源見各層原檔",
-                "source: SCP_WakeBrief (C#)   # 生產端；python awakening.py brief 只是 Editor 未開時的備援",
+                "source: SCP_WakeBrief (C#)   # 唯一生產端（senate cmd wake-brief）",
                 "---",
                 "",
                 "# 🌅 Wake Brief — " + iPersona + " wake #" + iWakeCount.ToString(),
