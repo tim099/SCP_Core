@@ -33,7 +33,25 @@ namespace SCP.Core.Letters
         {
             "layer_role", "forked_from", "fork_lineage", "forked_at", "created_at",
             "identity_vector", "vector_history", "email", "plurk_account", "model", "actual_agent",
+            // TASK-0428：建立時的角色設定（可讀的 markdown；沒填的格子寫「待本人填寫」）／測試殼標記（"1" ＝ 不是人，早安候選排除）
+            "character", "test_fixture",
         };
+
+        /// <summary>
+        /// 測試殼（persona 形狀的測試夾具，不是人）—— `profile/test_fixture.md` 內文為 `1`／`true`。
+        /// 早安候選清單排除它（TASK-0428）；⛔ 不擋直接指名登入：跑流程測試本來就要指名它。
+        /// </summary>
+        public static bool IsTestFixture(string iLettersRoot, string iPersona)
+        {
+            try
+            {
+                string aPath = Path.Combine(SCP_LettersPaths.ProfileDir(new SCP_LettersRoot(iLettersRoot), iPersona), "test_fixture.md");
+                if (!File.Exists(aPath)) return false;
+                string v = File.ReadAllText(aPath, Encoding.UTF8).Trim().ToLowerInvariant();
+                return v == "1" || v == "true";
+            }
+            catch (Exception) { return false; }
+        }
 
         /// <summary>結構值欄（檔案內文＝JSON）。**本表是型別判準的唯一真相源**，不准在對側另立一張。</summary>
         public static readonly string[] StructuredFieldsOrder =

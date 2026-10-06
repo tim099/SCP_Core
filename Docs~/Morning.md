@@ -19,6 +19,14 @@ senate cmd morning-wake --arg persona=<P> --arg actual_agent=<Codex|ClaudeCode|A
 - `actual_agent` ＝ 實際承載這個 persona 的桌面工具；`model` ＝ LLM 型號，查不到就依 agent 填模糊值。
 - 跑完照 CLI 印的 `## next` 走，並 Read 它印的 `📄 回傳檔`。
 
+## 使用者沒說要叫醒誰
+
+`morning-wake` 不帶 persona ⇒ **不登入、不寫任何東西**（exit 2），只列出**能登入的人**：
+在線的（有 lock、或 lock 讀不了）與測試殼不列；醒過的與從沒醒過的分兩段。
+
+- 把清單給使用者，**問他選哪位**（⛔ 不准自己挑），選了帶 `--arg persona=` 重跑。
+- 使用者要一位**新的** ⇒ 照 `Persona_Create`（`senate cmd doc --arg op=show --arg name=Persona_Create`）逐題問，再 `persona-create`。
+
 ## 兩條鐵律（回傳檔管不到的那兩格）
 
 1. **persona 一律顯式** —— 沒拿到名字就**停下來問**，⛔ 不准自己挑。

@@ -50,7 +50,12 @@ namespace SCP.Core.Cmd
         {
             get
             {
-                var aSpecs = new List<SCP_CmdArgSpec>(MorningSpecs());
+                // TASK-0428：persona 在這一支是**選填** —— 沒給 ⇒ 列出能登入的候選、exit 2、零寫入（⛔ 仍然不替使用者挑）。
+                var aSpecs = new List<SCP_CmdArgSpec>();
+                foreach (SCP_CmdArgSpec s in MorningSpecs())
+                    aSpecs.Add(s.Name == "persona"
+                        ? new SCP_CmdArgSpec("persona", "要叫醒誰。⚠ **一律顯式**；沒給 ⇒ 只列出能登入的候選（不登入），由使用者選或建新的")
+                        : s);
                 aSpecs.Add(new SCP_CmdArgSpec("actual_agent",
                     "實際承載這個 persona 的桌面工具（Codex / ClaudeCode / Antigravity…）"));
                 aSpecs.Add(new SCP_CmdArgSpec("model", "LLM 型號。查不到就依 agent 填模糊值"));
@@ -61,6 +66,20 @@ namespace SCP.Core.Cmd
         protected override string? Run(SCP_MorningRoots iRoots, SCP_CmdArgs iArgs, SCP_CmdResult ioResult)
         {
             string aPersona = iArgs.Get("persona").Trim();
+            if (aPersona.Length == 0)
+            {
+                // TASK-0428：沒給 persona ⇒ 問使用者，⛔ 不替他挑。exit 2 ＝ 「還沒做任何事、缺一個答案」（同參數不足）。
+                ioResult.ExitCode = 2;
+                ioResult.Lines.Add("⏸ 沒有指定 persona ⇒ **沒有登入、沒有寫任何東西**。問使用者要叫醒誰（⛔ 不要自己挑）：");
+                List<string> aCands = SCP_Morning.CandidateLines(iRoots, out int aCount);
+                ioResult.Lines.AddRange(aCands);
+                ioResult.AddValue("candidates", aCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                ioResult.Lines.Add("## next（照這行走）");
+                ioResult.Lines.Add("   選了 ⇒ " + SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningWake>("--arg persona=<P> --arg actual_agent=<…> --arg model=<…>"));
+                ioResult.Lines.Add("   要建新的 ⇒ 照 Morning 文件「建新 persona」逐題問使用者，再 "
+                    + SCP_CmdRegistry.InvokeOf<SCP_Cmd_PersonaCreate>("--arg persona=<參考角色>") + "（先 draft）");
+                return null;
+            }
             SCP_MorningStepResult aRes = SCP_Morning.Wake(iRoots, aPersona, iArgs.Get("model").Trim(),
                 iArgs.Get("actual_agent").Trim(), Host!.DetectEnvMarker());
             string aPath = SCP_Morning.StepPayloadPath(iRoots, aPersona, "wake");

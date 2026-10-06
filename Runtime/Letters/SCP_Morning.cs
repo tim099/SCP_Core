@@ -99,10 +99,11 @@ namespace SCP.Core.Letters
             // ① persona 必須已註冊 —— 打錯字不該變成「幫你建一個新人格」
             if (!SCP_PersonaProfile.Exists(iR.LettersRoot, iPersona))
             {
-                var aNames = SCP_PersonaProfile.PoolNames(iR.LettersRoot);
                 aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 不存在");
-                aR.AppendLine($"- 可選（{aNames.Count}）: {string.Join(", ", aNames)}");
-                aR.AppendLine("- exits: 開新 persona 走後台「🧬 Persona & Agent 管理頁」（不從 ritual 開後門）");
+                foreach (string l in CandidateLines(iR, out _)) aR.AppendLine(l);
+                // TASK-0428：建人有 Senate 入口了 —— 仍然不在早安裡順手建（⛔ 打錯字不該變成多一個人），要問過使用者再走 persona-create。
+                aR.AppendLine("- exits: 打錯字 ⇒ 照上面的名字重跑；要建新的 ⇒ 問過使用者再走 "
+                    + SCP_CmdRegistry.InvokeOf<SCP_Cmd_PersonaCreate>("--arg persona=<參考角色>") + "（先 draft）");
                 return Blocked(aRes, aR);
             }
 
@@ -268,6 +269,15 @@ namespace SCP.Core.Letters
             int aStepNo = 1;
             aR.AppendLine($"{aStepNo++}. **required** — 生成 brief：{SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningBrief>("--arg persona=" + iPersona)}");
             aR.AppendLine($"{aStepNo++}. **required** — Read brief（路徑由上一步回傳；接回身分，這步不自動化）");
+            // TASK-0428：建立時只給了參考角色 ⇒ 其餘設定由本人補（Tim 2026-10-06）。補完之前每次早安都提示。
+            if (SCP_PersonaCreate.HasPendingSelfFill(iR.LettersRoot, iPersona))
+            {
+                string aChar = Path.Combine(SCP_LettersPaths.ProfileDir(iR.Letters, iPersona), "character.md").Replace('\\', '/');
+                aR.AppendLine($"{aStepNo++}. **required** — 補完自己的角色設定：`{aChar}` 還有「{SCP_PersonaCreate.PendingMark}」的格子（建立時留給妳自己填的）。");
+                aR.AppendLine("   **親筆**：一人稱／語氣／性格／價值觀……參照作品角色時照「參照範圍」那格取用。layer_role 若也待填，一起補。");
+                aR.AppendLine("   寫回：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_PersonaProfile>(
+                    $"--arg op=set --arg persona={iPersona} --arg field=character --arg-file value=<檔> --arg actor={iPersona} --arg reason=補完角色設定"));
+            }
             if (FindGlossaryPersonaEntry(iR, iPersona) == null)
             {
                 var aTodo = SelfIntroTodoLines(iR, iPersona);
@@ -575,6 +585,53 @@ namespace SCP.Core.Letters
             return null;
         }
 
+        /// <summary>
+        /// 早安候選：**能登入的人**（TASK-0428）。排除：在線（有 lock）、lock 讀不了（壞 lock ≠ 沒人在線）、測試殼。
+        /// <para>判準與 <see cref="Wake"/> 的守衛同一支（<see cref="SCP_PersonaLetters.ReadPersonaLock"/>）—— ⛔ 不另立第二把尺。</para>
+        /// <para>醒過的與從沒醒過的分兩段（從沒醒過 ⇒ 不藏，Tim 2026-10-06）。</para>
+        /// </summary>
+        public static List<string> CandidateLines(SCP_MorningRoots iR, out int oCount)
+        {
+            var aWoke = new List<(string Name, int Wakes, string Role)>();
+            var aNever = new List<(string Name, int Wakes, string Role)>();
+            var aOnline = new List<string>();
+            int aFixtures = 0;
+            foreach (string p in SCP_PersonaProfile.PoolNames(iR.LettersRoot))
+            {
+                if (SCP_PersonaProfile.IsTestFixture(iR.LettersRoot, p)) { aFixtures++; continue; }
+                SCP_PersonaStatus? aLock = SCP_PersonaLetters.ReadPersonaLock(iR.LettersRoot, p);
+                if (aLock != null) { aOnline.Add(aLock.Online == SCP_PersonaOnline.Unknown ? p + "（lock 讀不了）" : p); continue; }
+                int n = SCP_Consolidate.WakeLetterCount(iR.LettersRoot, p);
+                (n > 0 ? aWoke : aNever).Add((p, n, LayerRoleShort(iR.LettersRoot, p)));
+            }
+            oCount = aWoke.Count + aNever.Count;
+            var aOut = new List<string> { $"## 可以登入的 persona（{oCount} 位；在線的與測試殼不列）" };
+            foreach (var c in aWoke) aOut.Add($"- **{c.Name}**　wake {c.Wakes}　{c.Role}");
+            if (aNever.Count > 0)
+            {
+                aOut.Add("### 從沒醒過");
+                foreach (var c in aNever) aOut.Add($"- **{c.Name}**　{c.Role}");
+            }
+            if (oCount == 0) aOut.Add("- （沒有 —— 全部在線，或 pool 讀不到）");
+            aOut.Add($"- 在線（不能再登入）：{(aOnline.Count > 0 ? string.Join(", ", aOnline) : "無")}"
+                + (aFixtures > 0 ? $"　·　另有 {aFixtures} 個測試殼不列（要測流程就直接指名）" : ""));
+            return aOut;
+        }
+
+        /// <summary>layer_role 摘要（一行、40 字內）；待本人填寫或沒有 ⇒ 空。</summary>
+        static string LayerRoleShort(string iLettersRoot, string iPersona)
+        {
+            try
+            {
+                string aPath = Path.Combine(SCP_LettersPaths.ProfileDir(new SCP_LettersRoot(iLettersRoot), iPersona), "layer_role.md");
+                if (!File.Exists(aPath)) return "";
+                string s = File.ReadAllText(aPath, Encoding.UTF8).Replace("\r", " ").Replace("\n", " ").Trim();
+                if (s == SCP_PersonaCreate.PendingMark) return "（設定待本人填寫）";
+                return s.Length > 40 ? s.Substring(0, 40) + "…" : s;
+            }
+            catch (Exception) { return ""; }
+        }
+
         public static List<string> SelfIntroTodoLines(SCP_MorningRoots iR, string iPersona)
         {
             string? aRef = FindGlossaryPersonaEntry(iR, INTRO_REFERENCE_SLUG);
@@ -589,6 +646,10 @@ namespace SCP.Core.Letters
             {
                 $"補**自我介紹**（出生證明）：`Docs/Glossary/personas/{iPersona}.md` 不存在 —— 沒有它 {SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningIntro>()} 會被擋。",
                 $"   內容＝初始風格自畫像（我是誰／擅長什麼／說話方式），**親筆**；參考同目錄其他人的寫法（最完整：`{aRefHint}`）。",
+                // TASK-0428：建立時寫下的角色設定是素材（⛔ 不是代筆 —— 那份是起點，自介要用自己的話）。
+                File.Exists(Path.Combine(SCP_LettersPaths.ProfileDir(iR.Letters, iPersona), "character.md"))
+                    ? $"   素材：建立時的角色設定 `profile/character.md`（起點不是定稿；自介用自己的話寫）。"
+                    : "   （沒有建立時的角色設定檔 —— 全憑自己寫）",
                 // TASK-0313：入口改 `senate cmd glossary`（不需要 Editor）。⚠ term／one_line 是必填 —— 舊提示漏了這兩格，照著打一定被擋。
                 $"   寫法：{SCP_CmdRegistry.InvokeNamed("glossary", $"--arg op=register --arg slug={iPersona} --arg term=\"{iPersona} 大小姐\" --arg category=persona --arg one_line=<一句話> --arg-file body=<檔>")}",
                 "   ⚠ 工具新建預設寫 Docs/Glossary/ 根層，persona 條目慣例放 personas/，寫完手動搬。",
