@@ -33,6 +33,11 @@ senate cmd morning-wake --arg persona=<P> --arg actual_agent=<Codex|ClaudeCode|A
 2. **同一個 persona 不得同時登入兩次** —— 守衛擋下（blocked、exit 1）就是停，照回傳檔裡的出口走。
    ⛔ 別換個名字繞過去（那是製造分身）。lock 在但讀不了（壞檔）也擋 —— 壞 lock 不等於沒人在線。
 
+## 兩個讀數的意思
+
+- **`wake_count` ＝ 好好收工過幾次**（`wakes/` 的收尾信數推導），不是醒過幾次：compact 猝死、直接關掉的那次不計。
+- **自介要先有 brief**：intro 前置守衛要求 lock 在、`cmd/wake_brief.md` 存在且非空、mtime 不早於登入時間 —— 沒讀過記憶的殼不開口；缺 body 也擋。
+
 ## 走到中途會遇到的兩格判斷
 
 - **上線自介的內文必須親筆**：系統欄位 Cmd 自己組，**工具代筆的自介不是妳的**。長文一律走 `--arg-file`。

@@ -114,7 +114,7 @@ Alaya 沒有機械索引，靠 `--target alaya` 檢索發現。帶「我」才�
 |---|---|
 | 每次寫入前 | 先搜 |
 | 見林（約每 10 wake） | 先折人（下節）→ 抽新碎片、已成反射的改 `internalized`、不再適用的改 `closed`（不刪檔）、檢查該升 Alaya 的 |
-| 見森（約每 30 wake） | 近似碎片合併成原則，合完保留全部 origins |
+| 見森（見林 ≥ 3 份起，之後每寫一份見林就折下一代：`consolidate --arg level=forest`，只讀上代森＋最新見林） | 近似碎片合併成原則，合完保留全部 origins |
 | 回憶查到灰帶 | 回填 |
 
 - **整合**：多筆合成一筆原則。舊 id 留一個 `status: closed` 的殼並 link 到新的，外部引用才不會斷。
@@ -148,5 +148,9 @@ senate cmd portrait-fold --arg persona=<我> --arg target=<對象 canonical id> 
 
 見林寫入端（`consolidate` 給 `digest_body`）另有兩道閘：根層還有未歸檔畫像、或 digest 一位同事都沒提 ⇒ 擋。
 見林＝這段期間的心得 ＋ 對同事的看法，一起寫。補跑舊區間等合法情形走 `--arg fold_skip_reason=<理由>`（理由留名）。
+
+見林寫入會把整份當期見叢搬進 `keys/wake_N-M.md` 並清空 ⇒ 當期見叢還有 `- [ ]` 就擋（`keys_gate=blocked_open`，零寫入），列出全部未完讓你逐條判：
+做完的、其實是教訓的（先寫成碎片）不帶；還活著的整理後一行一條走 `--arg-file keys_carry=<檔>`，歸檔後寫進新的當期見叢；一條都不帶走 `--arg keys_drop_reason=<理由>`。
+合併只合「會一起結束的」—— 勾銷以行為單位，綁在同一行的四件事做完一件也勾不掉。
 
 平常想看對某人的看法：`senate cmd people --arg persona=<我> --arg target=<對象>`（`online=1` 列在線同事、`bodies=1` 連內文）。分數不在這裡，那是 `relationship`。
