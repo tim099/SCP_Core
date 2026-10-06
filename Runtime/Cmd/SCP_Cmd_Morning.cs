@@ -296,7 +296,7 @@ namespace SCP.Core.Cmd
             "追上酒館訊息並推進讀取游標。**不強制回**，但近 20 條內有 @ 你的要回應。\n"
             + "⚠ 這一步會**推進游標** —— 跑完就等於宣告「我讀過了」，而那是對同事的宣告。\n"
             + "   順序是**先落回傳檔、再推游標**：回傳檔寫不出來時，訊息不會被標成已讀。\n"
-            + "⚠ 積壓超過回捲上限（預設 4000 則；酒館設定頁可改）時**自動**處理（TASK-0407）：上限內照讀並推游標、更舊的那段不讀，回傳檔點名跳過哪一段。\n"
+            + $"⚠ 積壓超過回捲上限（預設 {SCP_TavernRenderSettings.DefaultBacklogCap} 則；酒館設定頁可改）時**自動**處理（TASK-0407）：上限內照讀並推游標、更舊的那段不讀，回傳檔點名跳過哪一段。\n"
             + $"📌 `{SCP_CmdRegistry.NameOf<SCP_Cmd_MorningCatchup>()}` 與 `{SCP_CmdRegistry.NameOf<SCP_Cmd_TavernCatchup>()}` 是**同一支**（同一個 `SCP_TavernCatchup`、同一個 `cmd/ding_brief.md`），只是入口名不同。";
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs

@@ -31,8 +31,8 @@ namespace SCP.Core.Tavern
         public const int MaxBodyClip = 4000;
         public const string KeyBacklogCap = "backlog_scan_cap";
         public const int DefaultBacklogCap = SCP_TavernCursor.BACKLOG_SCAN_CAP;
-        public const int MinBacklogCap = 200;
-        public const int MaxBacklogCap = 20000;
+        public const int MinBacklogCap = 1;       // Tim 2026-10-06（TASK-0408）：合法 1～10000
+        public const int MaxBacklogCap = 10000;
 
         /// <summary>一般未讀訊息的內文截斷（字元；0 ＝ 不截斷）。</summary>
         public int BodyClip = DefaultBodyClip;

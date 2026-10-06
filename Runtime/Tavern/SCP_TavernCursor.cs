@@ -23,8 +23,9 @@ namespace SCP.Core.Tavern
         public const int SCAN_LIMIT = 60;
 
         /// <summary>回捲上限的**預設值**（則）。實際值讀 `render_settings.json` 的 `backlog_scan_cap`（酒館設定頁可改）。
-        /// 積壓超過它時更舊的那段不讀、由 catchup 點名（TASK-0407）。</summary>
-        public const int BACKLOG_SCAN_CAP = 4000;
+        /// 積壓超過它時更舊的那段不讀、由 catchup 點名（TASK-0407）。
+        /// Tim 2026-10-06（TASK-0408）：「太舊」＝ 100 則 —— 過舊的不處理，重要訊息走掛號信。</summary>
+        public const int BACKLOG_SCAN_CAP = 100;
 
         public static string CursorPath(string iDataRoot, string iPersona)
             => Path.Combine(iDataRoot, "ChatTavern", "_inbox_cursor", iPersona + ".json").Replace('\\', '/');
@@ -113,8 +114,9 @@ namespace SCP.Core.Tavern
             }
 
             // 往回捲到「窗口最舊的那則已經讀過」為止 —— 只有這個條件成立，才證明最舊的未讀在窗口內。
-            int aCap = Math.Max(SCAN_LIMIT, iBacklogCap);
-            int aWindow = SCAN_LIMIT;
+            // ⚠ 上限可以比一批小（合法 1～10000，TASK-0408）⇒ 窗口照上限取，⛔ 不撐回 SCAN_LIMIT（設 10 就只讀最新 10 則）。
+            int aCap = Math.Max(1, iBacklogCap);
+            int aWindow = Math.Min(SCAN_LIMIT, aCap);
             List<SCP_TavernMessage> aScan;
             bool aReachedOldest = false;
             while (true)
