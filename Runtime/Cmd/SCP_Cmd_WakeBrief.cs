@@ -21,8 +21,8 @@ namespace SCP.Core.Cmd
 
         public override string Details =>
             "全量：憲法→見根→見叢→見森→見林→見樹→回憶→記憶維護狀態→見人→見書→今日動作清單。\n"
-            + "⚠ 這是 brief 的**唯一生產端** —— Editor 的 GoodMorning step=brief 與本 CLI 都呼叫 SCP_WakeBrief.Write，\n"
-            + "  所以兩個入口讀到的是同一份，不會有「哪個 client 的版本比較新」這種狀態。";
+            + "⚠ 生產端只有一份（SCP_WakeBrief）—— 早安的 morning-brief 與本支是兩個入口，讀到的是同一份。\n"
+            + "  早安一律走 morning-brief；本支給「改完記憶層想重產／讀回 brief」用。wake 與 region 都不推導，不給 out_dir 只回摘要不寫檔。";
 
         public override string Example =>
             SCP_CmdRegistry.Invoke("wake-brief"

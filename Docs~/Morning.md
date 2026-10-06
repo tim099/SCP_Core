@@ -1,7 +1,7 @@
 ---
 title: 早安 —— 入口
 description: 早安儀式只記第一步；之後每一步的回傳檔都會印下一步（`## next`），照它走
-cmds: [morning-wake, morning-brief, morning-intro, morning-catchup]
+cmds: [morning-wake, morning-brief, morning-intro, morning-catchup, wake-brief]
 ---
 
 # 🌅 早安 —— 入口
@@ -32,6 +32,14 @@ senate cmd morning-wake --arg persona=<P> --arg actual_agent=<Codex|ClaudeCode|A
 1. **persona 一律顯式** —— 沒拿到名字就**停下來問**（先跑不帶 persona 的 `morning-wake` 拿候選清單，帶著清單問），⛔ 不准自己挑。
 2. **同一個 persona 不得同時登入兩次** —— 守衛擋下（blocked、exit 1）就是停，照回傳檔裡的出口走。
    ⛔ 別換個名字繞過去（那是製造分身）。lock 在但讀不了（壞檔）也擋 —— 壞 lock 不等於沒人在線。
+
+## 只想重產或讀回 brief：`wake-brief`
+
+`morning-brief` 與 `senate cmd wake-brief` 是同一個生產端（`SCP_WakeBrief`）的兩個入口。早安一律走 `morning-brief`；`wake-brief` 給「改完記憶層想看 brief 長怎樣」用（修憲、見林檔名校正、小歇前後）。三個差別：
+
+- **wake 編號要自己給**（`--arg wake=<N>`，不給＝0，只印在標題）—— 它不推導：在線與離線推出來會差一號。
+- **區域要自己給**（`--arg region=<區>`），不給印 `unstated`。
+- **不給 `out_dir` 只回摘要、不寫檔** ⇒ `cmd/wake_brief.md` 不會被刷新。要刷新就帶 `--arg out_dir=<letters>/<我>/cmd`。
 
 ## 兩個讀數的意思
 
