@@ -249,8 +249,8 @@ namespace SCP.Core.Gui
             }
         }
 
-        /// <summary>早安指令的字面（與 Unity UCL_LoginStatusPage 同一句）。</summary>
-        public static string MorningCommand(string iPersona) => $"/ucl-morning {iPersona}";
+        /// <summary>早安指令的字面</summary>
+        public static string MorningCommand(string iPersona) => $"/scp-morning {iPersona}";
 
         void CopyMorning(string iPersona)
         {
