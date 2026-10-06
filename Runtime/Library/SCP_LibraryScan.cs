@@ -163,8 +163,10 @@ namespace SCP.Core.Library
         // ⚠ 已遷移的 Archive 預設不進候選（Tim 2026-08-07）；而**隱藏幾筆一定印出來** ——
         //   靜默隱藏＝下一隻閘門讀的是一份被裁剪過而它不知道的清單。
         // ===========================================================
+        // ⚠ Archive 已封存（Tim 2026-10-06：觀影等架構差異太大，之後重看不讀舊心得）⇒ 預設不讀 Archive，
+        //   A／A′／D 三節只在 iIncludeArchive 時才掃；不掃時報告明講「沒讀」，⛔ 不印成 0 組。
         public static string ScanLibrary(string iDataRoot, out string? oReportPath, out string? oError,
-                                         bool iShowMigrated = false)
+                                         bool iShowMigrated = false, bool iIncludeArchive = false)
         {
             oError = null;
             oReportPath = null;
@@ -213,7 +215,7 @@ namespace SCP.Core.Library
             int aArchiveCount = 0, aHitCount = 0;
             var aSectionA = new StringBuilder();
             var aSectionD = new StringBuilder();
-            if (Directory.Exists(aArchiveRoot))
+            if (iIncludeArchive && Directory.Exists(aArchiveRoot))
             {
                 foreach (string aDir in Directory.GetDirectories(aArchiveRoot))
                 {
@@ -257,22 +259,30 @@ namespace SCP.Core.Library
                     }
                 }
             }
-            aSb.AppendLine($"- Archive entry：{aArchiveCount} 個"
-                           + (aHiddenMigrated > 0
-                               ? $"（另 {aHiddenMigrated} 筆已遷移預設隱藏 —— `--arg show_migrated=true` 顯示）"
-                               : ""));
-            aSb.AppendLine();
-            aSb.AppendLine($"## A. Archive ↔ Library 疑似同作品（{aHitCount} 組 —— 逐組人工裁決，不自動遷移）");
-            aSb.AppendLine();
-            aSb.Append(aSectionA.Length > 0 ? aSectionA.ToString() : "（無命中）\n");
-            aSb.AppendLine();
-            // ⚠ 這一節**一定印**（0 組也印）—— 「已裁決不遷」如果只在有資料時才出現，
-            //   那麼「沒有人裁決過」與「這份報告沒有這一節」在讀的人眼裡又會同形。
-            aSb.AppendLine($"## A′. 已裁決：**刻意不遷**（{aKeptCount} 組 —— registry `state=kept_archive`，"
-                           + "⛔ 不是候選、也不隱藏：Archive 就是它們的正本）");
-            aSb.AppendLine();
-            aSb.Append(aSectionKept.Length > 0 ? aSectionKept.ToString() : "（無）\n");
-            aSb.AppendLine();
+            if (!iIncludeArchive)
+            {
+                aSb.AppendLine("- Archive：**已封存，本次沒讀**（之後重看不讀舊心得）—— 要比對 Archive 帶 `--arg archive=1`");
+                aSb.AppendLine();
+            }
+            else
+            {
+                aSb.AppendLine($"- Archive entry：{aArchiveCount} 個"
+                               + (aHiddenMigrated > 0
+                                   ? $"（另 {aHiddenMigrated} 筆已遷移預設隱藏 —— `--arg show_migrated=true` 顯示）"
+                                   : ""));
+                aSb.AppendLine();
+                aSb.AppendLine($"## A. Archive ↔ Library 疑似同作品（{aHitCount} 組 —— 逐組人工裁決，不自動遷移）");
+                aSb.AppendLine();
+                aSb.Append(aSectionA.Length > 0 ? aSectionA.ToString() : "（無命中）\n");
+                aSb.AppendLine();
+                // ⚠ 這一節**一定印**（0 組也印）—— 「已裁決不遷」如果只在有資料時才出現，
+                //   那麼「沒有人裁決過」與「這份報告沒有這一節」在讀的人眼裡又會同形。
+                aSb.AppendLine($"## A′. 已裁決：**刻意不遷**（{aKeptCount} 組 —— registry `state=kept_archive`，"
+                               + "⛔ 不是候選、也不隱藏：Archive 就是它們的正本）");
+                aSb.AppendLine();
+                aSb.Append(aSectionKept.Length > 0 ? aSectionKept.ToString() : "（無）\n");
+                aSb.AppendLine();
+            }
 
             // ── B：Library 內部疑似重複 ──
             aSb.AppendLine("## B. Library 內部疑似重複（同名但不同 work_id —— arakawa 型爛帳的形狀）");

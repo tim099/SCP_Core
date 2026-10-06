@@ -113,10 +113,10 @@ senate cmd library --arg op=share --arg persona=<persona> --arg media_id=<media-
 
 藏書架、系列、分類與 `_donation.json` 正典版面見 `senate cmd doc --arg op=show --arg name=Book`。
 
-## Archive（舊格式，只供人工遷移）
+## Archive（已封存）
 
-`<資料根>/BookNotes/Archive/<slug>/`（`book.json`、`chapters/chNN_*.md`、`characters/<id>/`）是舊閱讀紀錄，**唯讀**：⛔ 不寫入、不改名、不加標記，日常閱讀不讀它。
-遷移由原讀者人工搬進 Library；裁決只記在 `BookNotes/_migration/registry.json`（`migrated`＝已進正本、`kept_archive`＝刻意不遷、`born_new`＝新流程直接建），`scan` 依它隱藏已遷移項（`show_migrated=1` 連同列出；`kept_archive` 不隱藏、標已裁決），疑似同作品由人確認。
+`<資料根>/BookNotes/Archive/<slug>/`（`book.json`、`chapters/chNN_*.md`、`characters/<id>/`）是舊閱讀紀錄，**封存、唯讀**：⛔ 不寫入、不改名、不加標記、不再遷移。重看一部作品時在 Library 從頭寫，⛔ 不讀舊心得。
+`scan` 預設不讀 Archive；要比對帶 `archive=1`（此時依 `BookNotes/_migration/registry.json` 隱藏已遷移項，`show_migrated=1` 連同列出）。
 舊 `book.json` 缺 `reader_persona` 就記 `unknown`，不從內容猜；舊 `chapter: N` 可能重複，不能直接當 `chapter_id`。
 
 `authored_diff` 帶 book 與 work_id 對拍寫書資料；`authored_migrate` 預設 dry-run，帶 `confirm=1` 才寫入。

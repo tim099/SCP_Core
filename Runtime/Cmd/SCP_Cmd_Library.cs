@@ -42,7 +42,8 @@ namespace SCP.Core.Cmd
                                      + "｜**scan｜comics｜comic_pages｜authored_diff｜authored_migrate｜share_body｜share**"
                                      + "（paths／scan／comics／authored_diff／authored_migrate 不需要 persona／media_id；"
                                      + "comic_pages 只要 media_id）"),
-            new SCP_CmdArgSpec("show_migrated", "op=scan 用：=1 ⇒ 連已遷移的 Archive 一起列（預設隱藏，而隱藏幾筆會印出來）"),
+            new SCP_CmdArgSpec("archive", "op=scan 用：=1 ⇒ 也比對 Archive（已封存，預設不讀）"),
+            new SCP_CmdArgSpec("show_migrated", "op=scan＋archive=1 用：=1 ⇒ 連已遷移的 Archive 一起列（預設隱藏，而隱藏幾筆會印出來）"),
             new SCP_CmdArgSpec("book", "authored_diff／authored_migrate 用：舊 store 的書 slug（必填）"),
             new SCP_CmdArgSpec("confirm", "op=authored_migrate 用：=1 才真的寫（預設 dry-run，零寫入）"),
             new SCP_CmdArgSpec("round", "op=share_body／share 用：要貼哪一個 round（省略＝該章最大那個）"),
@@ -341,7 +342,8 @@ namespace SCP.Core.Cmd
         static SCP_CmdResult OpScan(string iDataRoot, SCP_CmdArgs iArgs)
         {
             string aReport = SCP_LibraryScan.ScanLibrary(iDataRoot, out string? aPath, out string? aErr,
-                                                         Truthy(iArgs.Get("show_migrated")));
+                                                         Truthy(iArgs.Get("show_migrated")),
+                                                         Truthy(iArgs.Get("archive")));
             var aR = new SCP_CmdResult();
             aR.Lines.Add(aReport.TrimEnd());
             // ⚠ 報告落檔失敗**不吞**，而且不讓它看起來像整支失敗 —— 印出來的那份還在。
