@@ -52,7 +52,8 @@ namespace SCP.Core.Cmd
             {
                 var a = new List<SCP_CmdArgSpec>
                 {
-                    new SCP_CmdArgSpec("op", "draft（預設，零寫入）／create", iDefault: "draft", iChoices: new[] { "draft", "create" }),
+                    new SCP_CmdArgSpec("op", "draft（預設，零寫入）／create／repo（letters 變成 git repo；帶 remote_url ⇒ 接上遠端並登記 submodule）", iDefault: "draft", iChoices: new[] { "draft", "create", "repo" }),
+                    new SCP_CmdArgSpec("remote_url", "op=repo：letters 的遠端（Tim 在 GitHub 開好之後給）；不給 ⇒ 只做本地 init"),
                     new SCP_CmdArgSpec("persona", "參考角色＝persona id（資料夾名）", iRequired: true),
                     new SCP_CmdArgSpec("project", "哪個專案（senate.local.json 的 projects[].name）。只有一個啟用專案時可省略"),
                     new SCP_CmdArgSpec("agent", "綁定的 agent（agent_banks 的 key）；新開 agent 時是新名字。不給 ⇒ 由 actual_agent 推建議值"),
@@ -75,6 +76,7 @@ namespace SCP.Core.Cmd
 
         protected override string? Run(SCP_MorningRoots iRoots, SCP_CmdArgs iArgs, SCP_CmdResult ioResult)
         {
+            if (iArgs.Get("op").Trim() == "repo") return RunRepo(iRoots, iArgs, ioResult);
             var aSpec = new SCP_PersonaCreateSpec
             {
                 Persona = iArgs.Get("persona").Trim(),
@@ -177,6 +179,13 @@ namespace SCP.Core.Cmd
                 else ioResult.Lines.Add($"⚠ 主題色沒寫成（{aColErr}）—— 人已建好；補：persona-display --arg op=color");
             }
 
+            // ③' letters 變成 git repo（本地；remote 由 Tim 處理 —— 2026-10-06）
+            var aRepoLines = new List<string>();
+            if (SCP_PersonaCreate.InitLettersRepo(iRoots.LettersRoot, aPlan.Persona, aRepoLines, out string aRepoErr))
+                ioResult.Lines.AddRange(aRepoLines);
+            else ioResult.Lines.Add($"⚠ letters 沒變成 git repo（{aRepoErr}）—— 人已建好；補：" + RepoHint(aPlan.Persona, ""));
+            ioResult.Lines.Add("📌 遠端由 Tim 處理：在 GitHub 開好 repo 之後跑 " + RepoHint(aPlan.Persona, "<遠端網址>") + "，再自己 push。");
+
             // ④ 頭像 ＋ 回傳檔
             string aSpec2 = SCP_PersonaCreate.AvatarSpec(aPlan.Persona, aPlan.Color, aPlan.Character);
             string aPayload = SCP_LettersPaths.CmdPayload(new SCP_LettersRoot(iRoots.LettersRoot), aPlan.Persona, "persona", "create");
@@ -226,6 +235,37 @@ namespace SCP.Core.Cmd
         /// ⛔ 不用 system_accounts／closed_accounts 自動濾：那兩張表的鍵是帳號名、而且新舊混雜（`claude-code` 是舊帳號名，
         ///   不是 agent_banks 那個 claude-code→cc），濾錯的樣子是「該選的那個不見了」。標出來讓人看，比替人濾掉安全。
         /// </summary>
+        static string RepoHint(string iPersona, string iRemote)
+            => SCP_CmdRegistry.InvokeOf<SCP_Cmd_PersonaCreate>($"--arg op=repo --arg persona={iPersona}"
+                + (iRemote.Length > 0 ? $" --arg remote_url={iRemote}" : "") + " --arg confirm=1");
+
+        /// <summary>op=repo：已存在的 persona 補做 letters repo（本地 init；帶 remote_url ⇒ 接遠端＋登記 submodule）。</summary>
+        static string? RunRepo(SCP_MorningRoots iRoots, SCP_CmdArgs iArgs, SCP_CmdResult ioResult)
+        {
+            string p = iArgs.Get("persona").Trim();
+            string aRemote = iArgs.Get("remote_url").Trim();
+            if (!SCP_PersonaProfile.Exists(iRoots.LettersRoot, p)) { ioResult.ExitCode = 2; ioResult.Lines.Add($"✗ 查無 persona `{p}`（零寫入）"); return null; }
+            bool aIsRepo = SCP_PersonaCreate.IsLettersRepo(iRoots.LettersRoot, p);
+            ioResult.Lines.Add($"· letters/{p}：{(aIsRepo ? "已是 git repo" : "還不是 git repo")}；remote_url：{(aRemote.Length > 0 ? aRemote : "（沒給 ⇒ 只做本地 init）")}");
+            if (iArgs.Get("confirm") != "1")
+            {
+                ioResult.ExitCode = 2;
+                ioResult.Lines.Add("✗ op=repo 要帶 `--arg confirm=1`（零寫入）");
+                return null;
+            }
+            var aLines = new List<string>();
+            if (!SCP_PersonaCreate.InitLettersRepo(iRoots.LettersRoot, p, aLines, out string aErr))
+            { ioResult.ExitCode = 1; ioResult.Lines.AddRange(aLines); ioResult.Lines.Add("✗ " + aErr); return null; }
+            if (aRemote.Length > 0 && !SCP_PersonaCreate.AttachLettersRemote(iRoots.LettersRoot, p, aRemote, aLines, out aErr))
+            { ioResult.ExitCode = 1; ioResult.Lines.AddRange(aLines); ioResult.Lines.Add("✗ " + aErr); return null; }
+            ioResult.Lines.AddRange(aLines);
+            ioResult.Lines.Add("## next（照這行走）");
+            ioResult.Lines.Add(aRemote.Length == 0
+                ? "   遠端由 Tim 處理：GitHub 開好 repo 之後 ⇒ " + RepoHint(p, "<遠端網址>")
+                : $"   push：git -C <letters>/{p} push -u origin master（Tim 處理）");
+            return null;
+        }
+
         static void AppendAgentChoices(SCP_MorningRoots iRoots, SCP_CmdResult ioResult)
         {
             var aBanks = SCP_PersonaCreate.AgentBanks(iRoots.DataRoot);

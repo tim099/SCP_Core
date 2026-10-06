@@ -320,6 +320,111 @@ namespace SCP.Core.Letters
             catch (Exception e) { oError = e.GetType().Name + ": " + e.Message; return false; }
         }
 
+        // ==========================================================
+        // 區塊職責：persona 的 letters 變成獨立 git repo（TASK-0428，Tim 2026-10-06 選 (a)；remote 由 Tim 處理）。
+        // 物理意義：其他 persona 的 letters 都是 AgentCommands 底下的 submodule（各自一個 GitHub repo）；
+        //   🩸 erina（第一個真的 create）只是一個未追蹤目錄 ⇒ 晚安提交收尾信沒有 repo 可提交。
+        //   ⇒ 本地：git init（master）＋ 同步格式的 .gitignore ＋ 第一筆提交。
+        //     有 remote_url（Tim 開好遠端之後）：設 origin、在父層 submodule add、只提交 .gitmodules 與那一格指向。⛔ 不 push。
+        // ⚠ .gitignore 的格式從現有檔反推（同步工具 sync_letters_gitignore.py 已隨 python 退場刪除）：
+        //   檔頭 4 行 ＋ 基線（`letters/Template/.gitignore`）全文 ＋ END 標記 ＋ 本 persona 自訂區；
+        //   `baseline_sha256` ＝ 基線**換行正規化成 LF** 後的 sha256（對 kotoko 現有檔驗過：d3e78f72…）。
+        // ==========================================================
+        public const string GitignoreBaselinePersona = "Template";
+
+        /// <summary>照基線組一份新 persona 的 .gitignore。基線讀不到回 null。</summary>
+        public static string? BuildLettersGitignore(string iLettersRoot, out string oError)
+        {
+            oError = "";
+            string aTpl = Path.Combine(iLettersRoot, GitignoreBaselinePersona, ".gitignore");
+            if (!File.Exists(aTpl)) { oError = "基線 .gitignore 不在：" + aTpl; return null; }
+            string aBase = File.ReadAllText(aTpl, Encoding.UTF8).Replace("\r\n", "\n");
+            string aSha;
+            using (var sha = SHA256.Create())
+            {
+                var sb = new StringBuilder();
+                foreach (byte b in sha.ComputeHash(new UTF8Encoding(false).GetBytes(aBase))) sb.Append(b.ToString("x2"));
+                aSha = sb.ToString();
+            }
+            var aOut = new StringBuilder();
+            aOut.Append("# ╔═══ BASELINE — 由 letters/Template/.gitignore 同步，勿在本區編輯 ═══╗\n");
+            aOut.Append("# 要改共用規則：改基線檔，再跑 sync_letters_gitignore.py（--check 只報漂移）。\n");
+            aOut.Append("# 自訂規則寫在檔尾「本 persona 自訂」區 —— 那一區同步工具不動。\n");
+            aOut.Append("# baseline_sha256: " + aSha + "\n");
+            aOut.Append(aBase.TrimEnd('\n') + "\n");
+            aOut.Append("# ╚═══ BASELINE END ═══╝\n\n");
+            aOut.Append("### 本 persona 自訂\n");
+            return aOut.ToString().Replace("\n", "\r\n");
+        }
+
+        public static bool IsLettersRepo(string iLettersRoot, string iPersona)
+        {
+            string d = SCP_LettersPaths.PersonaDir(new SCP_LettersRoot(iLettersRoot), iPersona);
+            return Directory.Exists(Path.Combine(d, ".git")) || File.Exists(Path.Combine(d, ".git"));
+        }
+
+        /// <summary>
+        /// 本地初始化：git init（master）＋ .gitignore（沒有才寫）＋ 第一筆提交。已經是 repo ⇒ 什麼都不做、回 true。
+        /// </summary>
+        public static bool InitLettersRepo(string iLettersRoot, string iPersona, List<string> ioLines, out string oError)
+        {
+            oError = "";
+            string d = SCP_LettersPaths.PersonaDir(new SCP_LettersRoot(iLettersRoot), iPersona);
+            if (!Directory.Exists(d)) { oError = "letters 資料夾不存在：" + d; return false; }
+            if (IsLettersRepo(iLettersRoot, iPersona)) { ioLines.Add($"· letters/{iPersona} 已經是 git repo（沒有重新 init）"); return true; }
+            string aIgnore = Path.Combine(d, ".gitignore");
+            if (!File.Exists(aIgnore))
+            {
+                string? g = BuildLettersGitignore(iLettersRoot, out oError);
+                if (g == null) return false;
+                File.WriteAllText(aIgnore, g, new UTF8Encoding(false));
+            }
+            SCP.Core.Git.SCP_GitResult r = SCP.Core.Git.SCP_Git.Run(d, "init");
+            if (!r.Ok) { oError = "git init 失敗：" + r.FirstLine; return false; }
+            r = SCP.Core.Git.SCP_Git.Run(d, "symbolic-ref", "HEAD", "refs/heads/master");
+            if (!r.Ok) { oError = "設 master 失敗：" + r.FirstLine; return false; }
+            r = SCP.Core.Git.SCP_Git.Run(d, "add", "-A");
+            if (!r.Ok) { oError = "git add 失敗：" + r.FirstLine; return false; }
+            r = SCP.Core.Git.SCP_Git.Run(d, "commit", "-m", "Init（persona-create，TASK-0428）");
+            if (!r.Ok) { oError = "第一筆提交失敗：" + r.FirstLine; return false; }
+            SCP.Core.Git.SCP_GitResult aHead = SCP.Core.Git.SCP_Git.Run(d, "rev-parse", "--short", "HEAD");
+            ioLines.Add($"✓ letters/{iPersona} 變成 git repo（master，第一筆 {aHead.StdOut.Trim()}；.gitignore 照 Template 基線）");
+            return true;
+        }
+
+        /// <summary>
+        /// 接上遠端（Tim 開好之後）：設 origin、在父層 submodule add、**只**提交 .gitmodules 與那一格指向。⛔ 不 push。
+        /// </summary>
+        public static bool AttachLettersRemote(string iLettersRoot, string iPersona, string iRemoteUrl, List<string> ioLines, out string oError)
+        {
+            oError = "";
+            string d = SCP_LettersPaths.PersonaDir(new SCP_LettersRoot(iLettersRoot), iPersona);
+            if (!IsLettersRepo(iLettersRoot, iPersona)) { oError = "還不是 git repo —— 先跑一次不帶 remote_url 的 op=repo"; return false; }
+            SCP.Core.Git.SCP_GitResult r = SCP.Core.Git.SCP_Git.Run(d, "remote", "get-url", "origin");
+            if (r.Ok && r.StdOut.Trim() != iRemoteUrl)
+            { oError = $"origin 已經是 `{r.StdOut.Trim()}`，跟給的 `{iRemoteUrl}` 不同 —— ⛔ 不覆蓋，先確認哪個對"; return false; }
+            if (!r.Ok)
+            {
+                r = SCP.Core.Git.SCP_Git.Run(d, "remote", "add", "origin", iRemoteUrl);
+                if (!r.Ok) { oError = "設 origin 失敗：" + r.FirstLine; return false; }
+            }
+            ioLines.Add($"✓ origin ＝ {iRemoteUrl}");
+            // 父層＝包著 letters 根的那個 repo（AgentCommands）
+            SCP.Core.Git.SCP_GitResult aTop = SCP.Core.Git.SCP_Git.Run(iLettersRoot, "rev-parse", "--show-toplevel");
+            if (!aTop.Ok) { oError = "找不到父層 repo：" + aTop.FirstLine; return false; }
+            string aParent = aTop.StdOut.Trim();
+            string aRel = Path.GetFullPath(d).Replace('\\', '/').Substring(Path.GetFullPath(aParent).Replace('\\', '/').TrimEnd('/').Length + 1);
+            SCP.Core.Git.SCP_GitResult aKnown = SCP.Core.Git.SCP_Git.Run(aParent, "config", "-f", ".gitmodules", "--get", "submodule." + aRel + ".url");
+            if (aKnown.Ok) { ioLines.Add($"· 父層已經登記這個 submodule（{aKnown.StdOut.Trim()}）—— 沒有重複登記"); return true; }
+            r = SCP.Core.Git.SCP_Git.Run(aParent, "submodule", "add", iRemoteUrl, aRel);
+            if (!r.Ok) { oError = "父層 submodule add 失敗：" + r.FirstLine; return false; }
+            r = SCP.Core.Git.SCP_Git.Run(aParent, "commit", "-m", $"letters: 掛上 {iPersona} 的信件庫（persona-create，TASK-0428）", "--", ".gitmodules", aRel);
+            if (!r.Ok) { oError = "父層提交失敗（.gitmodules 與指向已 stage，沒提交）：" + r.FirstLine; return false; }
+            SCP.Core.Git.SCP_GitResult aHead = SCP.Core.Git.SCP_Git.Run(aParent, "rev-parse", "--short", "HEAD");
+            ioLines.Add($"✓ 父層登記 submodule `{aRel}`，提交 {aHead.StdOut.Trim()}（只含 .gitmodules 與這一格指向；⛔ 沒有 push）");
+            return true;
+        }
+
         public static List<double> GenVector(Random iRng)
         {
             var v = new List<double>(VectorDim);

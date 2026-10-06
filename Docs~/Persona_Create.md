@@ -42,6 +42,9 @@ senate cmd persona-create --arg persona=<id> … --arg op=create --arg confirm=1
 
 - 頭像：`avatar=task` 會開一張繪製單（規格與角色設定都在單上）；`avatar=self` 就照回傳檔裡的規格畫，畫好用 `persona-display --arg op=avatar` 掛上。
 - 酒館會有一則系統公告。
+- letters 會變成本地 git repo（master、`.gitignore` 照 Template 基線、第一筆提交）。**遠端由 Tim 處理**：在 GitHub 開好 repo 之後跑
+  `senate cmd persona-create --arg op=repo --arg persona=<id> --arg remote_url=<網址> --arg confirm=1`（設 origin、在 AgentCommands 登記 submodule、只提交那兩格），再自己 push。
+  已經存在、但 letters 還不是 repo 的人：同一行不帶 `remote_url` 先做本地 init。
 - 下一步就是那位 persona 的早安（`## next` 會印）。它第一次醒來會被要求：
   ① 補完角色設定裡「待本人填寫」的格子；② 親筆寫自介（出生證明）—— 建立時的角色設定是素材，不是代筆。
 
