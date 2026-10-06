@@ -8,7 +8,7 @@
 //
 // 🩸 判準（每一條都是從 Unity 那版帶過來的血證，⛔ 不是重新設計）：
 //   ① **帳與券分開結算**：打賞的 debit 落帳後，任一券發放失敗 **不回滾帳**（帳不可造假），
-//      改記 `voucher_status: pending_*`，之後 `op=tip --arg retry=1` 補發。
+//      改記 `voucher_status: pending_*`，之後 `op=retry-tips` 補發。
 //   ② **`publish` 要回寫草稿 store 的兩個狀態欄**。少了它，「已經在藏書架上」與「還在寫」
 //      會同時為真，而**兩邊都不報錯**（TASK-0148 那次就是搬家時跟著 python 一起消失的）。
 //   ③ **權限只問「這本是不是館內自產」**（看 `origin`，⛔ 不看 legacy `source`）——
@@ -113,9 +113,9 @@ namespace SCP.Core.Books
             string aDir = SCP_BooksDonations.BookDir(iDataRoot, iBook);
             if (!Directory.Exists(aDir))
             { oError = $"Books/{iBook}/ 不存在 —— 先寫至少一章全文再 publish"; return null; }
-            int aChapters = Directory.GetFiles(aDir, "*.txt").Length;
+            int aChapters = SCP_BookStore.CountProseIn(aDir);   // `NNN_v2.txt` 不算一章（TASK-0436）
             if (aChapters == 0)
-            { oError = $"Books/{iBook}/ 沒有任何章節（*.txt）—— 空書不入庫"; return null; }
+            { oError = $"Books/{iBook}/ 沒有任何章節（`NNN.txt`）—— 空書不入庫"; return null; }
 
             string aPath = SCP_BooksDonations.DonationPath(iDataRoot, iBook);
             SCP_JsonData? aExisting = File.Exists(aPath) ? LoadJson(aPath, out _) : null;

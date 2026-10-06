@@ -164,14 +164,23 @@ namespace SCP.Core.Books
         /// 「兩個落點是兩件事」見 `senate cmd doc --arg op=show --arg name=Book` §1。
         /// </summary>
         static int CountProse(string iDataRoot, string iSlug)
+            => CountProseIn(Path.Combine(iDataRoot, "Books", iSlug));
+
+        /// <summary>
+        /// 一本書的入庫正文目錄（`Books/&lt;slug&gt;/`）裡有幾章 —— **數章的唯一規則**。
+        /// 書店、publish、藏書頁都走這一支（TASK-0436）：各自寫一份 pattern，就會有人數成 `*.txt`。
+        /// </summary>
+        public static int CountProseIn(string iBookDir)
         {
-            string aDir = Path.Combine(iDataRoot, "Books", iSlug);
-            if (!Directory.Exists(aDir)) return 0;
+            if (!Directory.Exists(iBookDir)) return 0;
             // ⚠ `???.txt` 不是 `*.txt`（TASK-0152）：重出的版本檔叫 `NNN_v2.txt`，
             //   用 `*.txt` 數會把**同一章的第二版算成多一章** —— 而那個數字看起來完全正常。
-            try { return Directory.GetFiles(aDir, "???.txt").Length; }
+            try { return Directory.GetFiles(iBookDir, ProseChapterPattern).Length; }
             catch (Exception) { return 0; }
         }
+
+        /// <summary>正文章檔的檔名 pattern（`NNN.txt`）；`NNN_v2.txt` 這類版本檔不算一章。</summary>
+        public const string ProseChapterPattern = "???.txt";
 
         static DateTime SafeWriteTime(string iPath)
         {

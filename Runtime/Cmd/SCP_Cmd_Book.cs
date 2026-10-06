@@ -87,7 +87,8 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("tokens", "金額（donate 預設 100；tip 必填 1~1000）"),
             new SCP_CmdArgSpec("note", "備註（donate／publish／tip 選填）"),
             new SCP_CmdArgSpec("actual_agent", "實際承載的桌面工具（選填，記錄用）"),
-            new SCP_CmdArgSpec("persona", "op=writing 用：只看這位作者的書（省略＝全部作者）"),
+            new SCP_CmdArgSpec("persona", "donate／publish／tip **必填**（錢包綁 persona，署名也要它）；"
+                               + "op=writing 選填：只看這位作者的書（省略＝全部作者）"),
             new SCP_CmdArgSpec("book_filter", "op=tips 用：只看這一本的打賞（省略＝全部）"),
             new SCP_CmdArgSpec("confirm", "op=normalize_donations 用：=1 才真的寫（預設 dry-run，零寫入）"),
             new SCP_CmdArgSpec("kind", "original｜external｜watch-log｜tavern-history —— op=classify 選填；op=shelf 當篩選"),
@@ -98,7 +99,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("parent_series", "op=classify 用：上位系列 id（做巢狀：世界觀 › 三部曲；顯式空字串＝脫離上位）"),
             new SCP_CmdArgSpec("parent_series_title", "op=classify 用：上位系列顯示名（parent_series 首次使用時必填）"),
             new SCP_CmdArgSpec("series_note", "op=classify 用：系列一句話說明"),
-            new SCP_CmdArgSpec("book", "op=log-chapter／arc 用：書本 slug（必填）"),
+            new SCP_CmdArgSpec("book", "書本 slug —— log-chapter／arc／classify／donate／publish／tip **必填**"),
             new SCP_CmdArgSpec("chapter", "op=log-chapter 用：章號，整數（必填）"),
             new SCP_CmdArgSpec("slug", "op=log-chapter 用：章節檔名 slug（省略＝由 title 生成，再省略＝ch<N>）"),
             new SCP_CmdArgSpec("summary", "內容摘要／階段大綱（省略＝「（待補）」）"),
@@ -111,7 +112,8 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("reader", "讀者 persona；非初始讀者 ⇒ 自動走 `branches/<reader>/` 分支筆記"
                                + "（不影響初始讀者）"),
             new SCP_CmdArgSpec("continue_from", "首次開分支時：從誰的進度接續（只複製章號，不寫回來源）"),
-            new SCP_CmdArgSpec("title", "書名（必填）"),
+            new SCP_CmdArgSpec("title", "op=add：書名（**必填**）｜publish：只有**首次發表**要（之後沿用登記的書名）"
+                               + "｜log-chapter／arc：章／階段標題（選填）"),
             new SCP_CmdArgSpec("aliases", "別名，用 `;` `|` 或換行分隔；"
                                + "**使用者提供的書名必須含在裡面**（必填）"),
             new SCP_CmdArgSpec("id", "書本 slug（省略＝由 title 生成）"),
