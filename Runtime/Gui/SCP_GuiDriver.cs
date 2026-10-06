@@ -181,6 +181,13 @@ namespace SCP.Core.Gui
         {
             oValue = iRaw;
             oNote = "";
+            // ⛔ 按鈕不是欄位：照收的話會回「已設定」而畫面什麼都沒變（🩸 2026-10-06：`--set persona/sel=<名字>` 想選下拉，
+            //   實際只是在欄位倉多了一格沒人讀的值，接著的動作落在原本選中的那一位身上）。
+            if (iElem.Kind == SCP_GuiNodeKind.Button)
+            {
+                oNote = "這是按鈕不是輸入欄 —— 用 --click。下拉選單：--click <id> 展開 → --set <id>/search=<字> 篩 → --click <id>/pick/<值>";
+                return false;
+            }
             if (iElem.Kind != SCP_GuiNodeKind.Slider) return true;
             string aRaw = (iRaw ?? "").Trim();
             if (aRaw.Length == 0) { oValue = ""; oNote = "清空 ⇒ 回到預設"; return true; }

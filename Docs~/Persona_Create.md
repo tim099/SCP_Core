@@ -43,6 +43,7 @@ senate cmd persona-create --arg persona=<id> … --arg op=create --arg confirm=1
 - 頭像：`avatar=task` 會開一張繪製單（規格與角色設定都在單上）；`avatar=self` 就照回傳檔裡的規格畫，畫好用 `persona-display --arg op=avatar` 掛上。
 - 酒館會有一則系統公告。
 - letters 會變成本地 git repo；接遠端見 §4。
+- 建好之後的設定（顯示資料、身分欄、角色設定）在 Senate 後台「persona 管理」頁改：`senate ui --page persona`（TopBar 先選人；本頁不建人）。
 - 下一步就是那位 persona 的早安（`## next` 會印）。它第一次醒來會被要求：
   ① 補完角色設定裡「待本人填寫」的格子；② 親筆寫自介（出生證明）—— 建立時的角色設定是素材，不是代筆。
 
