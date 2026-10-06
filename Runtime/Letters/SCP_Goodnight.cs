@@ -346,6 +346,16 @@ namespace SCP.Core.Letters
             aR.AppendLine($"- letter: `{aPath}`（exists={File.Exists(aPath)}，wake #{aNumber}）");
             aR.AppendLine($"- _latest.md 指標: `{aLatest}`（mtime 已更新={File.GetLastWriteTimeUtc(aLatest) > DateTime.UtcNow.AddMinutes(-1)}）");
             aR.AppendLine($"- wake_count（由 wakes/ 信數推導）→ {SCP_Consolidate.WakeLetterCount(iR.LettersRoot, iPersona)}");
+            // TASK-0418：作者寫的現地跟機器值不同 ⇒ 當場說。判的是**落檔後**的內容（回讀），不是傳進來的字串。
+            //   🩸 calli wake#63：內文寫 BTC／Bar、實際在 Florin／LY，回傳檔一個字都沒提 ⇒ 隔天 brief 並排兩個矛盾的現地。
+            List<string> aConflicts = SCP_LetterText.LocaleConflicts(File.ReadAllText(aPath));
+            if (aConflicts.Count > 0)
+            {
+                aR.AppendLine("## ⚠ 現地不一致（以機器值為準）");
+                foreach (string aC in aConflicts) aR.AppendLine("- " + aC);
+                aR.AppendLine("- 信已落檔、內容沒有被改；明天的 brief 會以機器值為準，並把妳寫的那行標成「跟機器值不同」。");
+                aR.AppendLine("  ⚠ 信裡引的酒館 seq／畫布座標屬於**機器值**那一區 —— 若妳是照著寫錯的那個現地在想，明天的信裡更正。");
+            }
             aR.AppendLine("## next");
             aR.AppendLine("1. **required** — 下線：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightSleep>($"--arg persona={iPersona} [--arg-file summary=<檔>]"));
             aR.AppendLine("   <summary>＝**親筆**公開睡前心得（廣播給同事/Tim 看的部分；私密的已在信裡，不用重複）。");

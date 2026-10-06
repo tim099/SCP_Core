@@ -38,6 +38,9 @@ namespace SCP.Core.Letters
 
         /// <summary>作者自己也寫了 frontmatter ⇒ 已併入（不是疊第二坨）。</summary>
         public int AuthorFrontmatterFields;
+
+        /// <summary>作者寫的現地與機器值對不上的地方（TASK-0418；空＝沒有矛盾）。由落檔後的內容判，不是組字串時判。</summary>
+        public List<string> LocaleConflicts = new List<string>();
     }
 
     /// <summary>寫「給未來自己的信」的唯一組裝點（小歇／自寫信）。</summary>
@@ -130,6 +133,7 @@ namespace SCP.Core.Letters
             aResult.LatestPath = aLatest;
             // 回讀量位元組 —— 「我寫了」不是「它在裡面」。
             aResult.Bytes = File.Exists(aPath) ? (int)new FileInfo(aPath).Length : 0;
+            aResult.LocaleConflicts = SCP_LetterText.LocaleConflicts(aOut);
             return aResult;
         }
 

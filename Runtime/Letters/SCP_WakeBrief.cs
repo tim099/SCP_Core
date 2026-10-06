@@ -207,8 +207,8 @@ namespace SCP.Core.Letters
                 ActiveTasksSection(iPersona, iDataRoot),
                 ForestSection(iLettersRoot, iPersona),
                 DigestSection(iLettersRoot, iPersona),
-                TreeSection(iLettersRoot, iPersona, aPointer, aSettings),
-                RecallSection(iLettersRoot, iPersona, iWakeCount, aSettings),
+                TreeSection(iLettersRoot, iPersona, aPointer, aSettings, aRegion),
+                RecallSection(iLettersRoot, iPersona, iWakeCount, aSettings, aRegion),
                 MaintenanceSection(iLettersRoot, iPersona, iWakeCount, iDataRoot, aSettings),
                 PayrollSection(iLettersRoot, iDataRoot, aRegion),
                 PeopleSection(iLettersRoot, iPersona, aSettings),
@@ -528,7 +528,8 @@ namespace SCP.Core.Letters
             };
         }
 
-        static SCP_BriefSection TreeSection(string iLettersRoot, string iPersona, string? iPointer, SCP_WakeBriefSettings iS)
+        static SCP_BriefSection TreeSection(string iLettersRoot, string iPersona, string? iPointer, SCP_WakeBriefSettings iS,
+                                            string iCurrentRegion)
         {
             if (iPointer == null || !File.Exists(iPointer))
             {
@@ -540,9 +541,9 @@ namespace SCP.Core.Letters
                 };
             }
 
-            List<string> aBody = ReadLetterBody(iPointer);
+            List<string> aBody = FilterBodyLocale(ReadLetterBody(iPointer), iPointer);
             aBody.Insert(0, "");
-            aBody.Insert(0, LocaleLine(iPointer));
+            aBody.Insert(0, LocaleLine(iPointer, iCurrentRegion));
             string aTitle = "🍃 §5 見樹 — 最新 letter（`_latest.md`）";
 
             List<SCP_LetterRef> aLetters = SCP_WakeLetters.RecentSelfLetters(iLettersRoot, iPersona);
@@ -572,9 +573,9 @@ namespace SCP.Core.Letters
                     string aWhen = aRef.Day.Length > 0 ? aRef.Day : "日期不明";
                     if (aMerged.Count > 0) { aMerged.Add(""); aMerged.Add("---"); aMerged.Add(""); }
                     aMerged.Add("### 📅 " + aWhen + "（" + (aIsNewest ? "最新一封" : "往前補") + "）");
-                    aMerged.Add(LocaleLine(aRef.Path));
+                    aMerged.Add(LocaleLine(aRef.Path, iCurrentRegion));
                     aMerged.Add("");
-                    aMerged.AddRange(ReadLetterBody(aRef.Path));
+                    aMerged.AddRange(FilterBodyLocale(ReadLetterBody(aRef.Path), aRef.Path));
                 }
                 aBody = aMerged;
                 aTitle = "🍃 §5 見樹 — 已往前合併 " + aUsed.Count + " 封收尾信（共 " + aTotal
@@ -982,7 +983,8 @@ namespace SCP.Core.Letters
         //   .NET 沒有同一顆 PRNG ⇒ 要位元組對拍就得在 C# 重造 python 的抽法。
         //   本檔改採「穩定雜湊取模」（FNV-1a）：同一個 wake 必抽同一封、可複驗、跨端可重算，
         //   而**抽到哪一封本身不是規格的一部分**（回憶的用途是「想起遠方」，不是「想起特定那封」）。
-        static SCP_BriefSection RecallSection(string iLettersRoot, string iPersona, int iWakeCount, SCP_WakeBriefSettings iS)
+        static SCP_BriefSection RecallSection(string iLettersRoot, string iPersona, int iWakeCount, SCP_WakeBriefSettings iS,
+                                              string iCurrentRegion)
         {
             var aEmpty = new SCP_BriefSection { Title = "", Lines = new List<string>() };
             if (iWakeCount <= iS.RecallMinWake) return aEmpty;      // 新生 persona 沒有「遠方」
@@ -1050,14 +1052,14 @@ namespace SCP.Core.Letters
             {
                 "> 🎲 穩定抽出（種子＝persona+wake_count，同一次醒來必抽同一封，可複驗）",
                 "> 來源：" + aWhose + " · 📅 " + aWhen + " · `" + aFileName + "`",
-                "> " + LocaleLine(aPath),
+                "> " + LocaleLine(aPath, iCurrentRegion),
                 ">",
                 aNote,
                 "",
                 "### 📜 " + aWhen + " — 那天的我寫給那天的未來",
                 "",
             };
-            aLines.AddRange(SCP_LetterText.DemoteHeadings(BodyLines(aPath)));
+            aLines.AddRange(SCP_LetterText.DemoteHeadings(FilterBodyLocale(BodyLines(aPath), aPath)));
             return new SCP_BriefSection
             {
                 Title = "🕯 §5.5 回憶 — 一封遠方的收尾信",
@@ -1416,15 +1418,43 @@ namespace SCP.Core.Letters
         // ⚠ 舊信沒有這欄 ＝ **未宣告**，印「未宣告」；⛔ 不准用本次 brief 的現地補上 —— 那封信可能寫在別的專案。
         // 數值影響：純讀 frontmatter 前 1200 字元（SCP_LetterText.ReadFrontmatterField），讀不到回空字串 ⇒ 未宣告。
         // ===========================================================
-        static string LocaleLine(string iPath)
+        // ⭐ TASK-0418：信的區域跟本次醒來的區域不同 ⇒ 同一行接著說「不是本區」。
+        //   🩸 erina wake#2（2026-10-06）：在 BTC 醒來，見樹的信寫在 Florin、見叢答應的事在 Florin 的畫布上 ——
+        //     brief 頂端寫 BTC、見樹寫 Florin，兩行隔了一百多行，沒有一行把它們連起來。
+        static string LocaleLine(string iPath, string iCurrentRegion)
         {
             string aRegion = SCP_LetterText.ReadFrontmatterField(iPath, "region");
             string aProject = SCP_LetterText.ReadFrontmatterField(iPath, "project");
             if (aRegion.Length == 0 && aProject.Length == 0)
                 return "📍 現地：**未宣告**（這封信的 frontmatter 沒有 region／project 欄 —— 2026-09-02 之前的信都沒有；"
                        + "信裡的畫布座標與酒館 seq 不能當成本區的）";
-            return "📍 現地：區域 `" + (aRegion.Length > 0 ? aRegion : "未宣告") + "` ／ 專案 `"
-                   + (aProject.Length > 0 ? aProject : "未宣告") + "`";
+            string aLine = "📍 現地：區域 `" + (aRegion.Length > 0 ? aRegion : "未宣告") + "` ／ 專案 `"
+                           + (aProject.Length > 0 ? aProject : "未宣告") + "`";
+            if (aRegion.Length > 0 && aRegion != "unstated"
+                && iCurrentRegion.Length > 0 && iCurrentRegion != "unstated" && aRegion != iCurrentRegion)
+                aLine += "　⚠ **不是本區**（現在在 `" + iCurrentRegion + "`）⇒ 信裡的酒館 seq 與畫布座標屬於 `"
+                         + aRegion + "` 那一軸";
+            return aLine;
+        }
+
+        /// <summary>
+        /// 作者在內文手抄的現地行（TASK-0418）：跟機器值相同 ⇒ 拿掉（上面 LocaleLine 已經印過，不印兩次）；
+        /// 不同 ⇒ 換成一行警告，⛔ 不把寫錯的值原樣並排印出來。機器值讀不到（舊信）⇒ 原樣保留（那是唯一的資訊）。
+        /// </summary>
+        static List<string> FilterBodyLocale(List<string> iLines, string iPath)
+        {
+            string aRegion = SCP_LetterText.ReadFrontmatterField(iPath, "region");
+            string aProject = SCP_LetterText.ReadFrontmatterField(iPath, "project");
+            if (aRegion.Length == 0 || aRegion == "unstated") return iLines;
+            var aOut = new List<string>(iLines.Count);
+            foreach (string aLine in iLines)
+            {
+                if (!SCP_LetterText.TryParseBodyLocale(aLine, out string aR, out string aP)) { aOut.Add(aLine); continue; }
+                if (aR == aRegion && (aProject.Length == 0 || aP == aProject)) continue;
+                aOut.Add("⚠ 作者在信裡寫的現地是 `" + aR + "` ／ `" + aP + "`，跟寫信當下的機器值（`"
+                         + aRegion + "` ／ `" + aProject + "`）不同 —— **以機器值為準**（TASK-0418）");
+            }
+            return aOut;
         }
 
         /// <summary>剝一層 frontmatter 的內文行（見森／見林用）。讀不到就把原因寫成內容，不留空白。</summary>

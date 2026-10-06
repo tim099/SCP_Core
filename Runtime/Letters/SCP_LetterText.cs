@@ -11,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace SCP.Core.Letters
 {
@@ -131,6 +132,75 @@ namespace SCP.Core.Letters
                 return aCount;
             }
             catch (Exception) { return 0; }
+        }
+
+        // ===========================================================
+        // 區塊職責：信裡的**現地宣告**（TASK-0418）—— 作者在內文抄的那行「📍 現地：區域 X ／ 專案 P」，
+        //          以及作者自寫 frontmatter 被機器值蓋掉而留下的 `region_as_written`／`project_as_written`。
+        // 物理意義：現地是判斷「信裡的 seq／座標屬於哪一軸」的那一格。機器值（frontmatter 的 region／project）
+        //          是寫信當下量的；作者手抄的那行可能寫錯（calli wake#63：內文寫 BTC／Bar，實際寫在 Florin／LY）。
+        //          🩸 寫入端記了 `_as_written` 留痕，但**沒有人會被叫到**：寫的人不知道寫錯，
+        //             讀的人在 brief 上看到兩個並排、互相矛盾的現地。
+        // 數值影響：純字串處理，零 IO。
+        // ===========================================================
+        static readonly Regex s_BodyLocale = new Regex(
+            @"^\s*📍\s*現地[：:]\s*區域\s*`?([^`／/\s]+)`?\s*[／/]\s*專案\s*`?([^`\s]+)`?",
+            RegexOptions.CultureInvariant);
+
+        /// <summary>這一行是不是作者手抄的現地宣告（`📍 現地：區域 X ／ 專案 P`，反引號可有可無）。</summary>
+        public static bool TryParseBodyLocale(string iLine, out string oRegion, out string oProject)
+        {
+            Match aM = s_BodyLocale.Match(iLine ?? "");
+            oRegion = aM.Success ? aM.Groups[1].Value : "";
+            oProject = aM.Success ? aM.Groups[2].Value : "";
+            return aM.Success;
+        }
+
+        /// <summary>從整份信的文字讀**開頭連續幾層** frontmatter 的某一欄（第一個命中的為準）。讀不到回空字串。</summary>
+        public static string FrontmatterFieldOfText(string iText, string iField)
+        {
+            string aText = NormalizeNewlines(iText);
+            string aPrefix = iField + ":";
+            while (true)
+            {
+                string aTrimmed = aText.TrimStart();
+                if (!aTrimmed.StartsWith("---", StringComparison.Ordinal)) return "";
+                int aEnd = aTrimmed.IndexOf("\n---", 3, StringComparison.Ordinal);
+                if (aEnd < 0) return "";
+                foreach (string aLine in aTrimmed.Substring(3, aEnd - 3).Split('\n'))
+                    if (aLine.StartsWith(aPrefix, StringComparison.Ordinal))
+                        return aLine.Substring(aPrefix.Length).Trim();
+                aText = aTrimmed.Substring(aEnd + 4);
+            }
+        }
+
+        /// <summary>
+        /// 一封信裡**作者寫的現地**與**寫信當下的機器值**對不上的地方（一項一行，給寫入端印在回傳檔）。
+        /// <para>機器值讀不到或是 `unstated` ⇒ 回空（沒有基準就不判，⛔ 不拿作者寫的去當基準）。</para>
+        /// </summary>
+        public static List<string> LocaleConflicts(string iLetterText)
+        {
+            var aOut = new List<string>();
+            string aRegion = FrontmatterFieldOfText(iLetterText, "region");
+            string aProject = FrontmatterFieldOfText(iLetterText, "project");
+            if (aRegion.Length == 0 || aRegion == "unstated") return aOut;
+
+            string aRegionW = FrontmatterFieldOfText(iLetterText, "region_as_written");
+            string aProjectW = FrontmatterFieldOfText(iLetterText, "project_as_written");
+            if (aRegionW.Length > 0)
+                aOut.Add("frontmatter 妳寫 `region: " + aRegionW + "`，寫信當下的機器值是 `" + aRegion + "`（機器值勝出，妳寫的留在 `region_as_written`）");
+            if (aProjectW.Length > 0)
+                aOut.Add("frontmatter 妳寫 `project: " + aProjectW + "`，寫信當下的機器值是 `" + aProject + "`（機器值勝出，妳寫的留在 `project_as_written`）");
+
+            List<string> aBody = StripAllFrontmatter(iLetterText);
+            for (int i = 0; i < aBody.Count; i++)
+            {
+                if (!TryParseBodyLocale(aBody[i], out string aR, out string aP)) continue;
+                if (aR == aRegion && (aProject.Length == 0 || aP == aProject)) continue;
+                aOut.Add("內文第 " + (i + 1) + " 行寫「📍 現地：區域 `" + aR + "` ／ 專案 `" + aP
+                         + "`」，但這封信實際寫在 `" + aRegion + "` ／ `" + aProject + "`");
+            }
+            return aOut;
         }
     }
 }

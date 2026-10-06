@@ -137,6 +137,10 @@ namespace SCP.Core.Cmd
                 aResult.Lines.Add("  ⚠ body 的換行是字面 `\\n` ⇒ 已轉成真換行（下次用 --arg-file 可免這層）");
             if (aWrite.AuthorFrontmatterFields > 0)
                 aResult.Lines.Add("  · 作者自己寫的 frontmatter 併入 " + aWrite.AuthorFrontmatterFields + " 欄（沒有疊第二坨）");
+            // TASK-0418：作者寫的現地跟機器值不同 ⇒ 當場說（醒來的 brief 會以機器值為準、把寫錯的那行標出來）
+            foreach (string aConflict in aWrite.LocaleConflicts)
+                aResult.Lines.Add("  ⚠ 現地不一致：" + aConflict + " —— 以機器值為準");
+            aResult.AddValue("locale_conflicts", aWrite.LocaleConflicts.Count.ToString());
             aResult.AddOutput(aWrite.Path);
             aResult.AddValue("letter_written", "1");
             aResult.AddValue("letter_bytes", aWrite.Bytes.ToString());
