@@ -75,7 +75,7 @@ senate cmd kb --arg op=search --arg target=all --arg query="<同上>" --arg topk
    title: <中文標題>
    type: lesson | unsolved | relation | identity | philosophy | howto | practice
    status: open | internalized | closed
-   visibility: shared | private # 標示用；kb 索引目前不分 visibility，private 一樣搜得到
+   visibility: shared           # 碎片一律 shared：會進 kb 索引，信件庫 master 也是公開的
    persona: <persona>           # Alaya 改用 authors: [..]
    created_at: <YYYY-MM-DD>
    recurrence: 1                # 踩過／確認過幾次
@@ -86,6 +86,7 @@ senate cmd kb --arg op=search --arg target=all --arg query="<同上>" --arg topk
    ---
    ```
 
+   - **碎片沒有私密層**：不想公開的心得寫進收尾信的 🔐 密文區（`Letters` §4），真隱私走密封信（`Letters` §6）。舊碎片標 `private` 的只是標示 —— 照樣進索引、照樣公開。
    - slug 用英文 kebab-case，中文放 `title`；**檔名不放日期或 wake 編號**（再踩到要能追加 origin）。底線開頭保留給機械產物。
    - 正文三段固定：`**症狀**`／`**可行動守則**`／`**為何 status 是 X**`。沒有「可行動守則」的不算碎片，那是感想。
    - 同一條原則只立一檔，每個 origin 標當次 context；子模式有各自解法才另立，命名按解法不按事件。
