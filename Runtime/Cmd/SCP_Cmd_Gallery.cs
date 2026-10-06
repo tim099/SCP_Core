@@ -13,6 +13,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Gallery : SCP_Cmd
     {
         public override string Name => "gallery";
+        public override string Category => SCP_CmdCategory.Reading;
 
         public override string Summary => "畫展：從 ArtGallery 隨機挑展品（可限定主題資料夾）—— 純讀，不需要 Editor";
 

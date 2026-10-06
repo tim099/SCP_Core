@@ -17,6 +17,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_BankResolve : SCP_Cmd
     {
         public override string Name => "bank-resolve";
+        public override string Category => SCP_CmdCategory.Bank;
 
         public override string Summary =>
             "帳號解析：任何字串（persona／agent／別名／帳號）→ 正式帳號 —— **唯讀，不需要 Editor**";

@@ -17,6 +17,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Portfolio : SCP_Cmd
     {
         public override string Name => "portfolio";
+        public override string Category => SCP_CmdCategory.Bank;
 
         public override string Summary =>
             "投資組合：某 persona 各券的成本、現值、報酬率（加權平均成本）／開帳快照／交易事件";

@@ -30,6 +30,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_MorningWake : SCP_LocalRootsCmd
     {
         public override string Name => "morning-wake";
+        public override string Category => SCP_CmdCategory.Routine;
 
         public override string Summary => "早安①登入：守衛＋狀態寫入（不廣播）—— 本地跑，不需要 Editor";
 
@@ -81,6 +82,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_MorningBrief : SCP_LocalRootsCmd
     {
         public override string Name => "morning-brief";
+        public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_MorningWake>();
 
         public override string Summary => "早安②生成 wake brief（全量 SCP_WakeBrief）—— 本地跑，不需要 Editor";
 
@@ -136,6 +138,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_MorningIntro : SCP_LocalRootsCmd
     {
         public override string Name => "morning-intro";
+        public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_MorningWake>();
 
         public override string Summary => "早安③上線自介（單則廣播，body 必須親筆）—— 組訊息在本地，寫入交給酒館 Server";
 
@@ -352,6 +355,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_MorningCatchup : SCP_TavernCatchupCmdBase
     {
         public override string Name => "morning-catchup";
+        public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_MorningWake>();
 
         public override string Summary => "早安④酒館 catchup（在線同事＋未讀＋inbox）—— 本地跑，不需要 Editor";
 
@@ -363,6 +367,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_TavernCatchup : SCP_TavernCatchupCmdBase
     {
         public override string Name => "tavern-catchup";
+        public override string Category => SCP_CmdCategory.Tavern;
 
         public override string Summary => $"酒館 catchup（叮協議的「讀」：在線同事＋未讀＋inbox）—— 與 {SCP_CmdRegistry.NameOf<SCP_Cmd_MorningCatchup>()} 同一支，不需要 Editor";
 

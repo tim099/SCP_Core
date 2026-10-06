@@ -57,6 +57,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_BankAudit : SCP_Cmd
     {
         public override string Name => "bank-audit";
+        public override string Category => SCP_CmdCategory.Bank;
 
         public override string Summary =>
             "金流綁定健檢：`bank/<region>.md`（唯一權威）逐位檢查帳戶存不存在／有沒有銷戶 —— **唯讀，不需要 Editor**";

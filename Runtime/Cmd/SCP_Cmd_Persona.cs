@@ -32,6 +32,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Persona : SCP_Cmd
     {
         public override string Name => "persona";
+        public override string Category => SCP_CmdCategory.Persona;
 
         public override string Summary => "persona 身分欄唯讀查詢（agent／actual_agent／model／email／狀態）—— **本地跑，不需要 Editor**";
 

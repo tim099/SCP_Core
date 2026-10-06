@@ -15,6 +15,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_FreeTimeActivity : SCP_Cmd
     {
         public override string Name => "free-time-activity";
+        public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_FreeTime>();
 
         public override string Summary => "自由時間活動層：op=pick 選活動／op=step 代跑一步（in-process cmd）／op=done 收活動並指回換骰 —— **不需要 Editor**";
 

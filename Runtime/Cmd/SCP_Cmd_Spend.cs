@@ -20,6 +20,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Spend : SCP_Cmd
     {
         public override string Name => "spend";
+        public override string Category => SCP_CmdCategory.Routine;
 
         public override string Summary => "消費時間：擲一份可消費清單（前三項 50／20／10% 折扣、額度＝餘額 10%）／列出全部通道 —— **不需要 Editor、不動任何錢**";
 

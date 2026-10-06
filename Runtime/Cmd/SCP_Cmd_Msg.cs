@@ -23,6 +23,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Msg : SCP_Cmd
     {
         public override string Name => "msg";
+        public override string Category => SCP_CmdCategory.Tavern;
 
         public override string Summary => "跨區讀一則酒館訊息：給 region ＋ seq，回本文與可貼回的引用式（純讀，不 fetch）";
 

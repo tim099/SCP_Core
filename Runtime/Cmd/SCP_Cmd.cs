@@ -133,6 +133,22 @@ namespace SCP.Core.Cmd
         public virtual string PortNote => "";
 
         /// <summary>
+        /// 分類（<see cref="SCP_CmdCategory"/> 的常數）—— `help` 依它分組、`help --arg category=` 依它查。
+        /// <para>外層必填（沒填或不在表上 ⇒ 自測紅）；內層留空，跟著 <see cref="Parent"/> 的分類走。</para>
+        /// </summary>
+        public virtual string Category => "";
+
+        /// <summary>
+        /// 父指令名 —— 有值 ＝ **內層**：屬於父指令的子流程，由父指令那條流程的回傳指路，`help` 預設不列。
+        /// <para>預設空 ＝ 外層。⚠ 只有真的是某支指令子流程的那一步才填（判準見 TASK-0427）；
+        /// 冷門、管理用、Server 臨界區都不是理由。寫法用 <c>SCP_CmdRegistry.NameOf&lt;父類別&gt;()</c>，改名跟著走。</para>
+        /// </summary>
+        public virtual string Parent => "";
+
+        /// <summary>有父指令 ＝ 內層。</summary>
+        public bool IsInner => Parent.Length > 0;
+
+        /// <summary>
         /// 執行。**參數已經驗過**（未宣告的名字、必填、Choices 都在 Registry 擋掉了）。
         /// <para>⚠ 丟例外不是罪：Registry 會接住並轉成 exit code ＋ 型別名稱 ＋ 訊息。
         /// 但**能講清楚的失敗請自己回 Fail** —— 例外的訊息是給維護者的，Fail 的訊息是給使用者的。</para>

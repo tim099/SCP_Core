@@ -38,6 +38,7 @@ namespace SCP.Core.Cmd
         public const int DefaultLeaseHours = 2;
 
         public override string Name => "coding";
+        public override string Category => SCP_CmdCategory.Task;
 
         public override string Summary => "Coding 施工場（改 C# 前進場／場中更新 status 兼續期／"
             + "**綁單後單子進 in_review 就自動收場**／退場過編譯閘）—— **不需要 Editor**";

@@ -25,6 +25,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Watch : SCP_Cmd
     {
         public override string Name => "watch";
+        public override string Category => SCP_CmdCategory.Reading;
 
         public override string Summary =>
             "觀影實錄：把酒館 seq 區間匯出成一章（`op=export`）／列出章名仍掛哨兵的章（`op=untitled`）"

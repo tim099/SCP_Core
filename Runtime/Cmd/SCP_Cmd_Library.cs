@@ -16,6 +16,7 @@ namespace SCP.Core.Cmd
         public static Func<SCP_LibraryRoots>? RootsProvider { get; set; }
 
         public override string Name => "library";
+        public override string Category => SCP_CmdCategory.Reading;
 
         public override string Summary =>
             "閱讀庫（work → media → reader）：建檔／登記讀者／落章節心得／書籤／人物與看法版本史／追回檔。"

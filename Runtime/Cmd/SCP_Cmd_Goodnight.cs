@@ -22,6 +22,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_GoodnightCheck : SCP_LocalRootsCmd
     {
         public override string Name => "goodnight-check";
+        public override string Category => SCP_CmdCategory.Routine;
         public override string Summary => "晚安①唯讀起手：待辦盤點＋酒館最後一眼＋Task 對帳";
         public override string Details =>
             "純讀：lock 狀態、酒館最近 10 筆（peek 不動游標）、Task 對帳（見叢引用／未關單／逾期認領／記憶連結／收工預告），\n"
@@ -43,6 +44,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_GoodnightPortrait : SCP_LocalRootsCmd
     {
         public override string Name => "goodnight-portrait";
+        public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_GoodnightCheck>();
         public override string Summary => "晚安②見人畫像投遞（親筆），或顯式跳過";
         public override string Details =>
             "兩條路二擇一（**會擋 letter**）：\n"
@@ -81,6 +83,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_GoodnightLetter : SCP_LocalRootsCmd
     {
         public override string Name => "goodnight-letter";
+        public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_GoodnightCheck>();
         public override string Summary => "晚安③收尾信落檔（body 必須親筆）";
         public override string Details =>
             "寫 `wakes/<N>_<ts>.md`（N＝信數＋1）並同步 `_latest.md`。\n"
@@ -110,6 +113,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_GoodnightSleep : SCP_LocalRootsCmd
     {
         public override string Name => "goodnight-sleep";
+        public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_GoodnightCheck>();
         public override string Summary => "晚安④下線：收工閘→解鎖→關場→下線廣播（Editor 沒開也下得了線）";
         public override string Details => SCP_GoodnightCmds.SleepDetails
             + "\n⚠ **收工閘會實擋**：有未收工的單時非零退出。`skip_reason` 可以過閘 —— 理由寫進那幾張單的時間線並併入下線廣播。\n"
@@ -126,6 +130,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_GoodnightLogout : SCP_LocalRootsCmd
     {
         public override string Name => "goodnight-logout";
+        public override string Category => SCP_CmdCategory.Routine;
         public override string Summary => "手動登出／cleanup（不寫信，廣播標明未留信）";
         public override string Details =>
             "**這不是晚安的第五步，是另一條路** —— session 壞掉、或只想清掉 lock 時走它。\n"

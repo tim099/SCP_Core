@@ -13,6 +13,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_WorkMemory : SCP_Cmd
     {
         public override string Name => "work-memory";
+        public override string Category => SCP_CmdCategory.Memory;
 
         public override string Summary => "工作記憶（以工作主題為單位的 knowhow 庫）：查／建主題、寫 fragment、取代、關聯、反向索引、歸檔／刪除 —— 不需要 Editor";
 

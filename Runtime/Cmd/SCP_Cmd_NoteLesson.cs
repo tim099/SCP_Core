@@ -20,6 +20,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_NoteLesson : SCP_Cmd
     {
         public override string Name => "note-lesson";
+        public override string Category => SCP_CmdCategory.Memory;
 
         public override string Summary => "記一條跨 agent 共享的 lesson（去重＋append `Lessons/lessons.jsonl`）—— **本地跑，不需要 Editor**";
 

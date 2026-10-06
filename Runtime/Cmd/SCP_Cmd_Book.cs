@@ -46,6 +46,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Book : SCP_Cmd
     {
         public override string Name => "book";
+        public override string Category => SCP_CmdCategory.Reading;
 
         public override string Summary =>
             "書本筆記庫：開新書（`op=add`）／記一章（`op=log-chapter`）／記階段大綱（`op=arc`）"

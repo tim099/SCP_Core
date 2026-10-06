@@ -18,6 +18,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_PortraitFold : SCP_Cmd
     {
         public override string Name => "portrait-fold";
+        public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_Consolidate>();
 
         public override string Summary => "見人濃縮：折一版 `<target>_vNNN.md`，並把逐幅畫像搬進 `raw/`（只搬不刪）";
 

@@ -12,6 +12,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_RootIndex : SCP_Cmd
     {
         public override string Name => "root-index";
+        public override string Category => SCP_CmdCategory.Memory;
 
         public override string Summary => "見根：掃 fragments/ 機械重建 _root_index.md";
 

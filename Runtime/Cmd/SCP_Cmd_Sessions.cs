@@ -18,6 +18,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Sessions : SCP_Cmd
     {
         public override string Name => "sessions";
+        public override string Category => SCP_CmdCategory.System;
 
         public override string Summary => "活動 session：列出誰在哪一場／看某人的場／關掉過期殘留（關場委派給 Editor）";
 

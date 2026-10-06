@@ -11,6 +11,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_SealedLetter : SCP_Cmd
     {
         public override string Name => "sealed-letter";
+        public override string Category => SCP_CmdCategory.Memory;
 
         public override string Summary => "密封信：寫進信件 repo 的 private 分支（不切分支、不經過公開的 master）＋晚安密文答案的封緘與早安對帳 —— 不需要 Editor";
 

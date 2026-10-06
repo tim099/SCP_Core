@@ -25,6 +25,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_PortraitNext : SCP_Cmd
     {
         public override string Name => "portrait-next";
+        public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_Consolidate>();
 
         public override string Summary => "見人折人分步：挑下一位、把材料合併成一份檔、指出下一步（跑到清單空為止）";
 

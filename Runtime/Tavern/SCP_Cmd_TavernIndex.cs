@@ -23,6 +23,7 @@ namespace SCP.Core.Tavern
     public sealed class SCP_Cmd_TavernIndex : SCP_Cmd
     {
         public override string Name => "tavern-index";
+        public override string Category => SCP_CmdCategory.Tavern;
 
         public override string Summary =>
             "酒館訊息索引：驗證（索引 vs 全量列舉**逐筆**對撞）／看某房的命中狀況／顯式重建 —— **本地跑，不需要 Editor**";

@@ -17,6 +17,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Chess : SCP_Cmd
     {
         public override string Name => "chess";
+        public override string Category => SCP_CmdCategory.Game;
 
         public override string Summary =>
             "下棋（西洋棋）：開局／配對／入座／釋座／走子／盤面／認輸／提和／對局清單 ＋ 回放對拍。"

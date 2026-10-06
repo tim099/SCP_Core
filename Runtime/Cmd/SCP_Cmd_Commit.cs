@@ -39,6 +39,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Commit : SCP_Cmd
     {
         public override string Name => "commit";
+        public override string Category => SCP_CmdCategory.Task;
 
         public override string Summary =>
             "提交（只做最後一步，**不 stage 不 push**）：組 Co-Authored-By ＋ git commit ——"

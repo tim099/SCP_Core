@@ -18,6 +18,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Doc : SCP_Cmd
     {
         public override string Name => "doc";
+        public override string Category => SCP_CmdCategory.System;
         public override string Summary => "查文件：列出全部／印一份的全文／全文搜尋 —— 文件住在指令所在那一邊（Senate `Docs/`、SCP_Core `Docs~/`）";
 
         public override string Example => SCP_CmdRegistry.Invoke("doc --arg op=show --arg name=Doc_Query");

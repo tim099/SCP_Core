@@ -25,6 +25,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_PersonaProfile : SCP_Cmd
     {
         public override string Name => "persona-profile";
+        public override string Category => SCP_CmdCategory.Persona;
 
         public override string Summary =>
             "persona 設定寫入：身分欄 set／unset、本區銀行綁定 get_bank／set_bank／unbind、導出綁定 migrate_bank、換區重綁 rebind_region —— **本地跑，不需要 Editor**";

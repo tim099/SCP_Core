@@ -18,6 +18,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_FreeTime : SCP_Cmd
     {
         public override string Name => "free-time";
+        public override string Category => SCP_CmdCategory.Routine;
 
         public override string Summary => "自由時間流程（step=start/next/end ＋ 純參考查詢 list/shuffle/show）—— **不需要 Editor**";
 

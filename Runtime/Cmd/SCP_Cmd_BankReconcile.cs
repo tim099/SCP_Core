@@ -20,6 +20,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_BankReconcile : SCP_Cmd
     {
         public override string Name => "bank-reconcile";
+        public override string Category => SCP_CmdCategory.Bank;
 
         public override string Summary =>
             "動錢對帳：事件存在 ∧ 帳上沒有（涵蓋帳上每一種 kind）—— report 唯讀／apply 補酒館那一類（要 confirm）";

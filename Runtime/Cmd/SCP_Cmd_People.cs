@@ -21,6 +21,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_People : SCP_Cmd
     {
         public override string Name => "people";
+        public override string Category => SCP_CmdCategory.Memory;
 
         public override string Summary => "見人：對某位同事的看法（最新一版濃縮 ＋ 本期未歸檔畫像）";
 

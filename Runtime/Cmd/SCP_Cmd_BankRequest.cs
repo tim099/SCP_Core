@@ -17,6 +17,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_BankRequest : SCP_Cmd
     {
         public override string Name => "bank-request";
+        public override string Category => SCP_CmdCategory.Bank;
 
         public override string Summary => "開請款單／轉帳單、撤單、列單（**只寫單子、不動錢**；審批走 `bank op=approve`）—— **本地跑，不需要 Editor**";
 

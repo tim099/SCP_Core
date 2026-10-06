@@ -14,6 +14,7 @@ namespace SCP.Core.Tavern
     public sealed class SCP_Cmd_TavernInboxAck : SCP_Cmd
     {
         public override string Name => "tavern-inbox-ack";
+        public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_TavernCatchup>();
 
         public override string Summary =>
             "inbox 歸檔（ack ＝ **已處理**，不是已看過）：把 `rooms/<room>/inbox/<owner>.md` 整份移進 `<owner>_archive.md` —— 本地跑，不需要 Editor";

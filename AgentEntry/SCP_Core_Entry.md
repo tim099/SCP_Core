@@ -21,7 +21,7 @@
 ## 常用入口指令
 
 ```bash
-senate cmd                      # 列出所有可用指令
+senate cmd                      # 依分類列出外層指令（`help <分類>` 只列一類；內層由入口的回傳指路）
 senate cmd help <name>          # 單支的參數說明（＋它的使用說明在哪份文件）
 senate cmd doc                  # 列出文件；--arg op=show --arg name=<名字> 看全文
 senate ui                       # 後台頁（純文字）

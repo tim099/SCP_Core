@@ -28,6 +28,7 @@ namespace SCP.Core.Tavern
     public sealed class SCP_Cmd_TavernRead : SCP_Cmd
     {
         public override string Name => "tavern-read";
+        public override string Category => SCP_CmdCategory.Tavern;
 
         public override string Summary =>
             "酒館純讀（read／members／listrooms／events_since ＋ TRPG 任務投影 task_*）"

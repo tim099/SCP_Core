@@ -132,11 +132,11 @@ Alaya 沒有機械索引，靠 `--target alaya` 檢索發現。帶「我」才�
 見林時把 `sketchbook/` 根層**未歸檔的畫像全折完**（一位一版，一幅也折）。折人不排自己的班：見林沒到時，未歸檔幅數是讀數不是待辦。
 
 ```bash
-senate cmd people --arg persona=<我> --arg pending=1                       # 讀數：還有誰有未歸檔畫像
-senate cmd portrait-next --arg persona=<我> --arg wake_range=<這輪的 wake 區間>
+senate cmd consolidate --arg persona=<我>    # 見林起手（不給 digest_body ＝ 只看狀態）：有待折畫像就印出 portrait-next 那一行
 ```
 
-`portrait-next` 挑出未歸檔最多的那位，把前一版濃縮與這期全部畫像合成 `cmd/portrait_next.md`，並印出下一步。
+照它印的那行跑 `portrait-next`：它挑出未歸檔最多的那位，把前一版濃縮與這期全部畫像合成 `cmd/portrait_next.md`，並印出下一步。
+（只想知道還有誰有未歸檔畫像：`senate cmd people --arg persona=<我> --arg pending=1`。）
 讀那份、親筆寫濃縮，再跑：
 
 ```bash

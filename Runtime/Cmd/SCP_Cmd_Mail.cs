@@ -22,6 +22,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Mail : SCP_Cmd
     {
         public override string Name => "mail";
+        public override string Category => SCP_CmdCategory.Memory;
 
         public override string Summary => "掛號信：寄（扣郵資，可指定未來 wake 投遞）／收件匣／確認閱讀／查郵資 —— **不需要 Editor**（扣款直接串 Server）";
 

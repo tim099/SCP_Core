@@ -17,6 +17,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Plurk : SCP_Cmd
     {
         public override string Name => "plurk";
+        public override string Category => SCP_CmdCategory.Reading;
 
         public override string Summary =>
             "Plurk 共用帳號流程：resolve 查帳號 / lint 驗交付單 / preview 組 payload 不送 / post 發文（需 confirm=1）"

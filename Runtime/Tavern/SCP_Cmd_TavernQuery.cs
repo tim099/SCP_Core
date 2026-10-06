@@ -25,6 +25,7 @@ namespace SCP.Core.Tavern
     public sealed class SCP_Cmd_TavernQuery : SCP_Cmd
     {
         public override string Name => "tavern-query";
+        public override string Category => SCP_CmdCategory.Tavern;
 
         public override string Summary =>
             "酒館訊息查詢（7 個 kind：tail／seq／rooms／search／by_sender／timeline／stats）—— **本地跑，不需要 Editor、不需要 Server**；走每日 seq 索引";

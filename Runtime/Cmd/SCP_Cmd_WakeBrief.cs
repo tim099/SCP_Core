@@ -15,6 +15,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_WakeBrief : SCP_Cmd
     {
         public override string Name => "wake-brief";
+        public override string Category => SCP_CmdCategory.Memory;
 
         public override string Summary => "讀 persona 信件庫組一份 wake brief（全量：憲法→見樹→回憶→見人→見書→動作清單）";
 

@@ -18,6 +18,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Regions : SCP_Cmd
     {
         public override string Name => "regions";
+        public override string Category => SCP_CmdCategory.Tavern;
 
         public override string Summary => "列出酒館的「區」（seq 軸）：區名 → ref → 那條 ref 的 tip 有多新";
 

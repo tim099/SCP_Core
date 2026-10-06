@@ -13,6 +13,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_VoucherSwap : SCP_Cmd
     {
         public override string Name => "voucher-swap";
+        public override string Category => SCP_CmdCategory.Bank;
 
         public override string Summary =>
             "券互換交易：依據匯率快取進行 USD 中介兩段撮合與小數點無縫結算 —— **預設只試算不扣款**";

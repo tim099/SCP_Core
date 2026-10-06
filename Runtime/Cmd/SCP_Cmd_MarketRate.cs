@@ -13,6 +13,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_MarketRate : SCP_Cmd
     {
         public override string Name => "rate";
+        public override string Category => SCP_CmdCategory.Bank;
 
         /// <summary>
         /// 手續費率的合理性上限（**不含**）。現實中沒有任何交易所收到 5%

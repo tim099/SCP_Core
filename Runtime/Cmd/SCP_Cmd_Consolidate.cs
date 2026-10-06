@@ -18,6 +18,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Consolidate : SCP_Cmd
     {
         public override string Name => "consolidate";
+        public override string Category => SCP_CmdCategory.Memory;
 
         public override string Summary => "見林／見森：不給 digest_body ＝ 只列狀態與待濃縮信件；給了才寫檔";
 

@@ -30,6 +30,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Invoke : SCP_Cmd
     {
         public override string Name => "invoke";
+        public override string Category => SCP_CmdCategory.System;
 
         public override string Summary => "反射呼叫本 process 已載入組件的成員（讀一個值／按一下一支 API）";
 

@@ -21,6 +21,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Keys : SCP_Cmd
     {
         public override string Name => "keys";
+        public override string Category => SCP_CmdCategory.Memory;
 
         public override string Summary => "見叢（當期交棒清單）：列出未完／已完，或 append 一條";
 

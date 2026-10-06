@@ -16,6 +16,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_PayrollAudit : SCP_Cmd
     {
         public override string Name => "payroll-audit";
+        public override string Category => SCP_CmdCategory.Bank;
 
         public override string Summary =>
             "發文領薪差集：那一天有幾則訊息 vs 帳上有幾筆 `work_post` —— **唯讀，不需要 Editor**";

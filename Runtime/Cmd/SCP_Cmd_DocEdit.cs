@@ -16,6 +16,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_DocEdit : SCP_Cmd
     {
         public override string Name => "doc-edit";
+        public override string Category => SCP_CmdCategory.Routine;
 
         public override string Summary =>
             "文件編輯活動的一步：登記剛改完的那份 .md、驗收它在本場真的動了、指回自由時間流程 —— 不搬內容、不寫檔、**不需要 Editor**";

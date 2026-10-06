@@ -15,6 +15,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Channel : SCP_Cmd
     {
         public override string Name => "channel";
+        public override string Category => SCP_CmdCategory.Tavern;
 
         public override string Summary => "頻道（酒館房間）管理：頻道分類清單（先新增才能選）、設定頻道分類、封存／取消封存 —— **本地跑，不需要 Editor**";
 

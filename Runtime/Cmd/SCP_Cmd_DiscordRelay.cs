@@ -20,6 +20,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_DiscordRelay : SCP_Cmd
     {
         public override string Name => "discord-relay";
+        public override string Category => SCP_CmdCategory.Tavern;
 
         public override string Summary => "Discord 收發設定：In／Out 開關、webhook 管理（加密存檔＋驗證）、頻道分類 → webhook、persona 頭像網址 —— **不需要 Editor**";
 

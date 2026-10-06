@@ -22,6 +22,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Tasks : SCP_Cmd
     {
         public override string Name => "tasks";
+        public override string Category => SCP_CmdCategory.Task;
 
         public override string Summary => "任務單唯讀查詢：計數／清單／單張；可落一份 JSON 給程式讀";
 

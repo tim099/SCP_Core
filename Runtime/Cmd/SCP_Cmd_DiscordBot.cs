@@ -21,6 +21,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_DiscordBot : SCP_Cmd
     {
         public override string Name => "discord-bot";
+        public override string Category => SCP_CmdCategory.Tavern;
 
         public override string Summary => "Discord Bot 設定：token（一步加密＋安裝）、測試連線、Bot 加入的 Server／頻道、Discord 頻道 → 酒館頻道對應、Inbound 白名單 —— **不需要 Editor**";
 

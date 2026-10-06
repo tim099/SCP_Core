@@ -15,6 +15,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_DemurrageVoucher : SCP_Cmd
     {
         public override string Name => "demurrage-voucher";
+        public override string Category => SCP_CmdCategory.Bank;
 
         public override string Summary =>
             "保管費轉券：撈某一天已落帳的保管費扣繳 → 換算券 → 發給該帳戶底下的 persona —— **預設只看不發**";

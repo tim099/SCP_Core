@@ -20,6 +20,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Relationship : SCP_Cmd
     {
         public override string Name => "relationship";
+        public override string Category => SCP_CmdCategory.Memory;
 
         public override string Summary =>
             "好感度（relationship）寫入：update 寫一筆事件／add-opinion 加看法／show／list／rebuild —— **本地跑，不需要 Editor**";

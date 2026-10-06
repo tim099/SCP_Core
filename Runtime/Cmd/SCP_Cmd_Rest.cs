@@ -17,6 +17,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Rest : SCP_Cmd
     {
         public override string Name => "rest";
+        public override string Category => SCP_CmdCategory.Routine;
 
         public override string Summary =>
             "小歇片刻：記憶信落磁碟＋可選酒館廣播（酒館 Server 不在就排隊）—— 不需要 Editor；"

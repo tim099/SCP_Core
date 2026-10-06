@@ -13,6 +13,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_PersonaDisplay : SCP_Cmd
     {
         public override string Name => "persona-display";
+        public override string Category => SCP_CmdCategory.Persona;
 
         public override string Summary => "persona 顯示資料（頭像 avatar.png／顏色 color.md）：列出、查看、改顏色、換頭像 —— **本地跑，不需要 Editor**";
 

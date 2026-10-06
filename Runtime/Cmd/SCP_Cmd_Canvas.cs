@@ -25,6 +25,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_Canvas : SCP_Cmd
     {
         public override string Name => "canvas";
+        public override string Category => SCP_CmdCategory.Game;
 
         public override string Summary => "共用像素畫布：放點／看圖／查點／統計／快取／快照／筆記／宣稱區域／閘探針";
 

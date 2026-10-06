@@ -26,6 +26,7 @@ namespace SCP.Core.Cmd
     public sealed class SCP_Cmd_AutoCommit : SCP_Cmd
     {
         public override string Name => "auto-commit";
+        public override string Category => SCP_CmdCategory.Task;
 
         public override string Summary =>
             "自動 commit：機器生成的檔分群整批提交（AgentCommands＋全部信件庫＋有設定檔的 submodule）—— **預設只掃不提交**";
