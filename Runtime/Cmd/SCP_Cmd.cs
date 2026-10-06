@@ -134,9 +134,10 @@ namespace SCP.Core.Cmd
 
         /// <summary>
         /// 分類（<see cref="SCP_CmdCategory"/> 的常數）—— `help` 依它分組、`help --arg category=` 依它查。
-        /// <para>外層必填（沒填或不在表上 ⇒ 自測紅）；內層留空，跟著 <see cref="Parent"/> 的分類走。</para>
+        /// <para>沒填 ＝ <see cref="SCP_CmdCategory.Other"/>（「其他」）：照常列在 help 上，不算錯，之後再挑正確的分類。
+        /// 內層不必填，跟著 <see cref="Parent"/> 的分類走（填了也不看）。</para>
         /// </summary>
-        public virtual string Category => "";
+        public virtual string Category => SCP_CmdCategory.Other;
 
         /// <summary>
         /// 父指令名 —— 有值 ＝ **內層**：屬於父指令的子流程，由父指令那條流程的回傳指路，`help` 預設不列。

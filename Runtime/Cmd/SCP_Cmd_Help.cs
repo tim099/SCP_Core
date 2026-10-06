@@ -117,7 +117,7 @@ namespace SCP.Core.Cmd
 
             var aGroups = new List<string>();
             foreach (KeyValuePair<string, string> kv in SCP_CmdCategory.All) aGroups.Add(kv.Key);
-            aGroups.Add("");   // 未分類（外層沒填／不在表上、內層父鏈斷掉）
+            aGroups.Add("");   // 未分類（分類字串不在表上、內層父鏈斷掉；沒填的在「其他」）
 
             int aListedOuter = 0;
             foreach (string aGroup in aGroups)
@@ -135,7 +135,7 @@ namespace SCP.Core.Cmd
                 string aNote = "";
                 foreach (KeyValuePair<string, string> kv in SCP_CmdCategory.All) if (kv.Key == aGroup) aNote = kv.Value;
                 oResult.Lines.Add(aGroup.Length == 0
-                    ? "## ⚠ 未分類（" + aMembers.Count + "）—— 外層沒填分類，或內層的父指令不存在"
+                    ? "## ⚠ 未分類（" + aMembers.Count + "）—— 分類字串不在分類表上，或內層的父指令不存在（沒填分類的會在「" + SCP_CmdCategory.Other + "」）"
                     : "## " + aGroup + "（" + aMembers.Count + "）　" + aNote);
                 foreach (SCP_Cmd aCmd in aMembers)
                 {

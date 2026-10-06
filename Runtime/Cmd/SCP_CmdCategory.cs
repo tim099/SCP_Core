@@ -1,6 +1,6 @@
 // 區塊職責：指令**分類**的唯一一份清單（TASK-0427）—— `help` 的分組順序、`help --arg category=` 的合法值都從這裡來。
 // 物理意義：每支外層 Cmd 用 <see cref="SCP_Cmd.Category"/> 指向這裡的常數；內層跟著父指令的分類。
-//          加一個分類 ＝ 加一個常數並排進 <see cref="All"/>（排序即 help 上的順序）。
+//          加一個分類 ＝ 加一個常數並排進 <see cref="All"/>（排序即 help 上的順序）。沒填分類的指令落在 <see cref="Other"/>。
 // 數值影響：純資料。
 // ⚠ 方言限制：C# 9 / netstandard2.1 / 零第三方（Unity 那側也要編這份）。
 #nullable enable
@@ -19,6 +19,8 @@ namespace SCP.Core.Cmd
         public const string Bank = "銀行與券";
         public const string Persona = "身分";
         public const string System = "系統";
+        /// <summary>沒填分類的指令落在這裡（<see cref="SCP_Cmd.Category"/> 的預設值）—— 不算錯，之後再挑正確的分類。</summary>
+        public const string Other = "其他";
 
         /// <summary>全部分類與一句話說明。順序 ＝ help 上的順序。</summary>
         public static readonly IReadOnlyList<KeyValuePair<string, string>> All = new[]
@@ -32,6 +34,7 @@ namespace SCP.Core.Cmd
             new KeyValuePair<string, string>(Bank, "帳戶、請款、券、保管費、匯率與對帳"),
             new KeyValuePair<string, string>(Persona, "persona 身分欄、顯示資料、設定寫入"),
             new KeyValuePair<string, string>(System, "help、文件、skill、路徑、session、安裝與除錯"),
+            new KeyValuePair<string, string>(Other, "沒填分類的指令（預設）—— 之後再挑正確的分類"),
         };
 
         public static bool IsKnown(string iCategory)
@@ -41,7 +44,7 @@ namespace SCP.Core.Cmd
         }
 
         /// <summary>
-        /// 一支 Cmd 實際的分類：外層看自己；內層沿父指令往上找到外層為止。
+        /// 一支 Cmd 實際的分類：外層看自己（沒填 ＝ <see cref="Other"/>）；內層沿父指令往上找到外層為止。
         /// 父指令不存在或繞成圈 ⇒ 回空字串（自測會紅，help 列在「未分類」）。
         /// </summary>
         public static string Of(SCP_Cmd iCmd)
