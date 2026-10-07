@@ -16,6 +16,7 @@
 //     當成「最新的信」—— 那是個安靜的災難（brief 端出一份機器產物當昨夜的信）。
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 
 using SCP.Core.Paths;
@@ -33,7 +34,7 @@ namespace SCP.Core.Letters
         /// <summary>檔名（不含目錄）。</summary>
         public string FileName = "";
 
-        /// <summary>寫信日（<c>written_at</c> 的前 10 字）。取不到回空字串。</summary>
+        /// <summary>寫信日（<c>written_at</c> 換成本地之後的日期，見 <see cref="SCP_WakeLetters.DayOf(string)"/>）。取不到回空字串。</summary>
         public string Day = "";
     }
 
@@ -199,16 +200,41 @@ namespace SCP.Core.Letters
         }
 
         /// <summary>
-        /// `written_at` → `YYYY-MM-DD`。⚠ 兩種格式並存（`2026-09-01T…` 與緊湊的 `20260831T…`），
+        /// `written_at` → **本地**的 `YYYY-MM-DD`。⚠ 兩種格式並存（`2026-09-01T…` 與緊湊的 `20260831T…`），
         /// 只切前 10 字會把緊湊那種切成 `20260831T1`（2026-09-01 實測到的活體）。
+        /// <para>🩸 `written_at` 是 UTC（帶 `Z`）。直接切字串拿到的是 **UTC 日** ——
+        /// 本地 10-03 00:32 寫的信標成 10-02，跟前一晚那封同一天，而信裡署名、回傳檔 ts 都是本地（TASK-0420）。
+        /// ⇒ 帶時區的先換成本地再取日；不帶時區的照字面（不知道它是哪一區，就不替它換）。</para>
         /// </summary>
-        public static string DayOf(string iWrittenAt)
+        public static string DayOf(string iWrittenAt) => DayOf(iWrittenAt, TimeZoneInfo.Local);
+
+        /// <summary><see cref="DayOf(string)"/> 的本體；時區可指定（給對拍用，不依賴跑的那台機器在哪一區）。</summary>
+        public static string DayOf(string iWrittenAt, TimeZoneInfo iZone)
         {
             string aValue = (iWrittenAt ?? "").Trim();
+            if (TryParseZoned(aValue, out DateTimeOffset aAt))
+                return TimeZoneInfo.ConvertTime(aAt, iZone).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             if (aValue.Length >= 10 && aValue[4] == '-' && aValue[7] == '-') return aValue.Substring(0, 10);
             if (aValue.Length >= 8 && IsAllDigits(aValue, 8))
                 return aValue.Substring(0, 4) + "-" + aValue.Substring(4, 2) + "-" + aValue.Substring(6, 2);
             return "";
+        }
+
+        static readonly string[] s_CompactUtcFormats = { "yyyyMMdd'T'HHmmss'Z'", "yyyyMMdd'T'HHmmssfff'Z'" };
+
+        /// <summary>只認**帶時區**的時戳（結尾 `Z` 或 `±hh:mm`）；不帶的回 false，交給照字面那條路。</summary>
+        static bool TryParseZoned(string iValue, out DateTimeOffset oAt)
+        {
+            oAt = default;
+            if (iValue.Length < 9) return false;
+            bool aHasZone = iValue.EndsWith("Z", StringComparison.OrdinalIgnoreCase)
+                            || (iValue.Length >= 6 && (iValue[iValue.Length - 6] == '+' || iValue[iValue.Length - 6] == '-')
+                                && iValue[iValue.Length - 3] == ':');
+            if (!aHasZone) return false;
+            if (iValue[4] == '-')
+                return DateTimeOffset.TryParse(iValue, CultureInfo.InvariantCulture, DateTimeStyles.None, out oAt);
+            return DateTimeOffset.TryParseExact(iValue, s_CompactUtcFormats, CultureInfo.InvariantCulture,
+                                                DateTimeStyles.AssumeUniversal, out oAt);
         }
 
         static bool IsAllDigits(string iValue, int iCount)
