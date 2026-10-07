@@ -168,7 +168,6 @@ namespace SCP.Core.Gui
             // （撞了會共用 session 值 —— 那不會報錯，只會讓另一頁的欄位莫名有值）
             using (iUi.IdScope(aTop.Key))
             {
-                if (!string.IsNullOrEmpty(aTop.Title)) iUi.Title(aTop.Title);
                 aTop.Draw(iUi);
             }
             return true;
