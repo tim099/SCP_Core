@@ -8,8 +8,7 @@ using SCP.Core.Json;
 
 // 區塊職責：`op=scan` —— Library / Archive 的重複與異常**候選**審計（唯讀），以及
 //          「已遷移 Archive」集合的讀取（`_migration/registry.json` 是唯一標記處）。
-// 物理意義：`UCL_ReadingLibraryIO.ScanLibrary` 移進 SCP_Core（TASK-0166 ①，Tim 2026-09-17 拍板全搬）。
-//          Q4 定案：**先印候選、人工核對** —— 本層不合併不搬移不改任何資料檔。
+// 物理意義：Q4 定案：**先印候選、人工核對** —— 本層不合併不搬移不改任何資料檔。
 // 數值影響：唯一的寫入是報告檔 `BookNotes/_migration/scan_report.md`（機械產物，每次覆寫）；
 //          資料層一個位元組都不動。
 // ⚠ 判準沿 Plan_Library_Media_Migration 的實測教訓：**前綴法誤報 60%、title 法漏一半**

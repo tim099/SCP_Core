@@ -1,8 +1,8 @@
 // 區塊職責：自動 commit 的**分群設定檔**（`.ucl_autocommit.json`，放各 repo 根）——
 //          讓「這個 repo 的機器生成檔怎麼分群」由該 repo 自己宣告，而不是寫死在程式碼裡。
-// 物理意義：從 Unity 端 `UCL_AutoCommitConfig` 下沉而來（TASK-0340）。檔名與欄位**逐字不變**
+// 物理意義：檔名與欄位是讀者面介面，⛔ **不要隨手改**
 //          （`Enabled` / `Name` / `Groups[].Key|Label|MatchPrefixes|Message|DefaultOn`）——
-//          磁碟上已經有 Canvas／Chess／Tasks 三份，Unity 端退場前兩邊要讀同一份檔。
+//          磁碟上已經有 Canvas／Chess／Tasks 三份，改名＝既有設定檔讀不回來。
 //          ⭐ 「可宣告、但掀不動地板」（Tim 2026-08-21）：設定檔**入版控、由該 repo 擁有、改動在 diff 裡看得見**，
 //            所以它不是當年被否決的那種「執行期參數」。地板由 SCP_AutoCommitRules.Classify 的判定順序保證。
 // 數值影響：

@@ -8,7 +8,7 @@
 
 1. ⛔ **拉新版 UCL_Core 的那一刻，Unity 端的 Discord Inbound 就停了**（TASK-0319 廢棄，`IsLive` 恆為 false）。
    Senate 版 Inbound（TASK-0316 ④）做好之前，**Discord → 酒館沒有任何一條路**。⇒ 挑一個「收不到也沒關係」的時間點拉。
-2. ⚠ **Outbound 在 TASK-0316 ③ 之前仍然是 Unity 在送**（`UCL_DiscordMirrorDaemon`，讀 `PromptQueue/notify_config.json`）。
+2. ⚠ **Outbound 在 TASK-0316 ③ 之前仍然是 Unity 在送**（Unity 版轉發，讀 `PromptQueue/notify_config.json`）。
    Senate 這邊的設定頁現在只是「設定」—— `outbound.enabled` 打開也不會送。⛔ 等 Senate 版上線後，**兩邊不能同時開**（會雙發）。
 3. ⚠ **新版 UCL_Core 依賴 SCP_Core**（2026-09-28 量：UCL_Core 內 50 支 .cs 用到 `SCP.Core`）。
    專案裡沒有 `Assets/Plugins/SCP_Core` 的話，拉完 UCL_Core **Unity 會編不過** ⇒ 先把 SCP_Core 掛成 submodule（`https://github.com/tim099/SCP_Core`，master）。

@@ -1,6 +1,5 @@
 // 區塊職責：`cmd auto-commit` —— 把機器生成的檔分群整批 commit。**原生**，不需要 Unity。
-// 物理意義：取代 Unity 端的 `Cmd_AutoCommit`（TASK-0340，Tim 2026-09-30：Unity 端準備退場）。
-//          規則與引擎在 SCP_AutoCommitRules／SCP_AutoCommit —— 本檔只負責「參數 → 掃 → 逐群提交 → 回報」，
+// 物理意義：規則與引擎在 SCP_AutoCommitRules／SCP_AutoCommit —— 本檔只負責「參數 → 掃 → 逐群提交 → 回報」，
 //          Senate 的自動 Commit 頁走同一支引擎（頁面與 Cmd 對同一個檔給出同一個群，這不是巧合而是結構）。
 // 數值影響：
 //   · **`op=scan` 是預設**（純讀）。要真的 commit 得顯式 `op=commit` —— 批次提交的預設值必須是「不提交」，

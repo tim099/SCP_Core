@@ -1,6 +1,6 @@
 // 區塊職責：文件編輯類活動的「改完一份 .md 之後」—— 解析目標、驗收它真的動了、指回自由時間流程。
 //          三個自由時間活動共用：`doc-reflection`（kind=doc）／`letter-to-self`（kind=letter）／`constitution`。
-// 物理意義：TASK-0367 —— Unity `Cmd_DocEdit`（gura 2026-08-18）的搬家版，邏輯逐段照搬，入口改成 `senate cmd doc-edit`。
+// 物理意義：TASK-0367 —— 入口是 `senate cmd doc-edit`。
 //          ⛔ **刻意不搬檔案內容**（沒有 body 參數、不寫任何 .md）：把整份文件塞進 CLI 參數，
 //          等於把編輯器換成一個沒有 diff、沒有復原的通道 —— Tim 的原話是「改完後 CMD 一樣提示下一步」，
 //          「改完後」意味著編輯已經發生，本支站在那之後。

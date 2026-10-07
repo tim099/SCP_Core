@@ -1,5 +1,5 @@
 // 區塊職責：一場自由時間 session 的資料形狀（`<data_root>/sessions/<persona>.json`，`kind` 欄 = FreeTime）。
-// 物理意義：移植自 Unity `UCL_FreeTimeSession`（TASK-0360）。共通欄位（persona／session_id／start_ts／end_ts／
+// 物理意義：共通欄位（persona／session_id／start_ts／end_ts／
 //          until_local／active／end_reason／ended_at）在 `SCP_ActivitySession`；這裡只加自由時間自己的三格。
 //          ⚠ 欄位名**就是 JSON 的鍵名** —— Unity 那份子類別寫的是同一組鍵，兩個宿主讀寫同一個檔。
 //          改名＝舊檔讀回預設值，而預設值長得跟「這一場沒有輪次」一模一樣。

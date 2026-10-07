@@ -1,6 +1,5 @@
 // 區塊職責：一筆自由時間活動的**資料形狀**（來源＝一份活動 md 的 frontmatter）＋ 特殊邏輯標記 enum。
-// 物理意義：移植自 Unity `UCL_FreeTimeActivity` / `UCL_FreeTimeActivityKind`（TASK-0360）。
-//          活動的事實來源**只有 md 一處** —— v1 的 `AgentCommands/FreeTime/activities.json` 正是因為
+// 物理意義：活動的事實來源**只有 md 一處** —— v1 的 `AgentCommands/FreeTime/activities.json` 正是因為
 //          「雙源同步漂移」被廢止，所以這裡只是 md 的讀數，不是第二份設定。
 // 數值影響：純資料 ＋ 查表，零 IO（IO 在 SCP_FreeTimeCatalog）。
 // ⚠ 方言限制：C# 9 / netstandard2.1 / 零第三方（Unity 那側也要編這份）。

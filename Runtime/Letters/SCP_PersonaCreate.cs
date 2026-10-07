@@ -4,7 +4,7 @@
 //           本檔把那一段搬成共用層：CLI（`persona-create`）與之後 Senate 的 persona 管理頁（TASK-0424）呼叫同一份。
 // 數值影響：`Plan` 純讀（draft 就是它）；`AddAgentBank` 寫 `AwakenInit/_registry_meta.json` 的 `agent_banks` 一格。
 //
-// ⚠ 欄位規則鏡像 Editor 版（`UCL_PersonaAgentAdminPage.DoCreatePersona`，再往上是 awakening.py）：
+// ⚠ 欄位規則：
 //   identity_vector 64 維、每維 round(±1, 4)；vector_history 首筆 {at, hash, delta_mag:0, trigger[, source]}；
 //   hash ＝ sha256("x.xxxx,…") 前 8 hex；fork ⇒ 抄來源 vector 與 lineage、lineage 接上來源、鏈深 > 5 只警告。
 //   ⛔ 不寫推導欄（wake_count／status／last_active）—— 寫了也會被 Create 跳過，而且它們的真相源在別處。

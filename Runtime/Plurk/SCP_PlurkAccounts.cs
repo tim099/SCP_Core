@@ -2,8 +2,7 @@
 // 物理意義：Tim 2026-08-21 拍板三句：① 只分**個人**與**共用** ② 帳號資訊（token）存
 //          Secret Manager（`<資料根>/<secrets dir>/*.enc`）③ **persona 資料用 id 關聯到具體用哪一份**。
 //          ⇒ 所以本檔**不存任何 token**，只存「誰用哪個 secret id」。
-//          TASK-0362：Unity `UCL_PlurkAccounts`（UCL_Core/Editor/Plurk）的搬家版 —— 判準逐格照搬，
-//          只把 UCL 的全域路徑換成宿主傳進來的根（<see cref="SCP_PlurkContext"/>）。
+//          路徑一律吃宿主傳進來的根（<see cref="SCP_PlurkContext"/>）。
 //
 // 形狀刻意抄 `agent_email.py` 的 `resolve_email`（Tim 指定「參考目前 email 設定」）：
 //   **override → 預設 → 哨兵，且回值一律帶 `Source`**。
@@ -271,7 +270,7 @@ namespace SCP.Core.Plurk
         }
 
         /// <summary>persona profile 的 `plurk_account` 欄（`letters/&lt;p&gt;/profile/plurk_account.md`）。
-        /// 查無此人／沒有這一欄 ⇒ 空字串（同 Unity 版 `UCL_PersonaProfile.GetString(.., "")`）。</summary>
+        /// 查無此人／沒有這一欄 ⇒ 空字串。</summary>
         public static string PersonaAccountOf(SCP_PlurkContext iCtx, string iPersona)
         {
             if (!SCP_PersonaProfile.Exists(iCtx.LettersRoot, iPersona)) return "";

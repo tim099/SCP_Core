@@ -1,6 +1,5 @@
 // 區塊職責：早安流程（wake／brief／intro 前置與標頭）的**邏輯層** —— 不需要 Unity Editor。
-// 物理意義：移植自 UCL_Core `UCL_AwakeningService`（StepWake／RunBrief／PrecheckIntro／BuildIntroHeader）
-//          與 `Cmd_GoodMorning`（TASK-0303，Tim 2026-09-26：「Editor 卡住時早安也卡住，讓早安不再依賴 Editor」）。
+// 物理意義：TASK-0303（Tim 2026-09-26：「Editor 卡住時早安也卡住，讓早安不再依賴 Editor」）。
 //          寫入的檔、欄位名、格式逐一對齊 Editor 版（lock／memo／profile 兩欄／審計行；`_tokens.json` 已退場 TASK-0307），
 //          ⇒ Editor 端、python 端、SCP_PersonaLetters 等既有讀者**不必改**就讀得懂。
 // 與 Editor 版刻意的差異（寫在這裡讓人查得到，不是漏移植）：

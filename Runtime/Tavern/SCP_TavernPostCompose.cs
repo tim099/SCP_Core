@@ -1,5 +1,5 @@
 // 區塊職責：在 Senate 側把「一則 persona 發言」組成要交給寫入端的 SCP_TavernMessage —— 不需要 Unity Editor。
-// 物理意義：移植自 UCL_Core `Cmd_Tavern.Op_Post` 的**寫入前**那一段（TASK-0303：早安 intro 不再依賴 Editor）。
+// 物理意義：負責發文**寫入前**那一段（TASK-0303：早安 intro 不再依賴 Editor）。
 //          寫入端（Server 的 `tavern-write`）已經負責 seq／ts／uuid／@mention 通知／發薪（TASK-0296／0299），
 //          這裡只補它**之前**還只有 Editor 做的事：
 //            ① sender_id   ＝ persona 的 agent（profile 反推；沒有就用 persona 名）
@@ -89,7 +89,7 @@ namespace SCP.Core.Tavern
 
         // ===========================================================
         // 區塊職責：**沒有 persona** 的發言（系統元件／人在後台頁打字）—— 組訊息的第二個入口（TASK-0366）。
-        // 物理意義：Unity `Cmd_Tavern.Op_Post` 匿名那條路的搬家版（酒保廣播、酒館頁、沒帶 persona 的棋局廣播）。
+        // 物理意義：匿名那條路（酒保廣播、酒館頁、沒帶 persona 的棋局廣播）。
         //          與 <see cref="Build"/> 共用 ⑤ CLI 判定與 ④ 詞典判準（`SCP_Glossary.ShouldAutoAttach` 對系統 sender 本來就不附）；
         //          差在身分：sender_id 由呼叫端給、sender_name ＝ 顯式給的 → 新銀行帳戶的顯示名 → id，**沒有 sender_persona**
         //          ⇒ 寫入端不計酬（計酬一律由 persona 解析，SCP_TavernPayroll）。

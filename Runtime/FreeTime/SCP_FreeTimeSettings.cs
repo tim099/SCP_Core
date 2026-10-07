@@ -1,6 +1,6 @@
 // 區塊職責：自由時間的**可調數值**（`<data_root>/FreeTime/freetime_settings.json`）—— 取代 Unity 版散在三支檔裡的常數。
 // 物理意義：TASK-0360 搬家時 Tim 拍板：每場幾張限時券、券的緩衝、囤券門檻、飢餓門檻／置頂上限、
-//          配對簡報列幾筆 inbox —— 這六格原本是 `const`（Cmd_FreeTime／UCL_FreeTimeGating／UCL_FreeTimeActivityStatsIO），
+//          配對簡報列幾筆 inbox —— 這六格原本是寫死在程式裡的 `const`，
 //          改它要改 code、要編譯、要等人 commit。搬成一份資料之後，後台頁就能改。
 // 數值影響：每支 Cmd 呼叫**讀一次**、整趟傳遞（⛔ 不在半路重讀 —— 同一趟裡兩處讀到不同值會讓骰面自相矛盾）。
 //          檔不存在 ⇒ 預設值，而且**要說出來**（「使用預設值（設定檔不存在）」）；
@@ -21,7 +21,7 @@ namespace SCP.Core.FreeTime
     /// <summary>自由時間的可調數值。欄位名 ≠ JSON 鍵名（JSON 用 snake_case，見 <see cref="ToJson"/>）。</summary>
     public sealed class SCP_FreeTimeSettings
     {
-        /// <summary>設定檔在資料根底下的相對位置（目錄沿用 Unity 版 `UCL_FreeTimeIO.GetFreeTimeDir()`）。</summary>
+        /// <summary>設定檔在資料根底下的相對位置。</summary>
         public const string RelPath = "FreeTime/freetime_settings.json";
 
         /// <summary>每場自由時間發幾張限時繪圖券（Tim 2026-08-13：10；per-session 清零不累積）。</summary>

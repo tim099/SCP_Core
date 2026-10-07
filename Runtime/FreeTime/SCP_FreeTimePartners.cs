@@ -1,6 +1,5 @@
 // 區塊職責：自由時間回傳檔裡「**跟人有關**」的三段 —— 在線同事、配對簡報（另落一檔）、酒館未讀（推游標）。
-// 物理意義：移植自 Unity `Cmd_FreeTime.AppendOnlineSection` / `WritePartnerBrief` / `AppendInboxSection` /
-//          `AppendTavernCatchupSection`（TASK-0360）。自由時間有一半的活動**要有人才成立**（下棋／TRPG／聊天），
+// 物理意義：自由時間有一半的活動**要有人才成立**（下棋／TRPG／聊天），
 //          「誰在」以前只能自己去跑 catchup 才知道 —— 等於把一個能決定選哪個活動的事實放在骰面之外。
 // 數值影響：
 //   · 在線同事／配對簡報：**唯讀**，⛔ 不推進任何 cursor（配對簡報落 `cmd/freetime_partners.md`）。
@@ -9,7 +8,7 @@
 //     ⚠ 順序不可反：**先把回傳檔寫下去、再推游標** —— 反過來的話回傳檔寫入失敗時訊息已被標成已讀，
 //       那批訊息永遠不會再出現在任何人的未讀裡，而且沒有錯誤訊息。⇒ 本檔只**組**這一段並交出「可推到哪」，
 //       推游標由呼叫端在回傳檔落地之後呼叫 <see cref="AdvanceUnread"/>（Unity 版是印出來的同時就推了 —— 那是本次刻意改掉的一格）。
-// ⚠ 在線判準走 `SCP_PersonaLetters.Scan`（**lock 檔在＝在線**；與 Unity `UCL_ActivePersonaLocks.ListOnline` 同一個判準）。
+// ⚠ 在線判準走 `SCP_PersonaLetters.Scan`（**lock 檔在＝在線**）。
 //   ⛔ 不用 persona registry 的 status 欄：登出流程沒走完時 status 會停在 online，拿它當來源會 @ 到不在的人。
 // ⚠ 方言限制：C# 9 / netstandard2.1 / 零第三方（Unity 那側也要編這份）。
 #nullable enable

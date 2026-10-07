@@ -1,5 +1,5 @@
 // 區塊職責：**酒館內文的 `@名字` → Discord 的 `<@使用者id>`**（TASK-0380）—— Discord 只認後者才會真的通知那個人。
-// 物理意義：Unity 版轉發（TASK-0316 刪除）在送出前做這一步（舊 `UCL_DiscordIdentityResolver.RewriteMentions`）；
+// 物理意義：舊版轉發（TASK-0316 刪除）在送出前做這一步；
 //           Senate 版搬家時漏了，酒館裡 @真人 到 Discord 只剩一串字。規則照舊版：
 //           · 名字對照來源 ① `PromptQueue/notify_config.json` 的 `tavern_mirror.discord_user_mentions`（明確對照，**優先**）
 //                         ② 白名單使用者的顯示名稱與別名（`SCP_DiscordInboundConfig.LoadWhitelist`）—— **只補 ① 沒登記的名字**，不覆蓋。

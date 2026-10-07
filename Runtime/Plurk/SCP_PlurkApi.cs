@@ -1,6 +1,5 @@
 // 區塊職責：Plurk API 的**連線層** —— OAuth 1.0a 簽章、表單／multipart 請求、憑證讀取。
-// 物理意義：TASK-0362，Unity `Cmd_Plurk` 的 `OAuthHeader` / `CallAsync` / `UploadImageAsync` / `LoadCredentials` 搬家版。
-//          ⛔ **SCP_Core 不碰網路**（2026-09-23 拍板，見 `SCP_RateSource.cs` 守衛①）：
+// 物理意義：⛔ **SCP_Core 不碰網路**（2026-09-23 拍板，見 `SCP_RateSource.cs` 守衛①）：
 //            HTTP 一律走宿主注入的 `SCP_HttpFetch.Current as ISCP_HttpFormRequester`；
 //            沒注入 ⇒ **大聲失敗**，⛔ 不退回任何別的送法（那只會換來一個看起來像簽章錯的 4xx）。
 //          簽章本體逐字照搬 Unity 版（RFC 3986 `Q()`、HMAC-SHA1、RandomNumberGenerator nonce）。

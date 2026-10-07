@@ -1,11 +1,10 @@
 // 區塊職責：**往酒館發一則訊息**這件事的那道閘 —— 本體只知道「去問宿主」。
-// 物理意義：酒館發文的權威實作只有 Unity Editor 那側有：seq 配號、category 路由、
-//          鏡像與 Discord 轉發、以及發文掛的那些 hook。⇒ 這一格**沒有本地版**，
+// 物理意義：酒館發文的寫入端只有一個 —— 酒館 Server 的 `tavern-write`（seq 配號、category 路由、
+//          鏡像與 Discord 轉發、發文掛的那些 hook）。⇒ 這一格**沒有本地版**，
 //          而那不是「還沒移植」，是「同時只能有一個寫入端」（seq 是全域遞增的）。
-//          ⇒ CLI／Server 的實作走 AgentCommand 檔案協議派給 Editor；
-//             Editor 內的實作直呼 Cmd_Tavern（in-process，不繞檔案協議繞回自己）。
+//          ⇒ Senate 的實作（`SenateTavernPostGateway`）在本地組訊息、交給 Server 寫入。
 //          形狀同 `SCP_ICanvasGateway`。
-// 數值影響：本檔零 IO。實作會做一次 Cmd round-trip（檔案協議＋Watcher 輪詢，1〜3 秒）。
+// 數值影響：本檔零 IO。實作會做一次 Server round-trip。
 //
 // ⚠ **沒有登記閘 ≠ 發出去了**：兩件事必須不同形。沒登記時呼叫端要印
 //   「本宿主沒有登記發文閘 ⇒ **這一則沒有發出去**」——

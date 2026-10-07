@@ -1,5 +1,5 @@
 // 區塊職責：relationship（好感度）的**寫入**本體 —— 8 軸定義、重算、target 資料夾解析、事件／看法／投影的落檔。
-// 物理意義：TASK-0354。移植自 UCL `UCL_RelationshipModels` ＋ `UCL_RelationshipIO`（2026-10-01），
+// 物理意義：TASK-0354。8 軸定義與落檔都在這裡，
 //           讓好感度的唯一寫入通道（`senate cmd relationship`）不再需要 Unity Editor。
 //           讀取端（`SCP_Relationship`：brief／portrait-next 讀 `_current.md`）不動。
 //           ⭐ 寫出來的三種檔與 Editor 版**逐位元組同形**：事件檔名＝時刻、看法檔名＝內容雜湊、

@@ -109,7 +109,7 @@ nick 從帳號登記表的 `Nicks` 讀，缺了由發文三路自動補齊 ⇒ �
 > `plurk_account` 當時不在 persona profile 的 identity 欄清單裡，而 `SetField` 對
 > **非** identity 欄的行為是 patch 回 legacy ⇒ 當時 Unity 版本頁的寫入**全部落在
 > `AwakenInit/personas/<name>.json`**。審計 jsonl 留了現場：08-21 10:09:22Z 那筆
-> `actor=UCL_PlurkAdminPage` 的 `fields` 是 `plurk_account`（沒有 `profile/` 前綴）。
+> 管理頁寫入的 `fields` 是 `plurk_account`（沒有 `profile/` 前綴）。
 > 讀取端因為疊了 legacy 所以答案一直是對的 ⇒ **零報錯、頁面看起來完全正常**。
 > ⇒ 修法：把 `plurk_account` 加進 identity 清單，
 > basecamp／summit 兩筆存量走 lazy-migration 落到 `profile/plurk_account.md`（審計可查）。

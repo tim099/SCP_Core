@@ -1,5 +1,5 @@
 // 區塊職責：藏書架 —— 依**系列**呈現圖書館（`op=shelf`／`op=series`），以及設定某本書的分類（`op=classify`）。
-// 物理意義：`UCL_BooksShelf` 的移植（TASK-0403，epic 0398）。`shelf` 是總覽（系列一行、幾冊）、
+// 物理意義：`shelf` 是總覽（系列一行、幾冊）、
 //          `series` 是某一系列的書單（含 **book id 供閱讀**）、`classify` 是唯一的分類寫入通道。
 //          分類三軸的規則本體仍在 `SCP_BooksClassification`，讀寫 `_donation.json` 走 `SCP_BooksOps` 的同一支 writer。
 // 數值影響：shelf／series 唯讀；classify 只改 `_donation.json` 的三個分類欄位（＋補寫 origin）與 `_series.json`，**不動錢**。

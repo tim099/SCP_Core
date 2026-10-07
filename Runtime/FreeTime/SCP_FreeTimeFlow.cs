@@ -1,7 +1,6 @@
 // 區塊職責：`free-time` 的六個 step —— start（守衛＋註冊＋發券＋開場擲骰＋宣告）／next（活動邊界：未到期重擲、到期收工）／
 //          end（提前收工）／list・shuffle・show（純參考查詢）。
-// 物理意義：移植自 Unity `Cmd_FreeTime`（Plan_FreeTime_Cmd.md，Tim 2026-08-13 拍板；TASK-0360 搬到 Senate）。
-//          **時間感由 Cmd 供給**（每步回傳三個時間欄），agent 不自己心算 —— 時限判定只認時鐘，不認收束感（w44/w45 血證）。
+// 物理意義：**時間感由 Cmd 供給**（每步回傳三個時間欄），agent 不自己心算 —— 時限判定只認時鐘，不認收束感（w44/w45 血證）。
 //          step=next 的觸發點＝活動事件的自然結束（棋局終局／繪圖收筆／聊天告一段落）——
 //          「完成的時刻」從 stop signal 變成回 loop 的通道。
 // 數值影響：session 落 `<data_root>/sessions/<persona>.json`（一人一檔位；kind 是 json 欄位）；
@@ -39,7 +38,7 @@ namespace SCP.Core.FreeTime
             string aPath = iCtx.PayloadPath(iPersona, "start");
             var aR = Header("start", iPersona);
 
-            // 守衛①：必須在線（lock 檔在＝在線；與 Unity `UCL_AwakeningService.IsOnline` 同判準）
+            // 守衛①：必須在線（lock 檔在＝在線）
             if (!File.Exists(SCP_LettersPaths.SessionLockPath(iCtx.Letters, iPersona)))
             {
                 aR.AppendLine("## blocked");

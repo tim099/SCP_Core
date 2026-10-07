@@ -1,5 +1,5 @@
 // 區塊職責：**登入管理頁（最小版）** —— 設定 persona 信件夾根目錄、列出那底下的 persona 與上線狀態。
-// 物理意義：對照 Unity 端的 UCL_LoginStatusPage（該頁之後廢棄，全面改用 Senate 端）：顯示狀態＋**手動登出**。
+// 物理意義：顯示狀態＋**手動登出**。
 //           ⭐ 手動登出（TASK-0294，Tim 2026-09-25）：「真的發生忘記登出或故障，我可以手動排除」。
 //             兩段式確認；刪之前重讀 lock、session 身分（session_key＋locked_at）對不上就拒絕（邏輯在 SCP_PersonaLetters.ForceLogout，本頁不直接碰檔）。
 //           ⛔ 仍然**沒有**手動登入 —— 登入要發 token、寫 registry，那些 Senate 端還沒有寫入口。
@@ -8,7 +8,7 @@
 //           搬得動的前提是前三步：掃描層進了 SCP_Core（SCP_PersonaLetters）、
 //           設定改走 prefs 介面（本頁**不知道** senate.local.json 這個檔名的存在）。
 // 數值影響：畫面純讀（走 SCP_PersonaLetters.Scan）；唯一的寫入是按下「確認登出」那一下（刪 lock ＋ now_status）。
-//           每列最前面一顆「複製」＝把早安指令 `/ucl-morning <persona>` 放進剪貼簿（對照 UCL_LoginStatusPage，只動剪貼簿）。
+//           每列最前面一顆「複製」＝把早安指令 `/ucl-morning <persona>` 放進剪貼簿（只動剪貼簿）。
 //           排序在線 → 未知 → 離線；離線那格的時間讀 `profile/_last_login.json`（SCP_Morning.Wake 寫，登出不刪）。
 //           🩸 2026-09-05 拿掉了「信件夾根」的輸入框與儲存鈕：本頁曾自己走
 //           `Prefs.Read(awakening.lettersRoot)` 讀**存起來的原始值**，而那一格是 `[SCP_PathAuto]` 的 ——
@@ -162,7 +162,7 @@ namespace SCP.Core.Gui
                 return c != 0 ? c : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
             });
 
-            // 第一欄是「複製早安指令」（對照 Unity UCL_LoginStatusPage 的 Copy 鈕）：只複製 persona ——
+            // 第一欄是「複製早安指令」：只複製 persona ——
             //   agent 由 persona 綁定反推，帶 agent 反而讓 caller 有機會宣稱一個跟綁定不符的身分（Tim 2026-07-31）。
             using (g.Table("早安", "persona", "狀態", "agent", "model", "登入時間（離線＝最後一次）"))
             {

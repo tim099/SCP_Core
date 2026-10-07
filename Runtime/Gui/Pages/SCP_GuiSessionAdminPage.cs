@@ -1,6 +1,5 @@
 // 區塊職責：**活動 session 管理頁** —— 列出每個人的場（進行中／殘留／已收工）、對殘留補收工。
-// 物理意義：這是 Unity 那側 `UCL_SessionAdminPage` 的搬家版本（TASK-0127 ⑥）。
-//           資料讀走 `SCP_ActivitySessionStore`（純讀）；關場走 `SCP_ActivitySessionStore.CloseVerified`
+// 物理意義：資料讀走 `SCP_ActivitySessionStore`（純讀）；關場走 `SCP_ActivitySessionStore.CloseVerified`
 //           （與 `sessions op=close` 同一個門；TASK-0448 起就地做、不委派 Editor、不結算）。
 // 數值影響：讀＝每次 Refresh 掃一次 `sessions/*.json`；寫＝只有「補收工」那一條，且要二段確認。
 //

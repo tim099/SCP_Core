@@ -22,8 +22,8 @@
 //   📌 一個只比大小的警語會在第一天被所有人學會忽略，**而那比沒有警語更糟**：
 //     它會佔掉「這裡有人在看」的位置。
 //
-// ⚠ 2026-09-30 自 UCL `UCL_TaskRefCheck` 原樣搬來（TASK-0349）：留言／收工的寫入端搬進 Senate 之後，
-//   守衛必須站在寫入端的**落檔那一刻**（見上）⇒ 它跟著搬。這是唯一一份，UCL 那份已刪。
+// ⚠ 守衛必須站在寫入端的**落檔那一刻**（見上；TASK-0349）⇒ 它跟寫入端住在一起。
+//   這是唯一一份，⛔ 不要另長複本。
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;

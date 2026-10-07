@@ -4,8 +4,7 @@ using System.Text;
 using SCP.Core.Json;
 
 // 區塊職責：把一筆章節心得組成「可以貼進酒館」的內文（`op=share`），以及把發文回來的 seq 落回索引。
-// 物理意義：`UCL_ReadingLibraryIO` 的 share 那一叢移進 SCP_Core（TASK-0166 ①，Tim 2026-09-17 拍板全搬）。
-//          **round 檔是事實源，酒館貼文是投影** —— 本層只讀不寫（`RecordSharedSeq` 除外，它落 receipt）；
+// 物理意義：**round 檔是事實源，酒館貼文是投影** —— 本層只讀不寫（`RecordSharedSeq` 除外，它落 receipt）；
 //          發文成敗都不回滾心得檔（檔優先於投影）。
 // 數值影響：`iRoundNumber<=0` ⇒ 取該章最大 round 並回填；**已有 `shared_seq` 的 round 直接拒絕**
 //          （同一則心得重發會重複計酬，與「同一個 SHA 重貼一次」同型）。

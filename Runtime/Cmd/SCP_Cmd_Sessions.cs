@@ -1,6 +1,5 @@
 // 區塊職責：`cmd sessions` —— 活動 session 的查詢與關場（**原生**，查詢不需要 Unity）。
-// 物理意義：這是 UCL 那側 `UCL_SessionAdminPage` 與 `Cmd_SessionStatus` 的資料面搬家（TASK-0127 ⑤）。
-//           讀是純讀、走 SCP_ActivitySessionStore；關場在本層就地做（`CloseVerified`：翻三欄＋回讀）。
+// 物理意義：讀是純讀、走 SCP_ActivitySessionStore；關場在本層就地做（`CloseVerified`：翻三欄＋回讀）。
 //           🩸 TASK-0448：原本委派回 Editor 的 `SessionClose` 替觀影場結算 —— Editor 沒開就關不掉；
 //              觀影重做、不遷移（Tim 2026-10-07）⇒ 沒有 kind 需要結算，委派拔掉。
 // 數值影響：`op=list|show` 一個位元組都不寫；`op=close` 會寫別人的 session 檔 ⇒ 要 `confirm=1`。

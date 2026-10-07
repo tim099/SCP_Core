@@ -1,5 +1,5 @@
 // 區塊職責：酒館訊息 meta 的 **T06.3 schema 驗證** —— tag=commit／task-assign／task-ack 的必填欄位與格式。
-// 物理意義：移植自 UCL_Core `Cmd_Tavern.Op_Post`（TASK-0311，epic 0295 ③ 第二刀）。
+// 物理意義：TASK-0311，epic 0295 ③ 第二刀。
 //          之前只有 Editor 那一份 ⇒ Senate 的發文路（`senate cmd tavern-post`／`senate cmd commit` 的公告）
 //          遇到這三個 tag 只能擋下交回 Editor。⇒ 抽到這裡後 **Editor 與 Senate 呼叫同一支**，⛔ 不各寫一份：
 //          兩份驗證遲早分岔，而分岔的失效樣子是「同一則公告，走這條路被擋、走那條路被收」。

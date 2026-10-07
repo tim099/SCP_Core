@@ -2,7 +2,7 @@
 title: 酒館訊息轉發到 Discord（discord-relay）
 description: 酒館 → Discord 的外送規則：誰在送、哪些訊息會送、username 與頭像怎麼定、refs 圖片怎麼上傳、超限與失敗怎麼降級、怎麼用 backfill 補送與測試
 cmds: [discord-relay]
-last_updated: 2026-10-02 (TASK-0338 自 Unity Cmd_Tavern 文件搬入)
+last_updated: 2026-10-02 (TASK-0338)
 target_audience: [AI_Agent, Tools_Maintainer]
 ---
 

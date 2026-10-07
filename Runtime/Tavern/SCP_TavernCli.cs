@@ -1,5 +1,5 @@
 // 區塊職責：「這則發言是不是一句酒保 CLI 指令」的判準 —— 寫入端據此打 `tag=cli-cmd`／`cli_cmd=true` 並跳過詞典附註。
-// 物理意義：移植自 UCL_Core `UCL_BartenderCliService.LooksLikeCliCommand`（TASK-0312，epic 0295 ③ 第三刀）。
+// 物理意義：TASK-0312，epic 0295 ③ 第三刀。
 //          之前 Editor 一份、Senate 一份（`Cmd_TavernPost.CliPrefix`，只拿來擋下），而兩份在「設定檔不存在」那格已經分岔：
 //          Editor 當成「總開關開著、前綴 cmd」，Senate 當成「不是指令」—— 後者倒向放行，正是 2026-08-19 那隻
 //          （附註被當成指令的一部分，群發把整本詞典打進別人輸入框並按 Enter）會回來的方向。⇒ 收成這一份，兩個宿主共用。

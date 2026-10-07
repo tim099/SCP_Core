@@ -1,7 +1,6 @@
 // 區塊職責：Plurk 的 op 本體（第二份：社交面）—— timeline / responses / mentions / friends / like·unlike /
 //          profile / expand / search / alerts / befriend·unfriend·follow·unfollow·accept·deny，以及讀取層（API／本地快取）。
-// 物理意義：TASK-0362，Unity `Cmd_Plurk` 社交段的搬家版（報告文字與血證逐段照搬；HTTP 換成宿主注入、同步呼叫）。
-//          在這之前這支 Cmd 只有「送出」與「回讀自己那則」—— 也就是說它能發文，但**不能參與**。
+// 物理意義：在這之前這支 Cmd 只有「送出」與「回讀自己那則」—— 也就是說它能發文，但**不能參與**。
 //          而 Plurk 是雙向的：別人回了什麼、誰在講話，沒有入口就等於不存在。
 // 數值影響：讀的那幾支對 Plurk 純唯讀，但會寫本地快取（`<資料根>/Plurk/cache/`，⛔ 不入 git）與表情共用表；
 //          ⚠ `op=alerts`（getActive）**讀了就清通知**（見 OpAlerts 的血證）；

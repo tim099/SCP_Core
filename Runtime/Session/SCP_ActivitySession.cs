@@ -1,6 +1,5 @@
 // 區塊職責：**活動 session** 的共通資料模型 —— 誰的、哪一種、什麼時候開、什麼時候該收、收了沒。
-// 物理意義：這是 UCL 那側 `UCL_SessionBase`（2026-08-18 立、08-27 扁平化）的搬家版本。
-//           磁碟格式**逐鍵相同** —— 既有的 `<DataRoot>/sessions/<persona>.json` 必須讀得回來，
+// 物理意義：磁碟格式**逐鍵固定** —— 既有的 `<DataRoot>/sessions/<persona>.json` 必須讀得回來，
 //           否則「讀不到」與「這個人沒有 session」在輸出上同形（active=false 跟沒這場長得一樣）。
 // 數值影響：純資料 ＋ 判斷，零 IO（IO 走 SCP_ActivitySessionStore）。
 //
@@ -107,7 +106,7 @@ namespace SCP.Core.Session
                 ? aDt.ToLocalTime() : (DateTime?)null;
         }
 
-        /// <summary>收工時刻的寫法（與 UCL 那側 `UCL_AwakeningService.NowIso()` 同形）。</summary>
+        /// <summary>收工時刻的寫法（UTC、毫秒、`Z` 結尾；既有檔都是這個形，⛔ 不要隨手改）。</summary>
         public static string NowIso()
             => DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
     }

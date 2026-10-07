@@ -3,8 +3,8 @@
 //           op 名與參數與 Editor 版同名同義，本體在 `SCP_PersonaProfileWrite`。讀取（整份 persona）仍走 `senate cmd persona`。
 //           **原生**，不需要 Unity。
 // 數值影響：只寫 persona 檔（`profile/`、`bank/`）與 `AwakenInit/_persona_write_audit.jsonl`。⛔ 不動帳本、不動錢。
-// ⭐ TASK-0361：這是 persona 檔**唯一**的寫入入口 —— Unity Editor 的頁面（建 persona、email、actual_agent、Plurk 帳號）
-//   也是 spawn 本指令（`UCL_SenateCmdBridge`），Unity 端不留寫入程式碼。
+// ⭐ TASK-0361：這是 persona 檔**唯一**的寫入入口 —— 後台頁面（建 persona、email、actual_agent、Plurk 帳號）
+//   也走 `SCP_PersonaProfileWrite`，⛔ 不另留一份寫入程式碼。
 //
 // ⚠ Editor 版的另外兩個 op **刻意沒有移植**（寫在這裡，免得以為漏了）：
 //   · `refresh`：只重寫衍生快照 `_persona_profile_snapshot.json` —— Editor 自己在 domain reload 時重寫；Senate 不靠它。

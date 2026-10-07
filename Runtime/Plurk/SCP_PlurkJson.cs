@@ -1,5 +1,5 @@
 // 區塊職責：Plurk 移植層的共用小零件 —— UCL `JsonData` 形狀的薄殼、回應取值、報告文字、失敗型別、排序器。
-// 物理意義：TASK-0362。Unity 版 `Cmd_Plurk` 讀 API 回應的方式**依賴 UCL `JsonData` 的兩個怪癖**：
+// 物理意義：本檔讀 API 回應的方式**依賴 UCL `JsonData` 的兩個怪癖**：
 //            ① `ToJson()` 把非 ASCII 轉成 `\uXXXX` ⇒ `JsonScalar` 拿到的是**轉義過的**字串，
 //               呼叫端再走 `UnescapeJson` 還原（沒走的那幾格就印轉義形 —— 那也是輸出的一部分）
 //            ② 數字照 UCL parser 分型（無小數點 ⇒ int／long 原樣；有小數點 ⇒ double `R`）
@@ -155,7 +155,7 @@ namespace SCP.Core.Plurk
         }
     }
 
-    /// <summary>回應取值小工具 —— 每一支都照 Unity 版 `Cmd_Plurk` 的同名函式（含血證）。</summary>
+    /// <summary>回應取值小工具。</summary>
     public static class SCP_PlurkJson
     {
         public static SCP_PlurkNode? SafeParse(string? iJson)

@@ -1,12 +1,12 @@
-// 區塊職責：晚安 check 的「Task 對帳」那一段（markdown）—— 移植自 UCL_Core `UCL_TaskReconcile.BuildReport`（TASK-0305）。
+// 區塊職責：晚安 check 的「Task 對帳」那一段（markdown）（TASK-0305）。
 // 物理意義：以下每一段都**只印**：
 //   ① 見叢裡還留著 `[TASK-n]` 引用 ⇒ 舊規則殘留（2026-09-07 起見叢只放個人代辦）
 //   ② 跟我有關、還開著的單的張數 —— 只報數字，逐張列在早安 brief 的 §2.5 見單
 //   ③ 我掛在 in_progress 且逾期 ⇒ 認領變成占位（釋放走 op=sweep，顯式）
 //   ④ Task ↔ 工作記憶：(a) 連結壞掉 (b) 久未更新
 //   ⑤ 收工預告：等一下 sleep 會擋什麼 —— 印的是 `SCP_TaskReconcile.PendingWrapups` 本人，**跟閘同一個述詞**
-// ⚠ 「跟我有關」的 persona 比對用 OrdinalIgnoreCase（照 Editor 版 UCL_TaskEntry.RolesOf）；
-//   SCP 的 RolesOf 是 Ordinal —— 兩把尺的差異原本就存在，這裡刻意沿用 Editor 那把，讓搬家前後讀數相同。
+// ⚠ 「跟我有關」的 persona 比對用 OrdinalIgnoreCase；
+//   而 SCP 的 RolesOf 是 Ordinal —— 兩把尺不同是刻意的，⛔ 別順手統一（會改掉對帳讀數）。
 // 數值影響：純讀。回傳字串一定非空 —— 「沒印」跟「沒對」在回傳檔上長得一樣。
 #nullable enable
 using System;
@@ -21,7 +21,7 @@ namespace SCP.Core.Tasks
 {
     public static class SCP_TaskReconcileReport
     {
-        /// <summary>未關單多久沒動算「冷掉」—— 與 Editor `UCL_TaskIO.STALE_DAYS` 同值（sweep 量的是同一件事）。</summary>
+        /// <summary>未關單多久沒動算「冷掉」—— 與 `SCP_TaskStore.STALE_DAYS` 同值（sweep 量的是同一件事，改要一起改）。</summary>
         public const int STALE_DAYS = 14;
 
         static readonly Regex s_TaskRef = new Regex(@"TASK-(\d+)", RegexOptions.Compiled);

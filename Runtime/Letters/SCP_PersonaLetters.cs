@@ -237,12 +237,11 @@ namespace SCP.Core.Letters
         // ── 手動登出（TASK-0294）──────────────────────────────────────
 
         // 區塊職責：**手動登出** —— 忘記登出或流程故障時，由人刪掉那顆 lock（Tim 2026-09-25）。
-        // 物理意義：在線判準只看 lock 檔在不在（本檔 Scan、Editor 端 UCL_ActivePersonaLocks 都是）
+        // 物理意義：在線判準只看 lock 檔在不在（本檔 Scan）
         //          ⇒ 刪 lock 就足以解除「同一 persona 不得同時登入兩次」的卡死；**不需要 Unity Editor**。
-        //          對照 Unity 端 UCL_LoginStatusPage 的 Force Remove（該頁之後廢棄，全面改用 Senate 端）。
         // ⚠ 刪之前**重讀一次 lock**：畫面上看到的是上一次掃描，而那之後可能有人登出又登入了 ——
         //   預期的 session 身分（<see cref="SessionIdentity"/>）對不上就拒絕，⛔ 不刪到別人剛開的新一場。
-        //   ⛔ 只比 session_key 不夠：它是 `{actual_agent}-{persona}` 的常數（UCL_AwakeningService 登入端），
+        //   ⛔ 只比 session_key 不夠：它是 `{actual_agent}-{persona}` 的常數（`SCP_Morning` 登入端寫），
         //   同一個 agent 登出再登入 key 完全相同（TASK-0294 QA @kotoko）⇒ 身分要帶每次登入重生的 locked_at。
         //   iExpectedIdentity 為 null ＝ 確認時 lock 是壞的（Unknown），那就要求它**現在仍然**是壞的。
         // 數值影響：只刪 `profile/_session.json` 與 `cmd/now_status.json`。⛔ **不動** profile 的 status 欄

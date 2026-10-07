@@ -216,7 +216,7 @@ namespace SCP.Core.Cmd
         // 區塊職責：四支**會動錢**的 op —— 本體在 `SCP_BooksOps`，本處只負責取閘與轉參數。
         // 物理意義：閘由宿主裝（`SCP_BooksGatewayHost.Factory`）：
         //          Senate CLI 裝 `SenateBooksGateway`（直接串 Server 的 `bank` / `voucher`），
-        //          Editor 裝 `UCL_BooksGateway`。⇒ **兩個入口共用同一份實作**（0166 ②／0234 ②）。
+        //          ⇒ **本體只有一份實作**，換宿主只換閘（0166 ②／0234 ②）。
         // ⛔ 沒裝閘就**大聲失敗** —— 回一句「成功」而什麼都沒發生，
         //   跟真的做完在畫面上一模一樣。
         // ⚠ 廣播不在本層：本體回 `broadcastBody`，要不要發、發到哪是呼叫端的事

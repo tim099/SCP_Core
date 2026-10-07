@@ -443,7 +443,7 @@ namespace SCP.Core.Tavern
 
         /// <summary>
         /// ⚠ 尾巴是**三個 ASCII 點** `...`，⛔ 不是 `…`（單字元省略號）——
-        /// Editor 側 `Cmd_Tavern.Truncate` 逐字就是那三個字元。換一個的話每一行都不符，
+        /// 輸出版面是對拍的受詞，逐字就是那三個字元。換一個的話每一行都不符，
         /// 而 diff 只會說「不一樣」，不會說「差在省略號」。
         /// </summary>
         static string Truncate(string iText, int iMax)

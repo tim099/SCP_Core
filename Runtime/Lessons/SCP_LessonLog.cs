@@ -1,5 +1,5 @@
 // 區塊職責：跨 agent 共享 lesson 庫（`<data_root>/Lessons/lessons.jsonl`）的**寫入**本體 —— 去重＋append＋確認檔。
-// 物理意義：TASK-0354。移植自 UCL `Cmd_NoteLesson`（2026-10-01），讓「記一條教訓」不再需要 Unity Editor 開著。
+// 物理意義：TASK-0354。「記一條教訓」不需要 Unity Editor 開著。
 //           ⭐ 輸出與 Editor 版**逐位元組同形**（jsonl 那一行、`_last_lesson.md`、`notelesson_last_op.md`）——
 //           兩個寫入端會並存一段時間（同事手上的 skill 副本不會同時換掉），而 append-only 純文字的並存
 //           **只在格式同形時才安全**：去重是拿 `"body":"…"` 的字面去比，形狀一分岔，同一條教訓就會被記兩次。

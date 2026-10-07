@@ -6,7 +6,7 @@ using SCP.Core.Books;
 using SCP.Core.Json;
 
 // 區塊職責：**寫書線**（authored）那四欄的讀寫、舊 store ↔ 新 store 的逐欄對拍（③）與搬遷（④）。
-// 物理意義：`UCL_ReadingLibraryIO` 的 authored 家族移進 SCP_Core（TASK-0166 ①，Tim 2026-09-17 拍板全搬）。
+// 物理意義：寫書線有新舊兩個 store：
 //          舊 store ＝ `BookNotes/<slug>/book.json`；新 store ＝ `BookNotes/Library/works/<work_id>/work.json`。
 // 數值影響：`TrySetWorkAuthored` **空值不落盤** ⇒ 沒帶寫書線的 work.json 逐位元組不變；
 //          `DiffWorkAuthored` 純讀；`MigrateAuthoredWork` 不給 confirm ⇒ 零寫入。

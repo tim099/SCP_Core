@@ -1,5 +1,5 @@
 // 區塊職責：T26 Solo Alter 配對發言間隔 —— 「這一則要不要延後、延多久」的判準（只判，不等）。
-// 物理意義：移植自 UCL_Core `Cmd_Tavern.Op_Post` 的 T26 段（TASK-0312）。Alter 機制觸發後 agent 容易 self↔alter ping-pong
+// 物理意義：TASK-0312。Alter 機制觸發後 agent 容易 self↔alter ping-pong
 //          秒回、失去慢速意義；純 SKILL.md 自律守不住 ⇒ 寫入端自動延遲（不擋訊息）。
 //          Editor 版在 handler 裡 `await` 剩餘秒數；Senate 版把訊息放進酒館 Server 的延後發文匣（`SenateTavernDeferred`），
 //          到點由 Server 投回 tavern lane —— **兩邊用同一支判準**，⛔ 不各算一份。

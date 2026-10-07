@@ -1,9 +1,7 @@
 // 區塊職責：畫布本體與**宿主能力**之間的那道閘 —— 付款、自由時間資格、放點分享三件事。
-// 物理意義：這三件事的權威實作只有 Unity Editor 那側有（券／token 的 canonical ledger、
-//           UCL_SessionService、酒館 seq 分配）。本體不該知道自己跑在哪個宿主上，
+// 物理意義：這三件事的權威在宿主（Senate：token 與券串 Server 的 `bank`／`voucher`、在場資格讀 session 檔、
+//           分享走 `tavern-post`，見 `SenateCanvasGateway`）。本體不該知道自己跑在哪個宿主上，
 //           所以它只認這個介面；誰來實作是宿主啟動時裝上的。
-//           ⇒ CLI／Server 的實作走 AgentCommand 檔案協議派給 Editor（AgentCmdClient）；
-//              Editor 內的實作直呼那些 ledger（in-process，不繞檔案協議繞回自己）。
 // 數值影響：⚠ 資格查詢是**三態**不是 bool —— Yes／No／**Unknown**。
 //           🩸 「不知道」與「不在」必須不同形（canvas.py 2026-08-26 起就是這個語意，不可退化）：
 //           拿不知道冒充「不在自由時間」，使用者會照著去開一場他其實已經在的場；
@@ -79,7 +77,7 @@ namespace SCP.Core.Canvas
         // 區塊職責：放點後的分享（發不出去**不該讓放點失敗** —— 廣播是 best-effort）
         // 物理意義：`iAttachAbsolutePath` 是**本機絕對路徑**，由本體算（它才知道預覽渲在哪）；
         //          **轉成收件端要的形式是宿主的事** —— 酒館的 `refs` 慣例是 **repo 相對路徑**
-        //          （`UCL_DiscordMirrorDaemon.CollectImageRefFiles` 用 `Path.Combine(RepoRoot, rel)` 解），
+        //          （收件端拿 repo 根接上相對路徑解），
         //          而本體不知道也不該推導 repo 根（資料根可被 override，推導出來的根會靜默指錯樹）。
         //   🩸 這兩個參數是回歸修復（TASK-0165）：介面原本只吃 body ⇒ python 端
         //   `_share_place_preview`（帶 refs → mirror 的附件分支上 Discord，Tim 2026-08-20 拍板）

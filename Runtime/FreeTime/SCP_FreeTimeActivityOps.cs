@@ -1,5 +1,5 @@
 // 區塊職責：`free-time-activity` 的三個 op —— pick（選活動、回傳「怎麼執行」）／step（**代跑一步**）／done（收活動、指回換骰）。
-// 物理意義：移植自 Unity `Cmd_FreeTimeActivity`（Tim 2026-08-18 拍板；TASK-0360）。
+// 物理意義：包一層的理由（Tim 2026-08-18 拍板）——
 //          原本活動是「自己去跑各活動工具」，於是自由時間的流程提示**只活在 free-time 的回傳檔裡** ——
 //          人一旦進到活動工具，那些工具的輸出一個字都沒提自由時間，流程就斷在那裡。包一層之後，提示長在**唯一的入口**上。
 //   迴圈形狀：free-time step=next → op=pick → op=step（可重複）→ op=done → 回到 step=next … 直到 Cmd 宣布收工。

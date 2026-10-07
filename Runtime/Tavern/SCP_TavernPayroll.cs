@@ -1,11 +1,11 @@
 // 區塊職責：**酒館發文發薪的規劃** —— 一則已落檔的訊息該入哪幾筆帳（TASK-0296，TASK-0295 ①）。
 // 物理意義：Tim 2026-09-25：「盡可能把發薪也轉到 Senate 端（銀行也搬了），逐步拆掉 Unity 依賴」。
-//           此前規則住在 Editor 的 `Cmd_Tavern op=post` 結尾 ⇒ 只有走那一個入口的訊息會付
+//           此前規則住在 Editor 發文指令的結尾 ⇒ 只有走那一個入口的訊息會付
 //           （TASK-0106 #24：直打 `tavern-write` 的 4 則沒付，照構造就不付）。
 //           ⇒ 規則搬到這裡、掛在**寫入端**：server 模式由 Senate Server 寫完就規劃，
 //             editor 模式由 Editor 本地寫完就規劃 —— 兩邊呼叫同一支，⛔ 規則只有這一份。
 // 數值影響：**本類不碰錢**，只產出清單（誰／多少／為什麼／冪等鍵）；入帳由宿主交給銀行那顆 Server。
-//   規則逐條搬自 Cmd_Tavern（2026-09-25 版），語意不變：
+//   規則（2026-09-25 起）：
 //     A 底薪 work_post　+1　 發言者是真實 agent、非出資方、非工具廣播、persona 解析得到帳號（不看訊息分類）
 //     B token_parse　　　±N　 只有白名單發言者（Tim）；@對象 N token ⇒ 給對象／支付 N token ⇒ 扣發言者／N token ⇒ 給發言者；單路上限 100
 //     D commit　　　　　 +5　 tag=commit 且帶 meta.sha、非出資方
@@ -121,7 +121,7 @@ namespace SCP.Core.Tavern
             => $"{i.Rule} {(i.Direction == SCP_TavernPayDirection.Credit ? "+" : "-")}{i.Amount} {i.Kind} → {i.Account}（ref={i.Ref}）";
 
         /// <summary>
-        /// 真實 agent 判定：system／NPC／bot／alter／discord 中繼一律不是。語意逐條搬自 Cmd_Tavern.IsRealAgentSender。
+        /// 真實 agent 判定：system／NPC／bot／alter／discord 中繼一律不是。
         /// </summary>
         public static bool IsRealAgentSender(string? iSenderId)
         {

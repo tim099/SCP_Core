@@ -1,6 +1,6 @@
 // 區塊職責：棋局存檔（`<data_root>/Chess/games/<n>.json`）的**唯一讀寫層** ＋ 「哪些局在等人」的共用判準。
-// 物理意義：TASK-0268 ⑤ —— 這份資料原本有三個解讀端（python chess.py、C# `UCL_FreeTimeGating` 兩支、
-//           `Cmd_FreeTime.ChessNoteWith`），各自 `Path.Combine(DataRoot,"Chess","games")` 掃目錄、
+// 物理意義：TASK-0268 ⑤ —— 這份資料原本有三個解讀端（python chess.py、C# 自由時間骰面兩支、
+//           自由時間棋局筆記一支），各自 `Path.Combine(DataRoot,"Chess","games")` 掃目錄、
 //           各自決定「OPEN 座怎麼判」「persona 比對分不分大小寫」。
 //           🩸 而它們**已經不一致**：python 比 persona 是區分大小寫，C# 三支都是 OrdinalIgnoreCase。
 //           今天沒出事只因為 persona 全是小寫 ⇒ 那是運氣，不是設計。
@@ -153,7 +153,7 @@ namespace SCP.Core.Chess
         // ── 共用判準（lobby／match／自由時間骰面／配對簡報 全部讀這幾支）──
         /// <summary>座位上是誰；OPEN（JSON null、缺欄、空字串）一律回空字串。</summary>
         /// <remarks>
-        /// 🩸 2026-09-11（`UCL_FreeTimeGating` 那份舊讀取器的血證，搬過來跟著判準走）：
+        /// 🩸 2026-09-11（舊讀取器的血證，搬過來跟著判準走）：
         ///   OPEN 座是**鍵在、而值是 JSON null**（`"white": null`）。漏判那一格的症狀是 NullRef 被 fail-soft 吞掉
         ///   ⇒ 任何一局有 OPEN 座時骰面的 Chess 優先層整條靜默失效。⚠ 也不能回 `"null"` 字串 ——
         ///   那會讓空座位變成一個叫 "null" 的人。
@@ -208,7 +208,7 @@ namespace SCP.Core.Chess
         /// <para>排除我已經在座的局（含我自己的 solo）與 <paramref name="iSkip"/>（上一輪被搶掉的）。
         /// 排序：(已走手數, index) 升冪 —— 手數最少優先（接一局走了 50 手的殘局對接手的人不公平，
         /// Tim 2026-09-11 拍板）；同手數取小 index，⛔ 不用會隨時間改變的鍵當決勝（結果要可複驗）。</para>
-        /// <para>⭐ 骰面的「有一局在等」（`UCL_FreeTimeGating.TryFindJoinableChess`）與 match 真的去配，
+        /// <para>⭐ 骰面的「有一局在等」與 match 真的去配，
         /// **現在讀的是這同一支** —— 以前是跨語言兩份實作，漂掉的症狀是「骰面說有局在等，match 去了卻開新局」。</para>
         /// </summary>
         public static (SCP_JsonData? Game, int Candidates, string Reason) PickMatchCandidate(

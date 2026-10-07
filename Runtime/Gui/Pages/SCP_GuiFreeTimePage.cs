@@ -1,5 +1,5 @@
 // 區塊職責：**自由時間的後台頁**（TASK-0360，Tim 2026-10-01「另外需要 FreeTime 的後台設定頁面」）。
-// 物理意義：取代 Unity 的 `UCL_FreeTimeAdminPage`，另外多一區它沒有的「場次設定」。四區各有各的真相源，⛔ 本頁不存第二份：
+// 物理意義：四區各有各的真相源，⛔ 本頁不存第二份：
 //   ① 場次設定 —— `<資料根>/FreeTime/freetime_settings.json`（SCP_FreeTimeSettings；以前是程式碼常數）
 //   ② 活動清單 —— 兩層活動 md 的 frontmatter（共用層在 UCL_Core、專案層在 `<專案根>/docs/FreeTime/Activities`）
 //   ③ 活動統計 —— `letters/<P>/profile/freetime_activity_stats.md`（**唯讀**：寫入端只有 start 推場次、pick 記選中）

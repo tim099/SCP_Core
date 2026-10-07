@@ -1,5 +1,5 @@
 // 區塊職責：**Plurk 帳號管理頁**（Senate 版，TASK-0362）—— 共用帳號指到哪一份 secret、每個 persona 用個人還是共用、產生憑證 .enc。
-// 物理意義：移植自 Unity `UCL_PlurkAdminPage`（三格照搬：共用帳號／產生憑證／persona 對照）。
+// 物理意義：三格：共用帳號／產生憑證／persona 對照。
 //          解析邏輯**不在本頁**，在 `SCP_PlurkAccounts.Resolve`（單一解析點）—— 頁面只顯示與寫入，判準留在解析器裡。
 // 數值影響：
 //   · **本頁不顯示、不讀取任何 token**：只處理 secret **id**；憑證本體在「加密檔管理」頁（`senate ui --page secrets`）。

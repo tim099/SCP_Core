@@ -100,7 +100,6 @@ if (!SCP_ActivitySessionStore.TryStart(aRoot, aPersona, aSession, Kind, DateTime
 全部在 Senate 就地做，⛔ 不委派 Unity Editor（觀影在 Senate 重做中，TASK-0450）。
 
 - 新 kind **不必**登記任何關場行為；`Kinds` 有它就關得到。
-- ⛔ 不要再往 Unity 側的 `UCL_SessionKindHost` 登記新 kind —— 那張表只剩 Unity 舊指令在用，待 TASK-0454 退場。
 - 你的 kind 要付錢，就在**自己的正常收工**（`step=end`）裡付，⛔ 不要塞進關場門。
 
 ---

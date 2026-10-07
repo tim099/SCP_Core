@@ -1,6 +1,6 @@
 // 區塊職責：quest 投影的**渲染層**（Senate 側）—— `task_list` / `task_state` / `task_next` 三支的輸出。
-// 物理意義：TASK-0287。逐字對齊 Editor 側 `Cmd_Tavern.Op_TaskList`／`Op_TaskState`／`Op_TaskNext`
-//           的版面，理由是驗收③要做輸出對拍 —— 版面不同的話那個比對就沒有受詞了。
+// 物理意義：TASK-0287。三支的版面逐字固定，⛔ 不隨手改：
+//           理由是驗收③要做輸出對拍 —— 版面不同的話那個比對就沒有受詞了。
 // 數值影響：**純讀**，只組字串。
 //
 // ⚠ 小數一律走 `InvariantCulture`：`age` 那一格是 `F1`，而**小數點符號是 culture 的**。

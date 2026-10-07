@@ -1,6 +1,6 @@
 // 區塊職責：創作型發言（`tag=creative`）的**留念掛號信** —— 發文成功之後寄一封給作者，原文存一份。
-// 物理意義：移植自 UCL_Core `Cmd_Tavern.TryArchiveCreativePost`（TASK-0312）。Editor 那支改成呼叫這裡，Senate 的發文路
-//          （`senate cmd tavern-post`）拿到 seq 之後也呼叫這裡 ⇒ 判準與信文只有一份。
+// 物理意義：TASK-0312。Senate 的發文路
+//          （`senate cmd tavern-post`）拿到 seq 之後呼叫這裡 ⇒ 判準與信文只有一份。
 //          「訊息是流，會被推走、被讀掉、被壓縮；這封是存檔，跟著你走。」—— 免費系統掛號信（fee 0，不碰帳）。
 // 邊界（三個都刻意，照 Editor 版）：
 //   - **不擋發文主流程**：寄信失敗只回原因，⛔ 不讓已經貼出去的創作看起來像失敗。

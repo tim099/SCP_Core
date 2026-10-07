@@ -1,5 +1,5 @@
 // 區塊職責：persona 設定的**寫入**本體 —— 身分欄 set／unset、本區銀行綁定 set／unbind、換區重綁（複製）、寫入審計。
-// 物理意義：TASK-0354。移植自 UCL `UCL_PersonaProfile` 的寫入那半（2026-10-01），讓 `senate cmd persona-profile`
+// 物理意義：TASK-0354。persona 檔的寫入那半，讓 `senate cmd persona-profile`
 //           不需要 Unity Editor。讀取那半早就在 `SCP_PersonaProfile`（本檔只寫，讀回驗證走它）。
 //           ⭐ 寫出來的檔與 Editor 版**逐位元組同形**：純量欄 `值\n`、結構欄 UCL beautify（`\r\n`＋`\uXXXX`）、
 //           綁定檔 `帳號\n`、審計一行 UCL 緊湊 JSON（`\uXXXX`）。

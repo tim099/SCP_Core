@@ -1,7 +1,7 @@
 // 區塊職責：任務單**寫入 op** 的本體 —— create / claim / assign / unassign / update / comment / check / link /
 //           resolve / commit / sweep / wrapup / wrapup_skip（TASK-0349）。
 // 物理意義：狀態機與所有閘**只有這一份**，住在 SCP_Core；只在 Senate Server 的 `task-write` 裡被呼叫。
-//           移植自 UCL `Cmd_Task`（2026-09-30 基準，逐段照搬判準與措辭 —— 本檔是那支的搬家，⛔ 不是重寫）：
+//           判準與措辭每一段都有來由（⛔ 不要順手重寫）：
 //           閘（blocker／QA／confirm／signer／expect_text／縮水秤）、鎖內重判（形狀乙）、回報用落檔後那一份。
 //
 // ⚠ 本檔**不做**三件要等別的 process 的事 —— 它們在持鎖的 Server 裡做會卡住所有寫入，
@@ -76,7 +76,7 @@ namespace SCP.Core.Tasks
         };
 
         // ===========================================================
-        // 區塊職責：每個 op **必填**與**會讀**的鍵（UCL `Cmd_Task.ArgsSpec` 原樣搬 ＋ wrapup_skip）。
+        // 區塊職責：每個 op **必填**與**會讀**的鍵。
         // ⚠ 兩欄的保守方向相反：Required 從嚴（多列會砍掉合法呼叫）、Known 從寬（少列會擋掉合法呼叫）。
         //   🩸 Known 存在的理由（UCL 2026-09-21）：`--arg kind=related_to` 打錯參數名被靜默吃掉 ⇒
         //      `op_link` 取預設 `blocked_by` ⇒ 兩張單被標成阻塞，回傳 ✓Success。
@@ -1165,7 +1165,7 @@ namespace SCP.Core.Tasks
         }
 
         // ===========================================================
-        // 區塊職責：晚安收工閘的**顯式跳過** —— 把理由寫進那張單的時間線（UCL `UCL_TaskReconcile.WriteSkip` 的搬家）。
+        // 區塊職責：晚安收工閘的**顯式跳過** —— 把理由寫進那張單的時間線。
         // 物理意義：跳過要留在**別人看得到的地方**（basecamp 拍板：可跳過但留名，比不可跳過更持久）。
         //   🩸 搬家的理由：這一格是晚安 sleep 那一步「要 Editor」的原因之一（TASK-0349 ③）。
         // ===========================================================
@@ -1252,7 +1252,7 @@ namespace SCP.Core.Tasks
         }
 
         // ===========================================================
-        // 區塊職責：組酒館通知（UCL `UCL_TaskNotify.BuildBody` 的搬家）—— 本檔只組、呼叫端發。
+        // 區塊職責：組酒館通知 —— 本檔只組、呼叫端發。
         // 物理意義：第一行要能單獨站著；@ 名單放最後一行（參與者 ＋ 開單人 − 動手的人）。
         //   ⚠ 參與者為空時**明說**，不印一個空的 @ 行（那看起來像「已經通知了」）。
         // ===========================================================
@@ -1338,7 +1338,7 @@ namespace SCP.Core.Tasks
         static string Ids(List<int> iList)
             => iList == null || iList.Count == 0 ? "—" : string.Join(" ", iList.Select(i => "TASK-" + i.ToString("0000", CultureInfo.InvariantCulture)));
 
-        /// <summary>工作記憶主題存在嗎（`<data_root>/WorkMemory/<topic>/_topic.md`，UCL `UCL_TaskMemoryLink` 同一個判準）。</summary>
+        /// <summary>工作記憶主題存在嗎（`<data_root>/WorkMemory/<topic>/_topic.md`）。</summary>
         static bool TopicExists(SCP_DataRoot iRoot, string iTopic)
             => iTopic.Trim().Length > 0 && File.Exists(iRoot.Value + "/WorkMemory/" + iTopic.Trim() + "/_topic.md");
 

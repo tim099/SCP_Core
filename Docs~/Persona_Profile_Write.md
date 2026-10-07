@@ -17,8 +17,8 @@ related:
 > 綁定決定的是「**之後**的收付進哪一戶」；既有分錄 append-only，不追溯。
 
 > ⭐ **這是 persona 檔唯一的寫入端**（TASK-0361，Tim 2026-10-01「寫入端整合到 Senate，Unity 端不留」）：
-> Senate 銀行後台換綁、早安寫 model／actual_agent、Unity Editor 的頁面（建 persona、email、actual_agent、Plurk 帳號；
-> 經 `UCL_PersonaProfileSenateBridge` spawn 本指令）全部走同一份 `SCP_PersonaProfileWrite`，稽核只有一份。
+> Senate 銀行後台換綁、早安寫 model／actual_agent、建 persona、改身分欄（email、actual_agent、Plurk 帳號）
+> 全部走同一份 `SCP_PersonaProfileWrite`，稽核只有一份。
 
 ## 建 persona
 

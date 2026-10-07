@@ -1,7 +1,6 @@
 // 區塊職責：Plurk 的 op 本體（第一份：派遣、帳號、發文路徑）—— resolve / whoami / lint / preview / upload / post / get。
 // 物理意義：**發文的唯一寫入端**（Tim 2026-08-21：「這部分可以走 c# CMD」）。
-//          TASK-0362：Unity `Cmd_Plurk`（UCL_Core/Editor/Plurk）的搬家版 —— **忠實移植，不是重設計**：
-//          報告文字、守衛、血證註解逐段照搬；只換三件事：
+//          報告文字與守衛是讀者介面，⛔ 不順手改；宿主相依只有三件事：
 //            ① 路徑：UCL 全域 → 宿主傳進來的根（<see cref="SCP_PlurkContext"/>）
 //            ② HTTP：HttpClient → 宿主注入的 `ISCP_HttpFormRequester`（SCP_Core 不碰網路）
 //            ③ 同步：UniTask → 直接呼叫（SCP_Core 不碰 async）

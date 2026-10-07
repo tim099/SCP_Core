@@ -1,7 +1,6 @@
 // 區塊職責：自動 commit 的**引擎** —— 找出要管的 repo、逐個掃描分群、一群一筆 commit。
 //          Senate 的自動 Commit 頁（人按）與 `senate cmd auto-commit`（agent 跑）共用這一份。
-// 物理意義：從 Unity 端 `Cmd_AutoCommit`／`UCL_AutoCommitPage` 下沉而來（TASK-0340）。
-//          ⭐ Tim 2026-09-30 兩條拍板改變了形狀：
+// 物理意義：⭐ Tim 2026-09-30 兩條拍板定下形狀：
 //            ① **不再分模式** —— AgentCommands 本層、`letters/*` 每個信件庫、帶 `.ucl_autocommit.json`
 //               的 submodule **一次掃完、一張清單**（原本是 agent / letters / submodules 三種模式各掃各的）。
 //            ② **不再判斷 persona 是否在線** —— 自動 commit 管理的部分**不應該手動 commit**

@@ -6,7 +6,7 @@ using SCP.Core.Io;
 using SCP.Core.Json;
 
 // 區塊職責：新 Library store 的**資料鍵、JSON/文字讀寫、以及讀取端**（reader.json 載入與章節分類）。
-// 物理意義：這是 `UCL_ReadingLibraryIO` 移進 SCP_Core 的第二刀。第一刀（`SCP_LibraryStore`）只回答
+// 物理意義：`SCP_LibraryStore` 只回答
 //          「路徑在哪」，本層回答「那個檔裡有什麼、讀不讀得動、讀出來算第幾章」。
 //          寫入端（media_init / note_chapter / bookmark / …）後來也搬了（`SCP_LibraryInit` 等，入口 `senate cmd library`）；
 //          它們落地用的**版面**對齊舊 writer（見 SaveJson 的 remarks）。
@@ -20,7 +20,7 @@ namespace SCP.Core.Library
 
     public static class SCP_LibraryIO
     {
-        // ── 資料鍵（逐字對齊 UCL_ReadingLibraryIO，⛔ 不趁機改名）──────────────
+        // ── 資料鍵（落盤檔讀者依賴的鍵名，⛔ 不趁機改名）──────────────
         // ⚠ 這些是磁碟上 342 份既有 JSON 的實際鍵名；改一個字 = 讀不到舊值，
         //   而「讀不到」會退回 fallback ⇒ 看起來像「這欄還沒填」，不像「我把鍵改錯了」。
         public const string Key_SchemaVersion = "schema_version";
@@ -87,7 +87,7 @@ namespace SCP.Core.Library
         /// <summary>寫 JSON（UTF-8 無 BOM、tab 縮排、非 ASCII 原生字元、CRLF）。父目錄自動建立。</summary>
         /// <remarks>
         /// ⭐ 版面走 <see cref="SCP_JsonStyle.UclLegacy"/> —— 那是舊寫入端
-        /// <c>UCL_ReadingLibraryIO.SaveJson</c>（<c>ToJsonBeautify()</c>）的形狀：
+        /// （<c>ToJsonBeautify()</c>）的形狀：
         /// tab 縮排／冒號後**不**補空格／陣列的 <c>[</c> 自己佔一行／空容器展開成兩行。
         /// <para>⚠ 為什麼不是「用 SCP 預設、既有檔翻紅一次就算了」：遷移期間**兩個寫入端並存**，
         /// 而 TASK-0166 ③ 要的讀數正是「同輸入、兩邊輸出逐位元組相同」。版面不同 ⇒ 那一格永遠對不上，

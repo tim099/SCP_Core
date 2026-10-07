@@ -1,7 +1,5 @@
 // 區塊職責：自動 commit 的**分群規則**（單一真相源）——「這個檔屬於哪一群、哪些檔永遠不收」。
-// 物理意義：從 Unity 端 `UCL_AutoCommitRules` 下沉而來（TASK-0340，Tim 2026-09-30 拍板「先下沉到 SCP_Core」）。
-//          規則原本住 UCL_Core 的 EditorCore，只有 Editor 開著才用得到；搬下來之後
-//          Senate 的自動 Commit 頁與 `senate cmd auto-commit` 共用這一份。
+// 物理意義：Senate 的自動 Commit 頁與 `senate cmd auto-commit` 共用這一份。
 //          🩸 共用的理由不是「重複很醜」：這種規則的錯配等級是「檔進錯 commit」——
 //            兩份規則漂掉的症狀是「同一個檔在頁面被分到 A 群、在 Cmd 被分到 B 群」，
 //            而兩邊各自看起來都正常。

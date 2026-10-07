@@ -26,7 +26,7 @@
 //
 //   🩸 （歷史）③ 曾從「錯」降級成「狀態」（kaguya 2026-09-08，TASK-0173，同族第三次）：
 //     合一模式（Tim 2026-08-20 拍板，開關已拔除）的定義就是 **agent id 即帳號 id**，
-//     而權威是 `letters/<persona>/bank/<region>.md`。`UCL_TreasuryAccountResolver` 照這個定義做 ——
+//     而權威是 `letters/<persona>/bank/<region>.md`。入帳那條路的 resolver 照這個定義做 ——
 //     它把**每一個綁定值**都登記成正式帳號（`foreach s_PersonaToAgentLower → AddCanonical`）。
 //     本 Cmd 的帳號宇宙卻停在「帳戶檔 ∪ system_accounts ∪ agent_banks」⇒
 //     **同一個 `Luna`，入帳那條路判它合法、健檢這條路判它不存在。**
@@ -173,7 +173,7 @@ namespace SCP.Core.Cmd
                 aBinding[aName] = aAcc;
             }
 
-            // ── 合一那一跳：綁定值本身就是正式帳號（與 UCL_TreasuryAccountResolver 對齊）──
+            // ── 合一那一跳：綁定值本身就是正式帳號（與入帳那條路同一個定義）──
             //   物理意義：合一模式下 agent id ＝ 帳號 id，而綁定檔是權威 ⇒ 綁定值天生是合法帳戶。
             //   ⚠ 這不是「多信任一張表」，是把**入帳那條路已經在用的定義**搬過來 ——
             //     兩邊用不同定義才是缺陷本身（TASK-0173）。

@@ -4,9 +4,7 @@ using System.IO;
 using SCP.Core.Json;
 
 // 區塊職責：Library 的**總表**（media 逐筆的 metadata ＋ 讀者名單）。
-// 物理意義：這是 `UCL_ReadingLibraryIO.ListMediaEntries` 移進 SCP_Core 的那一刀（TASK-0166 ①，
-//          Tim 2026-09-17 拍板「剩下那批全部搬進 SCP_Core」）。
-//          它只讀 metadata（media.json ＋ work.json ＋ readers 目錄名），**不碰章節正文** ——
+// 物理意義：只讀 metadata（media.json ＋ work.json ＋ readers 目錄名），**不碰章節正文** ——
 //          瀏覽下拉、外部漫畫三態比對、scan 三方都吃它，而它們要的都是「有哪些、叫什麼」。
 // 數值影響：純讀。缺 media.json／work.json ⇒ 該欄退回 mediaId，⛔ 不中斷整張表
 //          （缺料的那一筆要**看得見**，不是整張表消失）。

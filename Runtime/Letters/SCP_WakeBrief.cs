@@ -12,8 +12,7 @@
 //           主檔與續讀檔的最後一行是 `🔚 本檔結束（共 N 行）`（<see cref="WithEndMarker"/>）。
 //
 // ⚠ **射程（2026-09-01 起是全量）**：§1 見根／§2 見叢／§2.5 見單／§3 見森／§4 見林／§5 見樹／§5.5 回憶／
-//   §6 記憶維護／§6.5 見人／§6.6 見書／§9 動作清單都在這裡，而 `Cmd_GoodMorning` step=brief
-//   已改成就地呼叫本檔。
+//   §6 記憶維護／§6.5 見人／§6.6 見書／§9 動作清單都在這裡（`senate cmd morning-brief` 就地呼叫本檔）。
 //   ① §5.5／§6.6 的抽籤用穩定雜湊（FNV-1a）：同一次醒來必抽同一封。
 //   ② 缺陷單張數要 `iDataRoot`；沒給就印「未量」——**不印 0**（未量 ≠ 零張）。
 using System;
@@ -1233,7 +1232,7 @@ namespace SCP.Core.Letters
         }
 
         // 區塊職責：判一張閱讀卡是不是**現行寫入端**產的（純檔頭，不回問真相源）。
-        // 物理意義：判準取自寫入端自己蓋的那個戳（`UCL_ReadingLibraryIO.SyncBookshelf` 寫
+        // 物理意義：判準取自寫入端自己蓋的那個戳（`SCP_LibraryBookshelf.SyncBookshelf` 寫
         //           <see cref="MechanicalMarker"/>），不是本段自己猜的欄位形狀 ——
         //           猜欄位形狀會在寫入端換欄位時靜默判反，而戳是雙方講好的同一個字。
         // 數值影響：⚠ 本多載**答不出孤兒** —— 有戳而真相源不在時它回 `Mechanical`。
@@ -1297,7 +1296,7 @@ namespace SCP.Core.Letters
         }
 
         /// <summary>現行寫入端蓋在閱讀卡 frontmatter 上的戳（跨端契約：與
-        /// `UCL_ReadingLibraryIO.SyncBookshelf` 寫出的那一行同字）。</summary>
+        /// `SCP_LibraryBookshelf.SyncBookshelf` 寫出的那一行同字）。</summary>
         public const string MechanicalMarker = "generated: mechanical";
 
         /// <summary>閱讀卡目錄名（跨端契約：python `wake_brief.BOOKSHELF_DIR_NAME` 同名）。</summary>

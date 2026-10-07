@@ -1,7 +1,5 @@
 // 區塊職責：自由時間活動清單的**唯一掃描器**（雙層 md）＋ frontmatter 單欄讀寫 ＋ 在專案層新增活動。
-// 物理意義：移植自 Unity `UCL_FreeTimeIO`（檔名叫 UCL_FreeTimeSettings.cs，實際是掃描器）與
-//          `UCL_FreeTimeAdminPage.CreateActivity`／`UCL_AwakeningService.Read/WriteFrontmatterField`（TASK-0360）。
-//          共用層跟著 UCL_Core 走（`<UCL_Core>/Docs~/zh-Hant/FreeTime/Activities`）、專案層跟著 repo 走
+// 物理意義：共用層跟著 UCL_Core 走（`<UCL_Core>/Docs~/zh-Hant/FreeTime/Activities`）、專案層跟著 repo 走
 //          （`<project_root>/docs/FreeTime/Activities`）；同 id 專案層覆蓋共用層。
 //          Cmd 擲骰與後台頁**共用這一份**：兩份掃描器的漂移症狀是「頁面看到的清單跟實際擲出來的不一樣」，而它不會報錯。
 // 數值影響：Scan 純讀；WriteField／CreateProjectActivity 各寫一個 md（原子換檔 ＋ 讀回確認）。
@@ -26,7 +24,7 @@ namespace SCP.Core.FreeTime
         /// <summary>共用層在 UCL_Core 根底下的相對位置。</summary>
         public const string SharedRelDir = "Docs~/zh-Hant/FreeTime/Activities";
 
-        /// <summary>專案層在專案根底下的相對位置（Unity 版 `UCL_FreeTimeIO.GetProjectActivityDir`）。</summary>
+        /// <summary>專案層在專案根底下的相對位置。</summary>
         public const string ProjectRelDir = "docs/FreeTime/Activities";
 
         // ── 路徑 ──────────────────────────────────────────────────
@@ -175,7 +173,7 @@ namespace SCP.Core.FreeTime
         // ── frontmatter 單欄讀寫 ──────────────────────────────────
 
         /// <summary>
-        /// 讀 md frontmatter 單欄 —— **逐字照 Unity `UCL_AwakeningService.ReadFrontmatterField`**：
+        /// 讀 md frontmatter 單欄：
         /// 第一行必須是 `---`；最多看 100 行；遇到收尾 `---` 停；`欄位:` 前綴比對（區分大小寫、不吃縮排）；
         /// 值 Trim 後剝掉兩端的 `"`／`'`；找不到或讀不了 ⇒ 空字串。
         /// </summary>
@@ -203,7 +201,6 @@ namespace SCP.Core.FreeTime
 
         /// <summary>
         /// 值含 `:`／`#`／前後空白時加雙引號（內部 `"` 跳脫成 `\"`）—— 否則 YAML 讀回來會截斷或變成註解。
-        /// 與 Unity `WriteFrontmatterField`／`UCL_FreeTimeAdminPage.Quote` 同一條規則。
         /// </summary>
         public static string Quote(string? iVal)
         {
@@ -266,7 +263,7 @@ namespace SCP.Core.FreeTime
         // ── 新增活動（一律建在專案層）──────────────────────────────
 
         /// <summary>
-        /// 在專案層新增一份活動 md（照 Unity `UCL_FreeTimeAdminPage.CreateActivity`）。
+        /// 在專案層新增一份活動 md。
         /// <para>為什麼一律建在專案層：共用層屬於 UCL_Core（跨專案），從專案的管理頁往那裡新增等於替別的專案做決定；
         /// 專案層同 id 會覆蓋共用層 —— 要改共用活動也走這裡。</para>
         /// <para>驗證：id 非空、不含非法檔名字元、不以 `_` 開頭（底線開頭的 md 被視為說明檔）、建議時間 ≥ 0、

@@ -5,9 +5,7 @@ using System.Text.RegularExpressions;
 using SCP.Core.Books;
 
 // 區塊職責：新 Library store（`work → media → reader_persona`）的**路徑與唯讀列舉**層。
-// 物理意義：這是 `UCL_ReadingLibraryIO` 移進 SCP_Core 的第一刀 —— 只搬「路徑怎麼算」與
-//          「目錄裡有什麼」，⛔ 還沒搬任何寫入端。挑這一刀先做的理由是它**可以被單獨驗證**：
-//          兩邊對同一個 data_root 算出的路徑字串必須逐字相同，而那不需要動任何檔案。
+// 物理意義：只回答「路徑怎麼算」與「目錄裡有什麼」，⛔ 不含任何寫入端。
 // 數值影響：全層純讀，不建目錄、不寫檔。目錄不存在一律回空清單（⛔ 不拋例外 ——
 //          「還沒有人讀過任何東西」是正常狀態，不是錯誤）。
 //
@@ -20,7 +18,7 @@ namespace SCP.Core.Library
 {
     public static class SCP_LibraryStore
     {
-        // ── 目錄與檔名（逐字對齊 UCL_ReadingLibraryIO，⛔ 不趁機改名）────────────
+        // ── 目錄與檔名（既有資料的版面，⛔ 不趁機改名）────────────
         // ⚠ 這些字串是**磁碟上既有 342 份 chapter.json 的實際位置**，改一個字就是找不到舊資料，
         //   而「找不到」與「這位讀者還沒讀過」在回傳值上同形（都是空清單）。
         public const string LibraryDirName = "Library";
