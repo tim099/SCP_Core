@@ -245,7 +245,6 @@ namespace SCP.Core.Discord
             List<SCP_DiscordWebhookInfo> aHooks = c.Webhooks.Where(w => aIds.Contains(w.Id) && w.Enabled).ToList();
             if (aHooks.Count == 0) { r.Problems.Add($"分類 {aSet.Category} 沒有綁任何啟用中的 webhook ⇒ 不送"); return r; }
             r.Targets.AddRange(aHooks.Select(w => w.Describe()));
-            string aRepoRoot = SCP_DiscordMedia.RepoRootOf(iDataRoot, "");
             Dictionary<string, string> aUrls = SCP_DiscordConfigStore.LoadWebhookUrls(iDataRoot, out string? aUrlErr);
             if (aUrlErr != null) { r.Problems.Add(aUrlErr); return r; }
             Dictionary<string, string>? aMentionMap = null;   // 只有常駐送出（iPing）才換成 <@id> —— 見檔頭
@@ -277,7 +276,7 @@ namespace SCP.Core.Discord
                 foreach (SCP_TavernMessage m in aEligible)
                 {
                     if (m.Seq <= aDone) { r.SkippedAlready++; continue; }
-                    List<SCP_HttpFilePart> aFiles = SCP_DiscordMedia.CollectUploads(iDataRoot, aRepoRoot, m, out List<string> aSkippedImgs);
+                    List<SCP_HttpFilePart> aFiles = SCP_DiscordMedia.CollectUploads(iDataRoot, "", m, out List<string> aSkippedImgs);
                     string aFooter = aSkippedImgs.Count > 0 ? "-# 📎 未上傳：" + string.Join("、", aSkippedImgs) : "";
                     List<string> aPayloads = BuildPayloads(iLettersRoot, c.AvatarUrlTemplate, iRoom, m, aFooter, aMentionMap);
                     if (iDryRun) { r.Posts += aPayloads.Count; r.Sent++; r.Images += aFiles.Count; continue; }

@@ -273,7 +273,7 @@ namespace SCP.Core.Tavern
                 aTitle = "🍺 " + iMeta.Name + " — 最新 " + aMessages.Count + " 筆"
                          + (aTail <= 0 && aLimit > 0 ? "（`limit=" + aLimit + "` 已當成 tail 用）" : "");
             }
-            return RenderMessages(aTitle, aMessages);
+            return RenderMessages(aTitle, aMessages, iDataRoot);
         }
 
         /// <summary>本側搜尋掃多少則（同查詢層 `SCAN_PER_ROOM`）。⚠ 抄值不抄來源 ⇒ 它印在輸出的頁尾上。</summary>
@@ -300,7 +300,7 @@ namespace SCP.Core.Tavern
         }
 
         /// <summary>訊息列表渲染成 markdown。⛔ 版面是讀者依賴的格式，別順手改。</summary>
-        static string RenderMessages(string iTitle, List<SCP_TavernMessage> iMessages)
+        static string RenderMessages(string iTitle, List<SCP_TavernMessage> iMessages, string iDataRoot)
         {
             var aSb = new StringBuilder();
             aSb.Append("# ").Append(iTitle).Append("\n\n");
@@ -324,7 +324,8 @@ namespace SCP.Core.Tavern
                     aSb.Append("\n  - refs:");
                     foreach (SCP_TavernRef r in m.Refs)
                     {
-                        aSb.Append(" [").Append(r.Label.Length > 0 ? r.Label : r.Path).Append("](").Append(r.Path);
+                        // 連結印**解好的絕對路徑**（接上設定的資料根，TASK-0390）—— 讀的人直接 Read 它，不用自己猜基準
+                        aSb.Append(" [").Append(r.Label.Length > 0 ? r.Label : r.Path).Append("](").Append(SCP_TavernRefPath.Resolve(iDataRoot, r.Path));
                         if (r.Anchor.Length > 0) aSb.Append('#').Append(r.Anchor);
                         aSb.Append(')');
                     }

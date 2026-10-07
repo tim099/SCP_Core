@@ -67,21 +67,33 @@ namespace SCP.Core.WorkMemory
 
         /// <summary>AgentCommands 資料根。</summary>
         public readonly string DataRoot;
-        /// <summary>專案根（related_docs 的相對路徑以它為基準）。</summary>
-        public readonly string RepoRoot;
-        /// <summary>UCL_Core 根（`ucl_core:` 前綴；null ＝ 這個專案沒有，那種 ref 照實說解不了）。</summary>
-        public readonly string? UclCoreRoot;
+        /// <summary>
+        /// 具名根（related_docs 的 `&lt;名&gt;:` 前綴 ⇒ 這個根，例 `senate:`、`scp_core:`）—— 由宿主給（<see cref="HostNamedRoots"/>）。
+        /// <para>TASK-0390（2026-10-07，Tim：Senate＝Server、Valhalla＝資料 repo，⛔ 不依賴 Unity）：
+        /// 沒前綴的相對路徑以**資料根**為基準；舊的 `AgentCommands/…` 去前綴後同樣接資料根。
+        /// 🩸 舊基準是「資料根的上一層＝Unity 專案 repo」—— 資料根搬到 Valhalla 之後那一層是 `D:/Unity`。
+        /// `ucl_core:`／`Assets/…` 這類 Unity 專案裡的檔照實說解不了，⛔ 不猜。</para>
+        /// </summary>
+        public readonly IReadOnlyDictionary<string, string> NamedRoots;
+
+        /// <summary>宿主宣告的具名根（Senate：`senate`＝repo 根、`scp_core`＝SCP_Core）。沒裝 ⇒ 只有資料根。</summary>
+        public static Func<IReadOnlyDictionary<string, string>>? HostNamedRoots { get; set; }
+
+        /// <summary>舊慣例前綴：資料根住在 Unity 專案裡時就叫這個名字（同 SCP_TavernRefPath.LegacyPrefix）。</summary>
+        const string LegacyDataPrefix = "AgentCommands/";
 
         public string WmRoot => P(DataRoot, "WorkMemory");
         public string BriefRoot => P(DataRoot, "WorkMemoryReadBriefs");
         public string TasksRoot => P(DataRoot, "Tasks", "tasks");
         public string TombstonePath => P(WmRoot, "_tombstones.md");
 
-        public SCP_WorkMemory(string iDataRoot, string iRepoRoot, string? iUclCoreRoot)
+        public SCP_WorkMemory(string iDataRoot, IReadOnlyDictionary<string, string>? iNamedRoots = null)
         {
             DataRoot = iDataRoot.Replace('\\', '/').TrimEnd('/');
-            RepoRoot = iRepoRoot.Replace('\\', '/').TrimEnd('/');
-            UclCoreRoot = iUclCoreRoot?.Replace('\\', '/').TrimEnd('/');
+            var aRoots = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var kv in iNamedRoots ?? HostNamedRoots?.Invoke() ?? new Dictionary<string, string>())
+                if (!string.IsNullOrWhiteSpace(kv.Value)) aRoots[kv.Key] = kv.Value.Replace('\\', '/').TrimEnd('/');
+            NamedRoots = aRoots;
         }
 
         static string P(params string[] iParts) => Path.Combine(iParts).Replace('\\', '/');
@@ -618,12 +630,22 @@ namespace SCP.Core.WorkMemory
             string raw = iRef.Trim();
             if (raw.StartsWith("commit:", StringComparison.Ordinal) || raw.StartsWith("tavern:", StringComparison.Ordinal)
                 || raw.StartsWith("workmem:", StringComparison.Ordinal)) { oWhy = "非本地檔案引用"; return null; }
-            string baseDir = RepoRoot;
-            if (raw.StartsWith("ucl_core:", StringComparison.Ordinal))
+            string baseDir = DataRoot;
+            // `<名>:` 前綴（小寫、不是磁碟代號 `D:/`）⇒ 宿主宣告的具名根；沒宣告的照實說，⛔ 不猜
+            Match aPrefix = Regex.Match(raw, @"^([a-z_]+):(?![\\/])");
+            if (aPrefix.Success)
             {
-                if (UclCoreRoot == null) { oWhy = "這個專案沒有 UCL_Core（`ucl_core:` 解不了）"; return null; }
-                baseDir = UclCoreRoot; raw = raw.Substring("ucl_core:".Length);
+                string aName = aPrefix.Groups[1].Value;
+                if (!NamedRoots.TryGetValue(aName, out string? aRoot))
+                {
+                    oWhy = aName == "ucl_core"
+                        ? "`ucl_core:` 是 Unity 專案裡的檔（UCL_Core）—— Senate 不讀 Unity 專案"
+                        : $"`{aName}:` 不是宿主宣告的根（有：{(NamedRoots.Count > 0 ? string.Join("、", NamedRoots.Keys) : "無")}）";
+                    return null;
+                }
+                baseDir = aRoot; raw = raw.Substring(aPrefix.Length);
             }
+            else if (raw.StartsWith(LegacyDataPrefix, StringComparison.OrdinalIgnoreCase)) raw = raw.Substring(LegacyDataPrefix.Length);
             raw = Regex.Replace(raw, @":\d+(?:-\d+)?$", "");
             string cand;
             try
@@ -633,7 +655,8 @@ namespace SCP.Core.WorkMemory
             catch (Exception e) { oWhy = "路徑解析失敗：" + e.Message; return null; }
             bool Under(string? root) => root != null
                 && cand.StartsWith(Path.GetFullPath(root).Replace('\\', '/').TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase);
-            if (!Under(RepoRoot) && !Under(UclCoreRoot)) { oWhy = "路徑不在允許的工作區範圍"; return null; }
+            if (!Under(DataRoot) && !NamedRoots.Values.Any(Under))
+            { oWhy = "路徑不在允許的工作區範圍（資料根＋宿主宣告的根；Unity 專案裡的檔 Senate 不讀）"; return null; }
             if (!File.Exists(cand)) { oWhy = "檔案不存在或不是一般檔案"; return null; }
             return cand;
         }
@@ -806,12 +829,12 @@ namespace SCP.Core.WorkMemory
                 var (clean, detail) = GitDirStatus(d);
                 if (!clean)
                 {
-                    r.Say($"\n🛑 **擋下**：`{Rel(RepoRoot, d)}` 在 git 裡不乾淨 ⇒ 不歸檔。");
+                    r.Say($"\n🛑 **擋下**：`{Rel(DataRoot, d)}` 在 git 裡不乾淨 ⇒ 不歸檔。");
                     r.Say("   實際讀數：");
                     foreach (string ln in detail.Length > 0 ? detail.Split('\n') : new[] { "（空 —— 但上面說不乾淨，這本身就是要看的訊號）" }) r.Say("     " + ln);
                     return r.Fail(3, "   ⇒ 先 commit 再來。「刪掉也沒關係，git 有」是一個需要被驗的前提。");
                 }
-                r.Say($"✅ git 守衛：`{Rel(RepoRoot, d)}` 乾淨（無 modified／staged／untracked）");
+                r.Say($"✅ git 守衛：`{Rel(DataRoot, d)}` 乾淨（無 modified／staged／untracked）");
             }
             string sha = iCommit.Trim();
             if (sha.Length == 0 && !iUndo) sha = GitHeadSha(d);
@@ -846,7 +869,7 @@ namespace SCP.Core.WorkMemory
             var (clean, detail) = GitDirStatus(d);
             if (!clean)
             {
-                r.Say($"🛑 **擋下**：`{Rel(RepoRoot, d)}` 在 git 裡不乾淨 ⇒ 不刪。");
+                r.Say($"🛑 **擋下**：`{Rel(DataRoot, d)}` 在 git 裡不乾淨 ⇒ 不刪。");
                 r.Say("   實際讀數：");
                 foreach (string ln in detail.Length > 0 ? detail.Split('\n') : new[] { "（空）" }) r.Say("     " + ln);
                 return r.Fail(3, "   ⇒ **刪除是不可逆的**，而沒入版控的內容刪掉就真的沒了。");
@@ -869,7 +892,7 @@ namespace SCP.Core.WorkMemory
                           + $"{n} 個檔的內容在 commit `{(sha.Length > 0 ? sha : "（拿不到 HEAD sha）")}`\n";
             File.AppendAllText(TombstonePath, line.Replace("\n", "\r\n"), new UTF8Encoding(false));
             r.Written.Add(TombstonePath);
-            r.Say($"🪦 已刪除 `{iTopic}`（{n} 個檔）並留墓碑：{Rel(RepoRoot, TombstonePath)}");
+            r.Say($"🪦 已刪除 `{iTopic}`（{n} 個檔）並留墓碑：{Rel(DataRoot, TombstonePath)}");
             r.Say($"   內容在 commit `{(sha.Length > 0 ? sha : "?")}` —— 刪除可以，失聯不行。");
             r.Say("");
             r.Say("📌 對每一張關聯單補上墓碑指標（那一格歸任務寫入端）：");
@@ -877,24 +900,6 @@ namespace SCP.Core.WorkMemory
             return r;
         }
 
-        // ===========================================================
-        // 專案根 → UCL_Core 根（`.gitmodules` 裡唯一以 UCL_Core 結尾的 submodule；⛔ 不猜）
-        // ===========================================================
-        public static string? FindUclCoreRoot(string iRepoRoot)
-        {
-            string aModules = Path.Combine(iRepoRoot, ".gitmodules");
-            if (!File.Exists(aModules)) return null;
-            var aHits = new List<string>();
-            foreach (string aLine in File.ReadAllLines(aModules))
-            {
-                string t = aLine.Trim();
-                if (!t.StartsWith("path", StringComparison.Ordinal)) continue;
-                int eq = t.IndexOf('=');
-                if (eq < 0) continue;
-                string p = t.Substring(eq + 1).Trim().Replace('\\', '/').TrimEnd('/');
-                if (p.EndsWith("/UCL_Core", StringComparison.OrdinalIgnoreCase) || p == "UCL_Core") aHits.Add(p);
-            }
-            return aHits.Count == 1 ? Path.Combine(iRepoRoot, aHits[0]).Replace('\\', '/') : null;
-        }
+        // ⛔ 2026-10-07（TASK-0390）刪掉 `FindUclCoreRoot`（讀 Unity 專案的 .gitmodules 找 UCL_Core）：Senate 不讀 Unity 專案。
     }
 }

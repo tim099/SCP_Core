@@ -38,8 +38,8 @@ namespace SCP.Core.Cmd
             //   而本 Cmd 沒有子命令 —— 不宣告的話那一格會被未知參數預檢擋下，交易所活動的 swap 步驟就走不通。
             new SCP_CmdArgSpec("op", "子命令（只有 swap；給自由時間 cmd_steps 路由用，直接呼叫不必帶）", iDefault: "swap",
                 iChoices: new[] { "swap" }),
-            new SCP_CmdArgSpec("letters_root", "persona 信件夾根（絕對路徑）。省略時自動嘗試推導", iDefault: ""),
-            new SCP_CmdArgSpec("data_root", "資料根目錄（絕對路徑）。省略時自動嘗試推導", iDefault: ""),
+            new SCP_CmdArgSpec("letters_root", "persona 信件夾根（絕對路徑）。省略時由資料根推（宿主有設定就照設定）", iDefault: ""),
+            new SCP_CmdArgSpec("data_root", "資料根目錄（絕對路徑）。宿主照後台設定補；省略又沒有宿主 ⇒ 擋下", iDefault: ""),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -61,14 +61,18 @@ namespace SCP.Core.Cmd
             if (!int.TryParse(aAmountStr, out int aAmount) || aAmount <= 0)
                 return SCP_CmdResult.Fail(2, $"✗ amount 必須為大於 0 之整數（收到 '{aAmountStr}'）");
 
-            string aLettersRaw = ResolveLettersRoot(iArgs.Get("letters_root"));
+            string aDataRoot = Clean(iArgs.Get("data_root"));
+            if (aDataRoot.Length == 0)
+                return SCP_CmdResult.Fail(2, "✗ 沒有資料根 —— 宿主照後台設定補 data_root；手動呼叫請給絕對路徑");
+            if (!Directory.Exists(aDataRoot))
+                return SCP_CmdResult.Fail(1, $"✗ 資料根不存在：{aDataRoot}");
+
+            // 信件根：沒給就從資料根推 —— 走 SCP_DataPaths.Letters（宿主裝了解析就是設定那一格）。
+            string aLettersRaw = Clean(iArgs.Get("letters_root"));
+            if (aLettersRaw.Length == 0) aLettersRaw = SCP_DataPaths.Letters(new SCP_DataRoot(aDataRoot)).Value;
             if (!Directory.Exists(aLettersRaw))
                 return SCP_CmdResult.Fail(1, $"✗ 信件夾根不存在：{aLettersRaw}");
             var aLetters = new SCP_LettersRoot(aLettersRaw);
-
-            string aDataRoot = ResolveDataRoot(iArgs.Get("data_root"));
-            if (!Directory.Exists(aDataRoot))
-                return SCP_CmdResult.Fail(1, $"✗ 資料根不存在：{aDataRoot}");
 
             bool aConfirm = iArgs.Get("confirm").Trim() == "1";
             DateTime aNow = DateTime.UtcNow;
@@ -115,20 +119,8 @@ namespace SCP.Core.Cmd
             return aR;
         }
 
-        static string ResolveLettersRoot(string iGiven)
-        {
-            if (!string.IsNullOrWhiteSpace(iGiven)) return iGiven.Trim().Replace('\\', '/');
-            string aCandidate = "D:/Unity/Bar/AgentCommands/ChatTavern/baton/letters";
-            if (Directory.Exists(aCandidate)) return aCandidate;
-            return Directory.GetCurrentDirectory().Replace('\\', '/');
-        }
-
-        static string ResolveDataRoot(string iGiven)
-        {
-            if (!string.IsNullOrWhiteSpace(iGiven)) return iGiven.Trim().Replace('\\', '/');
-            string aCandidate = "D:/Unity/Bar/AgentCommands";
-            if (Directory.Exists(aCandidate)) return aCandidate;
-            return Directory.GetCurrentDirectory().Replace('\\', '/');
-        }
+        // ⛔ 2026-10-07（TASK-0390）拿掉了「沒給就猜 D:/Unity/Bar/... 再退 cwd」的推導：
+        //   猜中舊樹時路徑全對、只是屬於另一棵資料樹，而那不會報錯。根一律由宿主照後台設定補。
+        static string Clean(string iGiven) => (iGiven ?? "").Trim().Replace('\\', '/');
     }
 }

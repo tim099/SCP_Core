@@ -63,8 +63,8 @@ namespace SCP.Core.Cmd
             string aDataRoot = iArgs.Get("data_root").Trim();
             if (aDataRoot.Length == 0 || !Directory.Exists(aDataRoot))
                 return SCP_CmdResult.Fail(3, "✗ 資料根不存在：" + aDataRoot);
-            string aRepo = Path.GetDirectoryName(Path.GetFullPath(aDataRoot).TrimEnd('\\', '/')) ?? aDataRoot;
-            var wm = new SCP_WorkMemory(aDataRoot, aRepo, SCP_WorkMemory.FindUclCoreRoot(aRepo));
+            // 具名根（senate:／scp_core:）由宿主宣告（SCP_WorkMemory.HostNamedRoots）；⛔ 不再拿「資料根的上一層」當 repo 根（TASK-0390）
+            var wm = new SCP_WorkMemory(aDataRoot);
 
             string op = iArgs.Get("op").Trim();
             string topic = iArgs.Get("topic").Trim();

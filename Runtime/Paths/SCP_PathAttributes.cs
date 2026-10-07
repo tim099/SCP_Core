@@ -48,6 +48,14 @@ namespace SCP.Core.Paths
         public string BlankMeans { get; set; } = "";
     }
 
+    /// <summary>這條路徑**由宿主給、不儲存**（例：宿主自己的 repo 根）。頁面唯讀；值走同一個 stored 回呼由宿主對映。</summary>
+    [AttributeUsage(AttributeTargets.Field, AllowMultiple = false)]
+    public sealed class SCP_PathHostAttribute : Attribute
+    {
+        public SCP_PathHostAttribute(SCP_PathScope iScope) { Scope = iScope; }
+        public SCP_PathScope Scope { get; }
+    }
+
     /// <summary>
     /// 這條路徑**永遠由上游算出來、不儲存**。
     /// <para>⚠ 上游是建構子必填 —— Derived 而沒有上游這個狀態**表示不出來**。</para>

@@ -96,12 +96,26 @@ namespace SCP.Core.Paths
             => ChatTavern(iRoot) + "/" + BatonDirName;
 
         /// <summary>
-        /// 慣例上的信件夾根（<c>&lt;資料根&gt;/ChatTavern/baton/letters</c>）。
-        /// <para>⚠ 它是**慣例值**不是唯一解 —— 設定可以把信件夾指到別處，
-        /// 所以 <see cref="SCP_LettersRoot"/> 是獨立型別，不從這裡自動轉換。</para>
+        /// 這個資料根的信件夾根。宿主裝了 <see cref="LettersResolver"/> 且它認得這個資料根
+        /// ⇒ 用宿主的解析（＝設定那一格）；否則慣例值 <c>&lt;資料根&gt;/ChatTavern/baton/letters</c>。
+        /// <para>⚠ 設定可以把信件夾指到別處（<c>SCP_PathId.LettersRoot</c> 是 Stored）。
+        /// 🩸 2026-10-07（TASK-0390）：這裡原本**只回慣例值** ⇒ 只拿到資料根的那半邊程式（早安、晚安、session lock、
+        /// mentions、薪資）寫慣例那棵，讀設定的那半邊（canvas、rest、wake-brief、auto-commit、bank）寫設定那棵，
+        /// 兩棵各自完整、**沒有任何一層會喊**。⇒ 推導的唯一入口就是本函式，它要問宿主。</para>
         /// </summary>
         public static SCP_LettersRoot Letters(SCP_DataRoot iRoot)
-            => new SCP_LettersRoot(Baton(iRoot) + "/" + LettersDirName);
+        {
+            SCP_LettersRoot? aHost = LettersResolver?.Invoke(iRoot);
+            return aHost ?? new SCP_LettersRoot(Baton(iRoot) + "/" + LettersDirName);
+        }
+
+        /// <summary>
+        /// 宿主的信件夾根解析（Senate：設定檔那一格經 <c>SCP_PathRegistry</c>）。
+        /// <para>契約：**只對宿主設定的那個資料根回值**，其他資料根（selftest 的暫存樹、別台的根）回 null
+        /// ⇒ 走慣例值。⛔ 對陌生資料根也回設定值的話，暫存樹上的測試會寫進真的信件庫。</para>
+        /// <para>沒裝（Unity 那側、純函式測試）⇒ 一律慣例值，與 2026-10-07 之前同形。</para>
+        /// </summary>
+        public static Func<SCP_DataRoot, SCP_LettersRoot?>? LettersResolver { get; set; }
 
         // ── 現地定語 ──────────────────────────────────────────────
 
@@ -114,8 +128,11 @@ namespace SCP.Core.Paths
         public const string UnstatedQualifier = "unstated";
 
         /// <summary>
-        /// 從資料根算出**專案名**（＝資料根的上一層目錄名）。**純路徑運算，不碰磁碟、不猜。**
+        /// 信件與 brief 的 <c>project</c> 定語 ＝ **資料根的完整路徑**（正規化成 <c>/</c>、去尾斜線）。**純路徑運算，不碰磁碟、不猜。**
         /// <para>沒給資料根就回 <see cref="UnstatedQualifier"/> —— 印一個猜的專案名比留空更難查。</para>
+        /// <para>🩸 2026-10-07（Tim 定案，TASK-0390）：原本回「資料根的上一層目錄名」—— 那個推導假設資料根是
+        /// <c>&lt;Unity 專案&gt;/AgentCommands</c>；資料根搬到 <c>D:/Unity/Valhalla</c> 之後它安靜地印出 <c>Unity</c>。
+        /// ⇒ 不再從資料夾名推，直接印路徑（名字保留，Unity 那側也編這份）。</para>
         /// <para>⚠ 它是「現地定語」的一半：另一半 <c>region</c>（貨幣 ID）的真相源是宿主的央行設定，
         /// **本層不長讀它的嘴**，由宿主傳進來。兩欄都要的理由：宿主的 <c>CurrencyId</c> 缺值時
         /// 回預設而不是空 ⇒ 兩個沒設定過的專案會印出同一個 region，而 project 在那種情況下
@@ -128,10 +145,8 @@ namespace SCP.Core.Paths
             if (string.IsNullOrWhiteSpace(iDataRoot)) return UnstatedQualifier;
             try
             {
-                string aNorm = iDataRoot!.Replace('\\', '/').TrimEnd('/');
-                string? aParent = System.IO.Path.GetDirectoryName(aNorm);
-                string aName = string.IsNullOrEmpty(aParent) ? "" : System.IO.Path.GetFileName(aParent!);
-                return string.IsNullOrWhiteSpace(aName) ? UnstatedQualifier : aName;
+                string aNorm = iDataRoot!.Trim().Replace('\\', '/').TrimEnd('/');
+                return aNorm.Length == 0 ? UnstatedQualifier : aNorm;
             }
             catch { return UnstatedQualifier; }
         }

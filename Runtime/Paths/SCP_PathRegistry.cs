@@ -32,6 +32,13 @@ namespace SCP.Core.Paths
 
         /// <summary>**永遠由上游算出來，不存**。頁面上唯讀，並且要把算式印出來。</summary>
         Derived,
+
+        /// <summary>
+        /// **由宿主給、不存**（例：宿主自己的 repo 根 ＝ exe 所在那棵）。頁面上唯讀。
+        /// <para>TASK-0390（2026-10-07）：Senate 獨立運作後，有些路徑的上游是「Senate 自己在哪」——
+        /// 那不是使用者該填的，也不是從資料根推得出來的。</para>
+        /// </summary>
+        Host,
     }
 
     /// <summary>作用域。</summary>
@@ -50,6 +57,13 @@ namespace SCP.Core.Paths
     /// </summary>
     public enum SCP_PathId
     {
+        [SCP_PathInfo("Senate 專案根（宿主 repo 根）",
+            "宿主程式自己所在的那棵 repo（Senate：exe 往上找到的 `.git`）—— **宿主給、不存、唯讀**。"
+            + " 跟著宿主走的內容（例：詞典 submodule `Glossary/`）從這裡推。"
+            + " ⛔ 跟「專案根」是兩件事：專案根是 Unity 開發目標，這一格是 Server 自己（TASK-0390）。")]
+        [SCP_PathHost(SCP_PathScope.Global)]
+        HostRepoRoot,
+
         [SCP_PathInfo("專案根（git repo 根）",
             "唯一那個 Unity 專案的 git repo 根。**沒有上游可以推導它** —— 這是唯一必須有人說的那一格。"
             + " ⚠ 只允許一個啟用專案：資料根只有一組，兩棵資料樹會把 seq／單號／lock 切成兩份而不報錯。")]
@@ -58,11 +72,11 @@ namespace SCP.Core.Paths
 
         [SCP_PathInfo("詞典根（glossary）",
             "新詞辭典的 .md 住這裡（酒館發文的詞典附註、早安的出生證明 `personas/<P>.md` 都從這裡讀）。"
-            + " `auto` ＝ `<專案根>/Docs/Glossary`（2026-09-27 之前寫死的位置）。"
+            + " `auto` ＝ `<宿主 repo 根>/Glossary`（Tim 2026-10-07：詞典裝成 Senate 的 submodule；之前是 `<專案根>/Docs/Glossary`）。"
             + " 存 senate.local.json（Tim 2026-09-27）；**只有 Senate 讀它** —— 詞典的操作全在 `senate cmd glossary`，"
             + "Editor 發的文由寫入端 `tavern-write` 補附註（TASK-0313，Tim 2026-09-28：Unity 端不碰詞典）。")]
         [SCP_PathStored("glossaryRoot", SCP_PathScope.Project)]
-        [SCP_PathAuto(SCP_PathId.ProjectRoot, "Docs/Glossary")]
+        [SCP_PathAuto(SCP_PathId.HostRepoRoot, "Glossary")]
         GlossaryRoot,
 
         [SCP_PathInfo("外部漫畫庫根（comic_root）",
@@ -242,6 +256,7 @@ namespace SCP.Core.Paths
             var aStored = aField.GetCustomAttribute<SCP_PathStoredAttribute>();
             var aDerived = aField.GetCustomAttribute<SCP_PathDerivedAttribute>();
             var aAuto = aField.GetCustomAttribute<SCP_PathAutoAttribute>();
+            var aHost = aField.GetCustomAttribute<SCP_PathHostAttribute>();
 
             var aD = new SCP_PathDescriptor
             {
@@ -262,6 +277,11 @@ namespace SCP.Core.Paths
                     aD.AutoSuffix = aAuto.Suffix;
                 }
             }
+            else if (aHost != null)
+            {
+                aD.Kind = SCP_PathKind.Host;
+                aD.Scope = aHost.Scope;
+            }
             else if (aDerived != null)
             {
                 aD.Kind = SCP_PathKind.Derived;
@@ -274,7 +294,7 @@ namespace SCP.Core.Paths
                 // 沒掛任何一種 ⇒ 這是**寫程式的人漏了**，不是使用者輸入錯。
                 // Validate() 會在出廠驗收擋下；這裡仍然丟，因為靜默的預設值會讓它一路活到頁面上。
                 throw new InvalidOperationException(
-                    $"[SCP_PathRegistry] enum 成員 {iId} 沒掛 [SCP_PathStored] 也沒掛 [SCP_PathDerived]"
+                    $"[SCP_PathRegistry] enum 成員 {iId} 沒掛 [SCP_PathStored]／[SCP_PathDerived]／[SCP_PathHost] 任何一種"
                     + " —— 加了成員就要掛一個（描述黏在成員上，本層沒有第二份清單可以補）");
             }
             return aD;
@@ -303,11 +323,13 @@ namespace SCP.Core.Paths
                 var aDerived = aField.GetCustomAttribute<SCP_PathDerivedAttribute>();
                 var aAuto = aField.GetCustomAttribute<SCP_PathAutoAttribute>();
                 var aInfo = aField.GetCustomAttribute<SCP_PathInfoAttribute>();
+                var aHost = aField.GetCustomAttribute<SCP_PathHostAttribute>();
 
-                if (aStored == null && aDerived == null)
-                    aProblems.Add($"{aId}：沒掛 [SCP_PathStored] 也沒掛 [SCP_PathDerived]");
-                if (aStored != null && aDerived != null)
-                    aProblems.Add($"{aId}：同時掛了 Stored 與 Derived（一格只能是其中一種）");
+                int aKinds = (aStored != null ? 1 : 0) + (aDerived != null ? 1 : 0) + (aHost != null ? 1 : 0);
+                if (aKinds == 0)
+                    aProblems.Add($"{aId}：沒掛 [SCP_PathStored]／[SCP_PathDerived]／[SCP_PathHost] 任何一種");
+                if (aKinds > 1)
+                    aProblems.Add($"{aId}：同時掛了兩種以上的 kind（一格只能是其中一種）");
                 if (aAuto != null && aStored == null)
                     aProblems.Add($"{aId}：掛了 [SCP_PathAuto] 卻不是 Stored（算出來的東西不需要 auto）");
                 if (aStored != null && aStored.JsonKey.Trim().Length == 0)
@@ -347,6 +369,16 @@ namespace SCP.Core.Paths
                 return new SCP_PathResolution("", "?", $"推導鏈成環或過深（起點 {iId}）");
 
             SCP_PathDescriptor aD = Get(iId);
+            if (aD.Kind == SCP_PathKind.Host)
+            {
+                // 宿主給的值走同一個回呼（宿主那一格對映到「它自己在哪」）—— 空白＝宿主沒宣告，⛔ 不猜
+                SCP_PathStoredValue aHostVal = iStored(iId);
+                if (aHostVal.Error != null) return new SCP_PathResolution("", "宿主", aHostVal.Error);
+                string aHostRaw = aHostVal.Raw.Trim();
+                return aHostRaw.Length == 0
+                    ? new SCP_PathResolution("", "宿主", "宿主沒有宣告這一格")
+                    : new SCP_PathResolution(Clean(aHostRaw), "宿主", null);
+            }
             if (aD.Kind == SCP_PathKind.Stored)
             {
                 SCP_PathStoredValue aStored = iStored(iId);
@@ -379,6 +411,7 @@ namespace SCP.Core.Paths
         public static string Formula(SCP_PathId iId)
         {
             SCP_PathDescriptor aD = Get(iId);
+            if (aD.Kind == SCP_PathKind.Host) return "宿主給（不存）";
             if (aD.Kind == SCP_PathKind.Stored)
                 return aD.SupportsAuto && aD.AutoFrom != null
                     ? $"手填，或 `{AutoLiteral}` ⇒ <{aD.AutoFrom}>/{aD.AutoSuffix}"

@@ -50,15 +50,13 @@ namespace SCP.Core.Letters
 
         string? m_GlossaryRoot;
         /// <summary>
-        /// 詞典根（`SCP_PathId.GlossaryRoot`）。宿主有解析就設（Senate 走 PathsPage 那一格）；
-        /// 沒設 ⇒ `<ProjectRoot>/` ＋ 描述表的 auto 後綴（⛔ 不在這裡再寫死一份 `Docs/Glossary`）。
+        /// 詞典根（`SCP_PathId.GlossaryRoot`）—— **只由宿主解析後給**（Senate 走 PathsPage 那一格）；沒給 ＝ 空字串 ＝ 沒有詞典。
+        /// <para>🩸 2026-10-07（TASK-0390）：這裡原本自己推 `<ProjectRoot>/` ＋ 描述表的 auto 後綴 —— 那是第二份算式，
+        /// 描述表的上游改成 Senate 專案根之後，它拼出 `<Unity 專案>/Glossary`（兩邊都不報錯）。⇒ 不推、不猜。</para>
         /// </summary>
         public string GlossaryRoot
         {
-            get => !string.IsNullOrEmpty(m_GlossaryRoot)
-                ? m_GlossaryRoot!
-                : Path.Combine(ProjectRoot, SCP.Core.Paths.SCP_PathRegistry.Get(SCP.Core.Paths.SCP_PathId.GlossaryRoot).AutoSuffix)
-                      .Replace('\\', '/');
+            get => m_GlossaryRoot ?? "";
             set => m_GlossaryRoot = value;
         }
 

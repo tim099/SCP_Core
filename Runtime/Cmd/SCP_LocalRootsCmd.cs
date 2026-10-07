@@ -27,7 +27,7 @@ namespace SCP.Core.Cmd
         public string Describe = "";
         /// <summary>「為什麼選這一個」（例：未給 --project ⇒ 用唯一啟用的專案）。空字串 ＝ 不必說明。</summary>
         public string SelectionNote = "";
-        /// <summary>詞典根；null ⇒ 解不出來（原因在 <see cref="GlossaryError"/>），由殼退回預設並**說出來**。</summary>
+        /// <summary>詞典根；null ⇒ 解不出來（原因在 <see cref="GlossaryError"/>），殼**說出來**、本次不附詞典（不猜根，TASK-0390）。</summary>
         public string? GlossaryRoot;
         public string? GlossaryError;
     }
@@ -117,9 +117,9 @@ namespace SCP.Core.Cmd
             aResult.AddValue("delegate_host", aHost.HostId);
             aResult.AddValue("project", aWhere.ProjectName);
             aResult.AddValue("data_root", aRoots.DataRoot);
-            // 詞典根解不出來 ⇒ 說出來、退回預設推導（⛔ 不靜默）。
+            // 詞典根解不出來 ⇒ 說出來、本次不附詞典（⛔ 不靜默、⛔ 不猜一個根 —— TASK-0390）。
             if (aWhere.GlossaryRoot != null) aRoots.GlossaryRoot = aWhere.GlossaryRoot;
-            else aResult.Lines.Add($"⚠ 詞典根解不出來（{aWhere.GlossaryError}）—— 本次用預設 `{aRoots.GlossaryRoot}`");
+            else aResult.Lines.Add($"⚠ 詞典根解不出來（{aWhere.GlossaryError}）—— 本次不附詞典附註、不讀出生證明");
 
             string? aPayload;
             try { aPayload = Run(aRoots, iArgs, aResult); }

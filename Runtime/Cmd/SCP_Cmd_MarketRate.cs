@@ -50,7 +50,7 @@ namespace SCP.Core.Cmd
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
-            new SCP_CmdArgSpec("data_root", "資料根目錄（絕對路徑）。省略時自動嘗試推導", iDefault: ""),
+            new SCP_CmdArgSpec("data_root", "資料根目錄（絕對路徑）。宿主照後台設定補；省略又沒有宿主 ⇒ 擋下", iDefault: ""),
             new SCP_CmdArgSpec("op", "做什麼（list|get|set|toggle|fee|source|sync|history，預設 list）", iDefault: "list",
                 iChoices: new[] { "list", "get", "set", "toggle", "fee", "source", "sync", "history" }),
             new SCP_CmdArgSpec("symbol", "券種代號（如 BTC, GOLD, USD）", iDefault: ""),
@@ -73,7 +73,7 @@ namespace SCP.Core.Cmd
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
         {
-            string aDataRoot = ResolveDataRoot(iArgs.Get("data_root"));
+            string aDataRoot = (iArgs.Get("data_root") ?? "").Trim().Replace('\\', '/');
             if (string.IsNullOrWhiteSpace(aDataRoot) || !Directory.Exists(aDataRoot))
                 return SCP_CmdResult.Fail(1, $"✗ 資料根不存在或無效：{aDataRoot}");
 
@@ -667,12 +667,6 @@ namespace SCP.Core.Cmd
             return aR;
         }
 
-        static string ResolveDataRoot(string iGiven)
-        {
-            if (!string.IsNullOrWhiteSpace(iGiven)) return iGiven.Trim().Replace('\\', '/');
-            string aCandidate = "D:/Unity/Bar/AgentCommands";
-            if (Directory.Exists(aCandidate)) return aCandidate;
-            return Directory.GetCurrentDirectory().Replace('\\', '/');
-        }
+        // ⛔ 2026-10-07（TASK-0390）拿掉了「沒給就猜 D:/Unity/Bar/AgentCommands 再退 cwd」：根由宿主照後台設定補。
     }
 }

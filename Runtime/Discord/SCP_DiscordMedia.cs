@@ -33,13 +33,8 @@ namespace SCP.Core.Discord
         static readonly string[] s_ImageExts = { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
         static readonly char[] s_UnsafeFileChars = { '<', '>', ':', '"', '/', '\\', '|', '?', '*', '=', ' ' };
 
-        /// <summary>repo 根：有給就用；沒給 ⇒ 資料根（AgentCommands）的上一層（同 `tavern-write` 的推法）。</summary>
-        public static string RepoRootOf(string iDataRoot, string iRepoRoot)
-        {
-            if (!string.IsNullOrWhiteSpace(iRepoRoot)) return iRepoRoot;
-            try { return Directory.GetParent(Path.GetFullPath(iDataRoot).TrimEnd('/', '\\'))?.FullName ?? ""; }
-            catch (Exception) { return ""; }
-        }
+        // ⛔ 2026-10-07（TASK-0390）刪掉 `RepoRootOf`（資料根上一層＝repo 根）與 `MakeRepoRelative`：
+        //   refs 改存資料根相對，存法與解法都在 SCP_TavernRefPath。
 
         public static string MediaDir(string iDataRoot) => Path.Combine(iDataRoot, "ChatTavern", "media", "discord");
 
@@ -64,15 +59,6 @@ namespace SCP.Core.Discord
             return DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         }
 
-        /// <summary>絕對路徑 ⇒ repo 相對＋斜線；不在 repo 內 ⇒ 原樣（斜線）。</summary>
-        public static string MakeRepoRelative(string iRepoRoot, string iAbs)
-        {
-            string aFull = Path.GetFullPath(iAbs).Replace('\\', '/');
-            if (string.IsNullOrEmpty(iRepoRoot)) return aFull;
-            string aRoot = Path.GetFullPath(iRepoRoot).Replace('\\', '/').TrimEnd('/');
-            return aFull.StartsWith(aRoot + "/", StringComparison.OrdinalIgnoreCase) ? aFull.Substring(aRoot.Length + 1) : aFull;
-        }
-
         // ── Inbound ──────────────────────────────────────────────────
 
         /// <summary>一個附件的處理結果。<see cref="Ref"/>＝null ⇒ 沒落地（<see cref="Note"/> 說為什麼）。</summary>
@@ -93,10 +79,8 @@ namespace SCP.Core.Discord
         {
             var aOut = new List<InboundAttachment>();
             if (!iAttachments.IsArray) return aOut;
-            // ⛔ 不用呼叫端給的 repo 根：Server 那條路給的是 **Senate 自己的 repo**（`D:/Unity/Senate`），不是資料所在的專案
-            //   ⇒ refs 會變成絕對路徑（2026-09-28 實測 seq 22520）。refs 慣例是「擁有這棵 AgentCommands 的專案」的相對路徑
-            //   ⇒ 一律從資料根往上推（同 `tavern-write` 推 @ 通知用的 repo 根）。
-            string aRepo = RepoRootOf(iDataRoot, "");
+            // refs 一律存「資料根相對」（TASK-0390）—— 存法在 SCP_TavernRefPath；⛔ 不用 repo 根（呼叫端給的那個是 Senate 自己的 repo，
+            //   2026-09-28 seq 22520；而「資料根上一層」在資料根搬出 Unity 專案之後是 `D:/Unity`）。iRepoRoot 保留只為了不改簽名。
             string aDir = Path.Combine(MediaDir(iDataRoot), DateOfSnowflake(iMsgId));
             for (int i = 0; i < iAttachments.Count; i++)
             {
@@ -127,7 +111,7 @@ namespace SCP.Core.Discord
                         SCP.Core.Io.SCP_TextFile.ReplaceOrMove(aLocal + ".tmp", aLocal);
                     }
                     // 標籤只放檔名：Discord 回報的 content_type 不可信（實測 22520：標 image/webp、位元組是 PNG）
-                    r.Ref = new SCP_TavernRef { Path = MakeRepoRelative(aRepo, aLocal), Label = r.FileName };
+                    r.Ref = new SCP_TavernRef { Path = SCP_TavernRefPath.ToStored(iDataRoot, aLocal, out _), Label = r.FileName };
                 }
                 catch (Exception e) { r.Note = "落地失敗：" + e.GetType().Name + "：" + e.Message; }
             }
@@ -154,7 +138,7 @@ namespace SCP.Core.Discord
             var aOut = new List<SCP_HttpFilePart>();
             oSkipped = new List<string>();
             if (iMsg.Refs == null || iMsg.Refs.Count == 0) return aOut;
-            string aRepo = RepoRootOf(iDataRoot, iRepoRoot);
+            // 解法唯一一處：SCP_TavernRefPath（資料根相對；舊的 `AgentCommands/…` 去前綴）—— iRepoRoot 保留只為了不改簽名。
             long aTotal = 0;
             foreach (SCP_TavernRef aRef in iMsg.Refs)
             {
@@ -164,7 +148,7 @@ namespace SCP.Core.Discord
                 if (Array.IndexOf(s_ImageExts, aExt) < 0) continue;
                 string aName = Path.GetFileName(aRel);
                 string aAbs;
-                try { aAbs = Path.IsPathRooted(aRel) ? aRel : Path.GetFullPath(Path.Combine(aRepo, aRel)); }
+                try { aAbs = Path.GetFullPath(SCP_TavernRefPath.Resolve(iDataRoot, aRel)); }
                 catch (Exception) { oSkipped.Add($"{aName}（路徑解析不了）"); continue; }
                 if (!File.Exists(aAbs)) { oSkipped.Add($"{aName}（找不到檔案）"); continue; }
                 long aLen;
