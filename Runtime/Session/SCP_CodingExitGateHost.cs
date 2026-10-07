@@ -4,7 +4,7 @@
 //          （2026-09-10 更名：舊名 `check_compile` 那支 python 已整支刪除）
 //          Senate 側＝`dotnet build`／`build.sh` 出廠驗收。
 //          硬湊一把兩邊共用的尺，會讓其中一邊量的**不是它自己的編譯**（TASK-0058 A/B/C 拍板附註）。
-//          ⇒ 同 `SCP_ActivitySessionGatewayHost` 的形狀：介面在共用層，實作在宿主。
+//          ⇒ 同 `SCP_CanvasGatewayHost` 的形狀：介面在共用層，實作在宿主。
 // 數值影響：本檔零 IO。閘的實作可能**跑一次編譯**（秒級）—— 那是它的重點，不是副作用。
 //
 // ⚠ **沒有登記閘 ≠ 編譯是綠的**：那兩件事必須不同形。沒登記時退場路徑要印
@@ -41,7 +41,7 @@ namespace SCP.Core.Session
         public string Scope { get; }
     }
 
-    /// <summary>宿主注入編譯閘的地方（同 <see cref="SCP_ActivitySessionGatewayHost"/> 的形狀）。</summary>
+    /// <summary>宿主注入編譯閘的地方（同 <see cref="SCP.Core.Canvas.SCP_CanvasGatewayHost"/> 的形狀）。</summary>
     public static class SCP_CodingExitGateHost
     {
         /// <summary>

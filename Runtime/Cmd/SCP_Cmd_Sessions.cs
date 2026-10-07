@@ -1,8 +1,9 @@
 // 區塊職責：`cmd sessions` —— 活動 session 的查詢與關場（**原生**，查詢不需要 Unity）。
 // 物理意義：這是 UCL 那側 `UCL_SessionAdminPage` 與 `Cmd_SessionStatus` 的資料面搬家（TASK-0127 ⑤）。
-//           讀是純讀、走 SCP_ActivitySessionStore；**關場委派**給登記了 gateway 的那一端
-//           （Senate 側＝委派回 Editor，因為結算就是金流、金流不搬 —— TASK-0106 Tim 拍 B 不動）。
-// 數值影響：`op=list|show` 一個位元組都不寫；`op=close` 會關掉一場（且可能發薪）⇒ 要 `confirm=1`。
+//           讀是純讀、走 SCP_ActivitySessionStore；關場在本層就地做（`CloseVerified`：翻三欄＋回讀）。
+//           🩸 TASK-0448：原本委派回 Editor 的 `SessionClose` 替觀影場結算 —— Editor 沒開就關不掉；
+//              觀影重做、不遷移（Tim 2026-10-07）⇒ 沒有 kind 需要結算，委派拔掉。
+// 數值影響：`op=list|show` 一個位元組都不寫；`op=close` 會寫別人的 session 檔 ⇒ 要 `confirm=1`。
 //
 // ⚠ 空清單的兩種意思本 Cmd **不合成一句**：「這個人沒有進行中的場」與「這個 kind 沒被登記過所以沒看」
 //   是不同的答案，後者被印成前者的話，讀的人會拿它當「他現在有空」的證據。
@@ -20,14 +21,13 @@ namespace SCP.Core.Cmd
         public override string Name => "sessions";
         public override string Category => SCP_CmdCategory.System;
 
-        public override string Summary => "活動 session：列出誰在哪一場／看某人的場／關掉過期殘留（關場委派給 Editor）";
+        public override string Summary => "活動 session：列出誰在哪一場／看某人的場／關掉過期殘留 —— **不需要 Editor**";
 
         public override string Details =>
             "資料源＝`<data_root>/sessions/<persona>.json`（**一人一檔位**，kind 是欄位不是路徑段）。\n"
             + "⭐ 三種狀態分開印，不合併：🟢 進行中／⚠ 殘留（active 但已過 end_ts）／⚪ 已收工。\n"
             + "⚠ `op=close` **只收殘留**：進行中的場要走該 kind 自己的收工步驟（那裡才有收工公告與同場者判定）。\n"
-            + "⚠ 關場**不是本層做的** —— 交給登記了 close gateway 的那一端（Senate ⇒ 委派 Editor 的 `SessionClose`）。\n"
-            + "   沒有登記 gateway 時**只翻三欄、不結算**，而且會明說（那是降級，不是成功）。\n"
+            + "· 關場就地做：翻三欄（active／end_reason／ended_at）後回讀磁碟，回讀說關了才算數；**不結算**（觀影重做中，TASK-0450）。\n"
             + "⚠ 「沒查到」不等於「他不在任何 session」：未登記的 kind 本層看不到，回報一律附掃描範圍。";
 
         public override string Example =>
@@ -43,7 +43,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("op", "list（預設）| show | close"),
             new SCP_CmdArgSpec("target_persona", "show／close 要看／要關誰的場（⚠ 不猜身分）"),
             new SCP_CmdArgSpec("reason", "close 寫進 end_reason 的一句話（預設 closed-by-senate）"),
-            new SCP_CmdArgSpec("confirm", "close 必填 1 —— 這會寫別人的 session 檔，觀影場還會發薪"),
+            new SCP_CmdArgSpec("confirm", "close 必填 1 —— 這會寫別人的 session 檔"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -185,8 +185,7 @@ namespace SCP.Core.Cmd
                 var aBlocked = SCP_CmdResult.Fail(1, "✗ 這場**還在進行中**（至 "
                                                      + (aEnd.HasValue ? aEnd.Value.ToString("HH:mm") : "無截止")
                                                      + " 本地）⇒ 不從這裡關");
-                aBlocked.Lines.Add("  出口：`senate ucmd run " + (aS.kind.Length == 0 ? "<那個 kind>" : aS.kind)
-                                   + " --persona " + iTarget + " --arg step=end`");
+                aBlocked.Lines.Add("  出口：" + RunningExit(aS.kind, iTarget));
                 aBlocked.Lines.Add("  ⛔ 不給 force：正常收工還有**收工公告**與**同場者判定**，那些不是本 Cmd 做的事。");
                 aBlocked.AddValue("blocked", "running");
                 return aBlocked;
@@ -195,7 +194,6 @@ namespace SCP.Core.Cmd
             {
                 var aNoop = SCP_CmdResult.Success("・這場已經收過工（reason=" + aS.end_reason
                                                   + "　ended_at=" + aS.ended_at + "）⇒ 未動作");
-                aNoop.Lines.Add("  ⛔ 不重複結算 —— 重複發薪不會有人喊，而帳對不上時沒有人查得出是這裡。");
                 aNoop.AddValue("closed", "0");
                 aNoop.AddValue("noop", "already_closed");
                 return aNoop;
@@ -204,32 +202,36 @@ namespace SCP.Core.Cmd
             {
                 var aNeed = SCP_CmdResult.Fail(2, "✗ 缺 confirm —— `" + iTarget + "` 有一場過期殘留的 "
                                                   + aS.kind + "（" + aS.session_id + "），可以收");
-                aNeed.Lines.Add("  這一步會寫別人的 session 檔，觀影場還會**發薪** ⇒ 要顯式確認：");
+                aNeed.Lines.Add("  這一步會寫別人的 session 檔 ⇒ 要顯式確認：");
                 aNeed.Lines.Add("  `senate cmd sessions --arg op=close --arg target_persona=" + iTarget + " --arg confirm=1`");
                 aNeed.AddValue("blocked", "need_confirm");
                 return aNeed;
             }
 
-            SCP_ActivitySessionCloseResult aClose =
-                SCP_ActivitySessionStore.CloseWithSettlement(iRoot, iTarget, aS, aReason);
+            // TASK-0448：就地關（翻三欄＋回讀），不委派 Editor、不結算 —— 需要結算的只有觀影，而觀影重做、不遷移。
+            bool aClosed;
+            string aErr = "";
+            try { aClosed = SCP_ActivitySessionStore.CloseVerified(iRoot, iTarget, aS, aReason); }
+            catch (Exception e) { aClosed = false; aErr = e.GetType().Name + ": " + e.Message; }
 
-            var aRes = aClose.Closed ? SCP_CmdResult.Success() : SCP_CmdResult.Fail(1, "✗ 關場沒有落地");
-            aRes.Lines.Add("・關場路徑："
-                           + (aClose.HasHandler
-                               ? "gateway（" + aS.kind + "）—— 那一端連結算一起做"
-                               : "**本層 base close**（這個 kind 沒有登記 gateway ⇒ 只翻三欄、**不結算**，明確降級）"));
-            for (int i = 0; i < aClose.SettleLines.Count; ++i) aRes.Lines.Add("  " + aClose.SettleLines[i]);
-            if (aClose.SettleError.Length > 0)
-            {
-                aRes.Lines.Add("⚠ 那一端回報失敗：" + aClose.SettleError);
-                aRes.Lines.Add("  ⚠ 而「場關了沒」看下一行的**回讀**，不是看這一行 —— 兩本帳分開。");
-            }
-            // ⭐ 判準是回讀，不是 gateway 說什麼（它在另一個 process 裡）。
-            aRes.Lines.Add("・回讀磁碟：active=" + (aClose.Closed ? "false ✅" : "true ❌（沒關成）"));
-            aRes.AddValue("closed", aClose.Closed ? "1" : "0");
-            aRes.AddValue("by_gateway", aClose.ClosedByGateway ? "1" : "0");
-            aRes.AddValue("has_handler", aClose.HasHandler ? "1" : "0");
+            var aRes = aClosed ? SCP_CmdResult.Success() : SCP_CmdResult.Fail(1, "✗ 關場沒有落地" + (aErr.Length > 0 ? "（" + aErr + "）" : ""));
+            aRes.Lines.Add("・關場：Senate 就地翻三欄（kind=" + (aS.kind.Length == 0 ? "未標" : aS.kind)
+                           + "　reason=`" + aReason + "`）—— 不結算");
+            aRes.Lines.Add("・回讀磁碟：active=" + (aClosed ? "false ✅" : "true ❌（沒關成）"));
+            aRes.AddValue("closed", aClosed ? "1" : "0");
             return aRes;
+        }
+
+        /// <summary>進行中的場要怎麼正常收工 —— 照 kind 給一行能直接複製的指令（⛔ 不編一個不存在的入口）。</summary>
+        static string RunningExit(string iKind, string iTarget)
+        {
+            if (iKind == SCP_ActivitySessionKind.FreeTime)
+                return "`" + SCP_CmdRegistry.InvokeNamed("free-time", "--arg step=end --arg persona=" + iTarget) + "`";
+            if (iKind == SCP_ActivitySessionKind.Coding)
+                return "`" + SCP_CmdRegistry.InvokeNamed("coding", "--arg op=end --arg persona=" + iTarget) + "`";
+            if (iKind == SCP_ActivitySessionKind.StreamWatch)
+                return "觀影在 Senate 重做中、沒有收工入口（TASK-0450）⇒ 等它過了預定收工時刻，再跑本指令收殘留";
+            return "`" + (iKind.Length == 0 ? "<那個 kind>" : iKind) + "` 沒有登記的收工入口 ⇒ 等它過了預定收工時刻，再跑本指令收殘留";
         }
 
         static string Pad(string iText, int iWidth)

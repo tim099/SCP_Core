@@ -4,7 +4,7 @@
 //          而那不是「還沒移植」，是「同時只能有一個寫入端」（seq 是全域遞增的）。
 //          ⇒ CLI／Server 的實作走 AgentCommand 檔案協議派給 Editor；
 //             Editor 內的實作直呼 Cmd_Tavern（in-process，不繞檔案協議繞回自己）。
-//          形狀同 `SCP_ICanvasGateway` / `SCP_IActivitySessionCloseGateway`。
+//          形狀同 `SCP_ICanvasGateway`。
 // 數值影響：本檔零 IO。實作會做一次 Cmd round-trip（檔案協議＋Watcher 輪詢，1〜3 秒）。
 //
 // ⚠ **沒有登記閘 ≠ 發出去了**：兩件事必須不同形。沒登記時呼叫端要印
@@ -123,7 +123,7 @@ namespace SCP.Core.Letters
                                    IReadOnlyDictionary<string, string> iMeta, List<string> oLines);
     }
 
-    /// <summary>宿主注入發文閘的地方（同 <see cref="SCP.Core.Session.SCP_ActivitySessionGatewayHost"/> 的形狀）。</summary>
+    /// <summary>宿主注入發文閘的地方（同 <see cref="SCP.Core.Canvas.SCP_CanvasGatewayHost"/> 的形狀）。</summary>
     public static class SCP_TavernPostGatewayHost
     {
         /// <summary>

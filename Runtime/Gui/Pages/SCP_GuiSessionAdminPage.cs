@@ -1,7 +1,7 @@
 // 區塊職責：**活動 session 管理頁** —— 列出每個人的場（進行中／殘留／已收工）、對殘留補收工。
 // 物理意義：這是 Unity 那側 `UCL_SessionAdminPage` 的搬家版本（TASK-0127 ⑥）。
-//           資料讀走 `SCP_ActivitySessionStore`（純讀）；**關場不在這裡做** ——
-//           交給 close gateway（Senate ⇒ 委派 Editor 的 `SessionClose`，因為結算就是金流）。
+//           資料讀走 `SCP_ActivitySessionStore`（純讀）；關場走 `SCP_ActivitySessionStore.CloseVerified`
+//           （與 `sessions op=close` 同一個門；TASK-0448 起就地做、不委派 Editor、不結算）。
 // 數值影響：讀＝每次 Refresh 掃一次 `sessions/*.json`；寫＝只有「補收工」那一條，且要二段確認。
 //
 // ⚠ 三條界線是從舊頁**原樣搬過來的，不是新加的**：
@@ -10,18 +10,11 @@
 //   ② 二段確認（第一次 arm、再按一次才真的動）—— 誤點的後果是關掉別人**真的在跑**的場。
 //   ③ 「開啟資料夾」宿主沒能力就不畫（畫一顆按了沒事的鈕比沒有那顆鈕糟），改把路徑印成字。
 //
-// 🩸 ⛔ **委派不得同步阻塞畫面迴圈**（本頁最容易寫錯的一格）：
-//   關場是一次 Cmd round-trip（檔案協議 ＋ Watcher 輪詢，1〜3 秒）。在會重畫的宿主上同步等待
-//   ＝ 視窗凍住 1〜3 秒，而 `ui --soak` 的凍窗閘 2026-09-04 已退場 ⇒ **現在沒有機器抓得到它**。
-//   ⇒ 會重畫的宿主走背景 task ＋ `⏳ 委派中` 態；不會重畫的宿主（CLI 單次 render）**才**同步跑
-//     —— 那裡沒有第二幀可以觀察結果，背景 task 等於把答案丟掉。
-//
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）—— 不用 record、不用檔案級 namespace。
 #nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading.Tasks;
 using SCP.Core.Paths;
 using SCP.Core.Prefs;
 using SCP.Core.Session;
@@ -53,10 +46,6 @@ namespace SCP.Core.Gui
         List<string> m_Problems = new List<string>();
         DateTime m_LastRefreshUtc = DateTime.MinValue;
         string? m_Message;
-
-        /// <summary>進行中的委派（null ＝ 沒有）。⚠ 它活在背景 thread 上，主迴圈只讀 <c>IsCompleted</c>。</summary>
-        Task<string>? m_CloseJob;
-        string m_CloseJobTarget = "";
 
         public SCP_GuiSessionAdminPage(ISCP_GuiAppContext iCtx) : base() { m_Ctx = iCtx; }
 
@@ -106,7 +95,6 @@ namespace SCP.Core.Gui
                 return;
             }
 
-            PumpCloseJob();          // ⚠ 先收委派結果，再畫 —— 不然畫面會比磁碟晚一幀
             RefreshIfDue();
             DrawToolRow(g);
             g.Separator();
@@ -121,8 +109,6 @@ namespace SCP.Core.Gui
             g.Note("· `" + string.Join(" / ", SCP_ActivitySessionKind.GlobalExclusiveKinds)
                    + "` 是**範圍**互斥：範圍不重疊的人可以同時 ● 進行中"
                    + " ⇒ **兩列同時進行中不代表守衛壞了**；未宣告範圍的那一場退化成全域獨佔（擋所有人）");
-            if (m_CloseJob != null)
-                g.Note("⏳ 委派中：正在請 Editor 關掉 `" + m_CloseJobTarget + "` 的場（1〜3 秒，畫面不會凍住）…");
             if (m_Message != null) g.Note(m_Message);
         }
 
@@ -228,7 +214,6 @@ namespace SCP.Core.Gui
 
                     // ① 只有殘留能從這裡收。進行中的場**不畫鈕** —— 畫了就是在邀請人做那件不該做的事。
                     if (!aStale) continue;
-                    if (m_CloseJob != null) { g.Label("（等前一筆委派完成）"); continue; }
                     bool aArmed = aPending == aS.persona;
                     if (aArmed) aPendingStillStale = true;
                     if (g.Button(aArmed ? "⚠ 再按一次確認補收工" : "🧹 補收工", "sessions/close/" + aS.persona))
@@ -249,8 +234,7 @@ namespace SCP.Core.Gui
             else if (aArm != null)
             {
                 g.SetField(PendingCloseId, aArm);
-                m_Message = "⚠ 待確認：再按一次才會真的關掉 `" + aArm + "` 的場"
-                            + "（觀影場會**補結算＋發薪**，由 Editor 那端執行）";
+                m_Message = "⚠ 待確認：再按一次才會真的關掉 `" + aArm + "` 的場";
             }
             else if (aDoClose != null)
             {
@@ -259,42 +243,20 @@ namespace SCP.Core.Gui
             }
         }
 
-        // ── 關場（委派）───────────────────────────────────────────
+        // ── 關場 ────────────────────────────────────────────────
 
         /// <summary>
-        /// 起一次關場。會重畫的宿主走背景 task；不會重畫的（CLI 單次 render）同步跑。
+        /// 關一場（同步）。關場是本地翻三欄＋回讀（TASK-0448），幾毫秒的事 ⇒ 不再需要背景 task。
+        /// <para>🩸 舊版是委派 Editor 的 1〜3 秒 round-trip，才有「背景 task＋⏳ 委派中」那一套；委派拔掉後它就是死碼。</para>
         /// </summary>
-        /// <remarks>
-        /// 🩸 兩種宿主要分開，理由不是效能是**答案會不會被看到**：
-        /// CLI 那側整個 render 只有一幀，背景 task 的結果永遠沒有第二幀可以印 ——
-        /// 而畫面會顯示「⏳ 委派中」然後程式就結束了，看起來像它沒做。
-        /// </remarks>
         void StartClose(string iPersona)
         {
-            string aRoot = m_Root.Value;   // ⚠ 抓成區域變數：委派跑在背景 thread 上，不從那邊碰頁面狀態
-            if (SCP_GuiHost.RedrawsContinuously)
-            {
-                m_CloseJobTarget = iPersona;
-                m_CloseJob = Task.Run(() => CloseOne(aRoot, iPersona));
-                m_Message = null;
-                return;
-            }
-            m_Message = CloseOne(aRoot, iPersona);
-            Refresh();
-        }
-
-        /// <summary>收背景委派的結果（每幀呼叫；沒有進行中的就什麼都不做）。</summary>
-        void PumpCloseJob()
-        {
-            if (m_CloseJob == null || !m_CloseJob.IsCompleted) return;
-            Task<string> aJob = m_CloseJob;
-            m_CloseJob = null;
-            try { m_Message = aJob.Result; }
-            catch (Exception e) { m_Message = "⚠ 委派本身炸了：" + e.GetType().Name + ": " + e.Message; }
+            try { m_Message = CloseOne(m_Root.Value, iPersona); }
+            catch (Exception e) { m_Message = "⚠ 關場炸了：" + e.GetType().Name + ": " + e.Message; }
             Refresh();   // 磁碟才是判準 —— 回讀之後再畫
         }
 
-        /// <summary>實際那一步（背景 thread 上跑）。⚠ 只讀寫檔案與委派，不碰任何 UI 狀態。</summary>
+        /// <summary>實際那一步。⚠ 只讀寫檔案，不碰 UI 狀態。</summary>
         static string CloseOne(string iRoot, string iPersona)
         {
             var aRoot = new SCP_DataRoot(iRoot);
@@ -302,18 +264,12 @@ namespace SCP.Core.Gui
             if (aS == null) return "⚠ `" + iPersona + "` 的 session 檔讀不回來 ⇒ 未動作";
             if (aS.IsRunningAt(DateTime.Now, out _))
                 return "⛔ `" + iPersona + "` 的場又變回進行中了 ⇒ 未動作（進行中要走該 kind 的 step=end）";
-            if (!aS.active) return "・`" + iPersona + "` 已經收過工 ⇒ 未動作（不重複結算）";
+            if (!aS.active) return "・`" + iPersona + "` 已經收過工 ⇒ 未動作";
 
-            SCP_ActivitySessionCloseResult aRes =
-                SCP_ActivitySessionStore.CloseWithSettlement(aRoot, iPersona, aS, "closed-by-admin-page");
-
-            string aWho = aRes.HasHandler ? "gateway（那一端連結算一起做）" : "**本層 base close**（沒有 gateway ⇒ 不結算，明確降級）";
-            string aBody = "・關場路徑：" + aWho;
-            for (int i = 0; i < aRes.SettleLines.Count; ++i) aBody += "\n  " + aRes.SettleLines[i];
-            if (aRes.SettleError.Length > 0) aBody += "\n⚠ 那一端回報失敗：" + aRes.SettleError;
-            // ⭐ 判準是回讀，不是誰說了什麼。
-            aBody += "\n・回讀磁碟：" + (aRes.Closed ? "active=false ✅ 關成了" : "active=true ❌ **沒關成**");
-            return aBody;
+            // TASK-0448：就地關（翻三欄＋回讀），不委派 Editor、不結算 —— 與 `sessions op=close` 同一個門。
+            bool aClosed = SCP_ActivitySessionStore.CloseVerified(aRoot, iPersona, aS, "closed-by-admin-page");
+            return "・關場：Senate 就地翻三欄（kind=" + (aS.kind.Length == 0 ? "未標" : aS.kind) + "）—— 不結算"
+                   + "\n・回讀磁碟：" + (aClosed ? "active=false ✅ 關成了" : "active=true ❌ **沒關成**");
         }
     }
 }

@@ -3,7 +3,7 @@
 //          PrepareSleep）（TASK-0305，承接 TASK-0303 早安）。寫的檔、欄位、回傳檔文字逐一對齊 Editor 版。
 //          Senate 的 `senate cmd goodnight-*` 與 Editor 的 `senate ucmd run GoodNight` 呼叫**同一份**。
 // sleep 的形狀：Preflight（唯讀，全部守衛）→ Apply（刪 lock／now_status、組廣播）→ 呼叫端自己決定
-//          關場方式（Senate：CloseOwnSessionNative；Editor：UCL_SessionCloseFlow 帶結算）→ 廣播。token 隨 lock 刪除失效（TASK-0307）。
+//          關本人的場（CloseOwnSessionNative，就地、不結算）→ 廣播。token 隨 lock 刪除失效（TASK-0307）。
 //          ⇒ 任何 blocked 都發生在第一個寫入之前（半睡半醒的狀態不存在）。
 // 與 Editor 版刻意的差異（寫在這裡讓人查得到，不是漏移植）：
 //   ① 收尾信寫入加**防覆寫**（目標檔已在就擋）＋ 跨 process 鎖 —— Editor 版沒有；編號算錯時它會靜默蓋掉舊信。
@@ -12,9 +12,8 @@
 //   ③ sleep 的 `WriteRaw(status=offline)` 同理不做：status 由 lock 在不在推導，刪 lock 就是下線。
 //   ④ lock 讀得到檔卻解析不了（壞檔）：sleep **擋**；logout **刪掉並明說**。Editor 版把壞 lock 當成沒 lock，
 //      於是永遠刪不掉 —— 那個 persona 會一直顯示在線。
-//   ⑤ 需要 Editor 的兩段（本人有進行中的觀影場要結算／收工閘帶 skip_reason 要寫進單子）由 Preflight 回報。
-//      Tim 2026-09-26 拍板：**Editor 沒開就跳過那一段，不得卡住晚安**。呼叫端 Editor 活著就整步交給 Editor；
-//      沒開就照走、觀影場留著不關（到期成殘留，殘留結算會補付）、skip 理由改印進回傳檔與下線廣播。
+//   ⑤ 晚安整條不需要 Editor：收工閘的 skip 理由走任務寫入端（TASK-0349），本人的活動 session（含觀影）
+//      就地關、不結算（TASK-0448；觀影重做、不遷移，原本「觀影場交 Editor 結算」那一段拔掉）。
 //   ⑥ portrait 的 `about` 必須是現有 persona（見 SCP_PortraitWriter）。
 // 數值影響：letter 寫 wakes/<N>_<ts>.md＋_latest.md；portrait 寫兩幅畫像檔；sleep 刪 lock／now_status；
 //          （token 隨 lock 刪除失效，TASK-0307）；CloseOwnSessionNative 改 session 檔。check 純讀。
@@ -40,13 +39,8 @@ namespace SCP.Core.Letters
     public sealed class SCP_GoodnightPreflight
     {
         public bool Blocked;
-        /// <summary>非空＝這一步有一段要 Editor 才做得完（原因）。
-        /// 呼叫端的處置（Tim 2026-09-26）：Editor 活著 ⇒ 整步交給 Editor；Editor 沒開 ⇒ 本層照走，**只跳過那一段並大聲說**。</summary>
-        public string NeedsEditor = "";
         /// <summary>收工閘帶了 skip_reason、而有單要寫理由 ⇒ 呼叫端交 `task op=wrapup_skip`（任務寫入端，TASK-0349 起不需要 Editor）。</summary>
         public bool NeedsTaskSkipWrite;
-        /// <summary>本人有進行中的觀影場（結算只有 Editor）。</summary>
-        public string ActiveStreamWatchId = "";
         public string Report = "";
         /// <summary>收工閘會擋的單（sleep 才算）。</summary>
         public List<SCP_TaskEntry> PendingWrapups = new List<SCP_TaskEntry>();
@@ -528,15 +522,6 @@ namespace SCP.Core.Letters
                     aR.AppendLine($"ℹ letter 閘門走 **mtime 備援**（此 lock 建立於 wake_expected 蓋章上線前）：最新收尾信 {aLetterAt:u} > locked_at {aLockedAt:u} ⇒ 放行。");
                 }
             }
-
-            // 進行中的觀影場 ⇒ 結算要 Editor（付錢／收播公告／關錄影頁）
-            var aSession = SCP_ActivitySessionStore.Load(aDataRoot, iPersona);
-            if (aSession != null && aSession.active && aSession.kind == SCP_ActivitySessionKind.StreamWatch)
-            {
-                aOut.ActiveStreamWatchId = aSession.session_id;
-                aOut.NeedsEditor = (aOut.NeedsEditor.Length > 0 ? aOut.NeedsEditor + "；" : "")
-                    + $"進行中的觀影場 `{aSession.session_id}` 要結算（付錢／收播公告／關錄影頁）—— 結算只有 Editor 有";
-            }
             aOut.Report = aR.ToString();
             return aOut;
         }
@@ -598,15 +583,13 @@ namespace SCP.Core.Letters
             try { s = SCP_ActivitySessionStore.Load(aRoot, iPersona); }
             catch (Exception e) { return $"- 🎬 活動 session：⚠ **讀不到**（{e.Message}）—— 不是「沒有場」"; }
             if (s == null || !s.active) return "- 🎬 活動 session：**無進行中 session**（不是沒查 —— 查了，沒有）";
-            if (s.kind == SCP_ActivitySessionKind.StreamWatch)
-                return $"- 🎬 活動 session：⚠ **觀影場 `{s.session_id}` 沒關** —— 結算需要 Unity Editor；"
-                    + "到期後它成為殘留，下次 StreamWatch start 或 `" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Sessions>($"--arg op=close --arg target_persona={iPersona} --arg confirm=1") + "` 會補結算";
+            // TASK-0448：每一種 kind（含觀影）都就地關、不結算 —— 觀影重做、不遷移，原本委派 Editor 結算的那條拔掉。
             string aTag = iNoLetter ? "goodnight-logout" : "goodnight-sleep";
             bool aClosed;
-            try { aClosed = SCP_ActivitySessionStore.Close(aRoot, iPersona, s, aTag); }
+            try { aClosed = SCP_ActivitySessionStore.CloseVerified(aRoot, iPersona, s, aTag); }
             catch (Exception e) { return $"- 🎬 活動 session：⚠ 關場失敗（{e.Message}）—— 下線照走，場還開著"; }
-            return $"- 🎬 活動 session：關掉 **{s.kind}**（`{s.session_id}`）　關場={aClosed}　結算=False　reason=`{aTag}`"
-                + $"\n  （{(string.IsNullOrEmpty(s.kind) ? "未登記種類" : s.kind)} 登記為不需要結算 —— 顯式，不是漏跑）";
+            return $"- 🎬 活動 session：關掉 **{(string.IsNullOrEmpty(s.kind) ? "未標 kind" : s.kind)}**（`{s.session_id}`）　reason=`{aTag}`　不結算"
+                + $"　回讀 active={(aClosed ? "false ✅" : "true ❌（沒關成 —— 到期後成為殘留，用 `" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_Sessions>($"--arg op=close --arg target_persona={iPersona} --arg confirm=1") + "` 收）")}";
         }
     }
 }

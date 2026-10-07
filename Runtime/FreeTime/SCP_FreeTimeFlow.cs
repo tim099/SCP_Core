@@ -124,7 +124,7 @@ namespace SCP.Core.FreeTime
             string? aGrantErr = iCtx.GrantFreeTimeVouchers(iPersona, aSessionId, aUntil, out string aExpiresIso);
             if (aGrantErr != null)
             {
-                // ① 權威狀態先落地（照 SCP_ActivitySessionStore.CloseWithSettlement 那條拍板的次序）
+                // ① 權威狀態先落地（TASK-0055 拍板的次序：狀態先、廣播後）
                 bool aRolledBack = iCtx.CloseSession(iPersona, aSession, "grant-failed-rollback", out _);
                 aR.AppendLine("## failed");
                 aR.AppendLine($"- session: `{aSessionId}`（至 {aUntil:HH:mm}）—— "

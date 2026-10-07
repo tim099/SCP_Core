@@ -1,7 +1,7 @@
 ---
 title: 新增一種 activity session kind
 description: 「一人一檔位」的 session 層要新增一種 kind 時，要動哪幾格、哪幾格會自動生效、以及三個不會報錯的漏做。
-last_updated: 2026-09-11
+last_updated: 2026-10-07
 target_audience: [AI_Agent, Tools_Maintainer, Backend_Programmer]
 related:
   - Coding_Standards.md | SCP 專案撰寫規範 | 方言／JSON／prefs／路徑單一落點
@@ -55,9 +55,9 @@ public static readonly string[] Kinds = { FreeTime, StreamWatch, Coding };
 ## 2. 開場：**一律走 `TryStart`**，不要自己 `Load` + `Save`
 
 ```csharp
-if (!UCL_SessionStartGuard.TryStart(aPersona, aSession, Kind, out string aReason, out string aExit))
+if (!SCP_ActivitySessionStore.TryStart(aRoot, aPersona, aSession, Kind, DateTime.Now, out var aBlocker, aScope))
 {
-    // 寫 blocked 回傳檔（reason / exit 直接用），非零退出
+    // 寫 blocked 回傳檔（點名 aBlocker 那一場＋可直接複製的出口），非零退出
 }
 ```
 
@@ -94,48 +94,26 @@ if (!UCL_SessionStartGuard.TryStart(aPersona, aSession, Kind, out string aReason
 
 ---
 
-## 3. 宿主層：登記行為（Editor 側，`UCL_SessionKindHost`）
+## 3. 關場不結算
 
-在**你自己這個 kind 的檔**裡加一次，⛔ 不要去改 `Cmd_SessionClose`：
+**沒有任何 kind 在關場時結算。** 關場只做一件事：翻三欄（`active`／`end_reason`／`ended_at`）再回讀磁碟。
+全部在 Senate 就地做，⛔ 不委派 Unity Editor（觀影在 Senate 重做中，TASK-0450）。
 
-```csharp
-[UnityEditor.InitializeOnLoadMethod]
-static void RegisterSessionKind()
-    => UCL_SessionKindHost.Register(new UCL_SessionKindEntry
-    {
-        Kind = SCP_ActivitySessionKind.Coding,
-        CmdName = "Coding",              // 擋下別人時要附的指令原文
-        HasStepEnd = true,               // 觀影是 false —— 它沒有 step=end
-        SettleResidueAsync = null,       // null ＝ **這個 kind 真的不用結算**（顯式答案）
-    });
-```
-
-| 格 | 漏了會怎樣（都**不報錯**） |
-|---|---|
-| 沒登記 | 補收工照樣關場，然後印「⚠ 這個 kind 沒有人登記過」＋已登記清單 —— **看得見，但要有人去看** |
-| `CmdName` 空 | 擋下時印的是 kind 本身而不是指令 —— 讀的人會去跑一個不存在的東西 |
-| `SettleResidueAsync` 該有卻是 `null` | 補收工**只翻三欄** ⇒ **酬勞蒸發**，而回傳檔說「登記為不需要結算」 |
-
-📌 為什麼「沒登記」與「登記為不用結算」要**不同形**：
-它們的處置相反（前者去補登記，後者什麼都不用做），而在 2026-09-05 之前
-它們印的是**同一句話**（TASK-0055）。
-
-⚠ **結算留在 Editor 不是偷懶**：結算就是金流，而金流不搬是 TASK-0106 拍過的（Tim 拍 B）。
-⇒ 名字在共用層、行為在宿主，兩邊各一份真相源，沒有第二份會漂的清單。
+- 新 kind **不必**登記任何關場行為；`Kinds` 有它就關得到。
+- ⛔ 不要再往 Unity 側的 `UCL_SessionKindHost` 登記新 kind —— 那張表只剩 Unity 舊指令在用，待 TASK-0454 退場。
+- 你的 kind 要付錢，就在**自己的正常收工**（`step=end`）裡付，⛔ 不要塞進關場門。
 
 ---
 
-## 4. 收工：兩條路，**不要讓它們互相呼叫**
+## 4. 收工：兩條路
 
 | 路 | 誰在走 | 做什麼 |
 |---|---|---|
-| **正常收工**（`step=end` 或到期） | 該 kind 自己 | 自己結算 → `Store.Close`（翻三欄）→ 收工公告 |
-| **補收工／殘留** | `Cmd_SessionClose`（Editor 的唯一門）；Senate 側走 `CloseWithSettlement` → gateway 委派回它 | ① 權威狀態＋回讀確認 ② 查登記表補結算 ③ **不廣播** |
+| **正常收工**（`step=end` 或到期） | 該 kind 自己 | 該 kind 自己的收尾（例：收工公告）→ `Store.Close`（翻三欄） |
+| **補收工／殘留** | `senate cmd sessions --arg op=close`、後台活動 session 頁 | `SCP_ActivitySessionStore.CloseVerified`：翻三欄＋回讀；**不廣播** |
 
-⛔ **正常收工那條不要改走 `CloseWithSettlement`。**
-🩸 它已經先結算再 `Close` ⇒ 再走一次統一入口就是**第二次結算**（觀影場會重複發薪）。
-📌 判準：**「所有路徑走同一個門」的射程是「原本沒有結算的那些路徑」，不是「全部路徑」**
-（憲法④：通則要問適用範圍）。
+- 補收工只收**殘留**（`active` 且已過 `end_ts`）；進行中的場會被擋下，並印出該 kind 的正常收工指令。
+- 缺 `confirm=1` ⇒ 擋下、零寫入；已收工 ⇒ 冪等 no-op。
 
 ---
 
@@ -144,10 +122,8 @@ static void RegisterSessionKind()
 - `senate cmd sessions`（list / show / close）與 **Session 管理頁**：它們讀的是基底，
   只要 `Kinds` 有登記就看得到，**一行都不用改**（兩支都零 kind 硬編碼，2026-09-05 查證）。
 - 跨 kind 互斥：只要開場走了 `TryStart`。
-- 晚安自動關（TASK-0057）：走的是**同一個關場函式**（`UCL_SessionCloseFlow`）——
+- 晚安自動關（TASK-0057）：走的是**同一個關場函式**（`CloseVerified`）——
   ⚠ **但判準不同**：補收工要「殘留」（`active` 且**已過 `end_ts`**），晚安只看 **`active`**。
-  🩸 這一行原本寫「走的是同一條補收工路」，而 @summit 2026-09-05 照它推出
-  「E 對 Coding 走不到」——**推得沒錯，是我的句子把「同一個函式」寫成了「同一條路」。**
 
 ---
 
@@ -176,8 +152,8 @@ static void RegisterSessionKind()
    ⚠ 只驗第 1 格的話，**一個永遠擋的閘也會通過**。
 3. **被保護的資料還在**：回讀 `sessions/<persona>.json`，被擋下之後**逐欄原封不動**。
    ⛔ 判準是那個檔，**不是你的 Cmd 回什麼**（它會說成功）。
-4. **補收工認得你**：造一份你這個 kind 的殘留 ⇒ `Cmd_SessionClose` 印的是
-   「登記為不需要結算」或真的跑了結算，**不是**「沒有人登記過」。
+4. **補收工認得你**：造一份你這個 kind 的殘留 ⇒ `senate cmd sessions --arg op=close --arg confirm=1`
+   回 `closed=1`，回讀 `sessions/<persona>.json` 的 `active=false`。測試用 Template persona。
 
 5. **selftest 要有反向對照**：不只驗「子類別寫得出、讀得回」，
    要驗「**讀成基底寫回去之後，kind 專屬欄位還在**」。

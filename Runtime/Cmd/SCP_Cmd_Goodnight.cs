@@ -1,9 +1,9 @@
 // 區塊職責：晚安流程的 `senate cmd` 入口 —— `goodnight-check` / `-portrait` / `-letter` / `-sleep` / `-logout`。
 // 物理意義：邏輯本體在 `SCP_Goodnight`；本檔只做「參數 → 呼叫 → 落回傳檔」＋ sleep 的組裝（預檢 → 寫入 → 關場 → 廣播）。
 //           與 `SCP_Goodnight` 住同一層 ⇒ 提示下一步一律用 `SCP_CmdRegistry.InvokeOf<型別>()`，指令改名不過時。
-//           只有宿主才有的事走 `SCP_LocalRootsCmd.Host`：酒館寫入（含排隊）、Editor 在不在、把觀影場交給 Editor 結算。
+//           只有宿主才有的事走 `SCP_LocalRootsCmd.Host`：酒館寫入（含排隊）。
 // 數值影響：回傳檔 `letters/<P>/cmd/goodnight_<step>.md`；sleep／logout 刪 lock 與 now_status、關本人活動 session、發下線廣播。
-// ⚠ 只有一段要 Editor：本人**進行中的觀影場**結算。Editor 沒開就跳過那一段並寫明，⛔ 不卡住晚安。
+// ⚠ 整條不需要 Editor（TASK-0448 拔掉最後一段：觀影場交 Editor 結算）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -150,8 +150,7 @@ namespace SCP.Core.Cmd
     {
         internal const string SleepDetails =
             "順序是**不變式**：預檢（全部守衛，零寫入）→ 刪 lock／now_status → 關本人活動 session → 下線廣播（best-effort）。\n"
-            + "token 只住 lock，刪 lock 就是作廢。只有一段要 Editor：進行中的**觀影場**結算 ——\n"
-            + "Editor 活著 ⇒ 只把那一段（關場＋結算）交給 Editor；沒開 ⇒ 照走，跳過那一段並在回傳檔明說（觀影場到期成殘留後由殘留結算補付）。";
+            + "token 只住 lock，刪 lock 就是作廢。整條不需要 Editor：本人的活動 session（含觀影）就地關、不結算（TASK-0448）。";
 
         internal static IReadOnlyList<SCP_CmdArgSpec> SleepSpecs(IEnumerable<SCP_CmdArgSpec> iBase, bool iSleep)
         {
@@ -162,7 +161,7 @@ namespace SCP.Core.Cmd
                 a.Add(new SCP_CmdArgSpec("skip_reason", "跳過收工閘的理由（寫進那幾張單的時間線）"));
             }
             a.Add(new SCP_CmdArgSpec("note", "附註（選填，併入下線廣播）"));
-            a.Add(new SCP_CmdArgSpec("timeout", "等酒館 Server／Editor 回執的秒數（預設 30）"));
+            a.Add(new SCP_CmdArgSpec("timeout", "等酒館 Server 回執的秒數（預設 30）"));
             return a;
         }
 
@@ -190,7 +189,6 @@ namespace SCP.Core.Cmd
         {
             string aPersona = iArgs.Get("persona").Trim();
             string aStep = iNoLetter ? "logout" : "sleep";
-            string aReason = iNoLetter ? "goodnight-logout" : "goodnight-sleep";
             string aSkip = iNoLetter ? "" : iArgs.Get("skip_reason").Trim();
             string aPath = SCP_Goodnight.StepPayloadPath(iRoots, aPersona, aStep);
 
@@ -204,28 +202,8 @@ namespace SCP.Core.Cmd
                 return aPath;
             }
 
-            // ② 需要 Editor 的那一段（觀影場結算）：活著就只把那一段交出去（④）；沒開就照走、跳過那段
+            // ② 收工閘顯式跳過 ⇒ 理由寫進那幾張單的時間線。寫不成只是警告並記在回傳檔與廣播 —— 下線本身不因此失敗。
             var aSkipped = new List<string>();
-            bool aSettleViaEditor = false;
-            if (aPre.NeedsEditor.Length > 0)
-            {
-                if (iHost.EditorAlive(iRoots.DataRoot, out string aWhy))
-                {
-                    aSettleViaEditor = true;
-                    ioResult.Lines.Add($"⤷ 這一步有一段要 Editor（{aPre.NeedsEditor}）；Editor 活著（{aWhy}）"
-                        + "⇒ **只有那一段**（關場＋結算）交給 Editor；解鎖與下線廣播在本地做");
-                }
-                else
-                {
-                    ioResult.Lines.Add($"⚠ 這一步有一段要 Editor（{aPre.NeedsEditor}），而 Editor 沒開（{aWhy}）⇒ 照走晚安，**只跳過那一段**");
-                    if (aPre.ActiveStreamWatchId.Length > 0)
-                        aSkipped.Add($"觀影場 `{aPre.ActiveStreamWatchId}` 沒結算、沒關 —— 到期後成為殘留，下次 StreamWatch start 或 "
-                            + SCP_CmdRegistry.InvokeNamed("sessions", $"--arg op=close --arg target_persona={aPersona} --arg confirm=1")
-                            + " 會補結算（付到 ends_at）");
-                }
-            }
-
-            // ②b 收工閘顯式跳過 ⇒ 理由寫進那幾張單的時間線。寫不成只是警告並記在回傳檔與廣播 —— 下線本身不因此失敗。
             if (aPre.NeedsTaskSkipWrite)
                 foreach (SCP.Core.Tasks.SCP_TaskEntry t in aPre.PendingWrapups)
                 {
@@ -241,10 +219,8 @@ namespace SCP.Core.Cmd
 
             // ③ 寫入：刪 lock／now_status、組廣播
             SCP_GoodnightSleep aApply = SCP_Goodnight.SleepApply(iRoots, aPersona, iNoLetter, aPre);
-            // ④ 關本人活動 session（位置在解鎖之後；關場失敗不擋下線）
-            string aSessionLine = aSettleViaEditor
-                ? iHost.CloseStreamWatchViaEditor(iRoots, aPersona, aReason, iArgs.Get("timeout"), ioResult)
-                : SCP_Goodnight.CloseOwnSessionNative(iRoots, aPersona, iNoLetter);
+            // ④ 關本人活動 session（位置在解鎖之後；關場失敗不擋下線）—— 就地關、不結算（TASK-0448）
+            string aSessionLine = SCP_Goodnight.CloseOwnSessionNative(iRoots, aPersona, iNoLetter);
 
             // ⑤ 下線廣播（best-effort）
             string aSummary = iNoLetter ? "" : iArgs.Get("summary").Trim();
@@ -292,7 +268,7 @@ namespace SCP.Core.Cmd
             aSb.AppendLine();
             if (aSkipped.Count > 0)
             {
-                aSb.AppendLine("## ⚠ 因 Editor 沒開或寫入失敗而跳過的段（晚安不因此卡住）");
+                aSb.AppendLine("## ⚠ 寫入失敗而跳過的段（晚安不因此卡住）");
                 foreach (string s in aSkipped) aSb.AppendLine("- " + s);
             }
             aSb.AppendLine("## verify（讀回的事實）");

@@ -63,15 +63,6 @@ namespace SCP.Core.Cmd
         /// ⚠ 發文的 Cmd 住在宿主那一層 ⇒ 由宿主用它自己的型別動態組，⛔ 共用層不寫死指令名（TASK-0406）。
         /// </summary>
         string TavernPostHint(string iPersona);
-
-        /// <summary>Editor 現在在不在（晚安判斷觀影場結算能不能交出去）。沒有 Editor 可委派的宿主回 false 並說原因。</summary>
-        bool EditorAlive(string iDataRoot, out string oWhy);
-
-        /// <summary>
-        /// 把本人**進行中**的觀影場交給 Editor 關場＋結算；回傳記進回傳檔的那一行。
-        /// ⚠ 判準是回讀 session 檔，不是 Editor 說什麼；失敗只記一行，⛔ 不擋下線。
-        /// </summary>
-        string CloseStreamWatchViaEditor(SCP_MorningRoots iRoots, string iPersona, string iReason, string iTimeout, SCP_CmdResult ioResult);
     }
 
     /// <summary>本地跑、需要宿主給根的 Cmd 共用殼（舊名 `MorningLocalCmd`）。</summary>
