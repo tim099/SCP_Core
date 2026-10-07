@@ -44,8 +44,8 @@ namespace SCP.Core.Cmd
             + "**綁單後單子進 in_review 就自動收場**／退場過編譯閘）—— **不需要 Editor**";
 
         public override string Details =>
-            "⛔ **射程**：本 Cmd 是 **Senate 側**的入口（TASK-0058 A2）。Unity 那側走 `ucmd run Coding`。\n"
-            + "兩邊寫的是**同一個檔位**（`<data_root>/sessions/<persona>.json`）⇒ 互相擋得到。\n"
+            "⛔ **射程**：改 C# 的施工場**只有這一個入口**（Unity 側的入口已刪，TASK-0454）—— 改 Senate 與改 Unity 都走這裡。\n"
+            + "退場閘：一律 `dotnet build`；**範圍碰到這一場的 Unity 專案**時另外讀那個專案的 Unity 編譯狀態，兩把各自判、任一把紅就擋。\n"
             + "⭐ 全域互斥由 `SCP_ActivitySessionStore.TryStart` 那一層保證，本 Cmd 不自己判 ——\n"
             + "   自己判就是第三份判準，而它會跟前兩份不一致且**不報錯**。\n"
             + "📐 **施工範圍**（TASK-0201）：`op=start --arg scope=<絕對路徑>` 宣告這一場要動哪一塊，\n"
@@ -587,7 +587,7 @@ namespace SCP.Core.Cmd
                         + string.Join("／", aStillWorking.ToArray()))
                     .AddValue("autoclose", "still-working");
 
-            SCP_CodingExitVerdict? aVerdict = SCP_CodingExitGateHost.Run();
+            SCP_CodingExitVerdict? aVerdict = SCP_CodingExitGateHost.Run(new SCP_CodingExitRequest(iRoot.Value, aS.scope, aS.start_ts));
             if (aVerdict != null && !aVerdict.Value.Green)
                 return SCP_CmdResult.Success(
                         "· ⛔ **不自動收：編譯閘紅燈** —— " + aVerdict.Value.Summary,
@@ -642,7 +642,7 @@ namespace SCP.Core.Cmd
                 : "  ⚠ **同時在場的還有 " + string.Join("、", aOtherNames.ToArray())
                   + "** ⇒ 這個編譯讀數涵蓋整棵樹，**它分不出紅字是誰造的**。";
 
-            SCP_CodingExitVerdict? aVerdict = SCP_CodingExitGateHost.Run();
+            SCP_CodingExitVerdict? aVerdict = SCP_CodingExitGateHost.Run(new SCP_CodingExitRequest(iRoot.Value, aS.scope, aS.start_ts));
             var aLines = new List<string>();
             if (aVerdict == null)
             {
@@ -721,9 +721,8 @@ namespace SCP.Core.Cmd
             return aS;
         }
 
-        /// <summary>射程定語 —— A2 落地後這句話要跟著改，所以它只有一份。</summary>
+        /// <summary>射程定語 —— 只有一份。</summary>
         internal const string ScopeCaveat =
-            "⚠ 射程：本入口是 **Senate 側**（不需要 Editor）；Unity 那側走 `ucmd run Coding`。"
-            + "兩邊同一個檔位 ⇒ 互相擋得到。";
+            "⚠ 射程：不需要 Editor；改 Unity C# 也走本入口 —— 範圍碰到 Unity 專案時，退場閘另外量 Unity 編譯。";
     }
 }

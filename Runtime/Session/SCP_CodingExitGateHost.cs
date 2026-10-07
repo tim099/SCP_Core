@@ -1,10 +1,8 @@
 // 區塊職責：`Coding` 退場時那道**編譯閘**由宿主提供 —— 本層只知道「去問那一端」。
 // 物理意義：⭐ **兩個宿主的尺不同形，而且不可以合成一把**：
-//          Unity 側＝`senate cmd unity-compile-status`（tracker ＋ ErrorLog 對帳）；
-//          （2026-09-10 更名：舊名 `check_compile` 那支 python 已整支刪除）
-//          Senate 側＝`dotnet build`／`build.sh` 出廠驗收。
+//          Unity 編譯＝`.compile_status.json`（tracker 寫的）；Senate 編譯＝`dotnet build`（`build.sh` 出廠驗收另外跑）。
 //          硬湊一把兩邊共用的尺，會讓其中一邊量的**不是它自己的編譯**（TASK-0058 A/B/C 拍板附註）。
-//          ⇒ 同 `SCP_CanvasGatewayHost` 的形狀：介面在共用層，實作在宿主。
+//          ⇒ 介面在共用層，實作在宿主；宿主依 `SCP_CodingExitRequest`（範圍碰到哪個專案）決定量哪幾把，各自判、各自報。
 // 數值影響：本檔零 IO。閘的實作可能**跑一次編譯**（秒級）—— 那是它的重點，不是副作用。
 //
 // ⚠ **沒有登記閘 ≠ 編譯是綠的**：那兩件事必須不同形。沒登記時退場路徑要印
@@ -41,6 +39,30 @@ namespace SCP.Core.Session
         public string Scope { get; }
     }
 
+    /// <summary>
+    /// 閘要量哪一場：資料根（＝哪個專案）、施工範圍、開場時刻。
+    /// <para>宿主靠它決定**要量哪幾把尺**（例：範圍碰到 Unity 專案 ⇒ 加量那個專案的 Unity 編譯），
+    /// 以及讀數夠不夠新（晚於開場才算本場的）。</para>
+    /// </summary>
+    public sealed class SCP_CodingExitRequest
+    {
+        public SCP_CodingExitRequest(string iDataRoot, string iScope, string iStartTs)
+        {
+            DataRoot = iDataRoot ?? "";
+            Scope = iScope ?? "";
+            StartTs = iStartTs ?? "";
+        }
+
+        /// <summary>這一場的資料根（`<專案>/AgentCommands`）。</summary>
+        public string DataRoot { get; }
+
+        /// <summary>施工範圍（`|` 分段；空字串 ＝ 未宣告 ＝ 全域）。</summary>
+        public string Scope { get; }
+
+        /// <summary>開場時刻（ISO-8601）。</summary>
+        public string StartTs { get; }
+    }
+
     /// <summary>宿主注入編譯閘的地方（同 <see cref="SCP.Core.Canvas.SCP_CanvasGatewayHost"/> 的形狀）。</summary>
     public static class SCP_CodingExitGateHost
     {
@@ -48,14 +70,14 @@ namespace SCP.Core.Session
         /// 宿主的閘。<c>null</c> ＝ **這個宿主沒有登記** ⇒ 退場路徑要明說「未驗編譯」，
         /// ⛔ 不可以印成綠燈。
         /// </summary>
-        public static Func<SCP_CodingExitVerdict>? Gate;
+        public static Func<SCP_CodingExitRequest, SCP_CodingExitVerdict>? Gate;
 
         /// <summary>跑一次閘。沒登記時回 <c>null</c>（**跟「跑了但紅」不同形**）。</summary>
-        public static SCP_CodingExitVerdict? Run()
+        public static SCP_CodingExitVerdict? Run(SCP_CodingExitRequest iRequest)
         {
-            Func<SCP_CodingExitVerdict>? aGate = Gate;
+            Func<SCP_CodingExitRequest, SCP_CodingExitVerdict>? aGate = Gate;
             if (aGate == null) return null;
-            try { return aGate(); }
+            try { return aGate(iRequest); }
             catch (Exception e)
             {
                 // 閘自己炸掉**不是綠燈**，也不是「沒登記」—— 它是第三種狀態，照實回紅並帶原因。

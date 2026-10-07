@@ -526,7 +526,7 @@ namespace SCP.Core.FreeTime
         }
 
         // ===========================================================
-        // 區塊：跨 kind 擋下時的措辭（Unity `UCL_SessionStartGuard.ReasonMine/ExitMine` 的 Senate 版）。
+        // 區塊：跨 kind 擋下時的措辭。
         // 物理意義：自由時間不是全域互斥的 kind ⇒ 擋住它的**只可能是我自己的另一場**（軸1）。
         //          每個 kind 的收工路徑不同形，所以逐 kind 給，不給一句通用的廢話。
         // ⚠ StreamWatch **沒有 step=end**：誠實出口是「等它到期」，⛔ 不編一個不存在的指令。

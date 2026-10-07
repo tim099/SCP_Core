@@ -1,4 +1,4 @@
-// 區塊職責：`cmd free-time` —— 自由時間流程的 Senate 入口（TASK-0360：Unity `ucmd run FreeTime` 的搬家版，**不需要 Editor**）。
+// 區塊職責：`cmd free-time` —— 自由時間流程的 Senate 入口（TASK-0360，**不需要 Editor**）。
 // 物理意義：同一支 Cmd 以 step 分步：start（註冊 until＋發限時券＋開場擲骰＋宣告）→ [做活動] →
 //          next（活動事件自然結束時跑：未到期重擲、到期收工）→ end（提前收工，附 reason）；
 //          list／shuffle／show 是純參考查詢（不進場、不發券、不寫 session、不發酒館）。

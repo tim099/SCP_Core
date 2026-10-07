@@ -1,12 +1,6 @@
-// 區塊職責：`Coding` kind 的**跨端資料形狀** —— 兩個宿主寫的是同一份鍵。
-// 物理意義：Unity 那側先有 `UCL_CodingSession`（TASK-0058 A1）；A2 要在 Senate 那側**也能進場**，
-//          而兩邊各宣告一份欄位就是**兩份會漂的 schema** —— 漂掉的症狀不是解析失敗（那會喊），
+// 區塊職責：`Coding` kind 的**資料形狀**（`sessions/<persona>.json` 的鍵）。
+// 物理意義：欄位只宣告這一份 —— 各宣告一份就是**會漂的 schema**，漂掉的症狀不是解析失敗（那會喊），
 //          是**下一個讀那些欄位的人拿到預設值**（`SCP_ActivitySession.Raw` 那條血證的同一族）。
-//          ⇒ 形狀搬進共用層，Unity 那側改成用它。
-//          ✅ 2026-09-05 已完成（@summit）：`UCL_CodingSession` **整個刪掉**，
-//             `Cmd_Coding` 直接用本類別 ⇒ 「兩邊逐鍵相同」不再是一份靠人維持的契約，
-//             而是**編譯期的事實**。⛔ 沒有選第二選項（「或至少逐鍵對齊」）——
-//             那條要求「加欄位時記得兩邊都加」，而漏了不會報錯，只會讓一端拿到預設值。
 // 數值影響：純資料類別，零 IO。欄位名**就是 JSON 的鍵名** —— 改名＝舊檔讀回預設值。
 //
 // ⚠ `Coding` 是第一個**全域獨佔**的 kind（同時至多一人），也是第一個**沒有天然時長**的 kind。
@@ -18,10 +12,9 @@ namespace SCP.Core.Session
 {
     /// <summary>
     /// 一場 `Coding` session（改 C# 的施工場）。
-    /// <para>⚠ **兩個宿主都用這一個類別**（Unity 側 <c>Cmd_Coding</c> ／ Senate 側 <c>SCP_Cmd_Coding</c>）——
-    /// 欄位名就是 JSON 的鍵名，而它們現在只有一份。改欄位＝兩端同時改，編譯器會擋。</para>
-    /// <para>⚠ 而 <c>end_ts</c> / <c>until_local</c> 由**兩個入口各自寫入**，格式必須逐字一致
-    /// （<c>yyyy-MM-ddTHH:mm:ss.fffZ</c> ／ <c>yyyy-MM-dd HH:mm</c>）—— 那一格編譯器擋不到。</para>
+    /// <para>⚠ 欄位名就是 JSON 的鍵名 —— 改名＝舊檔讀回預設值。</para>
+    /// <para>⚠ <c>end_ts</c> / <c>until_local</c> 的格式是讀者依賴的介面
+    /// （<c>yyyy-MM-ddTHH:mm:ss.fffZ</c> ／ <c>yyyy-MM-dd HH:mm</c>）—— 編譯器擋不到。</para>
     /// </summary>
     public class SCP_CodingSession : SCP_ActivitySession
     {

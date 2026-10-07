@@ -1,4 +1,4 @@
-// 區塊職責：`cmd free-time-activity` —— 自由時間「活動層」入口（TASK-0360：Unity `ucmd run FreeTimeActivity` 的搬家版）。
+// 區塊職責：`cmd free-time-activity` —— 自由時間「活動層」入口（TASK-0360）。
 //          op=pick 選活動並取得執行方式／op=step **代跑一步**（in-process 派遣 md `cmd_steps` 宣告的 cmd）／op=done 收活動並指回換骰。
 // 物理意義：提示長在**唯一的入口**上 —— 人一旦進到活動工具，那些工具的輸出一個字都沒提自由時間，流程就斷在那裡。
 //          邏輯本體在 `SCP_FreeTimeActivityOps`；本檔只做「參數 → 現場 → 分派」。
