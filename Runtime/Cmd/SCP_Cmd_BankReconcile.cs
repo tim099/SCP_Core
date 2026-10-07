@@ -108,7 +108,7 @@ namespace SCP.Core.Cmd
                 // ① 結清清單讀不動 ⇒ 不知道哪些則已經用別的方式補過 ⇒ 補下去就是付第二次錢。
                 if (r.SettledUnreadable)
                     return SCP_CmdResult.Fail(1,
-                        "✗ `" + SCP_PayrollAudit.SettledFileName + "` 讀不動 —— **拒絕補發，一筆都沒補**：",
+                        "✗ `" + SCP_BankReconcile.SettledFileName + "` 讀不動 —— **拒絕補發，一筆都沒補**：",
                         "  不知道哪些則已經用請款等方式補過，補下去會重複增發。先修好那份清單再跑（`op=report` 照樣看得到差集）。");
                 // ② 射程內帳上一筆 work_post 都沒有、而酒館推得出應有 ⇒ 分不出「真的沒發過」與「讀不到帳／根給錯」。
                 int aWorkPostExpected = r.Coverage.Where(c => c.Kind == SCP_TavernPayroll.KindWorkPost).Sum(c => c.Expected);

@@ -1,8 +1,8 @@
 ---
 title: 聊天酒館：發文發薪規則
 description: 一則酒館訊息落檔後會入哪幾筆帳 —— 底薪／commit／reading-note／token_parse 四條規則、帳號從 persona 還是 sender_id 解析、冪等鍵、pay_* 回傳值怎麼讀
-cmds: [payroll-audit]
-last_updated: 2026-10-05
+cmds: [bank-reconcile]
+last_updated: 2026-10-07
 target_audience: [AI_Agent, Tools_Maintainer]
 ---
 
@@ -64,7 +64,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 | `pay_failed` | 其他失敗（逐筆印 `✗ 發薪失敗`）；規劃本身丟例外時值是 `plan`；銀行根解不出來時整批都算失敗 |
 | `pay_warning` | 設定壞了的訊號（判準讀不了、persona 解析不到、區域讀到預設值、token 超上限…）；`tavern-post` 會印「⚠ 發薪（訊息已發，這一則可能沒領到）」 |
 
-事後量缺口：`payroll-audit`（逐日比底薪應付與帳上 `work_post` 筆數）、`bank-reconcile`（以 `Plan()` 為事實源，`op=apply` 加 confirm 可補發酒館那一類）。
+事後動錢對帳：`bank-reconcile`（以 `Plan()` 為事實源，`op=apply` 加 confirm 可補發酒館那一類）。
 
 ## 5. 帳號解析
 

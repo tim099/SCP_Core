@@ -28,6 +28,7 @@ using System.Globalization;
 using System.IO;
 using SCP.Core.Io;
 using SCP.Core.Json;
+using SCP.Core.Paths;
 using SCP.Core.Tavern;
 
 namespace SCP.Core.Bank
@@ -90,6 +91,47 @@ namespace SCP.Core.Bank
     {
         /// <summary>本支量得到的最早一天：金流權威 2026-09-17 切到 `Bank/`，那天是過渡日（一部分錢在已刪除的舊帳本）⇒ 從 09-18 起。</summary>
         public const string MeasurableFromDayKey = "2026-09-18";
+        /// <summary>請款補薪的逐則結清清單；補發前用來排除已付過的訊息。</summary>
+        public const string SettledFileName = "payroll_settled.json";
+
+        /// <summary>讀已結清 ref；缺檔為空集合，讀取失敗明示未知，補發端必須拒絕。</summary>
+        public static HashSet<string> ReadSettledRefs(string iBankRoot, List<string> ioProblems, out bool oUnreadable)
+        {
+            oUnreadable = false;
+            var aSettledRefs = new HashSet<string>(StringComparer.Ordinal);
+            string aSettledPath = Path.Combine(iBankRoot, SettledFileName);
+            if (!File.Exists(aSettledPath)) return aSettledRefs;
+            try
+            {
+                SCP_JsonData aSettledDoc = SCP_JsonParser.Parse(File.ReadAllText(aSettledPath));
+                SCP_JsonData aBatches = aSettledDoc["settled"];
+                if (!aBatches.IsArray)
+                {
+                    // ⚠ 檔在、而形狀不是我以為的那個 ⇒ 那**不是**「沒有結清過」。
+                    oUnreadable = true;
+                    ioProblems.Add(SettledFileName + "：`settled` 不是陣列 ⇒ 本次讀不到任何已結清 ref");
+                    return aSettledRefs;
+                }
+                for (int bi = 0; bi < aBatches.Count; bi++)
+                {
+                    SCP_JsonData aRefs = aBatches[bi]["refs"];
+                    if (!aRefs.IsArray) continue;
+                    for (int ri = 0; ri < aRefs.Count; ri++)
+                    {
+                        string aOne = aRefs[ri].AsString();
+                        if (aOne.Length > 0) aSettledRefs.Add(aOne);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                oUnreadable = true;
+                ioProblems.Add(SettledFileName + "：" + ex.GetType().Name + ": " + ex.Message
+                             + " ⇒ 已結清的那些則**沖不掉** ⇒ 差集偏高（⛔ 不是漏發）");
+            }
+            return aSettledRefs;
+        }
+
         public const string RunDirName = "reconcile";
         public const string LastRunFileName = "last_run.json";
         public const string RunLogFileName = "runs.jsonl";
@@ -212,9 +254,9 @@ namespace SCP.Core.Bank
             Func<string, SCP_ReconcileCoverageKind, string, SCP_ReconcileCoverage> iCov,
             Action<SCP_ReconcileCoverage, SCP_ReconcileGap, bool, int> iExpect)
         {
-            string aRooms = Path.Combine(iDataRoot, SCP_PayrollAudit.RoomsRelPath.Replace('/', Path.DirectorySeparatorChar));
+            string aRooms = SCP_DataPaths.Rooms(new SCP_DataRoot(iDataRoot));
             if (!Directory.Exists(aRooms)) { r.Problems.Add("找不到房間根：" + aRooms + " ⇒ 酒館那一類**沒量**（⛔ 不是沒缺口）"); return; }
-            HashSet<string> aSettled = SCP_PayrollAudit.ReadSettledRefs(iBank, r.Problems, out bool aUnreadable);
+            HashSet<string> aSettled = ReadSettledRefs(iBank, r.Problems, out bool aUnreadable);
             r.SettledUnreadable = aUnreadable;
             if (aUnreadable) r.Problems.Add("請款結清清單讀不動 ⇒ work_post 走第二條路結清的那些則會被報成缺口（差集偏高；apply 會拒絕）");
 
