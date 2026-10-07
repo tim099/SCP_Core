@@ -20,9 +20,11 @@
 //      🩸 新銀行「沒開戶的帳號不能收付」，而收付走的是**本區**的帳本 ⇒ 借來的那個帳號在這裡收不到錢。
 //         erina 2026-10-06 在 Bar（BTC）第一次醒來：綁定借自 Florin＝`cc`，BTC 的 `Bank/accounts/` 沒有 cc；
 //         早安回傳檔寫著「帳本裡查無此帳戶」，而本 Cmd 同一時間把她算成「不是錯」、不計入問題。
-//   ③ unmaterialized 綁定只靠合一成立、還沒有實體 ⇒ **不是錯**，是「這個帳戶沒被後台開過」的唯一讀數
+//   ③ unmaterialized 本區綁定指向**沒開戶**的帳號（只看帳戶檔）⇒ 🔴 **計入問題**（TASK-0441，Tim 2026-10-07）
+//      新銀行沒開戶不能收付 ⇒ 下面 0173 那次降級的前提（「錢照樣入帳」）已不成立；判準也從「三處都沒有」收成「沒有帳戶檔」，
+//      跟入帳的 `CheckUsable` 同一把尺。借別區的那一半在 ②b，而到新區的第一次早安會自己開戶補綁（`SCP_Morning.EnsureRegionBinding`）。
 //
-//   🩸 ③ 為什麼從「錯」降級成「狀態」（kaguya 2026-09-08，TASK-0173，同族第三次）：
+//   🩸 （歷史）③ 曾從「錯」降級成「狀態」（kaguya 2026-09-08，TASK-0173，同族第三次）：
 //     合一模式（Tim 2026-08-20 拍板，開關已拔除）的定義就是 **agent id 即帳號 id**，
 //     而權威是 `letters/<persona>/bank/<region>.md`。`UCL_TreasuryAccountResolver` 照這個定義做 ——
 //     它把**每一個綁定值**都登記成正式帳號（`foreach s_PersonaToAgentLower → AddCanonical`）。
@@ -72,6 +74,8 @@ namespace SCP.Core.Cmd
             + "· 五格分開報：`no_binding` / `borrowed` / `unknown_acct` / `closed_acct` / `stale_reverse`。\n"
             + "· `borrowed`（只有別區宣告）**不算錯**，它只是要看得見 ——\n"
             + "  但借來的帳號**本區沒開戶** ⇒ `borrowed_unopened`，計入問題（沒開戶的帳號不能收付）。\n"
+            + "· `unmaterialized`：本區自己的綁定指向沒開戶的帳號 ⇒ 計入問題（同一個理由）。\n"
+            + "· 借別區的人到本區第一次早安時會自動補：本區有那個戶 ⇒ 直接綁；沒有 ⇒ 開戶（種子 1000）再綁。\n"
             + "· exit 0＝沒有任何一格是問題（`borrowed` 不計）；exit 5＝有。\n"
             + "⛔ 本 Cmd 不寫任何檔；綁定是錢的歸屬，改它要走有審計的寫入端。";
 
@@ -202,12 +206,17 @@ namespace SCP.Core.Cmd
                                               + aKv.Key + " --arg account=<帳號> --arg actor=<你> --arg reason=<理由>`");
                     continue;
                 }
-                // 合一之後這裡問的不再是「存不存在」（綁定值天生存在），而是「有沒有實體」：
-                // 帳戶檔／system_accounts／agent_banks 三處都沒有 ⇒ 它只活在綁定檔上。
-                // 錢會正確入帳（resolver 認得它），但後台從沒替它開過戶 —— 那是狀態，不是缺陷。
-                if (aUnified.Contains(aKv.Value))
-                    aUnmaterialized.Add(aKv.Key + " → `" + aKv.Value
-                                        + "`（只靠合一成立：帳戶檔、system_accounts、agent_banks 都沒有實體）");
+                // TASK-0441：判準跟入帳那條路對齊 —— **只看帳戶檔**（`SCP_BankAccounts.CheckUsable` 只認它）。
+                // 🩸 舊判準是「帳戶檔／system_accounts／agent_banks 三處都沒有」：那是舊 Treasury（寫一筆就長出帳號）的定義，
+                //   新銀行沒開戶就收不到錢 ⇒ 綁到「registry 有登記、但沒開戶」的帳號時，舊版這格不列、其他格也不列，
+                //   **健檢全綠而錢進不去**。⇒ 這一格現在是缺陷，計入問題。
+                // ⚠ 借別區的不在這裡判（上面 ②b 已判），到新區的第一次早安也會自己補（SCP_Morning.EnsureRegionBinding）；
+                //   這一格剩下的是「**本區自己的綁定**指向沒開戶的帳號」—— 早安不會替它開，要人決定。
+                if (!aAccountFiles.Contains(aKv.Value))
+                    aUnmaterialized.Add(aKv.Key + " → `" + aKv.Value + "`（本區 `Bank/accounts/` 沒有這個戶 ⇒ 收不到錢"
+                                        + (aUnified.Contains(aKv.Value) ? "；只靠合一成立" : "；registry 有登記但沒開過戶") + "）"
+                                        + "　⇒ 開戶：`senate cmd bank --arg op=open --arg account=" + aKv.Value
+                                        + " --arg caller=<你>`，或改綁一個有開戶的帳號（`persona-profile --arg op=set_bank`）");
             }
 
             // ── ⑤ 反向表還在不在（它已退出解析，留著只是待清理）────────────────
@@ -244,7 +253,7 @@ namespace SCP.Core.Cmd
             Section(aR, "① no_binding　連別區都沒有宣告　⇒ 這個人的錢無處可去", aNoBinding);
             Section(aR, "② borrowed　只有別區宣告　⇒ **不是錯**，只是要看得見（前提：借來的帳號本區有開戶）", aBorrowed);
             Section(aR, "②b borrowed_unopened　借別區、但借來的帳號**本區沒開戶**　⇒ 🔴 收不到錢", aBorrowedUnopened);
-            Section(aR, "③ unmaterialized　只靠合一成立、後台還沒開過戶　⇒ **不是錯**，錢會正確入帳", aUnmaterialized);
+            Section(aR, "③ unmaterialized　本區綁定指向**沒開戶**的帳號　⇒ 🔴 收不到錢（沒開戶不能收付）", aUnmaterialized);
             Section(aR, "④ closed_acct　綁定指向**已銷戶**帳戶　⇒ 🔴 最貴的一格", aClosedHit);
             Section(aR, "⑤ stale_reverse　`bank_personas` 殘留（已不參與解析）", aStale);
 
@@ -260,21 +269,22 @@ namespace SCP.Core.Cmd
             aR.AddValue("closed_acct", aClosedHit.Count.ToString());
             aR.AddValue("stale_reverse", aStale.Count.ToString());
 
-            // ⚠ `borrowed` 與 `unmaterialized` **都不計入**問題數 —— 它們是狀態不是缺陷。
-            //   把它們算進去的話，每天都會紅一格，而天天紅的東西沒有人會再看。
-            //   🩸 `unmaterialized` 正是這樣被抓到的：它以 `unknown_acct` 之名紅了很久，
-            //      紅的內容是「錢會進一個沒有登記的地方」—— 而錢一直進對地方。
+            // ⚠ `borrowed` **不計入**問題數 —— 它是狀態不是缺陷（前提：借來的帳號本區有開戶，沒開的在 ②b）。
+            // ⚠ `unmaterialized` 計入（TASK-0441，推翻 TASK-0173 的降級，Tim 2026-10-07）：
+            //   0173 降級的前提是舊 Treasury「錢照樣入帳」；新銀行沒開戶不能收付，那個前提不在了。
+            //   ⇒ 它現在跟 `borrowed_unopened` 是同一種東西：錢收不進來。
             // ⚠ `unreadable` 計入：讀不了的那幾位**沒被檢查到**，這一次不能宣稱「沒有問題」。
             // ⚠ `borrowed_unopened` 計入（TASK-0440）：它不是狀態，是「錢收不進來」。
-            int aBad = aUnreadable.Count + aNoBinding.Count + aBorrowedUnopened.Count + aClosedHit.Count + aStale.Count;
+            int aBad = aUnreadable.Count + aNoBinding.Count + aBorrowedUnopened.Count + aUnmaterialized.Count
+                       + aClosedHit.Count + aStale.Count;
             aR.Lines.Add("");
             if (aBad > 0)
             {
                 aR.ExitCode = 5;
-                aR.Lines.Add("⇒ 共 **" + aBad + "** 項要處理（exit 5；`borrowed` 不計，`borrowed_unopened` 計）。⛔ 本 Cmd 只報不改。");
+                aR.Lines.Add("⇒ 共 **" + aBad + "** 項要處理（exit 5；`borrowed` 不計，`borrowed_unopened`／`unmaterialized` 計）。⛔ 本 Cmd 只報不改。");
             }
-            else aR.Lines.Add("✅ 計入問題的各格皆 0 —— 每位的綁定都指向一個未銷戶的帳戶（借別區的也在本區有開戶），反向表也清乾淨了。"
-                              + "（`borrowed` 與 `unmaterialized` 是狀態，各自的數字在上面。）");
+            else aR.Lines.Add("✅ 計入問題的各格皆 0 —— 每位的綁定都指向本區一個有開戶、未銷戶的帳戶，反向表也清乾淨了。"
+                              + "（`borrowed` 是狀態，數字在上面。）");
             return aR;
         }
 

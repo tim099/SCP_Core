@@ -15,6 +15,7 @@
 //      它是衍生快照，讀者是 Editor 頁與 python，而 python 端已明說不靠它（persona_profile.py:98）。
 //   ⑥ 見林書籤換算（RebaseBookmark）不做：Editor 版的換算結果**從不落盤**（WriteRaw 略過推導欄），只印一行。
 // 數值影響：wake 寫 lock（含 session_token）／memo／profile/{model,actual_agent}.md／profile/_last_login.json／審計 jsonl，刪 now_status。
+//          到新區（本區沒綁）時另可能開一個戶（種子 1000）＋寫本區綁定（TASK-0441，見 EnsureRegionBinding）。
 //          brief 寫 cmd/wake_brief.md。其餘純讀。
 #nullable enable
 using System;
@@ -180,6 +181,11 @@ namespace SCP.Core.Letters
             }
             if (aRawActual != aActual) WriteProfileField(iR, iPersona, "actual_agent", aActual, aActor, aReason);
 
+            // ⑤' 到新區：本區沒綁 ⇒ 照別區那一個帳號開戶／綁定（TASK-0441）。放在守衛之後 —— blocked 路徑維持零副作用。
+            //    補了就重新解析：lock 的 bank_account 與下面 identity 印的要是補好的那一個。
+            List<string> aArrival = EnsureRegionBinding(iR, aRegion, iPersona, aActor);
+            if (aArrival.Count > 0) aBank = ResolvePersonaAccountId(iR, aRegion, iPersona, aAgent, out aBankSource);
+
             // ⑥ token ＋ lock ＋ memo
             string aToken = Guid.NewGuid().ToString("N");
             string aClaimOrigin = $"cmd-goodmorning:{aActorTag}";
@@ -236,6 +242,11 @@ namespace SCP.Core.Letters
             bool aGapMeasured = aBookmark > 0 && aDerived - aBookmark >= 0;
             int aGap = aGapMeasured ? aDerived - aBookmark : 0;
             aR.AppendLine();
+            if (aArrival.Count > 0)
+            {
+                aR.AppendLine($"## 本區銀行綁定（{aRegion}）");
+                foreach (string l in aArrival) aR.AppendLine("- " + l);
+            }
             aR.AppendLine("## identity");
             aR.AppendLine($"- persona: {iPersona} / wake_count: **{aDerived}** / agent: {aAgent} / actual: {aActual}");
             aR.AppendLine($"- 帳號（帳號 id ＝ agent id）: {(string.IsNullOrEmpty(aBank) ? "(解析不到)" : aBank)}"
@@ -450,6 +461,83 @@ namespace SCP.Core.Letters
             if (string.IsNullOrWhiteSpace(iAgent)) { oSource = "unresolved"; return ""; }
             oSource = "legacy-agent-chain（帳本沒有這個人的綁定，退舊正向鏈）";
             return iAgent.Trim();   // 合一模式：agent id 就是帳號 id
+        }
+
+        /// <summary>到新區開戶的種子（Tim 2026-10-07：「開戶預設 1000 token」；與新開 agent 同額）。</summary>
+        public const int ArrivalSeed = SCP_PersonaCreate.DefaultAgentSeed;
+
+        // 區塊職責：**到新區的第一次早安** —— 本區沒有綁定時，照別區那一個帳號在本區落地（TASK-0441）。
+        // 物理意義：解析器在本區沒綁時會**借**別區的帳號 id，而新銀行「沒開戶不能收付」⇒
+        //          借來的 id 本區沒開戶，那個人在這一區一則薪都領不到（TASK-0440 erina 在 BTC 的現場）。
+        //          Tim 2026-10-07 拍板：剛到就先看本區有沒有那個帳戶 —— 有 ⇒ 直接綁；沒有 ⇒ 開戶（種子 1000）再綁。
+        // 數值影響：可能開一個戶（`bank op=open`，種子是 `system_init` 憑空增發，簽名記在分錄）＋ 寫一顆本區綁定檔。
+        //          其餘情況零寫入。
+        // ⚠ 只處理「本區沒綁、別區**恰好一個**」：多區都有（ambiguous）不挑、讀不了（unreadable）不當成沒有 ——
+        //   兩者跟解析器同一套判準（`GetBankAccount`），⛔ 不在這裡另立一份。
+        // ⚠ 已知代價（2026-10-07 量給 Tim 看過）：同一個 agent 在兩區的戶名不一定一樣（Florin `cc` vs BTC `claude-code`）
+        //   ⇒ 照別區 id 開戶可能在本區多開一個同主人的戶。Tim 選了「照 id 開」，本段不替他猜別名。
+        public static List<string> EnsureRegionBinding(SCP_MorningRoots iR, string iRegion, string iPersona, string iActor)
+        {
+            var aOut = new List<string>();
+            if (string.IsNullOrWhiteSpace(iRegion)) { aOut.Add("· 區域讀不到 ⇒ 不補綁定"); return aOut; }
+
+            string aOwn = SCP_PersonaProfile.ReadOwnBankBinding(iR.LettersRoot, iPersona, iRegion, out bool aOwnBusy);
+            if (aOwnBusy) { aOut.Add($"⚠ 本區（{iRegion}）綁定檔這一瞬間讀不了 ⇒ ⛔ 不補（讀不了不等於沒綁）"); return aOut; }
+            if (aOwn.Length > 0) return aOut;   // 本區已有綁定 —— 常態，不出聲
+
+            string aBorrowed = SCP_PersonaProfile.GetBankAccount(iR.LettersRoot, iPersona, iRegion, out string aSrc, out string aNote);
+            if (aBorrowed.Length == 0)
+            {
+                aOut.Add($"⚠ 本區（{iRegion}）沒有綁定，也沒有可照抄的別區綁定（source={aSrc}{(aNote.Length > 0 ? "；" + aNote : "")}）"
+                         + " ⇒ 不補；要綁：`persona-profile --arg op=set_bank`");
+                return aOut;
+            }
+
+            string aBankRoot = iR.BankRoot;
+            SCP_BankAccountCheck aCheck = SCP_BankAccounts.CheckUsable(aBankRoot, aBorrowed);
+            if (aCheck.Result == SCP_BankAccountCheck.Kind.NotOpened)
+            {
+                var aOpen = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["op"] = "open", ["bank_root"] = aBankRoot, ["account"] = aBorrowed,
+                    ["amount"] = ArrivalSeed.ToString(CultureInfo.InvariantCulture), ["confirm"] = "1", ["caller"] = iActor,
+                };
+                SCP_CmdResult aBank = SCP_CmdRegistry.Dispatch("bank", aOpen);
+                if (aBank.Ok) aOut.Add($"✓ 本區開戶 `{aBorrowed}`（照 {aSrc} 的綁定；種子 {ArrivalSeed}，`system_init`）");
+                else
+                {
+                    // 同時到的兩個人借同一個 id：後到的那個會撞「已經有了」—— 那正是要綁的那一戶，回頭再看一次。
+                    aCheck = SCP_BankAccounts.CheckUsable(aBankRoot, aBorrowed);
+                    if (aCheck.Result != SCP_BankAccountCheck.Kind.Usable)
+                    {
+                        aOut.Add($"✗ 本區開戶 `{aBorrowed}` 沒成（bank op=open exit {aBank.ExitCode}）⇒ ⛔ 不綁（綁到沒開戶的帳號一樣收不到錢）：");
+                        foreach (string l in aBank.Lines) aOut.Add("    " + l);
+                        return aOut;
+                    }
+                    aOut.Add($"· `{aBorrowed}` 剛被別人開好了 ⇒ 直接綁");
+                }
+                aCheck = SCP_BankAccounts.CheckUsable(aBankRoot, aBorrowed);
+            }
+            if (aCheck.Result != SCP_BankAccountCheck.Kind.Usable)
+            {
+                // 已銷戶／不合法：⛔ 不開、不綁 —— 銷戶是有人刻意做的決定，開回來等於替他推翻。
+                aOut.Add($"⚠ 別區綁定 `{aBorrowed}`（{aSrc}）在本區不能用：{aCheck.Why} ⇒ ⛔ 不補；要綁：`persona-profile --arg op=set_bank`");
+                return aOut;
+            }
+
+            if (!SCP_PersonaProfileWrite.WriteBankBinding(iR.LettersRoot, iR.DataRoot, iPersona, iRegion, aBorrowed,
+                    iActor, $"到新區（{iRegion}）早安：照 {aSrc} 的綁定 `{aBorrowed}` 補本區綁定（TASK-0441）",
+                    out string aWarn, out string aErr))
+            {
+                aOut.Add($"✗ 本區綁定寫不進去：{aErr}（帳戶已在，下次早安會再補一次）");
+                return aOut;
+            }
+            string aBack = SCP_PersonaProfile.ReadOwnBankBinding(iR.LettersRoot, iPersona, iRegion, out _);
+            aOut.Add(aBack == aBorrowed
+                ? $"✓ 本區綁定 `{iRegion}` → `{aBack}`（讀回確認）"
+                : $"✗ 本區綁定寫完讀回不符（期望 `{aBorrowed}`、實際 `{aBack}`）");
+            if (aWarn.Length > 0) aOut.Add("⚠ " + aWarn);
+            return aOut;
         }
 
         public static SCP_JsonData LoadRegistryMeta(string iDataRoot)
