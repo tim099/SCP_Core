@@ -1,7 +1,6 @@
 // 區塊職責：一次 free-time／free-time-activity 呼叫的**共用現場** —— 三個根、本趟設定、活動清單快取，
 //          以及三條**跨 Cmd 的出口**（session 檔、券、酒館發文）。
-// 物理意義：Unity 版這些東西散在 `UCL_AgentCommandsPath.DataRoot`（全域靜態）、`Cmd_FreeTime` 的 internal static、
-//          `UCL_CanvasVoucherLedger` 的直讀。搬到 SCP_Core 之後根要由宿主傳進來（本層不推導），
+// 物理意義：根要由宿主傳進來（本層不推導），
 //          而設定要「每趟讀一次、整趟傳遞」—— 兩件事都需要一個物件裝著。
 // 數值影響：
 //   · 券：**只走 `SCP_CmdRegistry.Dispatch("voucher", …)`**（Server 單一寫入端；券不記歷史，第二個寫入端蓋掉的東西回推不出來）。

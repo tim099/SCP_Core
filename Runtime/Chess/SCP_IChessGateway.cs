@@ -1,9 +1,6 @@
 // 區塊職責：棋局本體與**宿主能力**之間的閘 —— 廣播酒館、發對局獎勵券兩件事。
 // 物理意義：TASK-0268 ⑥ —— `chess.py` 的廣播是 `subprocess` 叫 `senate.exe ucmd run Tavern`；
-//           搬進 C# 之後這兩件事在不同宿主上是不同的路：
-//           · Senate CLI：酒館走 `AgentCmdClient` 派給 Editor 的 `Cmd_Tavern`（同 process，不 spawn）、
-//             券走 `SCP_CmdRegistry.Dispatch("voucher")`
-//           · Unity Editor：酒館走 registry 拿 `Cmd_Tavern` in-process、券走 `UCL_VoucherAuthority`
+//           搬進 C# 之後這兩件事由宿主決定怎麼做（Senate：廣播走 `tavern-post`、券走 `SCP_CmdRegistry.Dispatch("voucher")`）
 //           ⇒ 本體不該知道自己跑在哪個宿主上，它只認這個介面。形狀照抄 `SCP_ICanvasGateway` /
 //           `SCP_IBooksGateway`（同一個問題已經有兩份答案，⛔ 不發明第三套裝配時機）。
 // 數值影響：介面刻意窄到三個方法。

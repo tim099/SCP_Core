@@ -279,7 +279,7 @@ namespace SCP.Core.Bank
             return true;
         }
 
-        // ── 開單／撤單（TASK-0325：從 Unity `Cmd_Treasury` 搬來）──────────────
+        // ── 開單／撤單（TASK-0325）──────────────
 
         public const string StatusCancelled = "cancelled";
 

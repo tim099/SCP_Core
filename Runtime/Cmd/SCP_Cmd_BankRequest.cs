@@ -1,4 +1,4 @@
-// 區塊職責：`cmd bank-request` —— **開請款單／轉帳單、撤單、列單**的 CLI 出口（TASK-0325 第一批：從 Unity `Cmd_Treasury` 搬來）。
+// 區塊職責：`cmd bank-request` —— **開請款單／轉帳單、撤單、列單**的 CLI 出口（TASK-0325）。
 // 物理意義：agent 主張「該付我」或「這筆該從 A 搬到 B」的正規管道 —— 有單據、可審批、可駁回、可追溯。
 //           審批仍是 `cmd bank --arg op=approve|reject`（Server）；本支**只寫單子、一毛錢都不動**。
 //           單子是一張一檔（uuid 檔名）⇒ 本地跑就好，不需要 Server、不需要 Editor。

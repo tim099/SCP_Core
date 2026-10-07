@@ -189,7 +189,7 @@ namespace SCP.Core.Bank
                 aRow.Kind = aRow.Fee <= 0 ? SCP_DemurrageBillRowKind.FloorZero : SCP_DemurrageBillRowKind.Charge;
                 // ⛔ **這裡不做 persona → 帳號的歸一**（Tim 2026-09-22 拍板，TASK-0279）。
                 // 🩸 為什麼曾經做過、又為什麼收回來：
-                //   舊實作的歸一發生在寫入端（`UCL_TreasuryLedger.ResolveAccountOrThrow`），
+                //   舊實作的歸一發生在寫入端，
                 //   ⇒ 搬進 in-process 的第一版照抄了它，於是餘額表上那個叫 `sirius` 的**帳戶**
                 //     被解析成 persona `Sirius` 的帳號 `Spectre`，費用扣在 Spectre 身上。
                 //   後果是兩件事同時成立：`sirius` 的餘額**永遠不會下降** ⇒ 它每天被重新課一次；
