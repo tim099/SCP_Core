@@ -77,7 +77,7 @@ namespace SCP.Core.Paths
         KbTargetsFile,
 
         [SCP_PathInfo("Unity 專案根（選填）",
-            "要透過 Unity CLI 串接的那個 Unity 專案的 git repo 根 —— **選填**。"
+            "標記施工目標用的 Unity 專案 git repo 根（透過 Unity CLI 串接）—— **非必須**（Tim 2026-10-07）。"
             + " TASK-0390（Tim 2026-10-07）：Senate＋Valhalla 不依賴它；資料根、信件根、詞典根都不從它推。"
             + " 沒設時只有 Unity 那幾支指令（unity-recompile／unity-compile-status／ucmd）會說「沒有目標專案」。")]
         [SCP_PathStored("root", SCP_PathScope.Project)]
