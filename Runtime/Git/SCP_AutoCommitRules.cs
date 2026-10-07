@@ -194,6 +194,16 @@ namespace SCP.Core.Git
                 Message = "[data] 收 vouchers/ 券簿（餘額與零頭池；券不記歷史）(auto)",
                 DefaultOn = true,
             },
+            // `portfolio/` —— 投資組合帳（開帳快照＋交易事件；唯一寫入端 SCP_Portfolio）。券簿不記歷史，
+            // 成本來源只住這裡 ⇒ 丟了報酬率就算不出來，而畫面上只會變成「與紀錄不符」。
+            new SCP_AutoCommitGroupDef
+            {
+                Key = "portfolio",
+                Label = "投資組合帳 portfolio/（開帳快照＋交易事件；唯一寫入端 SCP_Portfolio）",
+                Match = p => p.StartsWith("portfolio/", StringComparison.Ordinal),
+                Message = "[data] 收 portfolio/ 投資組合帳（開帳快照＋交易事件）(auto)",
+                DefaultOn = true,
+            },
             // `bookshelf/` —— 閱讀卡，由 `reader.json` 重新生成的機械投影（親筆住 Library 的原檔）。
             new SCP_AutoCommitGroupDef
             {

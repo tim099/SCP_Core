@@ -187,7 +187,7 @@ namespace SCP.Core.Voucher
                 // 固定折算對（如 FLORIN -> GOLD）：來源券隱含 USD 價值以目標券市價乘折算率
                 aFromBidUsd = aToAskUsd * aResult.EffectiveRate;
             }
-            aResult.PortfolioWarning = SCP_Portfolio.RecordSwap(iDataRoot, iPersona,
+            aResult.PortfolioWarning = SCP_Portfolio.RecordSwap(iLettersRoot, iPersona,
                 aResult.FromVoucher, (long)iAmount * SCP_VoucherBook.FractionScale, aFromBidUsd,
                 aResult.ToVoucher, aToUnitsE8, aToAskUsd,
                 SCP_MarketRateCache.TotalFeeFactor(aConfig, aResult.FromVoucher, aResult.ToVoucher),

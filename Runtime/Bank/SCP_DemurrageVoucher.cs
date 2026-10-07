@@ -261,7 +261,7 @@ namespace SCP.Core.Bank
                     if (!SCP_VoucherStore.Save(aRoot, aBook, aNow, iRegion, out int _, out string? aErr))
                     { oProblems.Add($"✗ `{p}` 發券寫入失敗 ⇒ {aErr}"); aRowOk = false; continue; }
                     // 交易事件（TASK-0371，報酬率用）：券已落盤 ⇒ 沒記成只喊、不推翻（⛔ 不把這一列標成失敗，否則下次會重發）
-                    string? aLogErr = SCP_Portfolio.RecordFlow(iDataRoot, p, iPlan.VoucherType, r.PerPersonaE8,
+                    string? aLogErr = SCP_Portfolio.RecordFlow(iDataRoot, aRoot, p, iPlan.VoucherType, r.PerPersonaE8,
                                                                           "demurrage", r.FeeEntryId, aNow, out _);
                     if (aLogErr != null) oProblems.Add($"⚠ `{p}` 的券發了，但{aLogErr}");
                 }

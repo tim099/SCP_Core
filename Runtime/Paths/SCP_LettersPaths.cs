@@ -99,6 +99,17 @@ namespace SCP.Core.Paths
         public static string VoucherPath(SCP_LettersRoot iRoot, string iPersona, string iVoucher)
             => VouchersDir(iRoot, iPersona) + "/" + iVoucher + ".json";
 
+        // ===========================================================
+        // 區塊職責：**投資組合帳**（`portfolio/`）—— 券的開帳快照與交易事件簿，跟券簿住在同一個人底下。
+        // 物理意義：券跟著人跨專案走（見上），它的成本來源也必須跟著走 ——
+        //          事件簿若住在某個專案的資料根，到了另一個專案就只看得到券、看不到它從哪來，
+        //          整筆被算成「與紀錄不符／來源不明」（2026-10-07 實測）。
+        // ===========================================================
+        public const string PortfolioDirName = "portfolio";
+
+        public static string PortfolioDir(SCP_LettersRoot iRoot, string iPersona)
+            => PersonaDir(iRoot, iPersona) + "/" + PortfolioDirName;
+
         /// <summary>
         /// 券名合法性 ＝ **能安全當檔名**（與 `currency_id` 同一條規則）。
         /// <para>🩸 含 `/` 或 `..` 就是寫到別的地方去，而寫檔會自動建目錄

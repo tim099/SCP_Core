@@ -65,6 +65,7 @@ related:
 | `profile` | `profile/` | ✅ |
 | `bank` | `bank/`（區域 → 帳號） | ✅ |
 | `vouchers` | `vouchers/`（⚠ 券不記歷史，丟了補不回來） | ✅ |
+| `portfolio` | `portfolio/`（投資組合帳：開帳快照＋交易事件；成本來源只住這裡） | ✅ |
 | `bookshelf` | `bookshelf/`（reader.json 的機械投影） | ✅ |
 | `writing_dossier` | `writing/`（publish 的機械投影） | ✅ |
 | `sketchbook_raw` | `sketchbook/<target>/raw/`（⛔ 不含親筆濃縮檔） | ✅ |
