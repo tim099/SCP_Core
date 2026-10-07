@@ -28,6 +28,8 @@ namespace SCP.Core.Sculpture
     {
         public int Width = 1024;
         public int Height = 1024;
+        /// <summary>場景的實際邊長（由引擎給）；全格地板使用它，不由渲染設定覆寫。</summary>
+        public int SpaceSize = 256;
         /// <summary>
         /// 光源（Tim 2026-10-02：可以多組）。空清單 ＝ 只有環境光。預設一盞：方向 -1,-1,-1、白光、強度 1、投陰影。
         /// <para>⚠ 投陰影的光最多 <see cref="MaxShadowLights"/> 盞，超過 ⇒ TryRender 回 false（⛔ 不默默只取前幾盞）。</para>
