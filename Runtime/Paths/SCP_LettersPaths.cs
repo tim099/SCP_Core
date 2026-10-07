@@ -2,7 +2,7 @@
 // 物理意義：這批版面原本散在 `SCP_WakeLetters`（8 支）與 Senate 的 `PersonaLetters`
 //           （`profile` 判準、`_persona_` lock 前綴）兩處。收攏成一份的理由跟 UCL 那側
 //           `UCL_LettersPath` 一樣，而那條規則是踩出來的：
-//           🩸 2026-08-18 之前 `Cmd_FreeTime` / `Cmd_Sculpture` / `Cmd_StreamWatch` 各自組回傳檔路徑，
+//           🩸 2026-08-18 之前三支 Cmd 各自組回傳檔路徑，
 //             其中一支連 letters 根都自己推 —— **同一個目錄的第四種算法**。
 //             於是「回傳檔搬進 cmd/ 子目錄」從改一行變成 12 處各改一次，
 //             而**漏掉一處不會報錯**（寫檔會自動建目錄 ⇒ 那支的回傳檔靜靜留在舊位置）。

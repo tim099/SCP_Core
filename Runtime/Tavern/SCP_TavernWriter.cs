@@ -84,8 +84,8 @@ namespace SCP.Core.Tavern
         /// （TASK-0106 驗收 ③，PM @basecamp 2026-09-21 拍板候選 A）。
         /// <para>⚠ 它是 <c>queues/</c> 底下的**目錄名** ⇒ ⛔ 不可以含 `/`（那會變成協議的子分道，
         /// 而 `ServerExecutor.Tick` **讀不到子分道且不出聲**）或 `:`（Windows 的 ADS 分隔字元）。</para>
-        /// <para>🩸 為什麼常數住在這裡而不是各自寫死：送出端在 Unity（`UCL_ChatTavernIO`）、
-        /// 收下端在 Senate CLI（`Cmd_TavernWrite`），**而兩邊唯一共同編得到的組件是本 SCP_Core**。
+        /// <para>🩸 為什麼常數住在這裡而不是各自寫死：送出端與收下端（Senate `Cmd_TavernWrite`）
+        /// **共同編得到的組件是本 SCP_Core**。
         /// 在這之前兩邊是各自的字串字面＋一句「與對面同字面」的註解 ——
         /// 而 lane 對不上的失效樣子是 **15 秒逾時、沒有任何一層說不認得**。
         /// ⇒ 一致性從「有人記得改兩邊」換成「只有一個地方可以改」。</para>

@@ -1,6 +1,5 @@
 // 區塊職責：quest 事件流的**投影層**（Senate 側）—— 把事件重放成「每個 task 現在怎麼樣」。
-// 物理意義：TASK-0287。Editor 側 `UCL_ChatTavernQuestIO.ComputeTaskStates` 的同義移植，
-//           供 `task_list` / `task_state` / `task_next` 三個 kind 使用。
+// 物理意義：TASK-0287。供 `task_list` / `task_state` / `task_next` 三個 kind 使用。
 // 數值影響：**純讀**。⛔ 不寫、不建目錄、不回收過期租約 —— 見下面那段，那是本檔最重要的一格。
 //
 // 🔴 **本層刻意不做 lease 回收**（與 Editor 側的差別，⛔ 別把它當成漏掉的）：

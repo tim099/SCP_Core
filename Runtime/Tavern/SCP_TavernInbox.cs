@@ -1,8 +1,7 @@
 // 區塊職責：**房間 inbox 的附加與修剪** —— `<資料根>/ChatTavern/rooms/<room>/inbox/<id>.md` 的唯一寫入實作（TASK-0299）。
 // 物理意義：Tim 2026-09-25「直接打 tavern-write 的訊息不會觸發 @mention 通知 —— 優先處理」。
-//           mention 通知要搬到寫入端（Server 也要能寫 inbox）⇒ inbox 的附加／修剪從 Editor 的
-//           `UCL_ChatTavernQuestIO.AppendInbox` 搬到這裡，**Editor 那支改成呼叫本類** —— ⛔ 不留兩份。
-// 數值影響：條目格式、數量上限（50）、年齡上限（7 天）、歸檔檔名與截斷標記**逐字搬自 Editor 版（2026-09-25）**。
+//           mention 通知要搬到寫入端（Server 也要能寫 inbox）⇒ inbox 的附加／修剪只住這裡 —— ⛔ 不留兩份。
+// 數值影響：條目格式、數量上限（50）、年齡上限（7 天）、歸檔檔名與截斷標記**是讀者依賴的格式**，⛔ 別順手改。
 //   兩件是新的：
 //   ① **跨 process 鎖**（`<id>.md.lock`，FileShare.None）包住「附加＋修剪」整段 ——
 //      修剪是整檔重寫，兩個寫入端（Editor 與 Server）交錯時後寫的會把先寫的那條吃掉（TASK-0264 同族）。
@@ -67,7 +66,7 @@ namespace SCP.Core.Tavern
                 var sb = new StringBuilder();
                 if (!File.Exists(aPath)) sb.Append(aHeader);
                 sb.AppendLine();
-                // 時區顯式標註（crest-001 QA 2026-07-29）＋ 下一行的 UTC 權威時戳（跨房可比的唯一水位；沿革見 git 歷史 UCL_ChatTavernQuestIO）
+                // 時區顯式標註（crest-001 QA 2026-07-29）＋ 下一行的 UTC 權威時戳（跨房可比的唯一水位）
                 sb.AppendLine($"## [seq={iEventSeq}] {iTitle} ({DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss zz", CultureInfo.InvariantCulture)})");
                 sb.AppendLine($"_at {DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture)}_");
                 if (!string.IsNullOrEmpty(iBody)) { sb.AppendLine(); sb.AppendLine(iBody); }
@@ -78,7 +77,7 @@ namespace SCP.Core.Tavern
             }
         }
 
-        /// <summary>這筆條目是不是「太舊」。⚠ 拿不到時戳一律當**舊**（新條目必有 `_at`；舊格式殘留的沿革見 git 歷史 UCL_ChatTavernQuestIO，2026-09-25 之前）。</summary>
+        /// <summary>這筆條目是不是「太舊」。⚠ 拿不到時戳一律當**舊**（新條目必有 `_at`；沒有的是舊格式殘留，2026-09-25 之前）。</summary>
         public static bool IsEntryStale(string iEntry, DateTime iNowUtc, int iMaxAgeDays = MaxAgeDays)
         {
             Match m = Regex.Match(iEntry, @"(?m)^_at (\S+?)Z?_\s*$");

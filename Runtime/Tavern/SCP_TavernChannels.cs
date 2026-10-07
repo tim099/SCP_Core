@@ -2,8 +2,7 @@
 // 物理意義：
 //   · 分類清單：`ChatTavern/channel_categories.json`（全域一份，例如 Main／TRPG）。**要先新增分類，頻道才能選它。**
 //   · 頻道設定：`<房間資料夾>/channel.json`（category／archived_at）。
-//     ⛔ **不寫進房間的 `meta.json`**：Unity `UCL_ChatTavernIO.SaveRoomMeta` 用 JsonUtility 整份重寫那個檔，
-//       不認得的欄位會被靜默丟掉（createroom 補 owner_agent／mirror_kinds 時就會觸發）。
+//     ⛔ **不寫進房間的 `meta.json`**：頻道設定獨立一檔，房間 meta 的寫入端整份重寫時才不會把它吃掉。
 //   · 頻道分類是**頻道本身**的分類（不是每則訊息的 category），
 //     給 TASK-0316 Outbound 依頻道路由用（Tim 2026-09-28）。
 //   · 封存 ＝ 把整個房間資料夾搬到 `ChatTavern/rooms_archive/<room>/`（Tim 2026-09-28）；**不刪**任何訊息，

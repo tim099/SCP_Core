@@ -3,7 +3,7 @@
 //           但 AppendMessage 住在 Editor ⇒ 直打 `tavern-write` 的訊息沒人通知（TASK-0299 重現：seq 202 inbox 0→0）。
 //           ⇒ 規則搬到這裡、掛在**寫入端**：server 模式由 Senate `Cmd_TavernWrite` 寫完呼叫，
 //             editor 模式由 Editor 本地寫完呼叫 —— 兩邊同一支，⛔ 不留兩份。
-// 數值影響：解析、白名單、條目標題與內文**逐字搬自 Editor 版 `UCL_ChatTavernIO.NotifyMentions`（2026-09-25）**：
+// 數值影響：解析、白名單、條目標題與內文（2026-09-25 起）：
 //   · `@([a-zA-Z0-9_-]+)` 取名字；不通知自己（sender_id 與 sender_persona 都比）、`_` 開頭系統 id、白名單外的名字
 //   · TASK-0365（2026-10-05）加三格：① **程式碼區段裡的 @ 不算點名**（``` 區塊與 `行內`）——
 //     09-29 有人在留言裡**引用** `@酒保` 被當成點名；② 全形 `＠` 與半形 `@` 同義；
@@ -107,7 +107,7 @@ namespace SCP.Core.Tavern
             }
             return aOut;
         }
-        /// <summary>已知中繼來源前綴（白名單而非黑名單 —— meta.source 是自由字串，後台來源也會寫它；沿革見 git 歷史 UCL_ChatTavernIO）。</summary>
+        /// <summary>已知中繼來源前綴（白名單而非黑名單 —— meta.source 是自由字串，後台來源也會寫它）。</summary>
         static readonly string[] s_RelayPrefixes = { "discord", "line", "telegram", "webhook" };
 
         /// <summary>訊息是否源自系統外部中繼（Discord 等）。語意逐條搬自 Editor 版 `IsExternalRelay`。</summary>

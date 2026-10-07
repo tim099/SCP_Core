@@ -1,6 +1,5 @@
 // 區塊職責：「叮 / 醒來時的酒館 catch-up」—— 在線一覽 ＋ 未讀訊息 ＋ persona inbox，組成一份簡報並（可選）推游標。
-// 物理意義：移植自 UCL_Core `UCL_TavernCatchupService.Build`（TASK-0303：早安 catchup 不再依賴 Editor）。
-//          輸出版面逐行對齊 Editor 版（`letters/<p>/cmd/ding_brief.md`），讀的人不必分辨是哪一端產的。
+// 物理意義：輸出落在 `letters/<p>/cmd/ding_brief.md`（TASK-0303：早安 catchup 不依賴 Editor）。
 // ⚠ 順序不可反：**先組出簡報、再推游標**。反過來的話，回傳檔寫入失敗時訊息已被標成已讀
 //   ⇒ 那批訊息永遠不會再出現在任何人的未讀裡，而且沒有錯誤訊息。
 //   ⇒ 本類只**組**簡報並回傳「可推到哪」；真正推游標由呼叫端在回傳檔落地之後呼叫 AdvanceAfterWrite。

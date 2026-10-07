@@ -7,7 +7,7 @@
 //   ⛔ 留言本（note_read／note_list）已於 2026-09-28 整組移除（Tim：「留言本目前其實好像廢棄了，應該也可以移除」；TASK-0328）
 //      —— skill 沒有任何一處提到它，全樹 7 本、最後一次寫入是 5 月。檔案留在 `rooms/<room>/notes/` 當紀錄，⛔ 沒有刪資料。
 //   🔴 ⛔ **不含 `task_list`／`task_next`／`task_state`**：量過（2026-09-20），
-//      它們呼叫 `UCL_ChatTavernQuestIO.AutoRecoverStaleLeases`，而那支會 `AppendEvent`
+//      它們會回收過期租約，而回收會 `AppendEvent`
 //      ⇒ 它們是「讀為主、寫一格」，與 `catchup`／`inbox_read` 同一類，歸 TASK-0106 那一側。
 //      📌 失效樣子很難看：平常沒有過期租約時它們**表現得像純讀**，
 //         所以「把它們當純讀」這個錯誤會在剛好有一張單過期的那天才第一次出事。
@@ -299,7 +299,7 @@ namespace SCP.Core.Tavern
             return aOut;
         }
 
-        /// <summary>⭐ 逐字照 Editor 側 `UCL_ChatTavernRender.RenderMessages`（驗收④要原樣 diff）。</summary>
+        /// <summary>訊息列表渲染成 markdown。⛔ 版面是讀者依賴的格式，別順手改。</summary>
         static string RenderMessages(string iTitle, List<SCP_TavernMessage> iMessages)
         {
             var aSb = new StringBuilder();
@@ -349,11 +349,11 @@ namespace SCP.Core.Tavern
         }
 
         /// <summary>
-        /// 逐字照 Editor 側 `UCL_ChatTavernRender.ShortTime`：**切 ISO 字串**的 `T` 之後 8 個字元。
-        /// <para>🔴 ⛔ 這裡**不做時區轉換**，而那是刻意的：落盤的 `ts` 是 UTC，Editor 側印的就是 UTC 的
+        /// 時間欄：**切 ISO 字串**的 `T` 之後 8 個字元。
+        /// <para>🔴 ⛔ 這裡**不做時區轉換**，而那是刻意的：落盤的 `ts` 是 UTC，印的就是 UTC 的
         /// `HH:mm:ss`。第一版我寫成 `ToLocalTime().ToString("HH:mm")` —— 那會**每一行都差 8 小時、
-        /// 而且少印秒數**，⇒ 逐筆對拍全紅，而每一行單獨看都像一個合理的時間。</para>
-        /// <para>空字串回 `??:??:??`、切不出來回原字串 —— 兩者都照抄，⛔ 不「改良」。</para>
+        /// 而且少印秒數**，⇒ 每一行單獨看都像一個合理的時間，而全部都錯。</para>
+        /// <para>空字串回 `??:??:??`、切不出來回原字串 —— ⛔ 不「改良」。</para>
         /// </summary>
         static string ShortTime(string iTs)
         {

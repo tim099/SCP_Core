@@ -1,7 +1,7 @@
 // 區塊職責：per-persona 酒館已讀游標的讀寫（`ChatTavern/_inbox_cursor/<persona>.json`）＋「還沒看過哪些訊息」。
-// 物理意義：移植自 UCL_Core `UCL_TavernCursor`（TASK-0303：早安 catchup 不再依賴 Editor）。
+// 物理意義：TASK-0303：早安 catchup 不依賴 Editor。
 //          判準只有一條：**`ts > last_seen_ts` 即未讀**（ISO-8601 UTC 同格式時字典序＝時間序）。
-//          欄位名 `last_seen_ts` / `updated_at` 與 Editor 端、python 端一致，⛔ 別改。
+//          欄位名 `last_seen_ts` / `updated_at` 與 python 端一致，⛔ 別改。
 // ⚠ 游標是 read-modify-write。Editor 端原本只有「單調」一道擋板而**沒有跨 process 鎖** ——
 //   單調擋不住這個交錯：兩端都讀到 X，寫 Z 的先完成，另一端再寫 Y（X < Y < Z）⇒ 水位倒退、整段重播。
 //   ⇒ 本側的比較＋寫入整段包在 `SCP_FileLock` 裡。📌 Editor 端（FreeTime／StreamWatch）還沒改走這裡，

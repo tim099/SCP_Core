@@ -9,7 +9,7 @@
 //   📌 所以每一支都把 `掃 N 則／M 房` 印在標頭裡（Editor 側原本就這樣）——
 //      **那個數字就是這次付的錢**，⛔ 別讓它只活在體感裡。
 //
-// ⛔ 輸出格式原樣照搬 Editor 側 `UCL_TavernQueryService`（見 `SCP_TavernQuery.cs` 檔頭的鐵則）。
+// ⛔ 輸出格式同 `SCP_TavernQuery`（見它檔頭）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;

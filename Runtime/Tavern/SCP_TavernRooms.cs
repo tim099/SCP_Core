@@ -4,11 +4,7 @@
 // 數值影響：**純讀**。⛔ 一個位元組都不寫進 `ChatTavern/`（TASK-0247 驗收⑤）——
 //           包括「目錄不在就建一個」那種順手：建目錄也是寫。
 //
-// ⚠ 搬過來的是**讀取本身**，⛔ 不是 `UCL_ChatTavernIO`（1,587 行）。
-//   逐支量過 Editor 側那 6 個 op 真正呼叫的方法（大括號配對切範圍，⛔ 不是固定行數視窗）：
-//   `GetRoom`／`LoadRooms`／`ReadCurrentSeq`／`LoadMembers`／`LoadIdentities`／
-//   `ReadNote`／`ListNoteKeys`／`GetNotePath`／`QuestIO.LoadAllEvents` —— 就這 9 支，全部純讀。
-//   ⛔ note 那三支已於 2026-09-28 移除（留言本整組退場，TASK-0328）。
+// ⚠ 本檔只做**讀取**：房間清單／房間 meta／目前 seq／成員／身分／quest 事件 —— 全部純讀。
 //
 // 🔴 `task_list`／`task_next`／`task_state` **不在本檔射程**：它們呼叫 `AutoRecoverStaleLeases`，
 //   而那支會 `AppendEvent` ⇒ 它們是「讀為主、寫一格」，與 `catchup`／`inbox_read` 同一類，

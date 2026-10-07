@@ -1,8 +1,5 @@
 // 區塊職責：酒館訊息的**讀取層**（Senate 側）—— 「要哪一段」到「那一段的路徑」再到「訊息物件」。
-// 物理意義：Editor 側查詢層只用了 IO 的 4 個方法（summit 2026-09-18 量：
-//           `Tail` ×4／`Range` ×2／`EnumerateRoomIds` ×2／`CountMessages` ×1）
-//           ⇒ 搬家的介面面積就是這 4 個，⛔ 不是 `UCL_ChatTavernIO`（1,587 行）
-//           ＋ `UCL_ChatTavernIO_PerMsgFile`（899 行）那 2,486 行。
+// 物理意義：查詢層只需要 4 個讀取方法：`Tail`／`Range`／`EnumerateRoomIds`／`CountMessages`。
 // 數值影響：**純讀**。⛔ 一個位元組都不寫進 `ChatTavern/`（TASK-0240 驗收⑥）——
 //           包括索引：落後由 `oStaleDays` 回報，修它走 `senate cmd tavern-index --arg op=rebuild`。
 //
