@@ -28,7 +28,7 @@ namespace SCP.Core.Tavern
         public const int BACKLOG_SCAN_CAP = 100;
 
         public static string CursorPath(string iDataRoot, string iPersona)
-            => Path.Combine(iDataRoot, "ChatTavern", "_inbox_cursor", iPersona + ".json").Replace('\\', '/');
+            => Path.Combine(SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)), "_inbox_cursor", iPersona + ".json").Replace('\\', '/');
 
         /// <summary>讀 last_seen_ts；沒有游標檔／讀不到／壞檔回 null（語意＝「從未設過」）。</summary>
         public static string? ReadCursor(string iDataRoot, string iPersona)

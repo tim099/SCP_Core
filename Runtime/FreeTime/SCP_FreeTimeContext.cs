@@ -54,7 +54,8 @@ namespace SCP.Core.FreeTime
     {
         public string DataRootRaw = "";
         public string LettersRootRaw = "";
-        public string ProjectRoot = "";
+        /// <summary>自由時間活動 md 目錄（宿主給；TASK-0390 起單一目錄，不再分 UCL_Core 共用層／Unity 專案層）。</summary>
+        public string ActivitiesRoot = "";
         public SCP_DataRoot Data;
         public SCP_LettersRoot Letters;
 
@@ -65,11 +66,11 @@ namespace SCP.Core.FreeTime
         /// <summary>本趟累積的警告（活動掃描、券查詢失敗…）—— 呼叫端在回傳檔印出來，⛔ 不吞。</summary>
         public readonly List<string> Warnings = new List<string>();
 
-        public SCP_FreeTimeContext(string iDataRoot, string iLettersRoot, string iProjectRoot)
+        public SCP_FreeTimeContext(string iDataRoot, string iLettersRoot, string iActivitiesRoot)
         {
             DataRootRaw = iDataRoot.Replace('\\', '/').TrimEnd('/');
             LettersRootRaw = iLettersRoot.Replace('\\', '/').TrimEnd('/');
-            ProjectRoot = iProjectRoot.Replace('\\', '/').TrimEnd('/');
+            ActivitiesRoot = iActivitiesRoot.Replace('\\', '/').TrimEnd('/');
             Data = new SCP_DataRoot(DataRootRaw);
             Letters = new SCP_LettersRoot(LettersRootRaw);
             // 設定讀**一次**、整趟傳遞（⛔ 不在半路重讀）。
@@ -83,9 +84,9 @@ namespace SCP.Core.FreeTime
         List<SCP_FreeTimeActivity>? m_Activities;
         public readonly List<string> ScanWarnings = new List<string>();
 
-        /// <summary>兩層活動 md 的合併清單（含停用項）。一趟只掃一次 —— 同一趟裡兩次掃描之間有人改 md，骰面會自相矛盾。</summary>
+        /// <summary>活動 md 清單（含停用項）。一趟只掃一次 —— 同一趟裡兩次掃描之間有人改 md，骰面會自相矛盾。</summary>
         public List<SCP_FreeTimeActivity> Activities
-            => m_Activities ??= SCP_FreeTimeCatalog.Scan(ProjectRoot, ScanWarnings);
+            => m_Activities ??= SCP_FreeTimeCatalog.Scan(ActivitiesRoot, ScanWarnings);
 
         public SCP_FreeTimeActivity? FindActivity(string iId, bool iEnabledOnly)
         {

@@ -194,7 +194,7 @@ namespace SCP.Core.Cmd
                 aResult.Lines.Add("   → 先回讀（判準：`result=Success` ＋ 有 `post_seq` ⇒ 發了）：");
                 aResult.Lines.Add("     " + (aPosted.RecheckHint.Length > 0
                     ? aPosted.RecheckHint
-                    : "（閘沒有給回讀指令 —— 去看 " + aDataRoot + "/_cmd_results/ 最新那筆與酒館）"));
+                    : "（閘沒有給回讀指令 —— 去看 " + aDataRoot + "/" + SCP.Core.Paths.SCP_DataPaths.CmdResultsDirName + "/ 最新那筆與酒館）"));
                 aResult.Lines.Add("   ⛔ **確認真的沒發之前不要補** —— 同一個 SHA 貼兩次是**付兩次錢**。");
                 aResult.Lines.Add("   ⛔ 單號推進本次**沒有做**（它掛在公告成功之後）。");
                 aResult.ExitCode = ExitAnnounceUnresolved;

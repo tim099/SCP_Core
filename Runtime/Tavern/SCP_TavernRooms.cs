@@ -43,11 +43,11 @@ namespace SCP.Core.Tavern
 
         /// <summary>
         /// `&lt;資料根&gt;/ChatTavern/identities.json`（**全域一份**，不分房）。
-        /// <para>⚠ 從 <see cref="SCP_TavernMsgIndex.RoomsRoot"/> 往上一層推 ——
-        /// ⛔ 不自己 `Combine(iDataRoot, "ChatTavern")` 再組一份：那是第二個決定點。</para>
+        /// <para>⚠ 酒館根走版面唯一一處 <see cref="SCP.Core.Paths.SCP_DataPaths.ChatTavern"/>（TASK-0390）——
+        /// ⛔ 不自己 `Combine(iDataRoot, "ChatTavern")`、也不從 rooms 往上推：那都是第二個決定點。</para>
         /// </summary>
         public static string IdentitiesPath(string iDataRoot)
-            => (Path.GetDirectoryName(SCP_TavernMsgIndex.RoomsRoot(iDataRoot)) ?? iDataRoot)
+            => SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot))
                .Replace('\\', '/') + "/identities.json";
 
         public static string MetaPath(string iDataRoot, string iRoom)

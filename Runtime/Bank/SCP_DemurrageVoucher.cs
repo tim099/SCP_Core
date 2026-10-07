@@ -70,7 +70,7 @@ namespace SCP.Core.Bank
 
         const string IssuedDirName = "voucher_issued";
 
-        public static string BankRoot(string iDataRoot) => Path.Combine(iDataRoot, "Bank");
+        public static string BankRoot(string iDataRoot) => SCP_BankRegion.BankRootOfDataRoot(iDataRoot);   // ⛔ 不自己拼 "Bank"（TASK-0390）
         static string IssuedPath(string iDataRoot, string iDate)
             => Path.Combine(BankRoot(iDataRoot), IssuedDirName, iDate + ".json");
 

@@ -1,12 +1,12 @@
-// 區塊職責：自由時間活動清單的**唯一掃描器**（雙層 md）＋ frontmatter 單欄讀寫 ＋ 在專案層新增活動。
-// 物理意義：共用層跟著 UCL_Core 走（`<UCL_Core>/Docs~/zh-Hant/FreeTime/Activities`）、專案層跟著 repo 走
-//          （`<project_root>/docs/FreeTime/Activities`）；同 id 專案層覆蓋共用層。
-//          Cmd 擲骰與後台頁**共用這一份**：兩份掃描器的漂移症狀是「頁面看到的清單跟實際擲出來的不一樣」，而它不會報錯。
-// 數值影響：Scan 純讀；WriteField／CreateProjectActivity 各寫一個 md（原子換檔 ＋ 讀回確認）。
+// 區塊職責：自由時間活動清單的**唯一掃描器** ＋ frontmatter 單欄讀寫 ＋ 新增活動。
+// 物理意義：活動 md 住在**宿主給的那一個目錄**（Senate：`<Senate 專案根>/SenateData/config/freetime_activities`，
+//          描述表的 `FreeTimeActivitiesRoot`）。Cmd 擲骰與後台頁**共用這一份**：兩份掃描器的漂移症狀是
+//          「頁面看到的清單跟實際擲出來的不一樣」，而它不會報錯。
+// 數值影響：Scan 純讀；WriteField／CreateActivity 各寫一個 md（原子換檔 ＋ 讀回確認）。
 //
-// ⚠ UCL_Core 根的解析：SCP_Core 裡**沒有**既有的 UCL_Core 根解析器（skill ucl-core-paths 列的三個都在 Editor／python 端）。
-//   ⇒ 這裡照 Senate 唯一的先例（`Cmd_Task.WorkMemoryTool`）：讀 `<project_root>/.gitmodules`，取路徑以 `UCL_Core`
-//     結尾的那一個 submodule；**不是剛好一個就不猜**（回 null ＋ 原因，呼叫端印出來）。⛔ 不寫死 `Assets/Plugins/UCL_Core`。
+// 🩸 TASK-0390（Tim 2026-10-07：搬進 Senate）：原本是雙層 —— 共用層在 Unity 專案的 UCL_Core
+//   （讀 `<project_root>/.gitmodules` 找）、專案層在 `<project_root>/docs/FreeTime/Activities`。
+//   Senate＋Valhalla 不依賴 Unity 之後只剩一處，⛔ 本層不推導任何根（目錄由宿主給）。
 // ⚠ frontmatter 讀法刻意**不用** `SCP_LetterText.ReadFrontmatterField`：那支不要求開頭 `---`、只看前 1200 字元、
 //   不剝引號 —— 跟 Unity 版（本檔 ReadField）語意不同，而活動 md 的 `how:` 常常很長且帶引號。
 // ⚠ 方言限制：C# 9 / netstandard2.1 / 零第三方（Unity 那側也要編這份）。
@@ -21,80 +21,25 @@ namespace SCP.Core.FreeTime
 {
     public static class SCP_FreeTimeCatalog
     {
-        /// <summary>共用層在 UCL_Core 根底下的相對位置。</summary>
-        public const string SharedRelDir = "Docs~/zh-Hant/FreeTime/Activities";
-
-        /// <summary>專案層在專案根底下的相對位置。</summary>
-        public const string ProjectRelDir = "docs/FreeTime/Activities";
-
-        // ── 路徑 ──────────────────────────────────────────────────
-
-        /// <summary>
-        /// UCL_Core submodule 的絕對路徑（從 <c>&lt;project_root&gt;/.gitmodules</c> 找路徑以 `UCL_Core` 結尾的那一個）。
-        /// <para>不是剛好一個 ⇒ null ＋ <paramref name="oWhy"/>（⛔ 不猜 —— 猜錯的樣子是「掃到另一份 core 的活動」）。</para>
-        /// </summary>
-        public static string? UclCoreRoot(string iProjectRoot, out string oWhy)
-        {
-            oWhy = "";
-            if (string.IsNullOrWhiteSpace(iProjectRoot)) { oWhy = "沒有專案根（project_root）"; return null; }
-            string aModules = System.IO.Path.Combine(iProjectRoot, ".gitmodules");
-            if (!File.Exists(aModules)) { oWhy = "專案根沒有 .gitmodules（" + iProjectRoot + "）"; return null; }
-            var aHits = new List<string>();
-            try
-            {
-                foreach (string aLine in File.ReadAllLines(aModules))
-                {
-                    string t = aLine.Trim();
-                    if (!t.StartsWith("path", StringComparison.Ordinal)) continue;
-                    int eq = t.IndexOf('=');
-                    if (eq < 0) continue;
-                    string p = t.Substring(eq + 1).Trim();
-                    string n = p.Replace('\\', '/').TrimEnd('/');
-                    if (n.EndsWith("/UCL_Core", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(n, "UCL_Core", StringComparison.OrdinalIgnoreCase))
-                        aHits.Add(p);
-                }
-            }
-            catch (Exception e) { oWhy = ".gitmodules 讀不了：" + e.Message; return null; }
-            if (aHits.Count != 1) { oWhy = $".gitmodules 裡以 UCL_Core 結尾的 submodule 有 {aHits.Count} 個（⛔ 不猜）"; return null; }
-            return System.IO.Path.GetFullPath(System.IO.Path.Combine(iProjectRoot, aHits[0])).Replace('\\', '/');
-        }
-
-        /// <summary>共用層目錄；解不出 UCL_Core 根 ⇒ null ＋ 原因。</summary>
-        public static string? SharedDir(string iProjectRoot, out string oWhy)
-        {
-            string? aCore = UclCoreRoot(iProjectRoot, out oWhy);
-            return aCore == null ? null : (aCore + "/" + SharedRelDir);
-        }
-
-        /// <summary>專案層目錄（不檢查存在 —— 專案層本來就可以還沒建）。</summary>
-        public static string ProjectDir(string iProjectRoot)
-            => System.IO.Path.GetFullPath(System.IO.Path.Combine(iProjectRoot, ProjectRelDir)).Replace('\\', '/');
-
         // ── 掃描 ──────────────────────────────────────────────────
 
         /// <summary>
-        /// 掃兩層活動 md，回合併後的清單（**含停用項**，id 序）。
-        /// <para>同 id 專案層覆蓋共用層 —— **含 enabled:false 停用覆蓋**（kotoko QA 血證：過濾必須發生在 merge 之後，
-        /// 否則專案層的「停用」會被共用層的「啟用」蓋回去）。⇒ 回傳含停用項，由呼叫端決定要不要濾。</para>
-        /// <para><paramref name="oWarnings"/>：共用層解不出／目錄不存在／單一 md 讀不了 —— 呼叫端**必須印出來**
-        /// （兩層都空時「掃不到」與「沒有活動」同形）。</para>
+        /// 掃活動目錄，回清單（**含停用項**，id 序）—— 由呼叫端決定要不要濾。
+        /// <para><paramref name="oWarnings"/>：目錄沒給／不存在／單一 md 讀不了 —— 呼叫端**必須印出來**
+        /// （「掃不到」與「沒有活動」同形）。</para>
         /// </summary>
-        public static List<SCP_FreeTimeActivity> Scan(string iProjectRoot, List<string> oWarnings)
+        public static List<SCP_FreeTimeActivity> Scan(string iActivitiesDir, List<string> oWarnings)
         {
             var aMerged = new Dictionary<string, SCP_FreeTimeActivity>(StringComparer.Ordinal);
-            string? aShared = SharedDir(iProjectRoot, out string aWhy);
-            if (aShared == null) oWarnings.Add("共用層活動目錄解不出來：" + aWhy + " ⇒ 只剩專案層");
-            else if (!Directory.Exists(aShared)) oWarnings.Add("共用層活動目錄不存在：" + aShared);
-            else ScanDir(aShared, false, aMerged, oWarnings);
-            string aProject = ProjectDir(iProjectRoot);
-            if (Directory.Exists(aProject)) ScanDir(aProject, true, aMerged, oWarnings);   // 專案層不存在是常態，不出聲
+            if (string.IsNullOrWhiteSpace(iActivitiesDir)) oWarnings.Add("沒有活動目錄（宿主沒給 activities_root）");
+            else if (!Directory.Exists(iActivitiesDir)) oWarnings.Add("活動目錄不存在：" + iActivitiesDir);
+            else ScanDir(iActivitiesDir, aMerged, oWarnings);
             var aList = new List<SCP_FreeTimeActivity>(aMerged.Values);
             aList.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
             return aList;
         }
 
-        static void ScanDir(string iDir, bool iIsProject, Dictionary<string, SCP_FreeTimeActivity> ioMerged,
+        static void ScanDir(string iDir, Dictionary<string, SCP_FreeTimeActivity> ioMerged,
                             List<string> oWarnings)
         {
             string[] aFiles;
@@ -122,7 +67,6 @@ namespace SCP.Core.FreeTime
                         Path = aMd,
                         MinMinutes = aMin,
                         Enabled = !string.Equals(Nz(ReadField(aMd, "enabled"), "true"), "false", StringComparison.OrdinalIgnoreCase),
-                        IsProjectLayer = iIsProject,
                         NeedsSession = !string.Equals(Nz(ReadField(aMd, "needs_session"), "true"), "false", StringComparison.OrdinalIgnoreCase),
                         Tool = ReadField(aMd, "tool").Trim(),
                         Steps = ParseList(ReadField(aMd, "steps")),
@@ -260,16 +204,14 @@ namespace SCP.Core.FreeTime
             catch (Exception e) { oError = $"frontmatter 寫入失敗 {iMdPath}: {e.GetType().Name}: {e.Message}"; return false; }
         }
 
-        // ── 新增活動（一律建在專案層）──────────────────────────────
+        // ── 新增活動──────────────────────────────
 
         /// <summary>
-        /// 在專案層新增一份活動 md。
-        /// <para>為什麼一律建在專案層：共用層屬於 UCL_Core（跨專案），從專案的管理頁往那裡新增等於替別的專案做決定；
-        /// 專案層同 id 會覆蓋共用層 —— 要改共用活動也走這裡。</para>
+        /// 在活動目錄新增一份活動 md（目錄由宿主給）。
         /// <para>驗證：id 非空、不含非法檔名字元、不以 `_` 開頭（底線開頭的 md 被視為說明檔）、建議時間 ≥ 0、
         /// **已存在不覆寫**。正文只放一段待補 —— GUI 生得出欄位，生不出「這個活動是什麼」。</para>
         /// </summary>
-        public static bool CreateProjectActivity(string iProjectRoot, string iId, string iName, string iHow, string iGroup,
+        public static bool CreateActivity(string iActivitiesDir, string iId, string iName, string iHow, string iGroup,
             int iMinMinutes, out string oPath, out string? oError)
         {
             oPath = "";
@@ -279,9 +221,9 @@ namespace SCP.Core.FreeTime
             if (aId.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0) { oError = "id 含非法檔名字元：" + aId; return false; }
             if (aId.StartsWith("_", StringComparison.Ordinal)) { oError = "id 不可以 _ 開頭（底線開頭的 md 被視為說明檔，不算活動）"; return false; }
             if (iMinMinutes < 0) { oError = $"建議時間需為 ≥0 的整數（got '{iMinMinutes}'）"; return false; }
-            if (string.IsNullOrWhiteSpace(iProjectRoot)) { oError = "沒有專案根（project_root）"; return false; }
+            if (string.IsNullOrWhiteSpace(iActivitiesDir)) { oError = "沒有活動目錄（宿主沒給 activities_root）"; return false; }
 
-            string aDir = ProjectDir(iProjectRoot);
+            string aDir = iActivitiesDir.Replace('\\', '/').TrimEnd('/');
             string aPath = aDir + "/" + aId + ".md";
             oPath = aPath;
             if (File.Exists(aPath)) { oError = "已存在，未覆寫：" + aPath; return false; }

@@ -108,7 +108,7 @@ namespace SCP.Core.Bank
         public static string KeyOf(SCP_BankEntryType iType, string iKind, string iRef)
             => (iType == SCP_BankEntryType.Credit ? "credit" : "debit") + "|" + iKind + "|" + iRef;
 
-        public static string BankRootOf(string iDataRoot) => Path.Combine(iDataRoot, SCP_PayrollAudit.BankDirName);
+        public static string BankRootOf(string iDataRoot) => SCP_BankRegion.BankRootOfDataRoot(iDataRoot);   // ⛔ 不自己拼（TASK-0390）
 
         /// <summary>
         /// 對 [<paramref name="iFrom"/>, <paramref name="iTo"/>]（UTC 日，含頭尾）跑一次差集。**零寫入。**

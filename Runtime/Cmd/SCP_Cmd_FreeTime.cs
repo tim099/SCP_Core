@@ -47,7 +47,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("persona", "誰的自由時間（全步驟必填 —— ⚠ 不猜身分：多租戶環境，預設值是裝填好的槍）", iRequired: true),
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）—— senate CLI 沒給時用「路徑管理」頁那一格補上並印出來", iRequired: true),
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根（絕對路徑）—— senate CLI 沒給時用設定檔補上", iRequired: true),
-            new SCP_CmdArgSpec("project_root", "專案根（絕對路徑；找 UCL_Core 共用層與專案層活動 md）—— senate CLI 沒給時用設定檔補上", iRequired: true),
+            new SCP_CmdArgSpec("activities_root", "自由時間活動 md 目錄（絕對路徑）—— 宿主照描述表的 FreeTimeActivitiesRoot 自動填（TASK-0390：搬進 Senate）", iRequired: true),
             new SCP_CmdArgSpec("until", "step=start 必填：截止時刻 HH:mm（本地；已過且超過 12 小時視為跨日）"),
             new SCP_CmdArgSpec("reason", "step=end 選填：提前收工的理由（一句話 —— 形狀要可觀測）"),
             new SCP_CmdArgSpec("id", "step=show 必填：活動 id"),
@@ -65,7 +65,7 @@ namespace SCP.Core.Cmd
                 return SCP_CmdResult.Fail(2, "✗ persona 不合法（不可含 `/` `\\` `:` 或是 `.` / `..`）：'" + aPersona + "'");
 
             var aCtx = new SCP_FreeTimeContext(iArgs.Get("data_root").Trim(), iArgs.Get("letters_root").Trim(),
-                                               iArgs.Get("project_root").Trim());
+                                               iArgs.Get("activities_root").Trim());
             SCP_CmdResult aRes;
             switch (aStep)
             {

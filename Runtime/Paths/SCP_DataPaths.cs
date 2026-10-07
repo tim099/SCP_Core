@@ -21,6 +21,11 @@ namespace SCP.Core.Paths
         public const string ChatTavernDirName = "ChatTavern";
         public const string BatonDirName = "baton";
         public const string LettersDirName = "letters";
+        public const string MemosDirName = "memos";
+        public const string RoomsDirName = "rooms";
+        public const string BartenderDirName = "bartender";
+        /// <summary>新銀行帳本目錄名（`&lt;資料根&gt;/Bank`；描述表的 BankRoot 也用這一個）。</summary>
+        public const string BankDirName = "Bank";
 
         /// <summary>
         /// 資料根層設定檔（<c>&lt;資料根&gt;/agent_settings.json</c>）—— 走 <c>SCP_JsonPrefs</c>，各消費端各佔一個頂層 section。
@@ -94,6 +99,21 @@ namespace SCP.Core.Paths
 
         public static string Baton(SCP_DataRoot iRoot)
             => ChatTavern(iRoot) + "/" + BatonDirName;
+
+        // TASK-0390（Tim 2026-10-07：路徑要有統一入口）：下面這幾格原本各處自己拼 `"ChatTavern", "bartender"`／`"Bank"`／
+        //   `"baton", "memos"`／`"ChatTavern", "rooms"` —— 版面一調整，漏改的那一處安靜地讀寫另一個目錄。
+
+        /// <summary>session token 備忘（`&lt;資料根&gt;/ChatTavern/baton/memos`）。</summary>
+        public static string Memos(SCP_DataRoot iRoot) => Baton(iRoot) + "/" + MemosDirName;
+
+        /// <summary>酒館房間根（`&lt;資料根&gt;/ChatTavern/rooms`）。</summary>
+        public static string Rooms(SCP_DataRoot iRoot) => ChatTavern(iRoot) + "/" + RoomsDirName;
+
+        /// <summary>酒保（daemon／Server 酒保／cli 設定）的目錄（`&lt;資料根&gt;/ChatTavern/bartender`）。</summary>
+        public static string Bartender(SCP_DataRoot iRoot) => ChatTavern(iRoot) + "/" + BartenderDirName;
+
+        /// <summary>新銀行帳本根（`&lt;資料根&gt;/Bank`）—— 與描述表的 `BankRoot`（Derived）同一個名字。</summary>
+        public static string Bank(SCP_DataRoot iRoot) => iRoot.Value + "/" + BankDirName;
 
         /// <summary>
         /// 這個資料根的信件夾根。宿主裝了 <see cref="LettersResolver"/> 且它認得這個資料根

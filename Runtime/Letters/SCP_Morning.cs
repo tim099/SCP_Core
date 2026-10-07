@@ -45,7 +45,7 @@ namespace SCP.Core.Letters
     {
         public string DataRoot = "";
         public string LettersRoot = "";
-        /// <summary>專案根（頭像 asset 住這下面；詞典根沒給時也從它推導）。</summary>
+        /// <summary>顯示路徑的基準根（Senate 宿主給 Senate 專案根；Unity 宿主給 Unity 專案根）。⛔ 詞典根不再從它推（TASK-0390）。</summary>
         public string ProjectRoot = "";
 
         string? m_GlossaryRoot;
@@ -61,7 +61,7 @@ namespace SCP.Core.Letters
         }
 
         public SCP_LettersRoot Letters => new SCP_LettersRoot(LettersRoot);
-        public string MemosDir => Path.Combine(DataRoot, "ChatTavern", "baton", "memos").Replace('\\', '/');
+        public string MemosDir => SCP.Core.Paths.SCP_DataPaths.Memos(new SCP.Core.Paths.SCP_DataRoot(DataRoot)).Replace('\\', '/');
         public string BankRoot => SCP_BankRegion.BankRootOfDataRoot(DataRoot);
         public string Region => SCP_BankRegion.Read(DataRoot, out _);
     }

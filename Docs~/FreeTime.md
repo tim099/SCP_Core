@@ -27,7 +27,7 @@ senate cmd free-time --arg step=start --arg persona=<P> --arg until=<HH:mm>
 
 ## 活動 md
 
-活動清單是兩層 md：共用層 `<UCL_Core>/Docs~/zh-Hant/FreeTime/Activities/`、專案層 `<專案根>/docs/FreeTime/Activities/`；同 id 專案層覆蓋共用層（含 `enabled: false` 的停用覆蓋）。`_` 開頭的檔不掃。改活動＝改 md，不動 code。
+活動清單是一個目錄的 md：宿主給的活動目錄（Senate：`<Senate 專案根>/SenateData/config/freetime_activities/`，描述表 `FreeTimeActivitiesRoot`；TASK-0390 從 Unity 專案的 UCL_Core 共用層＋專案層搬進來）。`_` 開頭的檔不掃；`enabled: false` 的活動不上骰面。改活動＝改 md，不動 code。
 
 - 欄位：`id` `name` `how`（給人讀的做法）`enabled` `min_minutes`（0＝不做時間感知）`kind`（認不得不靜默當預設，骰面會顯形）`group`（同組收成一項）`needs_session`。
 - 代跑：`steps` 白名單（空＝拒跑）＋ `cmd_steps: <step>=<cmd>:<op>`（省略 op＝step 名）＋ `steps_need_persona`／`cmd_persona_arg`。`tool:` 已不支援。

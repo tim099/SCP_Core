@@ -124,7 +124,7 @@ namespace SCP.Core.Letters
             return true;
         }
 
-        public static string PathOf(string iDataRoot) => Path.Combine(iDataRoot, "ChatTavern", FileName);
+        public static string PathOf(string iDataRoot) => Path.Combine(SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)), FileName);
 
         public static List<string> Validate(SCP_WakeBriefSettings iS)
         {

@@ -113,7 +113,7 @@ namespace SCP.Core.Bank
         /// 發現 `bank-audit` 自己拼了一份、而且拼的還是**舊的**那個名字）。
         /// </summary>
         public static string BankRootOfDataRoot(string iDataRoot)
-            => Path.Combine(iDataRoot, SCP_TreasuryRequests.BankDirName);
+            => SCP.Core.Paths.SCP_DataPaths.Bank(new SCP.Core.Paths.SCP_DataRoot(iDataRoot));   // 版面唯一一處（TASK-0390）
 
         /// <summary>合法性 ＝ **能安全當檔名**。⚠ 與舊系統 `IsValidCurrencyId` 同一條規則。</summary>
         /// <remarks>含 `/` 或 `..` 就是寫到別的地方去，而寫檔會自動建目錄 ⇒ 症狀是憑空長出一個資料夾，不是錯誤。</remarks>

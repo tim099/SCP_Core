@@ -78,7 +78,7 @@ namespace SCP.Core.Glossary
 
         /// <summary>
         /// 附註裡印的路徑前綴（讀的人拿它去 Read 那個 .md）。
-        /// <para>預設詞典根 ⇒ 逐字 `docs/Glossary`；在專案底下 ⇒ 相對專案根；在專案外 ⇒ 絕對路徑
+        /// <para>預設詞典根 ⇒ 逐字 `docs/Glossary`；在基準根底下 ⇒ 相對基準根（Senate 宿主給的是 Senate 專案根）；在專案外 ⇒ 絕對路徑
         /// （⛔ 不印一個指不到檔的相對路徑）。</para>
         /// </summary>
         public static string DisplayPrefix(string iProjectRoot, string iGlossaryRoot)

@@ -5,7 +5,7 @@
 //             · UCL_Core/Tools~/_lib/ucl_paths.py        `POINTER_FILENAME`
 //             · Senate/src/Senate.Core/ProjectProbe.cs   字面值
 //           ⇒ 檔名或解析規則改一次，要三個地方同時對；漏掉的那邊**不會報錯**，
-//             它只會安靜地回退到 `<專案根>/AgentCommands` —— 而那個目錄通常真的存在。
+//             它只會安靜地回退到 `<Unity 專案根>/AgentCommands` —— 而那個目錄通常真的存在。
 //           本檔是 C# 這側的唯一落點（python 那份是另一個語言，靠這裡的註解對齊）。
 // 數值影響：`ResolveDataRoot` 會**讀一次 pointer 檔**（唯讀，不寫）。其餘純字串。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
@@ -39,7 +39,7 @@ namespace SCP.Core.Paths
             /// <summary>讀 pointer 檔得到的。</summary>
             Pointer = 1,
 
-            /// <summary>兩者都沒有 ⇒ 用 <c>&lt;專案根&gt;/AgentCommands</c> 慣例。</summary>
+            /// <summary>兩者都沒有 ⇒ 用 <c>&lt;Unity 專案根&gt;/AgentCommands</c> 慣例。</summary>
             Convention = 2,
         }
 

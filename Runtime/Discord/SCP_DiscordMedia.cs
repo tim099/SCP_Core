@@ -36,7 +36,7 @@ namespace SCP.Core.Discord
         // ⛔ 2026-10-07（TASK-0390）刪掉 `RepoRootOf`（資料根上一層＝repo 根）與 `MakeRepoRelative`：
         //   refs 改存資料根相對，存法與解法都在 SCP_TavernRefPath。
 
-        public static string MediaDir(string iDataRoot) => Path.Combine(iDataRoot, "ChatTavern", "media", "discord");
+        public static string MediaDir(string iDataRoot) => Path.Combine(SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)), "media", "discord");
 
         /// <summary>Discord 檔名 ⇒ 本地安全檔名（對齊 Unity／python 版）。</summary>
         public static string SanitizeFileName(string iName)

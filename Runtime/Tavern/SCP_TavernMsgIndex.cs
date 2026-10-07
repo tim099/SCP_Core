@@ -78,7 +78,7 @@ namespace SCP.Core.Tavern
 
         /// <summary><c>&lt;dataRoot&gt;/ChatTavern/rooms</c> —— 逐房掃描用。</summary>
         public static string RoomsRoot(string iDataRoot)
-            => Path.Combine(iDataRoot, "ChatTavern", "rooms").Replace(BackSlash, '/');
+            => Path.Combine(SCP.Core.Paths.SCP_DataPaths.Rooms(new SCP.Core.Paths.SCP_DataRoot(iDataRoot))).Replace(BackSlash, '/');
 
         /// <summary>索引檔的完整路徑（已 normalize 成 /）。診斷面要印它 ⇒ 曝露出去，⛔ 別讓呼叫端自己 Combine 一份。</summary>
         public static string IndexPath(string iDataRoot, string iRoom)

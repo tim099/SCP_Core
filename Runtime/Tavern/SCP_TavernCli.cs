@@ -31,7 +31,7 @@ namespace SCP.Core.Tavern
         static readonly char[] s_Sep = { ' ', '\t', '\r', '\n', '　' };
 
         public static string SettingsPath(string iDataRoot)
-            => Path.Combine(iDataRoot, "ChatTavern", "bartender", "cli_settings.json").Replace('\\', '/');
+            => Path.Combine(SCP.Core.Paths.SCP_DataPaths.Bartender(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)), "cli_settings.json").Replace('\\', '/');
 
         /// <summary>現在生效的前綴；總開關關著回 null。設定不存在／讀壞 ⇒ <see cref="DefaultPrefix"/>（fail-closed，照 Editor）。</summary>
         public static string? ActivePrefix(string iDataRoot)

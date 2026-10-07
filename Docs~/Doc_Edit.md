@@ -43,7 +43,7 @@ related:
 |---|---|
 | `constitution` | 固定 `letters/<persona>/_constitution.md`。`target` 刻意忽略 —— 允許覆寫的話，「改自己的憲法」就變成「可以改任何檔」 |
 | `letter` | 給了 `target` 就用它；沒給 ⇒ `letters/<persona>/` **頂層**最新一封 **frontmatter `type: letter_to_future_self`** 的信 |
-| `doc` | 只認顯式 `target`（相對路徑以專案根為基準） |
+| `doc` | 只認顯式 `target`（相對路徑以宿主 repo 根＝Senate 專案根為基準；TASK-0390） |
 
 letter 的自動挑選：
 - 只看頂層（`wakes/` `rests/` 等子目錄是別的東西）。
@@ -53,7 +53,7 @@ letter 的自動挑選：
 
 ## 5. 驗收：它憑什麼說「本場改過」
 
-- 檔案存在／是 `.md`／**在專案根之內**（repo 外的路徑通常是另一個宇宙的檔，失敗時會回一個看起來正常的讀數）。
+- 檔案存在／是 `.md`／**在允許範圍之內**：宿主 repo 根（文件）或信件根（信、憲法）。範圍外的路徑通常是另一個宇宙的檔，失敗時會回一個看起來正常的讀數）。
 - 印出實際 mtime 與大小。
 - **在自由時間中時，拿 session 開場時刻當基準**：
   - mtime ≥ 開場 ⇒ ✅ 本場改過（`verdict=yes`）

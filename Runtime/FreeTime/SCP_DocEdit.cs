@@ -56,11 +56,13 @@ namespace SCP.Core.FreeTime
                 return Block(r, sb, iData, iPersona, "找不到目標檔", aHow + "　⇒ 用 --arg target=<.md 路徑> 顯式指定");
             if (!aTarget!.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
                 return Block(r, sb, iData, iPersona, "目標不是 .md", "target: `" + aTarget + "`");
-            // 只認 repo 內的檔：repo 外的路徑通常是「另一個宇宙的檔」，那種失敗會回一個看起來正常的讀數。
+            // 只認允許範圍內的檔：宿主 repo（文件）＋ 信件根（信、憲法）。範圍外的路徑通常是「另一個宇宙的檔」，那種失敗會回一個看起來正常的讀數。
+            // 🩸 TASK-0390：原本只認「專案根」—— 信件根搬到 Valhalla 之後，kind=letter／constitution 一律被擋成「在 repo 之外」。
             string aRepo = Path.GetFullPath(iProjectRoot).TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+            string aLettersDir = Path.GetFullPath(iLetters.Value).TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
             string aFull = Path.GetFullPath(aTarget);
-            if (!aFull.StartsWith(aRepo, StringComparison.OrdinalIgnoreCase))
-                return Block(r, sb, iData, iPersona, "目標在 repo 之外", "target: `" + aFull + "`　repo: `" + aRepo + "`");
+            if (!aFull.StartsWith(aRepo, StringComparison.OrdinalIgnoreCase) && !aFull.StartsWith(aLettersDir, StringComparison.OrdinalIgnoreCase))
+                return Block(r, sb, iData, iPersona, "目標在允許範圍之外", "target: `" + aFull + "`　允許：`" + aRepo + "`、`" + aLettersDir + "`");
             if (!File.Exists(aFull))
                 return Block(r, sb, iData, iPersona, "目標檔不存在",
                              "target: `" + aFull + "`　⇒ **本 Cmd 不建檔**（它站在「改完之後」，不負責產生內容）");

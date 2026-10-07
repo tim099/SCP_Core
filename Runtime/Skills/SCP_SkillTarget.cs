@@ -27,7 +27,7 @@ namespace SCP.Core.Skills
         /// <summary>畫面上的名字。</summary>
         public string Display { get; }
 
-        /// <summary>skill 安裝目錄（相對專案根）。</summary>
+        /// <summary>skill 安裝目錄（相對安裝目標專案的根）。</summary>
         public string SkillsRelative { get; }
 
         /// <summary>某個專案底下這個 target 的 skill 目錄。</summary>

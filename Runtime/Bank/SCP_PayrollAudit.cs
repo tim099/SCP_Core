@@ -165,7 +165,7 @@ namespace SCP.Core.Bank
         public const string MeasurableFromDayKey = "2026-09-17";
         public const string TransitionDayKey = "2026-09-17";
         public const string RoomsRelPath = "ChatTavern/rooms";
-        public const string BankDirName = "Bank";
+        public const string BankDirName = SCP.Core.Paths.SCP_DataPaths.BankDirName;   // 同一個名字只拼一次（TASK-0390）
 
         /// <summary>
         /// 🔴 **第二條合法的完成路徑**：走請款補發的那些則。請款分錄不帶逐則 `ref`

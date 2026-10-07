@@ -118,7 +118,7 @@ namespace SCP.Core.Bank
         public const string StatusPending = "pending";
 
         /// <summary>單據的家 —— `<資料根>/Bank`（TASK-0274 起；⛔ 不是凍結的 `Treasury/`）。</summary>
-        public const string BankDirName = "Bank";
+        public const string BankDirName = SCP.Core.Paths.SCP_DataPaths.BankDirName;   // 同一個名字只拼一次（TASK-0390）
 
         public static string PayoutDir(string iDataRoot)
             => System.IO.Path.Combine(iDataRoot, BankDirName, PayoutDirName);

@@ -81,14 +81,14 @@ namespace SCP.Core.FreeTime
         public static SCP_FreeTimeRoll Roll(SCP_FreeTimeContext iCtx, string iPersona, int iRemainMinutes, Random? iRng = null)
         {
             var aRng = iRng ?? new Random();
-            int aShared = 0, aProject = 0;
+            int aCount = 0;
             bool aIsLive = false;
             var aVisible = new List<SCP_FreeTimeDiceItem>();
 
             // ── ① 可用性 ＋ ② 時間感知（活動層判定，與分組無關）──
             foreach (var a in iCtx.Activities)
             {
-                if (!a.Enabled) continue;   // 過濾在 merge 之後（專案層的 enabled:false 才擋得住共用層的啟用）
+                if (!a.Enabled) continue;   // 停用項不上骰面
                 SCP_FreeTimeGateResult aGate = SCP_FreeTimeGating.Evaluate(iCtx, a, iPersona);
                 if (!aGate.Visible) continue;
                 if (a.Kind == SCP_FreeTimeActivityKind.StreamWatch) aIsLive = true;
@@ -105,7 +105,7 @@ namespace SCP.Core.FreeTime
                     Group = a.Group,
                     TooLong = aTooLong,
                 });
-                if (a.IsProjectLayer) aProject++; else aShared++;
+                aCount++;
             }
 
             // ── ③ 飢餓置頂（通用）──  ⚠ 不動 visible（飢餓不能讓做不成的活動復活）；不覆蓋 tooLong。
@@ -179,7 +179,7 @@ namespace SCP.Core.FreeTime
                 : (aStats.LoadError.Length > 0
                     ? "｜⚠ 活動統計讀不了（不是 0 場，是沒有讀數）：" + aStats.LoadError
                     : "｜⚠ 尚無活動統計（不是 0 場，是沒有讀數）");
-            aRoll.Source = $"UCL_Core 共用 {aShared} + 專案 {aProject}{aStatsNote}{aStarveNote}";
+            aRoll.Source = $"活動 {aCount} 項{aStatsNote}{aStarveNote}";
             return aRoll;
         }
 

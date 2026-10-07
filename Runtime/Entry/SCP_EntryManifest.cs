@@ -35,7 +35,7 @@ namespace SCP.Core.Entry
         /// <summary>來源檔（相對 SCP_Core 根）—— append 模式是 fragment，full 模式是整份 template。</summary>
         public string SourceRelative { get; internal set; } = "";
 
-        /// <summary>目的地（相對專案根）。</summary>
+        /// <summary>目的地（相對安裝目標專案的根）。</summary>
         public string Destination { get; internal set; } = "";
 
         public string SourcePath(string iCoreRoot) => iCoreRoot.Replace('\\', '/').TrimEnd('/') + "/" + SourceRelative;

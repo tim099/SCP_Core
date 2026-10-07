@@ -64,8 +64,8 @@ namespace SCP.Core.Cmd
                 Body = aBody, Actor = aActor, Category = aCategory,
                 Title = iArgs.Get("title").Trim(), Tags = SCP_LessonLog.ParseTags(iArgs.Get("tags")),
             };
-            // 確認檔印「相對 repo 根」的路徑（Editor 版同）：資料根的上一層就是 repo 根
-            string aRel = Path.GetFileName(aData.TrimEnd('/', '\\')) + "/" + SCP_LessonLog.LessonsDirName + "/" + SCP_LessonLog.JsonlFileName;
+            // 確認檔印「相對資料根」的路徑（TASK-0390：同 refs 慣例）—— 🩸 舊版把資料根上一層當 repo 根，印成 `Valhalla/Lessons/...`
+            string aRel = SCP_LessonLog.LessonsDirName + "/" + SCP_LessonLog.JsonlFileName;
 
             SCP_LessonNoteResult r;
             try { r = SCP_LessonLog.Note(aData, aIn, aRel); }

@@ -39,8 +39,6 @@ namespace SCP.Core.FreeTime
         /// <summary>建議所需分鐘；0＝未設定（不做時間感知排序）。</summary>
         public int MinMinutes;
         public bool Enabled = true;
-        /// <summary>true＝專案層（同 id 會覆蓋共用層）。</summary>
-        public bool IsProjectLayer;
 
         /// <summary>
         /// 這件活動是否**必須在自由時間裡**才做得成（frontmatter `needs_session`，預設 true）。

@@ -1,5 +1,5 @@
 // 區塊職責：`cmd work-memory` —— 工作記憶區的入口（topics／init／add／read／supersede／link／index／tasks／archive／delete）。
-// 物理意義：邏輯在 `SCP_WorkMemory`；本檔只做「參數 → 呼叫 → 印結果」。資料根由宿主給，專案根＝資料根的上一層。
+// 物理意義：邏輯在 `SCP_WorkMemory`；本檔只做「參數 → 呼叫 → 印結果」。資料根由宿主給；related_docs 的具名根（senate:／scp_core:）也由宿主宣告（TASK-0390 起不再拿資料根上一層當 repo 根）。
 // 數值影響：寫入只落在 `<資料根>/WorkMemory/`（read 另寫一份 briefing 到 `<資料根>/WorkMemoryReadBriefs/`）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable

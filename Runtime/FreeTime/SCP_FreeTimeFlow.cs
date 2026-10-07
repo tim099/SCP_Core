@@ -430,15 +430,14 @@ namespace SCP.Core.FreeTime
         {
             string aPath = iCtx.PayloadPath(iPersona, "list");
             var aR = Header("list", iPersona);
-            int aShared = 0, aProject = 0, aDisabled = 0, aN = 0;
+            int aDisabled = 0, aN = 0;
             var aEnabled = new System.Collections.Generic.List<SCP_FreeTimeActivity>();
             foreach (var a in iCtx.Activities)
             {
                 if (!a.Enabled) { aDisabled++; continue; }
                 aEnabled.Add(a);
-                if (a.IsProjectLayer) aProject++; else aShared++;
             }
-            aR.AppendLine($"## 📋 活動清單（固定順序，{aEnabled.Count} 項 enabled｜來源：UCL_Core 共用 {aShared} ＋ 專案 {aProject}"
+            aR.AppendLine($"## 📋 活動清單（固定順序，{aEnabled.Count} 項 enabled"
                           + (aDisabled > 0 ? $"｜另有 {aDisabled} 項 disabled 未列" : "") + "）");
             foreach (var a in aEnabled)
             {
@@ -449,7 +448,7 @@ namespace SCP.Core.FreeTime
             aR.AppendLine();
             aR.AppendLine("- ℹ 本查詢**純讀**：不進場、不發券、不寫 session。要真的開場走 step=start。");
             AppendTail(aR, iCtx);
-            var aRes = SCP_CmdResult.Success($"✓ free-time step=list：{aEnabled.Count} 項 enabled（共用 {aShared}／專案 {aProject}／停用 {aDisabled}）");
+            var aRes = SCP_CmdResult.Success($"✓ free-time step=list：{aEnabled.Count} 項 enabled（停用 {aDisabled}）");
             Write(aRes, aPath, aR);
             return aRes.AddValue("activities", aEnabled.Count.ToString(CultureInfo.InvariantCulture))
                        .AddValue("disabled", aDisabled.ToString(CultureInfo.InvariantCulture));

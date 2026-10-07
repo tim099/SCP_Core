@@ -65,7 +65,7 @@ namespace SCP.Core.Watch
         static readonly string[] s_BartenderNames = { "酒保", "bartender", "tavern-keeper" };
 
         public static string MessagesDir(string iDataRoot, string iRoom)
-            => Path.Combine(iDataRoot, "ChatTavern", "rooms", iRoom, "messages").Replace('\\', '/');
+            => Path.Combine(SCP.Core.Paths.SCP_DataPaths.Rooms(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)), iRoom, "messages").Replace('\\', '/');
 
         /// <summary>
         /// 撈 <c>[iLo, iHi]</c> 的訊息（**seq 來自檔名，不是內文欄位**）。

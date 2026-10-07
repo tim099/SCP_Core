@@ -177,12 +177,12 @@ namespace SCP.Core.Tavern
         public const int MaxCategoryNameLength = 32;
 
         public static string CategoriesPath(string iDataRoot)
-            => (Path.GetDirectoryName(SCP_TavernMsgIndex.RoomsRoot(iDataRoot)) ?? iDataRoot).Replace('\\', '/')
+            => SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)).Replace('\\', '/')
                + "/" + CategoriesFileName;
 
         /// <summary>`ChatTavern/rooms_archive/`（與 `rooms/` 同層 —— ⛔ 不放進 `rooms/` 底下：Unity 會把它當成一個房）。</summary>
         public static string ArchiveRoot(string iDataRoot)
-            => (Path.GetDirectoryName(SCP_TavernMsgIndex.RoomsRoot(iDataRoot)) ?? iDataRoot).Replace('\\', '/')
+            => SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)).Replace('\\', '/')
                + "/" + ArchiveDirName;
 
         static string ActiveDir(string iDataRoot, string iRoom) => SCP_TavernRooms.RoomDir(iDataRoot, iRoom);

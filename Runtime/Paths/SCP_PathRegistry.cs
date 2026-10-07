@@ -10,7 +10,7 @@
 //   酒館 `_seq.txt`、任務 `_index.txt`、`_session` lock ——
 //   兩個資料根就是兩份序號、兩份計數、persona 被切成兩半，而**沒有任何一層會喊**。
 //   ⇒ 「有兩個啟用專案」在本層是**解析錯誤**，不是「替你挑一個」。
-//   📌 而它之後會搬到 Unity 專案之外 ⇒ 現在 `auto`（由專案根推導）是**過渡形**，不是終局。
+//   📌 而它之後會搬到 Unity 專案之外 ⇒ （TASK-0390 已搬到 Valhalla，`auto` 那條已拿掉）
 //
 // ⚠ Stored / Derived 的分野是本檔的核心：
 //   🩸 現場（2026-08-31）：`sessionDir` 曾經可填（`auto` ＝ 從**信件庫根**往上找 `_session`），
@@ -60,22 +60,35 @@ namespace SCP.Core.Paths
         [SCP_PathInfo("Senate 專案根（宿主 repo 根）",
             "宿主程式自己所在的那棵 repo（Senate：exe 往上找到的 `.git`）—— **宿主給、不存、唯讀**。"
             + " 跟著宿主走的內容（例：詞典 submodule `Glossary/`）從這裡推。"
-            + " ⛔ 跟「專案根」是兩件事：專案根是 Unity 開發目標，這一格是 Server 自己（TASK-0390）。")]
+            + " ⛔ 跟「Unity 專案根」是兩件事：那是 Unity CLI 串接目標，這一格是 Server 自己（TASK-0390）。")]
         [SCP_PathHost(SCP_PathScope.Global)]
         HostRepoRoot,
 
-        [SCP_PathInfo("專案根（git repo 根）",
-            "唯一那個 Unity 專案的 git repo 根。**沒有上游可以推導它** —— 這是唯一必須有人說的那一格。"
-            + " ⚠ 只允許一個啟用專案：資料根只有一組，兩棵資料樹會把 seq／單號／lock 切成兩份而不報錯。")]
+        [SCP_PathInfo("自由時間活動目錄",
+            "自由時間可擲的活動 md（一活動一檔、frontmatter 定義）。跟著 Senate 走（TASK-0390，Tim 2026-10-07：搬進 Senate）——"
+            + " 原本是 Unity 專案 UCL_Core 的共用層＋專案層兩處。放 `SenateData/config/`（入版控、文件庫不掃）。")]
+        [SCP_PathDerived(SCP_PathId.HostRepoRoot, "SenateData/config/freetime_activities", SCP_PathScope.Global)]
+        FreeTimeActivitiesRoot,
+
+        [SCP_PathInfo("知識庫 target 定義檔",
+            "`kb_targets.json`：知識庫要收哪些語料（glob 前綴：無＝Senate 專案根／`scp_core:`＝SCP_Core／`data:`＝資料根）。"
+            + " 跟著 Senate 走（TASK-0390）—— 原本在 Unity 專案的 `UCL_Core/Tools~/AgentCommands/`。")]
+        [SCP_PathDerived(SCP_PathId.HostRepoRoot, "SenateData/config/kb_targets.json", SCP_PathScope.Global)]
+        KbTargetsFile,
+
+        [SCP_PathInfo("Unity 專案根（選填）",
+            "要透過 Unity CLI 串接的那個 Unity 專案的 git repo 根 —— **選填**。"
+            + " TASK-0390（Tim 2026-10-07）：Senate＋Valhalla 不依賴它；資料根、信件根、詞典根都不從它推。"
+            + " 沒設時只有 Unity 那幾支指令（unity-recompile／unity-compile-status／ucmd）會說「沒有目標專案」。")]
         [SCP_PathStored("root", SCP_PathScope.Project)]
-        ProjectRoot,
+        UnityProjectRoot,
 
         [SCP_PathInfo("詞典根（glossary）",
             "新詞辭典的 .md 住這裡（酒館發文的詞典附註、早安的出生證明 `personas/<P>.md` 都從這裡讀）。"
-            + " `auto` ＝ `<宿主 repo 根>/Glossary`（Tim 2026-10-07：詞典裝成 Senate 的 submodule；之前是 `<專案根>/Docs/Glossary`）。"
+            + " `auto` ＝ `<宿主 repo 根>/Glossary`（Tim 2026-10-07：詞典裝成 Senate 的 submodule；之前是 `<Unity 專案根>/Docs/Glossary`）。"
             + " 存 senate.local.json（Tim 2026-09-27）；**只有 Senate 讀它** —— 詞典的操作全在 `senate cmd glossary`，"
             + "Editor 發的文由寫入端 `tavern-write` 補附註（TASK-0313，Tim 2026-09-28：Unity 端不碰詞典）。")]
-        [SCP_PathStored("glossaryRoot", SCP_PathScope.Project)]
+        [SCP_PathStored("glossaryRoot", SCP_PathScope.Global)]
         [SCP_PathAuto(SCP_PathId.HostRepoRoot, "Glossary")]
         GlossaryRoot,
 
@@ -84,17 +97,16 @@ namespace SCP.Core.Paths
             + " **空白＝沒有外部漫畫庫**（那不是錯誤：同事自己畫的內部漫畫在 `ArtGallery/Comic`，不靠這一格）。"
             + " ⛔ **沒有上游可以推導**（它是這台機器上的一個資料夾，不是專案內的東西）。"
             + " 存 senate.local.json（機器路徑不入版控）；**這一格是唯一真相源** ——"
-            + " 舊的 `<專案根>/.comic_root.local` 快照（Unity 閱讀心得管理頁寫的）**不再被讀**：它還在而本格空白時，"
+            + " 舊的 `<Unity 專案根>/.comic_root.local` 快照（Unity 閱讀心得管理頁寫的）**不再被讀**：它還在而本格空白時，"
             + "`op=comics` 會明說「舊快照有值、本格沒有」，⛔ 不靜默採用。")]
-        [SCP_PathStored("comicRoot", SCP_PathScope.Project, BlankMeans = "沒有外部漫畫庫（只讀內部 ArtGallery/Comic）")]
+        [SCP_PathStored("comicRoot", SCP_PathScope.Global, BlankMeans = "沒有外部漫畫庫（只讀內部 ArtGallery/Comic）")]
         ComicRoot,
 
         [SCP_PathInfo("AgentCommands 資料根",
             "**Global —— 只有一組**（Tim 2026-08-31）。酒館 seq／任務單號／session lock 全都假設只有一棵樹。"
             + " Stored 的理由：它可以不在專案裡（pointer 檔 `.agentcommands_root.local` 就是為此存在），"
-            + "而且**之後會搬到 Unity 專案之外** ⇒ 現在的 `auto`（由專案根推導）是過渡形不是終局。")]
+            + "已搬到 Unity 專案之外（Valhalla）。⛔ 2026-10-07（TASK-0390）起**不支援 auto**：「從 Unity 專案推」那條路已拿掉，資料根要明說。")]
         [SCP_PathStored("agentCommandsRoot", SCP_PathScope.Global)]
-        [SCP_PathAuto(SCP_PathId.ProjectRoot, "AgentCommands")]
         AgentCommandsRoot,
 
         [SCP_PathInfo("persona 信件庫根",
@@ -116,7 +128,7 @@ namespace SCP.Core.Paths
             + "要做的話是把 Bank 目錄本身做成跨樹共用的 repo，不是回頭讓這一格可填。"
             + " ⚠ 而它現在**在版控裡**（`AgentCommands` 是 submodule）——"
             + "舊的 `<repo>/SenateData/Bank` 是 gitignored 的，兩者對「錢的歷史留不留得下來」相反。")]
-        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, "Bank", SCP_PathScope.Global)]
+        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, SCP_DataPaths.BankDirName, SCP_PathScope.Global)]
         BankRoot,
 
         [SCP_PathInfo("資料根層設定檔",
@@ -133,22 +145,22 @@ namespace SCP.Core.Paths
             + "⚠ 舊註記寫著「`_seq.txt` 沒有跨 process lock」—— 那句的**受詞已經不對**："
             + "seq 的權威是訊息**檔數**、檔名就是 seq，而建檔走原子建檔（TASK-0256）"
             + "⇒ 撞檔會出聲，⛔ 不再是靜默覆蓋。")]
-        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, "ChatTavern", SCP_PathScope.Global)]
+        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, SCP_DataPaths.ChatTavernDirName, SCP_PathScope.Global)]
         ChatTavern,
 
         [SCP_PathInfo("酒館 baton", "各 persona 的 cmd 回傳檔住這下面。")]
-        [SCP_PathDerived(SCP_PathId.ChatTavern, "baton", SCP_PathScope.Global)]
+        [SCP_PathDerived(SCP_PathId.ChatTavern, SCP_DataPaths.BatonDirName, SCP_PathScope.Global)]
         Baton,
 
         [SCP_PathInfo("AgentCommand queue 根",
             "一個 persona 一個分道。掉進 `anonymous` ＝ 有人沒帶 `--persona`（全員會互相阻塞）。")]
-        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, "queues", SCP_PathScope.Global)]
+        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, SCP_DataPaths.QueuesDirName, SCP_PathScope.Global)]
         Queues,
 
         [SCP_PathInfo("任務單根",
             "讀取層 `SCP_TaskIO`、寫入層 `SCP_TaskStore`（SCP_Core）；**寫入只在 Senate Server 裡跑**"
             + "（`task-write`，TASK-0349）——配號是原子建檔，讀改寫包在跨 process 檔案鎖裡。")]
-        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, "Tasks", SCP_PathScope.Global)]
+        [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, Tasks.SCP_TaskIO.TasksDirName, SCP_PathScope.Global)]
         TasksRoot,
 
         [SCP_PathInfo("Cmd 判定檔",
@@ -387,7 +399,12 @@ namespace SCP.Core.Paths
                     return new SCP_PathResolution("", "取不到", aStored.Error);
                 string aRaw = aStored.Raw.Trim();
                 if (aRaw.Length > 0 && !string.Equals(aRaw, AutoLiteral, StringComparison.OrdinalIgnoreCase))
+                {
+                    // 🩸 TASK-0390：相對值會照**呼叫端 process 的 cwd** 解 ⇒ 換個目錄跑就指到另一棵樹，而且不報錯。⛔ 不替人挑基準。
+                    if (!System.IO.Path.IsPathRooted(aRaw))
+                        return new SCP_PathResolution("", "手填", $"`{aRaw}` 不是絕對路徑 —— 設定值要寫完整路徑（相對值會隨執行位置變成另一個目錄）");
                     return new SCP_PathResolution(Clean(aRaw), "手填", null);
+                }
                 if (!aD.SupportsAuto || aD.AutoFrom == null)
                     return new SCP_PathResolution("", aRaw.Length == 0 ? "未設定" : AutoLiteral,
                         aRaw.Length == 0

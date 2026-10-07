@@ -23,7 +23,7 @@ namespace SCP.Core.Tavern
 
         /// <summary>別名表路徑 —— 跟 identities.json 同一層（從同一個決定點推，⛔ 不自己再組一份）。</summary>
         public static string PathOf(string iDataRoot)
-            => (Path.GetDirectoryName(SCP_TavernMsgIndex.RoomsRoot(iDataRoot)) ?? iDataRoot).Replace('\\', '/') + "/" + FileName;
+            => SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)).Replace('\\', '/') + "/" + FileName;
 
         /// <summary>讀別名表（別名 → id，別名大小寫不分）。沒有檔 ⇒ 空表、oError=null；讀不了 ⇒ 空表＋oError。</summary>
         public static Dictionary<string, string> Load(string iDataRoot, out string? oError)

@@ -23,7 +23,7 @@ namespace SCP.Core.Discord
         public const string WebhookSecretFileName = "discord_webhooks.enc";
 
         static string TavernDir(string iDataRoot)
-            => (Path.GetDirectoryName(SCP_TavernMsgIndex.RoomsRoot(iDataRoot)) ?? iDataRoot).Replace('\\', '/');
+            => SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)).Replace('\\', '/');
 
         public static string Dir(string iDataRoot) => TavernDir(iDataRoot) + "/" + DirName;
         // ⚠ 每一條路徑都先觸發搬家 —— 🩸 只掛在其中三條上時，只讀 config 的那條路（op=status）永遠不會搬（2026-09-28 實測）

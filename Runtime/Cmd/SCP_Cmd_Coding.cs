@@ -471,7 +471,7 @@ namespace SCP.Core.Cmd
         static List<string> DirtyUnityCs(SCP_DataRoot iRoot)
         {
             var aOut = new List<string>();
-            // data_root 是 `<專案>/AgentCommands` ⇒ 專案根是它的上一層。
+            // data_root 是 `<專案>/AgentCommands` ⇒ Unity 專案根是它的上一層。⚠ 舊假設（TASK-0390 待改）：資料根搬到 Valhalla 後不成立。
             // ⛔ 不假設：推導完**驗它真的是 git 工作目錄**，不是就回空（呼叫端會說「沒量到」）。
             string aProj = Path.GetDirectoryName(iRoot.Value.TrimEnd('/', '\\')) ?? "";
             if (aProj.Length == 0 || !SCP_Git.IsRepo(aProj)) return aOut;

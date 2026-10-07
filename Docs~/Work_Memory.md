@@ -35,7 +35,7 @@ target_audience: [AI_Agent]
 | `<type>_<slug>.md` | fragment：`decision`／`knowhow`／`pitfall`／`state`／`pointer`。**正文寫一次不改寫** |
 | `_index.md` | 機械生成的索引，手改會被覆寫 |
 
-fragment 的價值在它的 ref：`docs`（相對專案根的 `路徑` 或 `路徑:行號`）指向知識點，`links`（`<topic>/<id>`）指向別的 fragment（可跨主題）。
+fragment 的價值在它的 ref：`docs`（沒前綴＝相對資料根；`senate:`／`scp_core:` 前綴＝相對該 repo；`ucl_core:` 是 Unity 專案的檔、Senate 不讀 —— TASK-0390）指向知識點，`links`（`<topic>/<id>`）指向別的 fragment（可跨主題）。
 
 ## 3. 常用
 

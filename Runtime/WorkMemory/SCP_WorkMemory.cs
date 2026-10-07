@@ -84,7 +84,7 @@ namespace SCP.Core.WorkMemory
 
         public string WmRoot => P(DataRoot, "WorkMemory");
         public string BriefRoot => P(DataRoot, "WorkMemoryReadBriefs");
-        public string TasksRoot => P(DataRoot, "Tasks", "tasks");
+        public string TasksRoot => SCP.Core.Tasks.SCP_TaskIO.TasksDir(new SCP.Core.Paths.SCP_DataRoot(DataRoot));   // 版面唯一一處（TASK-0390）
         public string TombstonePath => P(WmRoot, "_tombstones.md");
 
         public SCP_WorkMemory(string iDataRoot, IReadOnlyDictionary<string, string>? iNamedRoots = null)

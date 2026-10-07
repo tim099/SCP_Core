@@ -201,12 +201,8 @@ namespace SCP.Core.Market
             return Directory.Exists(aDir) && !File.Exists(Path.Combine(aDir, LegacyMigratedMarker));
         }
 
-        /// <summary>
-        /// 由 letters 根推資料根（letters ＝ `<資料根>/ChatTavern/baton/letters`）。
-        /// ⚠ 這條推導原本只有 `Cmd_Voucher op=swap` 自己算一次；搬到這裡讓券的寫入端共用同一份，⛔ 不在各處各推一次。
-        /// </summary>
-        public static string DataRootOfLetters(SCP_LettersRoot iLetters)
-            => Path.GetFullPath(Path.Combine(iLetters.Value, "../../..")).Replace('\\', '/');
+        // ⛔ 2026-10-07（TASK-0390）刪掉 `DataRootOfLetters`（letters 往上三層＝資料根）：信件根是可獨立設定的一格，
+        //   反推只在它剛好等於慣例值時成立。資料根一律由宿主照設定給。
 
         /// <summary>券簿上「有多少」：永久＋未過期限時＋零頭，單位 1e-8。</summary>
         public static long UnitsE8Of(SCP_VoucherBook iBook, DateTime iNowUtc)

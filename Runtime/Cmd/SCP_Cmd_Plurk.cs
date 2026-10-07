@@ -67,7 +67,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("alias", "表情代碼（emoadd 必填；⚠ Plurk 實測會忽略它自己編號）"),
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）—— senate CLI 沒給時用設定檔補上", iRequired: true),
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根（絕對路徑）—— senate CLI 沒給時用設定檔補上", iRequired: true),
-            new SCP_CmdArgSpec("project_root", "專案根（絕對路徑）—— senate CLI 沒給時用設定檔補上（本 Cmd 目前不讀它的內容，只驗它存在）", iRequired: true),
+            // ⛔ 2026-10-07（TASK-0390）拿掉 `project_root`：本 Cmd 從不讀它、只驗存在 ⇒ 沒有 Unity 專案時整支擋下。
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -77,9 +77,6 @@ namespace SCP.Core.Cmd
             string aPersona = iArgs.Get("persona").Trim();
             if (aPersona.Length > 0 && !SCP_Cmd_FreeTimeActivity.IsSafePersona(aPersona))
                 return SCP_CmdResult.Fail(2, "✗ persona 不合法（不可含 `/` `\\` `:` 或是 `.` / `..`）：'" + aPersona + "'");
-            string aProject = iArgs.Get("project_root").Trim();
-            if (!System.IO.Directory.Exists(aProject))
-                return SCP_CmdResult.Fail(2, "✗ 專案根不存在：" + aProject);
 
             var aCtx = new SCP_PlurkContext(iArgs.Get("data_root").Trim(), iArgs.Get("letters_root").Trim());
             var aLetters = new SCP_LettersRoot(aCtx.LettersRoot);

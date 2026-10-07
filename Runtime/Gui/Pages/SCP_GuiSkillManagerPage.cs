@@ -38,11 +38,6 @@ namespace SCP.Core.Gui
 
         string SkillsRoot { get { return Norm(m_Ctx.CoreRoot) + "/Skills~"; } }
 
-        /// <summary>下拉裡代表「自訂路徑」的哨兵值。⚠ 它不是路徑，選到它要另外讀輸入框。</summary>
-        const string kCustomSentinel = "__custom__";
-
-        static readonly SCP_PrefKey<string> KeyInstallRoot = SCP_PrefKey.String("skills", "installRoot", "");
-        static readonly SCP_PrefKey<string> KeyCustomRoot = SCP_PrefKey.String("skills", "customRoot", "");
         static readonly SCP_PrefKey<string> KeyAgent = SCP_PrefKey.String("skills", "agent", "");
 
         // ── 主體 ──────────────────────────────────────────────────
@@ -94,59 +89,14 @@ namespace SCP.Core.Gui
         //   於是預設裝到 Bar 去了（Tim 2026-08-30 按下安裝之後才現形）。
         //   那個模型的前提是**頁面住在它要裝的那個專案裡**，而這裡是外部工具：
         //   在這裡跑的 agent 需要的是**這個 repo** 的 skill。
-        //   ⇒ 預設是宿主自己；被管理的專案與自訂路徑是額外選項。
+        //   ⇒ 對象是宿主自己。TASK-0390 起**只有**宿主自己（被管理的專案、自訂路徑那兩個選項拿掉了）。
 
         SCP_GuiProjectRef? PickInstallRoot(SCP_Ui g)
         {
+            // TASK-0390（Tim 2026-10-07）：Senate 管理的 skill **只裝在 Senate 自己** ⇒ 不再列被管理的專案、不再有自訂路徑。
             SCP_GuiProjectRef aHost = m_Ctx.HostProject;
-
-            var aOptions = new List<SCP_GuiOption>();
-            aOptions.Add(new SCP_GuiOption(aHost.Root, "★ " + aHost.Name + "（" + aHost.Root + "）"));
-            foreach (SCP_GuiProjectRef p in m_Ctx.ManagedProjects)
-            {
-                if (p.Root == aHost.Root) continue;              // 同一個不列兩次
-                aOptions.Add(new SCP_GuiOption(p.Root, p.Name + "（" + p.Root + "）"));
-            }
-            aOptions.Add(new SCP_GuiOption(kCustomSentinel, "（自訂路徑…）"));
-
-            string aSaved = m_Ctx.Prefs.Get(KeyInstallRoot);
-            string aDefault = aSaved.Length > 0 ? aSaved : aHost.Root;
-            string aPick = g.Dropdown("安裝到", aOptions, aDefault, "skills/root");
-
-            // 換了才寫 —— 每幀寫會把設定檔攪成每秒一次的 diff
-            string aWant = aPick == aHost.Root ? "" : aPick;
-            if (aWant != aSaved) m_Ctx.Prefs.Write(KeyInstallRoot, aWant);
-
-            if (aPick == kCustomSentinel) return PickCustom(g);
-
-            SCP_GuiProjectRef? aFound = aPick == aHost.Root ? aHost : Find(m_Ctx.ManagedProjects, aPick);
-            if (aFound == null)
-            {
-                // 上次選的專案可能已從清單移除 ⇒ 說出來，不要靜靜換一個
-                g.Note($"⚠ 上次選的「{aPick}」已經不在清單裡 —— 請重選。");
-                return null;
-            }
-
-            // Editor 心跳只有被管理的 Unity 專案量得到；宿主自己不是 Unity 專案 ⇒ 不畫那行
-            if (aFound.EditorRunning == true)
-                g.Note("⚠ 這個專案的 Unity Editor **正在跑** —— 現在寫檔會跟它的 AssetDatabase import 撞上。"
-                       + "建議關掉 Editor 再裝，或裝完在 Editor 裡 Reimport。");
-            return aFound;
-        }
-
-        SCP_GuiProjectRef? PickCustom(SCP_Ui g)
-        {
-            string aOld = m_Ctx.Prefs.Get(KeyCustomRoot);
-            string aNew = g.TextField("自訂路徑（該 repo 的 git root）", aOld, "skills/customroot");
-            if (aNew != aOld) m_Ctx.Prefs.Write(KeyCustomRoot, aNew);
-
-            string aRoot = Norm(aNew.Trim());
-            // 「沒填」「填了但不存在」「填了而且在」是三態，不可以壓成兩態
-            if (aRoot.Length == 0) { g.Note("・還沒填路徑。"); return null; }
-            if (!Directory.Exists(aRoot)) { g.Note($"⚠ 這個目錄不存在：{aRoot}"); return null; }
-            if (!Directory.Exists(Path.Combine(aRoot, ".git")) && !File.Exists(Path.Combine(aRoot, ".git")))
-                g.Note("・看起來不是 git root（`.git` 不在）—— 還是可以裝，但那些檔不會進版控。");
-            return new SCP_GuiProjectRef("(自訂)", aRoot);
+            g.Note("安裝到：★ " + aHost.Name + "（" + aHost.Root + "）");
+            return aHost;
         }
 
         // ── 一鍵全裝 ──────────────────────────────────────────────
@@ -433,12 +383,6 @@ namespace SCP.Core.Gui
                 case SCP_SkillState.Foreign: return "◇";
                 default: return "・";
             }
-        }
-
-        static SCP_GuiProjectRef? Find(IReadOnlyList<SCP_GuiProjectRef> iList, string iRoot)
-        {
-            foreach (SCP_GuiProjectRef p in iList) if (p.Root == iRoot) return p;
-            return null;
         }
 
         static string SafeRead(string iPath)

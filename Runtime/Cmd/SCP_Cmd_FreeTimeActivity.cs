@@ -39,7 +39,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("persona", "誰在做活動（必填 —— 不猜身分：猜錯會替別人記活動，而那看起來完全正常）", iRequired: true),
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）—— senate CLI 沒給時用「路徑管理」頁那一格補上並印出來", iRequired: true),
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根（絕對路徑）—— senate CLI 沒給時用設定檔補上", iRequired: true),
-            new SCP_CmdArgSpec("project_root", "專案根（絕對路徑；找活動 md）—— senate CLI 沒給時用設定檔補上", iRequired: true),
+            new SCP_CmdArgSpec("activities_root", "自由時間活動 md 目錄（絕對路徑）—— 宿主照描述表的 FreeTimeActivitiesRoot 自動填（TASK-0390：搬進 Senate）", iRequired: true),
             new SCP_CmdArgSpec("activity", "活動 id（op=pick 必填；op=step 沒給就用本場 pick 過的那一件；不綁場次的活動一律要給）"),
             new SCP_CmdArgSpec("step", "op=step 必填：子命令（須在該活動 md 的 `steps` 白名單內）"),
             new SCP_CmdArgSpec("step_args", "op=step 選填：交給那支 cmd 的參數，寫法 `--arg k=v --arg k2=\"含 空白\"`"),
@@ -56,7 +56,7 @@ namespace SCP.Core.Cmd
                 return SCP_CmdResult.Fail(2, "✗ persona 不合法（不可含 `/` `\\` `:` 或是 `.` / `..`）：'" + aPersona + "'");
 
             var aCtx = new SCP_FreeTimeContext(iArgs.Get("data_root").Trim(), iArgs.Get("letters_root").Trim(),
-                                               iArgs.Get("project_root").Trim());
+                                               iArgs.Get("activities_root").Trim());
             // ⚠ 參數**依 op 讀** —— 讀了不屬於這個 op 的參數，「給了而從來沒被讀」那盞燈（TASK-0289）就永遠不會亮。
             string aActivity = iArgs.Get("activity");
             string aStep = aOp == "step" ? iArgs.Get("step") : "";

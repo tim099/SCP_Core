@@ -47,7 +47,7 @@ namespace SCP.Core.Tavern
 
         public bool SameAs(SCP_TavernRenderSettings o) => BodyClip == o.BodyClip && BodyClipMentioned == o.BodyClipMentioned && BacklogCap == o.BacklogCap;
 
-        public static string PathOf(string iDataRoot) => Path.Combine(iDataRoot, "ChatTavern", FileName);
+        public static string PathOf(string iDataRoot) => Path.Combine(SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)), FileName);
 
         static bool IsValid(int v) => v == 0 || (v >= MinBodyClip && v <= MaxBodyClip);
 

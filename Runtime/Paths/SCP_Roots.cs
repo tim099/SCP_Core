@@ -1,4 +1,4 @@
-// 區塊職責：**有型別的「根」** —— 專案根 / 資料根 / 信件夾根各自一個型別。
+// 區塊職責：**有型別的「根」** —— Unity 專案根 / 資料根 / 信件夾根各自一個型別。
 // 物理意義：路徑解析器一律吃「根 ＋ 相對版面」。如果三種根都是裸 `string`，
 //           **傳錯根是編譯得過的**，而算出來的路徑看起來完全正常
 //           （`<lettersRoot>/queues/basecamp` 這種東西不會有任何一層喊）。
@@ -42,8 +42,8 @@ namespace SCP.Core.Paths
 
     /// <summary>
     /// AgentCommands 資料根（例：<c>D:/Unity/Bar/AgentCommands</c>）。
-    /// <para>⚠ 它**不一定**是 <c>&lt;專案根&gt;/AgentCommands</c> —— 可以被 pointer 檔搬走
-    /// （見 <see cref="SCP_ProjectPaths.ResolveDataRoot"/>）。所以它是獨立的一種根，不是專案根的衍生。</para>
+    /// <para>⚠ 它**不一定**是 <c>&lt;Unity 專案根&gt;/AgentCommands</c> —— 可以被 pointer 檔搬走
+    /// （見 <see cref="SCP_ProjectPaths.ResolveDataRoot"/>）。所以它是獨立的一種根，不是 Unity 專案根的衍生。</para>
     /// </summary>
     public readonly struct SCP_DataRoot
     {

@@ -41,7 +41,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("note", "一句心得（選填）", iDefault: ""),
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）—— senate CLI 沒給時用設定檔補上", iRequired: true),
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根（絕對路徑）—— senate CLI 沒給時用設定檔補上", iRequired: true),
-            new SCP_CmdArgSpec("project_root", "專案根（絕對路徑；target 的相對基準、repo 內判定）—— senate CLI 沒給時用設定檔補上", iRequired: true),
+            new SCP_CmdArgSpec("repo_root", "宿主 repo 根（Senate 專案根；kind=doc 的相對基準、允許範圍之一）—— 宿主自動填（TASK-0390：文件住在 Senate，不在 Unity 專案）", iRequired: true),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -55,8 +55,8 @@ namespace SCP.Core.Cmd
                 return SCP_CmdResult.Fail(2, "✗ persona 不合法（不可含 `/` `\\` `:` 或是 `.` / `..`）：'" + aPersona + "'");
             string aData = iArgs.Get("data_root").Trim();
             string aLetters = iArgs.Get("letters_root").Trim();
-            string aProject = iArgs.Get("project_root").Trim();
-            if (!Directory.Exists(aProject)) return SCP_CmdResult.Fail(2, "✗ 專案根不存在：" + aProject);
+            string aProject = iArgs.Get("repo_root").Trim();
+            if (!Directory.Exists(aProject)) return SCP_CmdResult.Fail(2, "✗ 宿主 repo 根不存在：" + aProject);
 
             var aLettersRoot = new SCP_LettersRoot(aLetters);
             SCP_DocEditResult r = SCP_DocEdit.Run(new SCP_DataRoot(aData), aLettersRoot, aProject, aKind, aPersona,

@@ -1,9 +1,9 @@
 // 區塊職責：**自由時間的後台頁**（TASK-0360，Tim 2026-10-01「另外需要 FreeTime 的後台設定頁面」）。
 // 物理意義：四區各有各的真相源，⛔ 本頁不存第二份：
 //   ① 場次設定 —— `<資料根>/FreeTime/freetime_settings.json`（SCP_FreeTimeSettings；以前是程式碼常數）
-//   ② 活動清單 —— 兩層活動 md 的 frontmatter（共用層在 UCL_Core、專案層在 `<專案根>/docs/FreeTime/Activities`）
+//   ② 活動清單 —— 活動 md 的 frontmatter（目錄＝描述表 FreeTimeActivitiesRoot，TASK-0390 起在 Senate）
 //   ③ 活動統計 —— `letters/<P>/profile/freetime_activity_stats.md`（**唯讀**：寫入端只有 start 推場次、pick 記選中）
-//   ④ 新增活動 —— 一律建在專案層（共用層屬於 UCL_Core，從專案的頁往那裡加等於替別的專案做決定）
+//   ④ 新增活動 —— 建在活動目錄（描述表 FreeTimeActivitiesRoot；TASK-0390 起只有這一處）
 // 數值影響：畫面純讀；寫入只有三個按鈕：設定「儲存」（驗證 → 暫存檔換檔 → 回讀）、活動欄位「套用」（逐欄寫回 md 並回讀）、
 //   「建立」（不覆寫既有檔）。三者寫完都重讀磁碟 —— **印 ✓ 不算數，讀回來才算**。
 //   設定存檔之後**下一場**（下一次 step=start／next）生效：free-time 每趟呼叫讀一次設定，沒有快取。
@@ -62,7 +62,7 @@ namespace SCP.Core.Gui
             m_Gen++;
             m_Data = m_Ctx.AgentCommandsRoot;
             m_Letters = m_Ctx.LettersRoot;
-            m_Project = m_Ctx.ProjectRoot;
+            m_Project = m_Ctx.FreeTimeActivitiesRoot;
 
             m_DiskSettings = null; m_Draft = null; m_SettingsError = null; m_SettingsFileExists = false;
             if (Ok(m_Data))
@@ -170,20 +170,18 @@ namespace SCP.Core.Gui
         {
             int aEnabled = 0;
             foreach (var a in m_Activities) if (a.Enabled) aEnabled++;
-            using (g.Fold($"② 活動清單（{m_Activities.Count} 項，啟用 {aEnabled}｜同 id 專案層覆蓋共用層）", "freetime/fold/acts"))
+            using (g.Fold($"② 活動清單（{m_Activities.Count} 項，啟用 {aEnabled}）", "freetime/fold/acts"))
             {
                 if (!Ok(m_Project))
                 {
-                    g.Note("⚠ **專案根量不到** ⇒ 這不是「沒有活動」：" + (m_Project.Error ?? "專案根是空的"));
+                    g.Note("⚠ **活動目錄量不到** ⇒ 這不是「沒有活動」：" + (m_Project.Error ?? "活動目錄是空的"));
                     return;
                 }
-                string aShared = SCP_FreeTimeCatalog.SharedDir(m_Project.Value, out string aWhy) ?? ("（解析不到：" + aWhy + "）");
-                g.Note("📦 共用層：`" + aShared + "`");
-                g.Note("🏠 專案層：`" + SCP_FreeTimeCatalog.ProjectDir(m_Project.Value) + "`");
+                g.Note("📁 活動目錄：`" + m_Project.Value + "`");
                 foreach (string w in m_ScanWarnings) g.Note("⚠ " + w);
                 if (m_Activities.Count == 0)
                 {
-                    g.Note("掃不到任何活動 md —— 兩層都是空的（環境異常，不是正常狀態）。");
+                    g.Note("掃不到任何活動 md —— 目錄是空的（環境異常，不是正常狀態）。");
                     return;
                 }
                 foreach (var a in m_Activities) DrawActivity(g, a);
@@ -193,14 +191,12 @@ namespace SCP.Core.Gui
         void DrawActivity(SCP_Ui g, SCP_FreeTimeActivity a)
         {
             string k = $"freetime/{m_Gen}/act/{a.Id}";
-            string aTitle = $"{(a.IsProjectLayer ? "🏠" : "📦")} {a.Name} `{a.Id}`"
+            string aTitle = $"{a.Name} `{a.Id}`"
                             + (a.Enabled ? "" : "　⛔ 停用")
                             + (string.IsNullOrEmpty(a.Group) ? "" : $"　（{a.Group}）");
             using (g.Fold(aTitle, k + "/fold", iDefaultOpen: false))
             {
                 g.Note("md：`" + a.Path + "`");
-                if (!a.IsProjectLayer)
-                    g.Note("⚠ 這一項在**共用層**（UCL_Core，跨專案）—— 在這裡改等於改所有專案。只想改本專案 ⇒ 用 ④ 建一個同 id 的專案層活動覆蓋它。");
 
                 bool aEnabled = g.Toggle("啟用", a.Enabled, k + "/enabled");
                 string aName = g.TextField("顯示名稱（name）", a.Name, k + "/name");
@@ -303,14 +299,14 @@ namespace SCP.Core.Gui
             }
         }
 
-        // ── ④ 新增活動（專案層）───────────────────────────────────────
+        // ── ④ 新增活動───────────────────────────────────────
 
         void DrawNewActivity(SCP_Ui g)
         {
-            using (g.Fold("④ 新增活動（建在專案層）", "freetime/fold/new", iDefaultOpen: false))
+            using (g.Fold("④ 新增活動", "freetime/fold/new", iDefaultOpen: false))
             {
-                if (!Ok(m_Project)) { g.Note("⚠ **專案根量不到** ⇒ 沒有地方建：" + (m_Project.Error ?? "空的")); return; }
-                g.Note("id 用 kebab-case，會成為檔名與骰面識別；同 id 會覆蓋共用層同名活動。只生 frontmatter ＋ 一段待補正文 —— GUI 生得出欄位，生不出「這個活動是什麼」。");
+                if (!Ok(m_Project)) { g.Note("⚠ **活動目錄量不到** ⇒ 沒有地方建：" + (m_Project.Error ?? "空的")); return; }
+                g.Note("id 用 kebab-case，會成為檔名與骰面識別；同 id 已存在則不覆寫。只生 frontmatter ＋ 一段待補正文 —— GUI 生得出欄位，生不出「這個活動是什麼」。");
                 string k = $"freetime/{m_Gen}/new";
                 string aId = g.TextField("id", "", k + "/id").Trim();
                 string aName = g.TextField("顯示名稱（留空＝用 id）", "", k + "/name").Trim();
@@ -321,7 +317,7 @@ namespace SCP.Core.Gui
                 {
                     if (!int.TryParse(aMinRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int aMin) || aMin < 0)
                     { m_Message = $"✗ 建議時間需為 ≥0 的整數（got `{aMinRaw}`）"; return; }
-                    bool aOk = SCP_FreeTimeCatalog.CreateProjectActivity(m_Project.Value, aId, aName.Length > 0 ? aName : aId,
+                    bool aOk = SCP_FreeTimeCatalog.CreateActivity(m_Project.Value, aId, aName.Length > 0 ? aName : aId,
                                                                        aHow, aGroup, aMin, out string aPath, out string? aErr);
                     Reload();
                     m_Message = aOk ? $"✓ 已建立並讀回：`{aPath}`（正文待補）" : "✗ 建立失敗：" + aErr;
