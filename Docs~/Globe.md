@@ -56,6 +56,14 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `sub=join`：加入成為成員；只有負責人與成員能 `sub=update`（`title`／`bbox`／`status=active|paused|done`／`note`）。
 - 畫完了就 `status=done`；框線顏色：黃＝施工中、橘＝暫停、灰＝完成。
 
+### 規劃進度（像任務單，但只管這一區）
+
+- `sub=plan --arg item=<一項>`：計畫清單加一項（例：本州海岸線、富士山、沖繩）。
+- `sub=check --arg index=<N> --arg expect_text=<那項開頭>`：勾掉＝署名＋時間。`expect_text` 對不上 ⇒ 一格都不勾（序號會因別人加項而對錯格）。
+- `sub=log --arg note=<做了什麼；下一步>`：進度日誌。接手的人先讀它。
+- 畫的時候帶 `--arg zone=<id>`：`sub=show` 由事件**自動統計**這一區畫了幾筆、幾格、誰畫的（被 undo 的不算）——不用手抄進日誌。
+- `sub=show` 一次給全貌：基本資料、計畫（含「下一項」）、最近日誌、繪製統計。開工前讀它，收工前寫一筆 log。
+
 ## 5. 看
 
 - `op=render`：CPU 正交投影輸出 PNG（最近鄰取色，決定性）。`graticule=<度>` 疊經緯線（0＝關）、`zones=1` 疊施工區框線、`seams=1` 疊面接縫（除錯用）。

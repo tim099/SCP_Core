@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using SCP.Core.Globe;
 using SCP.Core.Letters;
 using SCP.Core.Paths;
@@ -23,6 +24,7 @@ namespace SCP.Core.Cmd
             + "op：status（預設）｜init｜base｜cell｜point｜line｜polygon｜fill｜erase｜undo｜zone｜render｜history\n"
             + "· 橡皮擦：op=erase --arg shape=point|line|polygon|fill（參數同那一種畫法）⇒ 擦回底色（大海）。\n"
             + "· 施工區：op=zone --arg sub=add|list|show|join|update —— 標記「誰在這塊畫什麼」，可重疊、⛔ 不擋任何人下筆。\n"
+            + "  規劃進度：sub=plan（加計畫項）｜sub=check（勾項＝署名）｜sub=log（記做了什麼、下一步）；畫的時候帶 --arg zone=<id>，show 會自動統計這區畫了多少。\n"
             + "· 下筆前先 op=cell 查那一格現在是什麼 —— 別人畫的會被你蓋掉，而覆蓋不會報錯。\n"
             + "· 經緯度一律 lat,lon（度；北緯／東經為正）。點列：points=\"lat,lon;lat,lon;…\"（長的走 --arg-file）。\n"
             + "· color：#RRGGBB 或 r,g,b（全彩）；color=empty ＝ 擦回底色。\n"
@@ -39,7 +41,11 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("op", "status｜init｜base｜cell｜point｜line｜polygon｜fill｜erase｜undo｜zone｜render｜history",
                                iChoices: new[] { "status", "init", "base", "cell", "point", "line", "polygon", "fill", "erase", "undo", "zone", "render", "history" }),
             new SCP_CmdArgSpec("shape", "erase：point｜line｜polygon｜fill（預設 point）", iChoices: new[] { "point", "line", "polygon", "fill" }),
-            new SCP_CmdArgSpec("sub", "zone：add｜list｜show｜join｜update", iChoices: new[] { "add", "list", "show", "join", "update" }),
+            new SCP_CmdArgSpec("sub", "zone：add｜list｜show｜join｜update｜plan｜check｜log", iChoices: new[] { "add", "list", "show", "join", "update", "plan", "check", "log" }),
+            new SCP_CmdArgSpec("zone", "point／line／polygon／fill／erase：這一筆算在哪個施工區（zone show 依此統計進度）"),
+            new SCP_CmdArgSpec("item", "zone plan：計畫清單加一項（例：本州海岸線）"),
+            new SCP_CmdArgSpec("index", "zone check：勾第幾項（1-based，show 列的序號）"),
+            new SCP_CmdArgSpec("expect_text", "zone check：那一項的開頭文字（防序號對錯格；建議帶）"),
             new SCP_CmdArgSpec("id", "zone：施工區 id（小寫英數、-、_）"),
             new SCP_CmdArgSpec("title", "zone add／update：名稱（例：創造日本）"),
             new SCP_CmdArgSpec("bbox", "zone add／update：範圍 南,西,北,東（度；西 > 東 ＝ 跨 180°）"),
@@ -170,8 +176,7 @@ namespace SCP.Core.Cmd
             {
                 SCP_GlobeZone? z = zs.Find(aId);
                 if (z == null) return SCP_CmdResult.Fail(1, "✗ 沒有這個施工區：" + aId);
-                return SCP_CmdResult.Success(ZoneLine(z), "  成員：" + (z.Members.Count > 0 ? string.Join("、", z.Members) : "（只有負責人）"),
-                    "  建立 " + z.CreatedAt + "　更新 " + z.UpdatedAt + (z.Note.Length > 0 ? "\n  備註：" + z.Note : ""));
+                return ZoneShow(iStore, z);
             }
             if (aPersona.Length == 0) return SCP_CmdResult.Fail(2, "✗ zone " + aSub + " 要給 persona");
 
@@ -203,8 +208,42 @@ namespace SCP.Core.Cmd
                     zs.Save(z);
                     return SCP_CmdResult.Success("✓ 加入施工區 " + ZoneLine(z));
                 }
-                // update
                 if (!z.CanEdit(aPersona)) return SCP_CmdResult.Fail(2, $"✗ 只有負責人或成員能改 {aId}（先 sub=join）");
+                if (aSub == "plan")
+                {
+                    string aItem = iArgs.Get("item").Trim();
+                    if (aItem.Length == 0) return SCP_CmdResult.Fail(2, "✗ zone plan 要給 item（例：本州海岸線）");
+                    z.Items.Add(new SCP_GlobeZoneItem { Text = aItem, AddedBy = aPersona });
+                    z.UpdatedAt = Now();
+                    zs.Save(z);
+                    return SCP_CmdResult.Success($"✓ {aId} 計畫 #{z.Items.Count}：{aItem}").AddValue("index", z.Items.Count.ToString(CultureInfo.InvariantCulture));
+                }
+                if (aSub == "check")
+                {
+                    string aIdx = iArgs.Get("index").Trim(), aExpect = iArgs.Get("expect_text").Trim();
+                    if (!int.TryParse(aIdx, NumberStyles.None, CultureInfo.InvariantCulture, out int k) || k < 1 || k > z.Items.Count)
+                        return SCP_CmdResult.Fail(2, $"✗ index 要在 1..{z.Items.Count}：{aIdx}");
+                    SCP_GlobeZoneItem it = z.Items[k - 1];
+                    if (aExpect.Length > 0 && !it.Text.StartsWith(aExpect, StringComparison.Ordinal))
+                        return SCP_CmdResult.Fail(2, $"✗ 第 {k} 項是「{it.Text}」，不是以「{aExpect}」開頭 —— 一格都沒勾");
+                    if (it.Done) return SCP_CmdResult.Success($"· 第 {k} 項已經是 {it.DoneBy} 在 {it.DoneAt} 勾的");
+                    it.Done = true; it.DoneBy = aPersona; it.DoneAt = Now();
+                    z.UpdatedAt = it.DoneAt;
+                    zs.Save(z);
+                    int aLeft = z.Items.FindAll(x => !x.Done).Count;
+                    return SCP_CmdResult.Success($"✓ {aId} 勾了 #{k}：{it.Text}（{aPersona}）　還剩 {aLeft} 項")
+                        .AddValue("left", aLeft.ToString(CultureInfo.InvariantCulture));
+                }
+                if (aSub == "log")
+                {
+                    string aText = iArgs.Get("note").Trim();
+                    if (aText.Length == 0) return SCP_CmdResult.Fail(2, "✗ zone log 要給 note（做了什麼、下一步）");
+                    z.Logs.Add(new SCP_GlobeZoneLog { At = Now(), Persona = aPersona, Text = aText });
+                    z.UpdatedAt = Now();
+                    zs.Save(z);
+                    return SCP_CmdResult.Success($"✓ {aId} 日誌 +1（共 {z.Logs.Count} 筆）");
+                }
+                // update
                 string aTitle = iArgs.Get("title").Trim(), aBbox = iArgs.Get("bbox").Trim(), aStatus = iArgs.Get("status").Trim(), aNote = iArgs.Get("note").Trim();
                 if (aTitle.Length + aBbox.Length + aStatus.Length + aNote.Length == 0)
                     return SCP_CmdResult.Fail(2, "✗ zone update 沒給要改什麼（title／bbox／status／note）");
@@ -228,8 +267,54 @@ namespace SCP.Core.Cmd
         static string ZoneLine(SCP_GlobeZone z)
         {
             string aMark = z.Status == "done" ? "✅" : z.Status == "paused" ? "⏸" : "🚧";
+            int aDone = z.Items.FindAll(x => x.Done).Count;
             return $"{aMark} {z.Id}「{z.Title}」{z.Status}　負責 {z.Owner}" + (z.Members.Count > 0 ? "＋" + z.Members.Count + " 人" : "")
-                   + $"　範圍 {z.BboxText}";
+                   + $"　範圍 {z.BboxText}" + (z.Items.Count > 0 ? $"　計畫 {aDone}/{z.Items.Count}" : "");
+        }
+
+        /// <summary>施工區全貌：基本資料、計畫清單、日誌（最近 5 筆）、掛在這一區的繪製統計（由事件算，⛔ 不手抄）。</summary>
+        static SCP_CmdResult ZoneShow(SCP_GlobeStore iStore, SCP_GlobeZone z)
+        {
+            var r = new SCP_CmdResult();
+            r.Lines.Add(ZoneLine(z));
+            r.Lines.Add("  成員：" + (z.Members.Count > 0 ? string.Join("、", z.Members) : "（只有負責人）") + "　建立 " + z.CreatedAt + "　更新 " + z.UpdatedAt);
+            if (z.Note.Length > 0) r.Lines.Add("  備註：" + z.Note);
+            r.Lines.Add("## 計畫");
+            if (z.Items.Count == 0) r.Lines.Add("  （還沒有 —— sub=plan --arg item=<一項>）");
+            for (int k = 0; k < z.Items.Count; k++)
+            {
+                SCP_GlobeZoneItem it = z.Items[k];
+                r.Lines.Add($"  - [{(it.Done ? "x" : " ")}] #{k + 1} {it.Text}" + (it.Done ? $"　（{it.DoneBy} {it.DoneAt}）" : ""));
+            }
+            SCP_GlobeZoneItem? aNext = z.Items.Find(x => !x.Done);
+            if (aNext != null) r.Lines.Add("  ⇒ 下一項：" + aNext.Text);
+            r.Lines.Add("## 日誌（最近 5 筆）");
+            if (z.Logs.Count == 0) r.Lines.Add("  （還沒有 —— sub=log --arg note=<做了什麼、下一步>）");
+            for (int k = Math.Max(0, z.Logs.Count - 5); k < z.Logs.Count; k++)
+                r.Lines.Add($"  {z.Logs[k].At}  {z.Logs[k].Persona}：{z.Logs[k].Text}");
+
+            // 繪製統計：掛了這一區的事件（被 undo 的不算）
+            var aAll = iStore.History(int.MaxValue);
+            var aUndone = new HashSet<int>();
+            foreach (SCP_GlobeEvent e in aAll) if (e.Op == "undo") aUndone.Add(e.Target);
+            int aEvents = 0, aCells = 0;
+            var aWho = new SortedDictionary<string, int>(StringComparer.Ordinal);
+            var aRecent = new List<SCP_GlobeEvent>();
+            foreach (SCP_GlobeEvent e in aAll)
+            {
+                if (e.Zone != z.Id || e.Op == "undo" || aUndone.Contains(e.Seq)) continue;
+                aEvents++; aCells += e.Cells.Count / 3;
+                aWho[e.Persona] = (aWho.TryGetValue(e.Persona, out int n) ? n : 0) + 1;
+                aRecent.Add(e);
+            }
+            r.Lines.Add($"## 繪製（帶 zone={z.Id} 的有效事件）：{aEvents} 筆、{aCells:N0} 格"
+                        + (aWho.Count > 0 ? "　" + string.Join("、", aWho.Select(kv => kv.Key + "×" + kv.Value)) : ""));
+            for (int k = Math.Max(0, aRecent.Count - 5); k < aRecent.Count; k++)
+                r.Lines.Add($"  #{aRecent[k].Seq} {aRecent[k].At} {aRecent[k].Persona} {aRecent[k].Op} {aRecent[k].Cells.Count / 3:N0} 格" + (aRecent[k].Note.Length > 0 ? "　" + aRecent[k].Note : ""));
+            return r.AddValue("items", z.Items.Count.ToString(CultureInfo.InvariantCulture))
+                    .AddValue("items_done", z.Items.FindAll(x => x.Done).Count.ToString(CultureInfo.InvariantCulture))
+                    .AddValue("events", aEvents.ToString(CultureInfo.InvariantCulture))
+                    .AddValue("cells", aCells.ToString(CultureInfo.InvariantCulture));
         }
 
         static SCP_CmdResult Cell(SCP_GlobeStore iStore, SCP_CmdArgs iArgs)
@@ -305,7 +390,10 @@ namespace SCP.Core.Cmd
                     break;
                 }
             }
-            SCP_GlobeEvent? e = iStore.Paint(iErase ? "erase-" + iOp : iOp, aPersona, iArgs.Get("note").Trim(), aCells, aValue);
+            string aZone = iArgs.Get("zone").Trim();
+            if (aZone.Length > 0 && new SCP_GlobeZones(iStore.Paths).Find(aZone) == null)
+                return SCP_CmdResult.Fail(2, "✗ 沒有這個施工區：" + aZone + "（先 op=zone --arg sub=list）");
+            SCP_GlobeEvent? e = iStore.Paint(iErase ? "erase-" + iOp : iOp, aPersona, iArgs.Get("note").Trim(), aCells, aValue, aZone);
             var r = new SCP_CmdResult();
             string aColorText = aValue == SCP_GlobeCells.Empty ? "empty（擦回底色）" : SCP_GlobeCells.ToHex(aValue);
             if (e == null)

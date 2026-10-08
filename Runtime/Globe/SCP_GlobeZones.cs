@@ -10,8 +10,28 @@ using SCP.Core.Json;
 
 namespace SCP.Core.Globe
 {
+    /// <summary>施工區計畫清單的一項（像任務單的驗收格：勾＝署名）。</summary>
+    public sealed class SCP_GlobeZoneItem
+    {
+        public string Text { get; set; } = "";
+        public string AddedBy { get; set; } = "";
+        public bool Done { get; set; }
+        public string DoneBy { get; set; } = "";
+        public string DoneAt { get; set; } = "";
+    }
+
+    /// <summary>施工區進度日誌一筆：做了什麼、下一步。</summary>
+    public sealed class SCP_GlobeZoneLog
+    {
+        public string At { get; set; } = "";
+        public string Persona { get; set; } = "";
+        public string Text { get; set; } = "";
+    }
+
     public sealed class SCP_GlobeZone
     {
+        public List<SCP_GlobeZoneItem> Items { get; set; } = new List<SCP_GlobeZoneItem>();
+        public List<SCP_GlobeZoneLog> Logs { get; set; } = new List<SCP_GlobeZoneLog>();
         public string Id { get; set; } = "";
         public string Title { get; set; } = "";
         public string Owner { get; set; } = "";

@@ -61,6 +61,8 @@ namespace SCP.Core.Globe
         public List<int> Cells { get; set; } = new List<int>();
         /// <summary>undo：退的是哪一筆。</summary>
         public int Target { get; set; }
+        /// <summary>這一筆算在哪個施工區（選填；施工區的 show 用它統計進度）。</summary>
+        public string Zone { get; set; } = "";
     }
 
     sealed class SCP_GlobeCacheInfo
@@ -215,13 +217,13 @@ namespace SCP.Core.Globe
         /// 一筆繪製：<paramref name="iCells"/> 是要塗的格子（可重複，會去重），值 <paramref name="iValue"/>（0xRRGGBB，0＝擦掉）。
         /// 跟現值一樣的格子不記；全部一樣 ⇒ 不寫事件、回 null。
         /// </summary>
-        public SCP_GlobeEvent? Paint(string iOp, string iPersona, string iNote, IEnumerable<int> iCells, int iValue)
+        public SCP_GlobeEvent? Paint(string iOp, string iPersona, string iNote, IEnumerable<int> iCells, int iValue, string iZone = "")
         {
             if (iValue < 0 || iValue > 0xFFFFFF) throw new SCP_GlobeException("格子值越界：" + iValue);
             using (SCP_FileLock.Acquire(LockTargetReady()))
             {
                 SCP_GlobeState s = Load();
-                var e = new SCP_GlobeEvent { Seq = s.LastSeq + 1, Op = iOp, Persona = iPersona, Note = iNote, At = Now() };
+                var e = new SCP_GlobeEvent { Seq = s.LastSeq + 1, Op = iOp, Persona = iPersona, Note = iNote, At = Now(), Zone = iZone };
                 var aSeen = new HashSet<int>();
                 int aMax = s.Grid.CellCount;
                 foreach (int idx in iCells)
