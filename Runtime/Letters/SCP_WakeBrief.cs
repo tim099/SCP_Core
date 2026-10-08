@@ -595,32 +595,16 @@ namespace SCP.Core.Letters
             List<string> aForests = SCP_WakeLetters.ListForests(iLettersRoot, iPersona);
             var aLines = new List<string>();
 
-            int aCovered = aDigests.Count > 0 ? LastCoveredWake(aDigests[aDigests.Count - 1]) : 0;
-            if (aDigests.Count == 0)
+            DigestGapReading aGap = MeasureDigestGap(iLettersRoot, iPersona, iWakeCount);
+            if (!aGap.Measured)
             {
-                aLines.Add("- 見林進度：尚無見林（本次 wake " + iWakeCount + "）");
-            }
-            else if (aCovered <= 0)
-            {
-                // 🩸 檔名解析不出來時**不准假裝 gap 是 0** —— 那會讓「該濃縮了」永遠不出現。
-                aLines.Add("- ⚠ 見林進度：最後一份是 `" + Path.GetFileName(aDigests[aDigests.Count - 1])
-                           + "`，但檔名解不出涵蓋到第幾個 wake ⇒ **gap 量不到**（不是 0）");
-            }
-            else if (iWakeCount - aCovered < 0)
-            {
-                // ⚠ 第二道：檔名**解出來了，而它不可能是真的**（涵蓋到的 wake 比現在還大）。
-                //   上面那道只擋「解不出」，擋不住這種 —— 而錯的那個值長得像合法讀數，
-                //   🩸 負 gap 又永遠 < 門檻 ⇒ 它會拿到一個 `✓`，提醒靜默失效。
-                aLines.Add("- ⚠ 見林進度：最後一份是 `" + Path.GetFileName(aDigests[aDigests.Count - 1])
-                           + "`，解出「涵蓋到 wake " + aCovered + "」而本次才 wake " + iWakeCount
-                           + " ⇒ **gap 量不到**（不是 0，也不是負數）");
+                aLines.Add("- ⚠ 見林進度：" + aGap.Problem + " ⇒ **gap 量不到**（不是 0，也不是負數）");
             }
             else
             {
-                int aGap = iWakeCount - aCovered;
-                string aMark = aGap >= iS.DigestGapOverdue ? "🔴 **OVERDUE**" : "✓";
-                aLines.Add("- " + aMark + " 見林進度：gap=" + aGap + "/" + iS.DigestGapOverdue
-                           + "（上次到 wake " + aCovered + "）");
+                string aMark = aGap.Gap >= iS.DigestGapOverdue ? "🔴 **OVERDUE**" : "✓";
+                aLines.Add("- " + aMark + " 見林進度：gap=" + aGap.Gap + "/" + iS.DigestGapOverdue
+                           + (aGap.NeverConsolidated ? "（尚無見林，從出生算）" : "（上次到 wake " + aGap.Covered + "）"));
             }
 
             aLines.Add("- " + (aForests.Count > 0
@@ -688,6 +672,48 @@ namespace SCP.Core.Letters
                 // 讀失敗要出聲：靜默回 0 會把「量不到」講成「沒有單」。
                 return "- 📋 我涉及的未結單：**量不到**（" + e.GetType().Name + ": " + e.Message + "）";
             }
+        }
+
+        /// <summary>見林 gap 的讀數 —— 早安 wake 回傳檔、brief §6、§9 共用（各算一份必然漂移，TASK-0465）。</summary>
+        public sealed class DigestGapReading
+        {
+            /// <summary>false ＝ 量不到（⛔ 不是 0），原因在 <see cref="Problem"/>。</summary>
+            public bool Measured;
+            public int Gap;
+            /// <summary>最後一份見林涵蓋到的 wake；從沒見林過 ＝ 0。</summary>
+            public int Covered;
+            public bool NeverConsolidated;
+            public string Problem = "";
+        }
+
+        // 物理意義：gap ＝ 本次 wake − 最後一份見林涵蓋到的 wake。
+        //   從沒見林過 ⇒ 從出生算（gap ＝ 本次 wake；Tim 2026-10-08 拍板）—— 不然新 persona 永遠不會被提醒第一次見林。
+        //   量不到只留給「有見林檔，但檔名解不出／解出不可能的值」：
+        //   🩸 檔名解不出時**不准假裝 gap 是 0** —— 那會讓「該濃縮了」永遠不出現。
+        //   🩸 解出比本次 wake 還大的值長得像合法讀數，而負 gap 永遠 < 門檻 ⇒ 會拿到 `✓`，提醒靜默失效。
+        public static DigestGapReading MeasureDigestGap(string iLettersRoot, string iPersona, int iWakeCount)
+        {
+            List<string> aDigests = SCP_WakeLetters.ListDigests(iLettersRoot, iPersona);
+            var aR = new DigestGapReading();
+            if (aDigests.Count == 0)
+            {
+                aR.Measured = true;
+                aR.NeverConsolidated = true;
+                aR.Gap = iWakeCount;
+                return aR;
+            }
+            string aLast = Path.GetFileName(aDigests[aDigests.Count - 1]);
+            aR.Covered = LastCoveredWake(aDigests[aDigests.Count - 1]);
+            if (aR.Covered <= 0)
+                aR.Problem = "最後一份是 `" + aLast + "`，但檔名解不出涵蓋到第幾個 wake";
+            else if (iWakeCount - aR.Covered < 0)
+                aR.Problem = "最後一份是 `" + aLast + "`，解出「涵蓋到 wake " + aR.Covered + "」而本次才 wake " + iWakeCount;
+            else
+            {
+                aR.Measured = true;
+                aR.Gap = iWakeCount - aR.Covered;
+            }
+            return aR;
         }
 
         /// <summary>從見林檔名（`wake_072-081.md`）取涵蓋到的最後一個 wake。解不出來回 0。</summary>
@@ -885,16 +911,15 @@ namespace SCP.Core.Letters
         // 物理意義：只列「現在就成立」的動作 —— 不成立的動作寫上去會被當成待辦而永遠躺著。
         static SCP_BriefSection NextActionsSection(string iLettersRoot, string iPersona, int iWakeCount, SCP_WakeBriefSettings iS)
         {
-            List<string> aDigests = SCP_WakeLetters.ListDigests(iLettersRoot, iPersona);
             var aLines = new List<string>();
 
-            int aCovered = aDigests.Count > 0 ? LastCoveredWake(aDigests[aDigests.Count - 1]) : 0;
-            int aGap = aCovered > 0 ? iWakeCount - aCovered : -1;
-            if (aGap >= iS.DigestGapOverdue)
-                aLines.Add("- 🔴 **見林 OVERDUE**（gap=" + aGap + "）⇒ `cmd consolidate"
+            DigestGapReading aGap = MeasureDigestGap(iLettersRoot, iPersona, iWakeCount);
+            bool aOverdue = aGap.Measured && aGap.Gap >= iS.DigestGapOverdue;
+            if (aOverdue)
+                aLines.Add("- 🔴 **見林 OVERDUE**（gap=" + aGap.Gap + "）⇒ `cmd consolidate"
                            + " --arg persona=" + iPersona + "`（不給 digest_body ＝ 只看狀態）");
-            else if (aGap < 0)
-                aLines.Add("- ⚠ 見林 gap 量不到（檔名解不出涵蓋範圍）⇒ 去看 `longterm/` 那幾份的檔名");
+            else if (!aGap.Measured)
+                aLines.Add("- ⚠ 見林 gap 量不到（" + aGap.Problem + "）⇒ 去看 `longterm/` 那幾份的檔名");
             else
                 aLines.Add("- 記憶維護無待辦（見 §6）。");
 
@@ -904,7 +929,7 @@ namespace SCP.Core.Letters
             //   正是本區塊開頭那句「不成立的動作寫上去會被當成待辦而永遠躺著」在防的形狀。
             // ⚠ 不是把提示拿掉：見林那條必經路上（`SCP_Cmd_Consolidate`）本來就印同一份讀數，
             //   所以折人的提醒在**該做它的那一刻**仍然會出現 —— 這裡刪的是射程外的那一份。
-            if (aGap >= iS.DigestGapOverdue)
+            if (aOverdue)
             {
                 int aFoldTargets = 0;
                 int aFoldPortraits = 0;

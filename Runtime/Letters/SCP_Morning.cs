@@ -68,7 +68,6 @@ namespace SCP.Core.Letters
 
     public static class SCP_Morning
     {
-        public const int CONSOLIDATE_GAP_THRESHOLD = 10;
         public const string INTRO_REFERENCE_SLUG = "gura";
 
         public static string NowIso() => DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
@@ -235,9 +234,10 @@ namespace SCP.Core.Letters
 
             // 回傳 payload：verify 給可讀回的事實（路徑/值），不給 ✓
             SCP_JsonData aReadback = SCP_PersonaProfile.GetRaw(iR.LettersRoot, iPersona, aRegion) ?? SCP_JsonData.NewObject();
-            int aBookmark = aReadback.GetInt("last_consolidated_wake", 0);
-            bool aGapMeasured = aBookmark > 0 && aDerived - aBookmark >= 0;
-            int aGap = aGapMeasured ? aDerived - aBookmark : 0;
+            // 見林 gap 與門檻跟 brief §6/§9 同一支量法、同一份設定（TASK-0465：三處各算一份就各說各的）
+            SCP_WakeBrief.DigestGapReading aGap = SCP_WakeBrief.MeasureDigestGap(iR.LettersRoot, iPersona, aDerived);
+            int aGapOverdue = SCP_WakeBriefSettings.ReadOrDefault(iR.DataRoot).DigestGapOverdue;
+            bool aOverdue = aGap.Measured && aGap.Gap >= aGapOverdue;
             aR.AppendLine();
             if (aArrival.Count > 0)
             {
@@ -263,11 +263,9 @@ namespace SCP.Core.Letters
             aR.AppendLine($"- lock: `{aLockPath}`（exists={File.Exists(aLockPath)}）");
             aR.AppendLine($"- memo: `{aMemoPath}`（exists={File.Exists(aMemoPath)}）");
             aR.AppendLine("## state");
-            aR.AppendLine(aGapMeasured
-                ? $"- 見林 gap: {aGap}/{CONSOLIDATE_GAP_THRESHOLD}{(aGap >= CONSOLIDATE_GAP_THRESHOLD ? "（**OVERDUE — 排進今日**）" : "")}"
-                : $"- ⚠ 見林 gap: **量不到**（`last_consolidated_wake`"
-                  + (aBookmark > 0 ? $"={aBookmark} 比本次 wake {aDerived} 還大" : " 讀不到")
-                  + "）—— ⛔ 不是 0；詳情見 brief §6");
+            aR.AppendLine(aGap.Measured
+                ? $"- 見林 gap: {aGap.Gap}/{aGapOverdue}{(aGap.NeverConsolidated ? "（尚無見林，從出生算）" : "")}{(aOverdue ? "（**OVERDUE — 排進今日**）" : "")}"
+                : $"- ⚠ 見林 gap: **量不到**（{aGap.Problem}）—— ⛔ 不是 0；詳情見 brief §6");
             int aKeysOpen;
             try { aKeysOpen = SCP_WakeLetters.KeysEntries(iR.LettersRoot, iPersona).Todo.Count; }
             catch (Exception) { aKeysOpen = -1; }
@@ -298,7 +296,7 @@ namespace SCP.Core.Letters
                 for (int i = 1; i < aTodo.Count; i++) aR.AppendLine(aTodo[i]);
             }
             foreach (string aLine in IntroNextLines(iPersona, ref aStepNo)) aR.AppendLine(aLine);
-            if (aGap >= CONSOLIDATE_GAP_THRESHOLD)
+            if (aOverdue)
             {
                 aR.AppendLine($"{aStepNo++}. 見林 OVERDUE → {SCP_CmdRegistry.InvokeOf<SCP_Cmd_Consolidate>("--arg persona=" + iPersona)}");
                 aR.AppendLine("   （不帶 digest_body ＝ 只列狀態與待濃縮信件；寫入時長內文走 --arg-file digest_body=<檔>）");
