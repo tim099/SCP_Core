@@ -16,6 +16,8 @@ namespace SCP.Core.Globe
         /// <summary>經緯線間隔（度）；0 ＝ 不畫。</summary>
         public double Graticule = 10;
         public bool Seams;
+        /// <summary>要疊框線的施工區（空＝不疊）。</summary>
+        public System.Collections.Generic.List<SCP_GlobeZone> Zones = new System.Collections.Generic.List<SCP_GlobeZone>();
     }
 
     public static class SCP_GlobeRender
@@ -56,14 +58,17 @@ namespace SCP.Core.Globe
                     if (c == SCP_GlobeCells.Empty) c = aBase;
                     double shade = 0.35 + 0.65 * Math.Max(0, dx * lx + dy * ly + dz * lz);
                     double R = ((c >> 16) & 255) * shade, G = ((c >> 8) & 255) * shade, B = (c & 255) * shade;
-                    if (v.Graticule > 0)
+                    if (v.Graticule > 0 || v.Zones.Count > 0)
                     {
                         SCP_GlobeGrid.DirToLatLon(dx, dy, dz, out double aLat, out double aLon);
                         double tol = aTolDeg / Math.Max(sz, 0.15);
+                        if (ZoneEdge(v.Zones, aLat, aLon, tol * 2, out int zr, out int zg, out int zb)) { R = zr; G = zg; B = zb; goto Done; }
+                        if (v.Graticule <= 0) goto Done;
                         double eLat = Math.Abs(aLat - Math.Round(aLat / v.Graticule) * v.Graticule);
                         double eLon = Math.Abs(aLon - Math.Round(aLon / v.Graticule) * v.Graticule) * Math.Cos(aLat * Math.PI / 180);
                         if (eLat < tol || (eLon < tol && Math.Abs(aLat) < 89)) { R = R * 0.55 + 255 * 0.45; G = G * 0.55 + 255 * 0.45; B = B * 0.55 + 255 * 0.45; }
                     }
+                    Done:
                     rgba[o] = Clamp(R); rgba[o + 1] = Clamp(G); rgba[o + 2] = Clamp(B); rgba[o + 3] = 255;
                 }
 
@@ -84,6 +89,33 @@ namespace SCP.Core.Globe
 
         public static byte[] RenderPng(SCP_GlobeState s, SCP_GlobeView v)
             => SCP_CanvasPng.EncodeRgbaRows(RenderRgba(s, v), v.Size, v.Size);
+
+        /// <summary>這個經緯度是不是落在某個施工區的框線上（框內、離任一邊 &lt; tol 度）。顏色看狀態。</summary>
+        static bool ZoneEdge(System.Collections.Generic.List<SCP_GlobeZone> iZones, double iLat, double iLon, double iTol, out int r, out int g, out int b)
+        {
+            r = g = b = 0;
+            double c = Math.Max(Math.Cos(iLat * Math.PI / 180), 0.01);
+            foreach (SCP_GlobeZone z in iZones)
+            {
+                if (!z.Contains(iLat, iLon)) continue;
+                double dW = LonGap(iLon, z.West) * c, dE = LonGap(z.East, iLon) * c;
+                if (iLat - z.South < iTol || z.North - iLat < iTol || dW < iTol || dE < iTol)
+                {
+                    if (z.Status == "done") { r = 200; g = 200; b = 200; }
+                    else if (z.Status == "paused") { r = 255; g = 150; b = 40; }
+                    else { r = 255; g = 230; b = 0; }
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>從 a 往東走到 b 的經度差（0..360）。</summary>
+        static double LonGap(double a, double b)
+        {
+            double d = (a - b) % 360;
+            return d < 0 ? d + 360 : d;
+        }
 
         static byte Clamp(double d) => d <= 0 ? (byte)0 : d >= 255 ? (byte)255 : (byte)(d + 0.5);
     }

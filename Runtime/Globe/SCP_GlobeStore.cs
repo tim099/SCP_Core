@@ -264,6 +264,9 @@ namespace SCP.Core.Globe
 
         string LockTargetReady() { Directory.CreateDirectory(Paths.Root); return Paths.LockTarget; }
 
+        /// <summary>跟繪製同一把鎖（施工區的「查有沒有同 id → 寫檔」要在鎖裡，不然兩人同時開同名區會互蓋）。</summary>
+        public SCP_FileLock AcquireLock() => SCP_FileLock.Acquire(LockTargetReady());
+
         public List<SCP_GlobeEvent> History(int iLast)
         {
             var a = new List<SCP_GlobeEvent>();
