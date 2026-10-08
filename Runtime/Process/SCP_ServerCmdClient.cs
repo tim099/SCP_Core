@@ -1,7 +1,6 @@
 // 區塊職責：**把一筆 Cmd 送給 Senate Server 並等它的判定** —— 檔案協議的 client 那一半。
-// 物理意義：TASK-0106 第 5 步。Unity Editor 需要這條路（委派酒館寫入），而 Senate 那側的
-//           `AgentCmdClient` 住在 `Senate.Core`（吃 `System.Text.Json.Nodes`）—— Unity 編不到。
-//           ⇒ 本檔是同一個協議的 netstandard2.1 版，兩個宿主都編得過。
+// 物理意義：TASK-0106。`AgentCmdClient` 住在 `Senate.Core`（吃 `System.Text.Json.Nodes`）—— SCP_Core 引用不到。
+//           ⇒ 本檔是同一個協議的 netstandard2.1 版（呼叫端例：`SenateTavernDeferred`）。
 //
 // 🔴 **兩份實作 ＝ 會分岔**，而分岔的失效樣子是「送出去了，對面永遠看不到」——
 //   queue 落在對的路徑、JSON 合法、trigger 也寫了，而 Watcher 不認得那個形狀，於是**沒有人報錯**。
@@ -111,7 +110,7 @@ namespace SCP.Core.Proc
         /// append 一筆 OneShot 指令到 `queue.json` 並寫 `pending.trigger`，回傳 cmd_id。
         /// <para>⚠ 既有指令（含本版不認得的欄位）**原樣保留** —— 讀改寫，⛔ 不整檔重生。</para>
         /// <para>🔴 **讀改寫整段在 <see cref="SCP_FileLock"/> 裡**（TASK-0263）：這顆 queue 有多個
-        /// 寫入端（每顆 CLI／Unity Editor／Server 執行器）。沒有互斥時兩邊各自讀到同一份舊內容、
+        /// 寫入端（每顆 CLI／Server 執行器）。沒有互斥時兩邊各自讀到同一份舊內容、
         /// 各自寫回，**後寫的把先寫的那一筆整個吃掉** —— 而每一層都回報成功。
         /// 實測（2026-09-21，60 筆併發委派）：落盤 55，client **全部 exit 0**。</para>
         /// <para>⛔ 別把 `WriteAtomic` 讀成已經有互斥了：它保護的是「寫到一半的檔」，
@@ -253,7 +252,7 @@ namespace SCP.Core.Proc
             return aNode;
         }
 
-        /// <summary>temp → move overwrite；撞檔鎖 backoff 重試（Editor 與 Server 可能同時碰同一個 queue）。</summary>
+        /// <summary>temp → move overwrite；撞檔鎖 backoff 重試（多個寫入端可能同時碰同一個 queue）。</summary>
         static void WriteAtomic(string iPath, string iPayload)
         {
             string aTmp = iPath + ".tmp." + Guid.NewGuid().ToString("N").Substring(0, 6);

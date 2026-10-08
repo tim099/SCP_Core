@@ -138,8 +138,8 @@ namespace SCP.Core.Watch
                     catch (Exception e) { oLines.Add($"⚠ 準備檔讀不動 {Path.GetFileName(aPp)}: {e.Message}"); }
 
                     // ── TASK-0076：準備檔的「檔名」與「內容 media_id」交叉對帳 ──
-                    // 🩸 側門：C# Editor 那側的守衛掛在 `LoadPrepared`，而**本路徑是直接讀檔** ——
-                    //    守衛沒蓋到這條路時，它的失效樣子跟「沒有守衛」一模一樣（kiara 指出的射程洞）。
+                    // 🩸 **本路徑是直接讀檔** ⇒ 守衛要掛在這裡 —— 守衛沒蓋到這條路時，
+                    //    它的失效樣子跟「沒有守衛」一模一樣（kiara 指出的射程洞）。
                     // ⛔ **不挑一邊、不自動修**：矛盾就把 prepared 清空，讓章號／章名退回「要人明示」，
                     //    而不是拿一份不知道自己是誰的檔去決定這一章叫什麼、編號幾號。
                     string aInner = aPrepared.GetString("media_id", "");

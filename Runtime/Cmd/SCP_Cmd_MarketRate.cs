@@ -36,7 +36,7 @@ namespace SCP.Core.Cmd
             + "· `op=fee`：設定**全域單筆成交手續費率**（`--arg fee_pct=0.001` ＝ 0.1%）。\n"
             + "· `op=source`：設定某券的抓取端點（`--arg symbol=<券> --arg url=<端點> --arg kind=<解析器>`）。\n"
             + "· `op=sync`：從已設定的端點刷新報價並落盤（`--arg symbol=<單一券>` 可只刷一個；`--arg force=1` 無視 TTL）。\n"
-            + "  ⛔ 抓取由**宿主注入**（Senate CLI 有；Unity 端沒有 ⇒ 會明說「本宿主未註冊抓取器」而不是靜默沒事）。\n"
+            + "  ⛔ 抓取由**宿主注入**（沒註冊的宿主會明說「本宿主未註冊抓取器」而不是靜默沒事）。\n"
             + "  ⭐ **平常不手動跑**（Tim 2026-09-28）：每天由 Senate 端的 `demurrage op=run` 發完券之後觸發（`--arg day=<UTC 日>`，一天一版）。\n"
             + "  ⭐ 有更新才寫**一個歷史版本**（`Market/history/rates_<抓取時間>.json`，一版一檔、先於快取落盤）；沒更新不寫。\n"
             + "· `op=history`：歷史匯率。`--arg symbol=<券>` 查走勢（中間價序列＋變動幅度＋波動度，`since`／`until` 限區間）；\n"
@@ -382,7 +382,7 @@ namespace SCP.Core.Cmd
                 return SCP_CmdResult.Fail(3,
                     "✗ **本宿主未註冊抓取器** ⇒ 抓不了。\n"
                     + "  · 這不是「沒有新報價」，是這個宿主沒有網路出口（SCP_Core 刻意不引入 HTTP，見 SCP_RateSource.cs 守衛①）。\n"
-                    + "  · Senate CLI／Server 會註冊；Unity Editor 端不會 ⇒ 請從 Senate 那側跑。");
+                    + "  · Senate CLI／Server 會註冊 ⇒ 請從 Senate 跑。");
             }
 
             var aFetcher = SCP_HttpFetch.Current!;

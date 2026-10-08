@@ -1,13 +1,12 @@
 // 區塊職責：**Process 管理頁** —— SCP_ProcessRegistry 的 UI 入口：列出所有登記過的 process、
 //           即時身分驗證（Alive / Dead / PidReused / Unknown）、防誤殺 kill、殘留記錄清理。
-// 物理意義：對照 Unity 端的 UCL_ProcessAdminPage（2026-07-27 Tim 拍板那套的頁面半邊）。
-//           它是 TASK-0101，也是 Senate 常駐 Server（TASK-0100）的第一格：Server 之後會用
+// 物理意義：它是 TASK-0101，也是 Senate 常駐 Server（TASK-0100）的第一格：Server 之後會用
 //           tag `senate_server` 把自己登記進同一個 registry，這一頁就是人看得到它的地方。
 //           ⛔ 本頁**不 spawn 任何 process** —— 它只讀、只 kill 身分驗證過的、只清殘檔。
 // 數值影響：讀 SCP_ProcessRegistry（每筆 Validate 會打一次 OS API）；寫入只有三種：
 //           KillRegistered（Alive 且二段確認）、Unregister（非 Alive 的記錄檔）、CleanupStale。
 //
-// ⚠ 刻意跟 UCL 那版不同的三格：
+// ⚠ 刻意的三格：
 //   ① **二段確認住 session 欄位，不用 5 秒計時器。** CLI 每次呼叫是新 process ⇒ 頁面欄位裡的
 //      「已 arm」活不過一個指令，而計時器在純文字那側根本沒有第二幀可以過期
 //      （SubmoduleSyncPage 2026-08 踩過：待確認態放頁面欄位 ⇒ 純文字那側永遠停在第一步）。
@@ -35,7 +34,7 @@ namespace SCP.Core.Gui
 
         /// <summary>
         /// 視窗模式下兩次 Validate 之間至少隔多久 —— 每幀對每顆 process 打 OS API 是穩定的效能坑，
-        /// 而它不會叫（UCL 那版也是 2 秒）。純文字／指令模式每次都是新 process，這個節流自然不生效。
+        /// 而它不會叫。純文字／指令模式每次都是新 process，這個節流自然不生效。
         /// </summary>
         public const double RefreshIntervalSeconds = 2.0;
 

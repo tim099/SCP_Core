@@ -25,11 +25,9 @@ namespace SCP.Core.Library
         // 區塊職責：由 reader.json 重算閱讀卡，寫正本並轉發副本。
         // 數值影響：讀不到 reader.json ⇒ **一個檔都不寫**（⛔ 不寫一張空卡片 ——
         //           那會讓「還沒讀」與「讀不到」在書架上同形）。
-        // ⚠ <paramref name="oForwardWarning"/> 是本層與 Editor 版**唯一**的行為差異，而它是結構性的：
-        //   Editor 版轉發失敗時吞掉例外並 `Debug.LogWarning`，而 SCP_Core 叫不到 Unity，
-        //   也 ⛔ 不該自己造第二套 log 管道。⇒ 警告**交出去**，由呼叫端決定印不印。
-        //   📌 檔案產物逐位元組相同；差的只有「那句警告從哪裡出來」。
-        //   而方向沒有變：**轉發失敗不連累正本**（正本先寫、副本後寫，失敗不回滾）。
+        // ⚠ <paramref name="oForwardWarning"/>：SCP_Core ⛔ 不自己造 log 管道
+        //   ⇒ 轉發失敗的警告**交出去**，由呼叫端決定印不印。
+        //   **轉發失敗不連累正本**（正本先寫、副本後寫，失敗不回滾）。
         // ===========================================================
         public static void SyncBookshelf(SCP_LettersRoot iLettersRoot, string iDataRoot,
                                          string iMediaId, string iPersona,
@@ -51,7 +49,7 @@ namespace SCP.Core.Library
         // 🩸 為什麼要把它從 `SyncBookshelf` 裡拆出來（TASK-0166）：那一支的唯一出口是寫檔，
         //   ⇒ 「它產出什麼」這件事**無法被對拍**，除非先寫進真的資料樹再讀回來 ——
         //   而那正是「我自己造的證人跟我同源」那一族：用寫入端去驗寫入端。
-        //   ⇒ 拆出純函式之後，Editor 端落在磁碟上的那幾百份 `bookshelf.md` 才變成得了對照組。
+        //   ⇒ 拆出純函式之後，磁碟上既有的那幾百份 `bookshelf.md` 才變成得了對照組。
         // 數值影響：零寫入。讀不到 reader.json ⇒ 回 null ＋ oError（⛔ 不回一張空卡片）。
         // ===========================================================
         public static string? RenderCard(string iDataRoot, string iMediaId, string iPersona,

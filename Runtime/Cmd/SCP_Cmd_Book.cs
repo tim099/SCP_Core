@@ -1,4 +1,4 @@
-// 區塊職責：`cmd book` —— 書本筆記庫（`BookNotes/<slug>/`）的建檔（**原生**，不需要 Unity）。
+// 區塊職責：`cmd book` —— 書本筆記庫（`BookNotes/<slug>/`）的建檔。
 // 物理意義：這是 `library.py add-book` 的移植（TASK-0143 ②-bis 那條線的第一刀）。
 //           落點是**舊 store**（`BookNotes/<slug>/book.json` ＋ `chapters/`／`characters/`），
 //           ⛔ 不是 `BookNotes/Library/work|media/` 那個新 store ——
@@ -50,7 +50,7 @@ namespace SCP.Core.Cmd
 
         public override string Summary =>
             "書本筆記庫：開新書（`op=add`）／記一章（`op=log-chapter`）／記階段大綱（`op=arc`）"
-            + "／列出寫到一半的書（`op=writing`）—— **本地跑，不需要 Editor**";
+            + "／列出寫到一半的書（`op=writing`）—— **本地跑**";
 
         public override string Details =>
             "⭐ `op=log-chapter` 寫 `<book>/chapters/ch<NN>_<slug>.md` ＋ 把 `book.json` 的\n"
@@ -300,7 +300,7 @@ namespace SCP.Core.Cmd
         // ── op=classify ───────────────────────────────────────────────────────
         // 區塊職責：設定某本書的 kind／series／volume（唯一的分類寫入通道；TASK-0403）。**只改分類欄位，不動錢。**
         // ⚠ `series`／`parent_series` 用 IsExplicit 判斷「有沒有傳」而不是判空字串：
-        //   傳空字串是「脫離系列」的唯一表達方式，跟沒傳是兩件事（Unity 版用 args.ContainsKey，同一個判準）。
+        //   傳空字串是「脫離系列」的唯一表達方式，跟沒傳是兩件事。
         static SCP_CmdResult OpClassify(string iDataRoot, SCP_CmdArgs iArgs)
         {
             string aBook = iArgs.Get("book").Trim();
@@ -319,7 +319,7 @@ namespace SCP.Core.Cmd
             return aResult;
         }
 
-        /// <summary>把報表整段逐行放進結果 —— ⚠ 尾端空行**不吃掉**（吃掉就跟 Editor 那側差一格）。</summary>
+        /// <summary>把報表整段逐行放進結果 —— ⚠ 尾端空行**不吃掉**。</summary>
         static SCP_CmdResult Emit(string iText)
         {
             string aText = (iText ?? "").Replace("\r\n", "\n");

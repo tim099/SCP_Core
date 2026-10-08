@@ -1,7 +1,7 @@
 // 區塊職責：一個 agent target 的安裝位置 —— skill 裝哪、入口檔放哪。
 // 物理意義：每家 agent 讀自己的目錄（Claude `.claude/skills/`、Codex `.codex/skills/`、
 //           Antigravity `.agents/skills/`）。⚠ 三者**必須各自獨立**：
-//           🩸 UCL 那邊踩過 —— Codex 一度共用 Antigravity 的 `.agents/skills/.ucl_installed`，
+//           🩸 踩過 —— Codex 一度共用 Antigravity 的標記檔 `.agents/skills/.ucl_installed`，
 //           於是 Codex 頁面讀到別人的標記後**誤判為已安裝**。
 // 數值影響：純字串（路徑組裝走 SCP_Paths 的同一套規矩：根傳進來、不推導）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。

@@ -5,9 +5,9 @@
 //               的 submodule **一次掃完、一張清單**（原本是 agent / letters / submodules 三種模式各掃各的）。
 //            ② **不再判斷 persona 是否在線** —— 自動 commit 管理的部分**不應該手動 commit**
 //               ⇒ 那些群的檔是機器獨佔的，沒有「她正在寫」這回事；親筆檔本來就不在任何一群裡。
-//          🩸 下沉時順手收掉一個分岔：Unity 頁面的提交路徑**沒有** Cmd 那三道 BUG-30 守衛
-//            （呼叫前 index 已有 staged 檔 → 擋／pathspec 提交／提交後對帳），失敗時還整個 `git reset`。
-//            兩個入口同一件事、守衛不一樣，而兩邊各自看起來都正常。⇒ 這裡只有一條提交路徑，守衛以 Cmd 版為準。
+//          ⭐ 只有一條提交路徑，帶 BUG-30 三道守衛
+//            （呼叫前 index 已有 staged 檔 → 擋／pathspec 提交／提交後對帳）。
+//            🩸 兩個入口各走各的提交路徑時守衛會不一樣，而兩邊各自看起來都正常。
 // 數值影響：
 //   · 掃描唯讀（rev-parse / diff --cached / status / config）。
 //   · 提交只寫**該 repo 自己的 history**：具名 stage（⛔ 絕不 `git add -A`）→ `--pathspec-from-file` 提交
@@ -344,7 +344,7 @@ namespace SCP.Core.Git
                 //   （還沒登記進 .gitmodules 的那種）。它跟 submodule pointer 同一族：`git add` 會把它當成
                 //   沒有 .gitmodules 的 gitlink 塞進去，而那不會報錯。
                 // 🩸 TASK-0340 沙盒實測：新的信件庫 `ChatTavern/baton/letters/alice/` 被 `ChatTavern/` 前綴吃進
-                //   **runtime 群（預設勾選）**—— UCL 版的規則表同形，一樣會中。⇒ 一律歸 __subptr（永不自動收）。
+                //   **runtime 群（預設勾選）**。⇒ 一律歸 __subptr（永不自動收）。
                 bool aNestedRepo = aPath.EndsWith("/", StringComparison.Ordinal);
                 string? aKey = SCP_AutoCommitRules.Classify(aPath, iRepo.Defs, aNestedRepo || aSubPaths.Contains(aPath));
                 if (aKey == null) { iRepo.Ephemeral++; continue; }

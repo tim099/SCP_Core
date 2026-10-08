@@ -1,4 +1,4 @@
-// 區塊職責：inbox 歸檔的 CLI 入口 —— `senate cmd tavern-inbox-ack`（TASK-0409：取代 UCL_Core 的 python `inbox_ack.py`）。
+// 區塊職責：inbox 歸檔的 CLI 入口 —— `senate cmd tavern-inbox-ack`（TASK-0409）。
 // 物理意義：**Cmd 是入口不是實作** —— 歸檔本體在 `SCP_TavernInbox.Ack`，跟 Append／trim 同一把跨 process 鎖。
 //           ack ＝「已處理」，不是「已看過」：歸檔之後這些條目不會再出現在 catchup 的 inbox 區。
 // 數值影響：每一房各自歸檔（一房失敗不影響其他房）；寫 archive 失敗就不動 inbox（不漏存）。
@@ -17,7 +17,7 @@ namespace SCP.Core.Tavern
         public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_TavernCatchup>();
 
         public override string Summary =>
-            "inbox 歸檔（ack ＝ **已處理**，不是已看過）：把 `rooms/<room>/inbox/<owner>.md` 整份移進 `<owner>_archive.md` —— 本地跑，不需要 Editor";
+            "inbox 歸檔（ack ＝ **已處理**，不是已看過）：把 `rooms/<room>/inbox/<owner>.md` 整份移進 `<owner>_archive.md` —— 本地跑";
 
         public override string Details =>
             "inbox 是被 @ 時寫入端附加的待辦清單（catchup 的「📥 inbox」區讀它）。處理完跑本支，下次只會看到新的。\n"

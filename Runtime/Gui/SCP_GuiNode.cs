@@ -79,7 +79,7 @@ namespace SCP.Core.Gui
 
         /// <summary>
         /// **釘在最上面、不跟內容一起捲**（⭐ 掉在樹的**第幾層都算數**）。
-        /// <para>概念取自 Unity 的 `UCL_EditorPage`：`TopBar()` 畫在 ScrollView **外面**，
+        /// <para>`TopBar()` 畫在 ScrollView **外面**，
         /// `ContentOnGUI()` 畫在裡面 ⇒ 捲到第 200 行時返回鈕還在。</para>
         /// <para>🩸 TASK-0236：這一行原本寫「只有 Root 的直接子節點有意義」，而那是**真的**——
         /// renderer 當時只掃 `Root.Children`。於是 `SCP_GuiPageController.Draw` 的

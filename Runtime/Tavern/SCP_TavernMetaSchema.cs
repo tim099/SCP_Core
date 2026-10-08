@@ -1,13 +1,11 @@
 // 區塊職責：酒館訊息 meta 的 **T06.3 schema 驗證** —— tag=commit／task-assign／task-ack 的必填欄位與格式。
-// 物理意義：TASK-0311，epic 0295 ③ 第二刀。
-//          之前只有 Editor 那一份 ⇒ Senate 的發文路（`senate cmd tavern-post`／`senate cmd commit` 的公告）
-//          遇到這三個 tag 只能擋下交回 Editor。⇒ 抽到這裡後 **Editor 與 Senate 呼叫同一支**，⛔ 不各寫一份：
+// 物理意義：TASK-0311。所有發文路（`senate cmd tavern-post`／`senate cmd commit` 的公告）呼叫同一支，⛔ 不各寫一份：
 //          兩份驗證遲早分岔，而分岔的失效樣子是「同一則公告，走這條路被擋、走那條路被收」。
 //   · commit     ：必帶 `sha`，只能一個，7～40 位十六進位（commit 公告同時是 +5 的請款憑證 —— Tim 2026-07-30）
 //   · task-assign：必帶 task_id／task_body／assigned_by／requires_ack
 //   · task-ack   ：必帶 task_id，action ∈ accept|decline|defer
-// 數值影響：純函式，零 IO。回 null ＝ 通過（或不是這三個 tag）；回字串 ＝ 拒絕理由（訊息逐字沿用 Editor 版）。
-// ⚠ 不驗「那個 SHA 真的存在」—— 那要枚舉 submodule 路徑，正是 install-path 陷阱（Editor 版原註解的判斷，照留）。
+// 數值影響：純函式，零 IO。回 null ＝ 通過（或不是這三個 tag）；回字串 ＝ 拒絕理由。
+// ⚠ 不驗「那個 SHA 真的存在」—— 那要枚舉 submodule 路徑，正是 install-path 陷阱。
 #nullable enable
 using System.Collections.Generic;
 

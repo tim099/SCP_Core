@@ -318,15 +318,14 @@ namespace SCP.Core.Plurk
             }
 
             // ⑧ 附圖路徑必須是**絕對路徑**且檔案存在（Tim 2026-08-21：「圖片需要完整路徑」）
-            // 物理意義：相對路徑會相對於 Editor 的工作目錄（repo 根），不是交付單所在的位置
+            // 物理意義：相對路徑會相對於 senate.exe 的工作目錄，不是交付單所在的位置
             //          ⇒ 同一份交付單換個地方跑就指到別的檔，或指到不存在的檔。
-            //          （Senate 這側相對的是 senate.exe 的工作目錄 —— 同一個病，換一個宿主。）
             // 數值影響：擋在 lint —— 不是等到上傳那一刻才炸（那時噗還沒發，但已浪費一次往返）。
             if (iSlip.HasImage)
             {
                 string aImg = iSlip.Image.Trim();
                 if (!System.IO.Path.IsPathRooted(aImg))
-                    aErr.Add($"圖片路徑不是絕對路徑：`{aImg}` —— 相對路徑會相對於 Editor 的工作目錄，"
+                    aErr.Add($"圖片路徑不是絕對路徑：`{aImg}` —— 相對路徑會相對於執行時的工作目錄，"
                         + "同一份交付單換個地方跑就指到別的檔");
                 else if (!System.IO.File.Exists(aImg))
                     aErr.Add($"圖片檔不存在：`{aImg}`");

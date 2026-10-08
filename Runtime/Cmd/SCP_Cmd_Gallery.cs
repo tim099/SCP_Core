@@ -15,7 +15,7 @@ namespace SCP.Core.Cmd
         public override string Name => "gallery";
         public override string Category => SCP_CmdCategory.Reading;
 
-        public override string Summary => "畫展：從 ArtGallery 隨機挑展品（可限定主題資料夾）—— 純讀，不需要 Editor";
+        public override string Summary => "畫展：從 ArtGallery 隨機挑展品（可限定主題資料夾）—— 純讀";
 
         public override string Details =>
             "畫展根目錄＝`<資料根>/ArtGallery`。印的是相對路徑 —— 開那個檔去看。\n"

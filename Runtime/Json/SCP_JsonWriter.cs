@@ -4,7 +4,7 @@
 //              同樣的資料每次輸出逐字相同，於是 git diff 只會顯示真正變動的那幾行。
 //           ② **非 ASCII 不轉義**：中文直接寫出去，不變成 中文。
 //              轉義過的檔案人看不懂，而人看不懂的 diff 等於沒有 diff。
-// 數值影響：預設縮排用 **tab**（對齊既有 UCL 產物的樣式，換手時 diff 不會整檔翻紅）。
+// 數值影響：預設縮排用 **tab**（對齊磁碟上既有檔的樣式，diff 不會整檔翻紅）。
 // ⚠ 方言限制：C# 9 / netstandard2.1。
 #nullable enable
 using System.Collections.Generic;

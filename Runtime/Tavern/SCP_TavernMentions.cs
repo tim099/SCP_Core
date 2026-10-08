@@ -1,8 +1,6 @@
 // 區塊職責：**@mention → 對方 inbox 通知** —— 寫入不變量的唯一實作（TASK-0299）。
-// 物理意義：「任何進到房間的訊息都該觸發提及通知」跟來源無關（2026-07-29 就是因此從 Op_Post 下沉到 AppendMessage）。
-//           但 AppendMessage 住在 Editor ⇒ 直打 `tavern-write` 的訊息沒人通知（TASK-0299 重現：seq 202 inbox 0→0）。
-//           ⇒ 規則搬到這裡、掛在**寫入端**：server 模式由 Senate `Cmd_TavernWrite` 寫完呼叫，
-//             editor 模式由 Editor 本地寫完呼叫 —— 兩邊同一支，⛔ 不留兩份。
+// 物理意義：「任何進到房間的訊息都該觸發提及通知」跟來源無關 ⇒ 規則掛在**寫入端**：
+//           Senate `Cmd_TavernWrite` 寫完呼叫（TASK-0299）—— ⛔ 不在發文入口另寫一份。
 // 數值影響：解析、白名單、條目標題與內文（2026-09-25 起）：
 //   · `@([a-zA-Z0-9_-]+)` 取名字；不通知自己（sender_id 與 sender_persona 都比）、`_` 開頭系統 id、白名單外的名字
 //   · TASK-0365（2026-10-05）加三格：① **程式碼區段裡的 @ 不算點名**（``` 區塊與 `行內`）——
@@ -22,7 +20,7 @@ using SCP.Core.Paths;
 
 namespace SCP.Core.Tavern
 {
-    /// <summary>通知的輸入：一則**已經落檔、拿到 seq** 的訊息（兩個宿主各自從自己的訊息型別轉進來）。</summary>
+    /// <summary>通知的輸入：一則**已經落檔、拿到 seq** 的訊息（呼叫端從自己的訊息型別轉進來）。</summary>
     public sealed class SCP_MentionInput
     {
         public string Room = "";
@@ -110,7 +108,7 @@ namespace SCP.Core.Tavern
         /// <summary>已知中繼來源前綴（白名單而非黑名單 —— meta.source 是自由字串，後台來源也會寫它）。</summary>
         static readonly string[] s_RelayPrefixes = { "discord", "line", "telegram", "webhook" };
 
-        /// <summary>訊息是否源自系統外部中繼（Discord 等）。語意逐條搬自 Editor 版 `IsExternalRelay`。</summary>
+        /// <summary>訊息是否源自系統外部中繼（Discord 等）。</summary>
         public static bool IsExternalRelay(IReadOnlyDictionary<string, string>? iMeta, string? iSenderId)
         {
             if (iMeta != null && iMeta.TryGetValue("source", out string? aSrc) && !string.IsNullOrEmpty(aSrc))

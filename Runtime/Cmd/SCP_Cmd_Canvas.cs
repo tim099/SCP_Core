@@ -1,8 +1,8 @@
 // 區塊職責：`cmd canvas` —— 共用像素畫布的**讀取端**（view / pixel / stats / cache / snapshot
-//           / note / claim）。**原生**，這幾個 op 一顆都不派給別人，Editor 沒開也跑得完。
+//           / note / claim）。這幾個 op 一顆都不派給別人，在本 process 跑完。
 // 物理意義：畫布事實源是 events/ 底下的 append-only json；本 Cmd 只 replay 與渲染，
 //           唯一會寫的是**衍生物**（快取／預覽 PNG／快照）與 per-persona 的 notes／claims。
-// 數值影響：讀取端不動錢；place 的付款經宿主的畫布閘交給 Senate Server，分享經酒館發文閘 —— 都不需要 Editor。
+// 數值影響：讀取端不動錢；place 的付款經宿主的畫布閘交給 Senate Server，分享經酒館發文閘。
 //           所以這裡看不到任何 ledger 型別，那是刻意的邊界不是待辦。
 // 設計取捨：資料根**由呼叫端給**（--arg data_root），與 `cmd tasks` 同形。
 //           🩸 為什麼不在這裡推導（TASK-0112，2026-09-03）：python 那側儲存根原本相對 cwd，
@@ -33,11 +33,11 @@ namespace SCP.Core.Cmd
             "全社群共用畫布（預設 2048×2048），事實源是 `<資料根>/Canvas/events/` 的 append-only 事件。\n"
             + "⭐ 尺寸（TASK-0445）：`op=size` 看／設 `Canvas/canvas_settings.json`；實際尺寸 ＝ max(設定值, 已畫範圍) —— "
             + "設小也不會讓已畫的點掉出畫布，而 `op=size` 寫入時直接擋下縮到已畫範圍以下。\n"
-            + "唯讀 op（view／pixel／stats／cache／snapshot／note／claim／exhibit）**在本 process 跑完，Editor 沒開也行**。\n"
+            + "唯讀 op（view／pixel／stats／cache／snapshot／note／claim／exhibit）**在本 process 跑完**。\n"
             + "⭐ 展品（TASK-0443）＝ 同一個**標題**的宣稱區域合成一件，範圍取聯集外框；`op=exhibit` 列出，"
             + "`op=view --arg exhibit=<標題>` 直接看那件（不用自己算 region）。\n"
             + "⚠ 只有 `op=place` 會動錢：付款（限時券→永久券→酒館券→token）走 Senate Server、自由時間資格就地讀 session 檔；"
-            + "分享（帶圖發到酒館）走酒館發文閘 —— 整支都不需要 Editor。\n"
+            + "分享（帶圖發到酒館）走酒館發文閘。\n"
             + "⚠ index 255 同時是「純白」與「沒人畫過」—— 透明變體的判定靠 painted-mask，不看顏色；\n"
             + "  place 預設**擋下**量化到 255 的顏色（要「擦掉」得顯式 allow_white=1）。";
 

@@ -1,4 +1,4 @@
-// 區塊職責：`cmd auto-commit` —— 把機器生成的檔分群整批 commit。**原生**，不需要 Unity。
+// 區塊職責：`cmd auto-commit` —— 把機器生成的檔分群整批 commit。
 // 物理意義：規則與引擎在 SCP_AutoCommitRules／SCP_AutoCommit —— 本檔只負責「參數 → 掃 → 逐群提交 → 回報」，
 //          Senate 的自動 Commit 頁走同一支引擎（頁面與 Cmd 對同一個檔給出同一個群，這不是巧合而是結構）。
 // 數值影響：
@@ -51,7 +51,7 @@ namespace SCP.Core.Cmd
                 "只做這幾群（逗號分隔的群 key；對所有 repo 一體適用）。不給＝**每個 repo 各自**的 DefaultOn 群。"
                 + "特殊群 `__other` / `__other_untracked` / `__subptr` 只有列在這裡才會做"),
             // ⚠ 參數名刻意**不叫** `persona`：派遣端會把 `--persona <me>` 戳進 args（那是「這筆是誰派的」），
-            //   叫 persona 就會被那個宣告當成篩選條件。🩸 UCL 端實測：`--persona kiara` 讓掃描範圍從 9 個 repo 縮成 1 個。
+            //   叫 persona 就會被那個宣告當成篩選條件。🩸 實測：`--persona kiara` 讓掃描範圍從 9 個 repo 縮成 1 個。
             new SCP_CmdArgSpec("only", "只做這幾個 repo（逗號分隔的顯示名，例：AgentCommands,kotoko,Chess）"),
         };
 
@@ -164,7 +164,7 @@ namespace SCP.Core.Cmd
                     }
                 }
 
-                // 永不自動收的那幾群：清單一律印出來（看與收不該共用同一個手勢 —— UCL 端 TASK-0129）。
+                // 永不自動收的那幾群：清單一律印出來（看與收不該共用同一個手勢 —— TASK-0129）。
                 foreach (string aNever in SCP_AutoCommitRules.NeverAutoKeys)
                 {
                     if (aExplicit != null && aExplicit.Contains(aNever)) continue;   // 顯式要了 ⇒ 上面那圈已經印過

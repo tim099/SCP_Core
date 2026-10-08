@@ -1,7 +1,6 @@
 // 區塊職責：**建一位新 persona 的規劃與組裝**（TASK-0428）—— 名稱驗證、綁定的 agent（或新開一個）、
 //           identity_vector／fork 血統、角色設定檔、頭像規格。寫入身分欄仍交給 `SCP_PersonaProfileWrite.Create`（唯一寫入端）。
-// 物理意義：Unity 身分後台的「建 persona」在頁面裡自己組整份身分欄 JSON；Senate 這側沒有人會組 ⇒ CLI 建不出人。
-//           本檔把那一段搬成共用層：CLI（`persona-create`）與之後 Senate 的 persona 管理頁（TASK-0424）呼叫同一份。
+// 物理意義：整份身分欄 JSON 由本檔組 —— CLI（`persona-create`）與 Senate 的 persona 管理頁（TASK-0424）呼叫同一份。
 // 數值影響：`Plan` 純讀（draft 就是它）；`AddAgentBank` 寫 `AwakenInit/_registry_meta.json` 的 `agent_banks` 一格。
 //
 // ⚠ 欄位規則：
@@ -284,7 +283,7 @@ namespace SCP.Core.Letters
         }
 
         /// <summary>
-        /// 新開 agent：`agent_banks[agent] = account`。已存在 ⇒ 擋（⛔ 不覆蓋 —— Editor 版會覆蓋，那會把別人麾下的錢改道）。
+        /// 新開 agent：`agent_banks[agent] = account`。已存在 ⇒ 擋（⛔ 不覆蓋 —— 覆蓋會把別人麾下的錢改道）。
         /// 原子寫入、拿檔鎖、保留其他鍵與換行風格。
         /// </summary>
         public static bool AddAgentBank(string iDataRoot, string iAgent, string iAccount, out string oError)
@@ -493,7 +492,7 @@ namespace SCP.Core.Letters
             return v;
         }
 
-        /// <summary>sha256("x.xxxx,x.xxxx,…") 前 8 hex（鏡像 Editor 版／awakening.hash_vector —— 兩端算出同值才能互相驗證）。</summary>
+        /// <summary>sha256("x.xxxx,x.xxxx,…") 前 8 hex（鏡像 awakening.hash_vector —— 兩端算出同值才能互相驗證）。</summary>
         public static string HashVector(List<double> iV)
         {
             var parts = new List<string>(iV.Count);

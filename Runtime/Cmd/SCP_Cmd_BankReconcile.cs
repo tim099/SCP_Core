@@ -1,4 +1,4 @@
-// 區塊職責：`cmd bank-reconcile` —— 動錢對帳器的入口（TASK-0245）。**原生，不需要 Editor。**
+// 區塊職責：`cmd bank-reconcile` —— 動錢對帳器的入口（TASK-0245）。
 // 物理意義：規則本體在 `SCP_BankReconcile`；本檔只把它開給 CLI（report／apply／status）。
 // 數值影響：`report`／`status` 不動錢（report 只落一份執行紀錄）；`apply` 要 `confirm=1`，
 //          **只補酒館那一類**（它就是發放路當時會送的那一筆，冪等鍵同一把）。
@@ -104,7 +104,7 @@ namespace SCP.Core.Cmd
             int aApplied = 0, aDup = 0, aFailed = 0;
             if (aOp == "apply")
             {
-                // ── 兩道閘（TASK-0332：Unity 補款那支有、本支原本沒有）—— ⛔ 往付錢的方向不猜 ──
+                // ── 兩道閘（TASK-0332）—— ⛔ 往付錢的方向不猜 ──
                 // ① 結清清單讀不動 ⇒ 不知道哪些則已經用別的方式補過 ⇒ 補下去就是付第二次錢。
                 if (r.SettledUnreadable)
                     return SCP_CmdResult.Fail(1,

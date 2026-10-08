@@ -9,13 +9,10 @@
 // ⚠ 方言限制：C# 9 / netstandard2.1 —— **Unity 那側也要編這份**。
 //   ⛔ 不要用 file-scoped namespace、list pattern 那些 C#10+ 的寫法（`src/` 底下可以，這裡不行）。
 //
-// 🔴 **與 Unity 端 `UCL_ReflectionInvoker` 的結構性差異，寫在最前面因為它會咬人**：
-//   那邊的 `Variables` 是一張 **static 字典 + 常駐 Editor process** ⇒ 跨 Cmd 呼叫存活
-//   （`storeAs` 存在第 1 次呼叫，`$var` 在第 2 次呼叫拿得到）。
-//   ⛔ **CLI 每一次呼叫都是一個新的 process** ⇒ 照抄那個形狀的話，`$var` 永遠找不到，
-//   而失敗訊息會長得像「變數名打錯了」。⇒ 本檔的變數表是**每次 Run 一張、跑完就沒**，
-//   鏈式呼叫改由**一次呼叫內的多步**（`steps`）表達。
-//   📌 那不只是將就：它同時拿掉了 Unity 那側「domain reload 會讓變數消失」那個坑。
+// 🔴 **變數表是每次 Run 一張、跑完就沒**，寫在最前面因為它會咬人：
+//   ⛔ **CLI 每一次呼叫都是一個新的 process** ⇒ 跨呼叫存活的 static 變數表
+//   （`storeAs` 存在第 1 次呼叫、`$var` 在第 2 次呼叫拿）永遠找不到，
+//   而失敗訊息會長得像「變數名打錯了」。⇒ 鏈式呼叫由**一次呼叫內的多步**（`steps`）表達。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -174,7 +171,7 @@ namespace SCP.Core.Reflect
         /// <summary>
         /// 從已拆好的鍵值build 一步。
         /// <para>⚠ **camelCase 與 snake_case 兩種都收**（`paramTypes` / `param_types`）——
-        /// Unity 端那支用 camelCase，而 Senate CLI 的慣例是 snake_case。
+        /// Senate CLI 的慣例是 snake_case，camelCase 也照收。
         /// 🩸 只收一種的代價是 09-17 那隻活體：兩個入口參數名不同 ⇒ 另一邊**靜默取預設值**，
         /// 而一棵樹上永遠看不出來。</para>
         /// </summary>

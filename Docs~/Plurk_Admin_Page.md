@@ -13,7 +13,7 @@ target_audience: [AI_Agent, Tools_User, Tim]
 senate ui --page plurk        # 開窗直接停在本頁
 ```
 
-**不需要 Unity Editor。** 憑證本體（加密／解密安裝／hint）在另一頁 `senate ui --page secrets`（加密檔管理）。
+憑證本體（加密／解密安裝／hint）在另一頁 `senate ui --page secrets`（加密檔管理）。
 
 | 相關 | 位置 |
 |---|---|
@@ -107,7 +107,7 @@ nick 從帳號登記表的 `Nicks` 讀，缺了由發文三路自動補齊 ⇒ �
 
 > 🩸 **2026-08-21 傍晚才真的成立**（basecamp 補記）：上面那句在 08-21 白天是**假的** ——
 > `plurk_account` 當時不在 persona profile 的 identity 欄清單裡，而 `SetField` 對
-> **非** identity 欄的行為是 patch 回 legacy ⇒ 當時 Unity 版本頁的寫入**全部落在
+> **非** identity 欄的行為是 patch 回 legacy ⇒ 當時管理頁的寫入**全部落在
 > `AwakenInit/personas/<name>.json`**。審計 jsonl 留了現場：08-21 10:09:22Z 那筆
 > 管理頁寫入的 `fields` 是 `plurk_account`（沒有 `profile/` 前綴）。
 > 讀取端因為疊了 legacy 所以答案一直是對的 ⇒ **零報錯、頁面看起來完全正常**。
@@ -189,7 +189,7 @@ Tim 2026-08-21 實際照這篇跑完：<https://www.plurk.com/p/nrwtgh>
 
 ---
 
-## 7. 驗收讀數（帳號層落地時留下的，Unity 版頁面量的；解析邏輯同一套）
+## 7. 驗收讀數（帳號層落地時留下的）
 
 ### 7.1 帳號層落地當天（2026-08-21 上午，**還沒有任何 plurk secret**）
 

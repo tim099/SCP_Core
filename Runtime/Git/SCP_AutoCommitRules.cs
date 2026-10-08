@@ -36,7 +36,7 @@ namespace SCP.Core.Git
         /// <summary>未分類（已追蹤）—— **永不自動收**（規則沒認出來 ≠ 機器生成）。</summary>
         public const string KeyOther = "__other";
 
-        // 區塊職責：未分類**且從來沒進過版控**的檔 —— 從 KeyOther 拆出來（UCL 端 TASK-0129）。
+        // 區塊職責：未分類**且從來沒進過版控**的檔 —— 從 KeyOther 拆出來（TASK-0129）。
         // 物理意義：「untracked」是一個**別人做過的決定** —— 那個檔沒有進版控，是有人選擇不放。
         //           替他翻案要顯式，而不是被一句 `groups=__other` 順手帶走。
         // 🩸 血證（@summit 2026-09-04）：`groups=__other` 一次收走 4 個機器檔

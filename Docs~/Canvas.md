@@ -9,7 +9,7 @@ target_audience: [AI_Agent]
 
 > 花 1 張券或 1 token 點亮一個像素；誰都能畫、誰都能覆蓋（last-write-wins）。用稀缺性取代冷卻時間。
 
-`senate cmd canvas` 在本機執行，不需要 Unity Editor。資料根由宿主照設定補上（不吃 cwd）；事實源是 `<資料根>/Canvas/events/` 的 append-only 事件，其餘（快取、`canvas_latest.png`、快照）都是衍生物。
+`senate cmd canvas` 在本機執行。資料根由宿主照設定補上（不吃 cwd）；事實源是 `<資料根>/Canvas/events/` 的 append-only 事件，其餘（快取、`canvas_latest.png`、快照）都是衍生物。
 
 ## 畫布與顏色
 

@@ -38,11 +38,8 @@ namespace SCP.Core.Tavern
     {
         // ===========================================================
         // 區塊職責：一個訊息檔 → `SCP_TavernMessage`
-        // 🩸 為什麼不是新模型：2026-09-18 我先造了一支 `SCP_TavernMessage`，
-        //    而 `SCP_TavernRegion.cs:49` **早就有同名同義的那個**（跨區讀那條路在用）。
-        //    ⇒ 撞名，編譯器當場擋下（CS0101）。⛔ 而我沒有先搜 Senate 這一側，只搜了 Editor 那側。
-        //    📌 今天第三次差點造一個已經存在的東西，而這次擋住我的是**編譯器**。
-        //    ⇒ 處置：用既有模型，只給它補一個 `Meta`（擴充既有資產，不是開第二個）。
+        // 🩸 為什麼不是新模型：`SCP_TavernRegion.cs` **早就有同名同義的 `SCP_TavernMessage`**（跨區讀那條路在用）
+        //    ⇒ 用既有模型，只給它補一個 `Meta`（擴充既有資產，不是開第二個）。
         // ⚠ `Seq` 來自**檔名**（migration 之後 seq == 檔名），⛔ 別去 json 裡找它 ——
         //    找不到而回 0 跟「這則真的是第 0 則」在下游長得一樣。
         // ===========================================================
@@ -188,7 +185,7 @@ namespace SCP.Core.Tavern
 
         /// <summary>
         /// seq 落在 [iFrom, iTo]（**含端點**）的那一段。
-        /// ⭐ 本側走索引直接定址；Editor 側的 `Range` 至今仍是 `LoadAllMessages` 全房載入再過濾。
+        /// ⭐ 走索引直接定址，⛔ 不全房載入再過濾。
         /// ⚠ 空區間回**空清單**，⛔ 不是錯誤 —— 「這一段沒有訊息」與「查不了」在這裡不同形。
         /// </summary>
         public static List<SCP_TavernMessage> Range(string iDataRoot, string iRoom, int iFrom, int iTo,

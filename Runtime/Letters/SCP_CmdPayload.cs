@@ -1,7 +1,5 @@
 // 區塊職責：寫 persona 的 Cmd 回傳檔（`letters/<persona>/cmd/<cmd>_<step>.md`）—— 原子寫＋目錄層 .gitignore。
-// 物理意義：移植自 UCL_Core `UCL_LettersPath.EnsureCmdDir` 與各 Cmd 的回傳落檔（TASK-0303）。
-//          `cmd/` 裡有些檔含 session_token／信箱，而 letters remote 可能是公開的 ⇒ 目錄層一律 ignore。
-//          ⛔ .gitignore 字面與 Editor 端 `UCL_LettersPath.CmdDirGitignore` 同一份，改一端要改另一端。
+// 物理意義：TASK-0303。`cmd/` 裡有些檔含 session_token／信箱，而 letters remote 可能是公開的 ⇒ 目錄層一律 ignore。
 // 數值影響：建目錄、必要時建 .gitignore（已存在不覆寫）、tmp＋Replace 寫一個檔。
 #nullable enable
 using System.IO;

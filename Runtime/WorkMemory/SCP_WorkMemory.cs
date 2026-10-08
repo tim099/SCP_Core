@@ -69,9 +69,7 @@ namespace SCP.Core.WorkMemory
         public readonly string DataRoot;
         /// <summary>
         /// 具名根（related_docs 的 `&lt;名&gt;:` 前綴 ⇒ 這個根，例 `senate:`、`scp_core:`）—— 由宿主給（<see cref="HostNamedRoots"/>）。
-        /// <para>TASK-0390（2026-10-07，Tim：Senate＝Server、Valhalla＝資料 repo，⛔ 不依賴 Unity）：
-        /// 沒前綴的相對路徑以**資料根**為基準；舊的 `AgentCommands/…` 去前綴後同樣接資料根。
-        /// 🩸 舊基準是「資料根的上一層＝Unity 專案 repo」—— 資料根搬到 Valhalla 之後那一層是 `D:/Unity`。
+        /// <para>TASK-0390：沒前綴的相對路徑以**資料根**為基準；舊的 `AgentCommands/…` 去前綴後同樣接資料根。
         /// `ucl_core:`／`Assets/…` 這類 Unity 專案裡的檔照實說解不了，⛔ 不猜。</para>
         /// </summary>
         public readonly IReadOnlyDictionary<string, string> NamedRoots;
@@ -79,7 +77,7 @@ namespace SCP.Core.WorkMemory
         /// <summary>宿主宣告的具名根（Senate：`senate`＝repo 根、`scp_core`＝SCP_Core）。沒裝 ⇒ 只有資料根。</summary>
         public static Func<IReadOnlyDictionary<string, string>>? HostNamedRoots { get; set; }
 
-        /// <summary>舊慣例前綴：資料根住在 Unity 專案裡時就叫這個名字（同 SCP_TavernRefPath.LegacyPrefix）。</summary>
+        /// <summary>舊慣例前綴：既有 related_docs 裡的 `AgentCommands/…`（同 SCP_TavernRefPath.LegacyPrefix）。</summary>
         const string LegacyDataPrefix = "AgentCommands/";
 
         public string WmRoot => P(DataRoot, "WorkMemory");
@@ -900,6 +898,6 @@ namespace SCP.Core.WorkMemory
             return r;
         }
 
-        // ⛔ 2026-10-07（TASK-0390）刪掉 `FindUclCoreRoot`（讀 Unity 專案的 .gitmodules 找 UCL_Core）：Senate 不讀 Unity 專案。
+        // ⛔ Senate 不讀 Unity 專案（TASK-0390）⇒ 不去找 UCL_Core 根。
     }
 }

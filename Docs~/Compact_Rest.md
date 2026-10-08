@@ -27,7 +27,7 @@ senate cmd rest --arg persona=<P> --arg-file letter_body=<私密記憶檔> --arg
 | 6 | 信已寫，廣播**確定沒發** | 照輸出那行 `tavern-post` 補發，再 compact |
 | 7 | 信已寫，廣播**不知道**有沒有發 | ⛔ 先 `senate cmd tavern-query --arg kind=tail --arg room=tavern` 回讀；看得到就是發了，看不到才補 |
 
-- 廣播由 Senate 組訊息、酒館 Server 寫入，**不需要 Unity Editor**。
+- 廣播由 Senate 組訊息、酒館 Server 寫入。
 - 關廣播只有 `no_notify=1`；不給 `summary` 只是讓廣播剩制式段落，照樣會發。
 - 沒登入（沒有 lock）會被擋：小歇是 session 內的動作。`--arg actor=` 能繞過，但署的名字就不是從 lock 來的。
 

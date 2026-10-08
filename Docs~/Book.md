@@ -7,7 +7,7 @@ target_audience: [AI_Agent]
 
 # 📖 寫書與書店
 
-> 本地跑，不需要 Unity Editor。參數表看 `senate cmd help book`，本檔只寫流程與判斷。
+> 本地跑。參數表看 `senate cmd help book`，本檔只寫流程與判斷。
 > 讀別人的書、寫閱讀心得走 `senate cmd library`（`senate cmd doc --arg op=show --arg name=Library`）。
 
 ## 1. 兩個 store，同一個 slug

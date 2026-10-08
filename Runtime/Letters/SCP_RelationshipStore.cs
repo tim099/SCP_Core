@@ -1,18 +1,16 @@
 // 區塊職責：relationship（好感度）的**寫入**本體 —— 8 軸定義、重算、target 資料夾解析、事件／看法／投影的落檔。
-// 物理意義：TASK-0354。8 軸定義與落檔都在這裡，
-//           讓好感度的唯一寫入通道（`senate cmd relationship`）不再需要 Unity Editor。
-//           讀取端（`SCP_Relationship`：brief／portrait-next 讀 `_current.md`）不動。
-//           ⭐ 寫出來的三種檔與 Editor 版**逐位元組同形**：事件檔名＝時刻、看法檔名＝內容雜湊、
-//           投影可刪除重建 —— 兩個寫入端只要形狀不分岔，就不會在同一個 target 底下長出兩種帳。
+// 物理意義：TASK-0354。8 軸定義與落檔都在這裡；好感度的唯一寫入通道是 `senate cmd relationship`。
+//           讀取端（`SCP_Relationship`：brief／portrait-next 讀 `_current.md`）只讀 `_current.md`。
+//           ⭐ 三種檔的形狀：事件檔名＝時刻、看法檔名＝內容雜湊、投影可刪除重建 —— 形狀一分岔，
+//           同一個 target 底下就會長出兩種帳。
 // 數值影響：純檔案 IO（UTF-8 無 BOM、`\n`）。重算是 float 逐筆累加、最後 clamp 一次再四捨五入到 4 位
-//           （與 Editor 版同一順序：事件檔的磁碟列舉序 —— float 加法不滿足結合律，順序要一樣）。
+//           （順序＝事件檔的磁碟列舉序 —— float 加法不滿足結合律，順序要固定）。
 //
-// ⚠ 照抄 Editor 版的兩個怪行為（改了就不再同形；要修另開單）：
-//   ① 事件檔的 `surface_score_after` 永遠寫 0：Editor 版在**寫檔之後**才回填分數（磁碟實測 live 事件全為 0）。
+// ⚠ 兩個已知怪行為（既有資料就是這個形狀；要修另開單）：
+//   ① 事件檔的 `surface_score_after` 永遠寫 0（磁碟實測 live 事件全為 0）。
 //   ② 資料夾存在但沒有 `_target.txt` ⇒ 走 `__<hash4>` 備用夾（註解寫「被接管」，程式碼不是）。
-// ⚠ 與 Editor 版**刻意不同**的一格（修 bug）：rebuild 全部時，target 名取資料夾裡 `_target.txt` 的主人，
-//   沒有才用資料夾名 —— Editor 版直接拿資料夾名（`Kaguya__b557`）當 target，於是每跑一次就再疊一層後綴夾
-//   （calli 的 `Kaguya__b557__84d3` 就是它長出來的）。
+// ⚠ rebuild 全部時，target 名取資料夾裡 `_target.txt` 的主人，沒有才用資料夾名 ——
+//   直接拿資料夾名（`Kaguya__b557`）當 target 會每跑一次就再疊一層後綴夾（calli 的 `Kaguya__b557__84d3` 就是這樣長出來的）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -45,7 +43,7 @@ namespace SCP.Core.Letters
         public static float Clamp(float v) => v < Min ? Min : (v > Max ? Max : v);
 
         /// <summary>
-        /// 加權和 → [-100, 100]。分母是**權重絕對值的總和**（11.5）—— Editor 版拿 108 筆既有資料回歸過，不要動。
+        /// 加權和 → [-100, 100]。分母是**權重絕對值的總和**（11.5）—— 拿 108 筆既有資料回歸過，不要動。
         /// </summary>
         public static int SurfaceScore(IReadOnlyDictionary<string, float> iVec)
         {
@@ -63,7 +61,7 @@ namespace SCP.Core.Letters
             return (int)Math.Round(aNorm, MidpointRounding.AwayFromZero);
         }
 
-        /// <summary>分段 51 / 11 / -9 / -49（Editor 版實測 108/108 相符）。</summary>
+        /// <summary>分段 51 / 11 / -9 / -49（實測 108/108 相符）。</summary>
         public static string Tier(int iScore)
         {
             if (iScore >= 51) return "信任";
@@ -84,7 +82,7 @@ namespace SCP.Core.Letters
         public string Persona = "";
         public string Target = "";
         public string Source = "live";
-        /// <summary>插入順序即落檔順序（Editor 版是 Dictionary 的插入序；呼叫端照軸的正規順序放）。</summary>
+        /// <summary>插入順序即落檔順序（呼叫端照軸的正規順序放）。</summary>
         public List<KeyValuePair<string, float>> AxisDeltas = new List<KeyValuePair<string, float>>();
         public int SurfaceScoreAfter;
         public string Reason = "";
@@ -118,7 +116,7 @@ namespace SCP.Core.Letters
         // ── target 名正規化 ─────────────────────────────────────────
         /// <summary>
         /// ① 有同名 persona（大小寫不論）⇒ 以 persona 的寫法為準（多個時取 Ordinal 最小）；② 沒有 ⇒ 大寫開頭。
-        /// <para>已知名字 ＝ letters 根下所有資料夾名 ＋ persona pool。⚠ 每次呼叫都重掃（Editor 版快取到 domain reload）。</para>
+        /// <para>已知名字 ＝ letters 根下所有資料夾名 ＋ persona pool。⚠ 每次呼叫都重掃（不快取）。</para>
         /// </summary>
         public static string CanonicalTarget(string iLettersRoot, string? iTarget)
         {
@@ -148,7 +146,7 @@ namespace SCP.Core.Letters
         // ── target 資料夾（`_target.txt` 釘住主人；大小寫只差的名字分開存）──────────
         /// <summary>
         /// target 的資料夾。<paramref name="iExact"/> 必須已正規化。<paramref name="iWrite"/>＝false 時零寫入（只回路徑）。
-        /// <para>⚠ Editor 版的「dry run」其實會寫 `_target.txt`；本層把它收成真正的零寫入 ——
+        /// <para>⚠ dry run 是真正的零寫入（連 `_target.txt` 都不寫）——
         /// 寫入路徑（事件／看法／投影）都會帶 <c>iWrite=true</c> 再呼叫一次，落盤結果相同。</para>
         /// </summary>
         public static string TargetDir(string iLettersRoot, string iPersona, string iExact, bool iWrite)
@@ -166,7 +164,7 @@ namespace SCP.Core.Letters
             return aAlt;
         }
 
-        /// <summary>null ＝ 資料夾不存在；"" ＝ 資料夾在但沒有 `_target.txt`（⇒ 走備用夾，與 Editor 版同）。</summary>
+        /// <summary>null ＝ 資料夾不存在；"" ＝ 資料夾在但沒有 `_target.txt`（⇒ 走備用夾）。</summary>
         static string? ReadOwner(string iDir)
         {
             string f = Path.Combine(iDir, OwnerFileName);
@@ -306,7 +304,7 @@ namespace SCP.Core.Letters
             return c;
         }
 
-        /// <summary>逐筆累加（float）→ clamp → Round(4)。事件順序＝磁碟列舉序（與 Editor 版同）。</summary>
+        /// <summary>逐筆累加（float）→ clamp → Round(4)。事件順序＝磁碟列舉序。</summary>
         public static Dictionary<string, float> Recompute(List<List<KeyValuePair<string, float>>> iEvents)
         {
             var aAcc = new Dictionary<string, float>(StringComparer.Ordinal);
@@ -318,7 +316,7 @@ namespace SCP.Core.Letters
             return aOut;
         }
 
-        /// <summary>讀一個 events 夾裡每個事件檔的 axis_deltas（與 Editor 版 LoadEvents 同一套解析）。</summary>
+        /// <summary>讀一個 events 夾裡每個事件檔的 axis_deltas。</summary>
         public static List<List<KeyValuePair<string, float>>> LoadEventDeltas(string iEventsDir)
         {
             var aOut = new List<List<KeyValuePair<string, float>>>();
@@ -341,7 +339,7 @@ namespace SCP.Core.Letters
                         if (ci > 0 && float.TryParse(ln.Substring(ci + 1).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float dv))
                         {
                             string k = ln.Substring(0, ci).Trim();
-                            // Editor 版是 dictionary 指派（同一軸寫兩次取後者）
+                            // 同一軸寫兩次取後者
                             int aIdx = aDeltas.FindIndex(p => p.Key == k);
                             if (aIdx >= 0) aDeltas[aIdx] = new KeyValuePair<string, float>(k, dv);
                             else aDeltas.Add(new KeyValuePair<string, float>(k, dv));

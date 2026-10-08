@@ -1,6 +1,5 @@
 // 區塊職責：`cmd discord-bot` —— Discord Bot 設定的 CLI 出口：憑證、測試連線、Server／頻道清單、頻道對應、白名單（TASK-0319）。
 // 物理意義：讀寫全走 `SCP_DiscordBot`／`SCP_DiscordInboundConfig`（與 Senate 後台「Discord Bot」頁同一份）；本 Cmd 只是薄殼。
-//           完全不需要 Unity（Unity 端 Inbound 已廢棄，Tim 2026-09-28）。
 // 數值影響：
 //   · `op=set-token` 只收**檔案路徑**（`token_path`／`passphrase_path`），⛔ 不收 token 本身 ——
 //     指令參數會被記進回傳檔與錯誤報告（`_cmd_errors` 會逐條印 Args），token 一旦進去就散出去了。
@@ -23,7 +22,7 @@ namespace SCP.Core.Cmd
         public override string Name => "discord-bot";
         public override string Category => SCP_CmdCategory.Tavern;
 
-        public override string Summary => "Discord Bot 設定：token（一步加密＋安裝）、測試連線、Bot 加入的 Server／頻道、Discord 頻道 → 酒館頻道對應、Inbound 白名單 —— **不需要 Editor**";
+        public override string Summary => "Discord Bot 設定：token（一步加密＋安裝）、測試連線、Bot 加入的 Server／頻道、Discord 頻道 → 酒館頻道對應、Inbound 白名單";
 
         public override string Details =>
             "· `op=status`（預設）：憑證狀態（.enc／明文／環境變數）、快取的 Server 數、對應表、白名單摘要。⛔ 不印 token。\n"

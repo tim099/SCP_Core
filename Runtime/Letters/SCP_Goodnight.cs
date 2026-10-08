@@ -1,17 +1,16 @@
-// 區塊職責：晚安流程（check／portrait／letter／sleep／logout）的**邏輯層** —— 不需要 Unity Editor。
+// 區塊職責：晚安流程（check／portrait／letter／sleep／logout）的**邏輯層**。
 // 物理意義：TASK-0305（承接 TASK-0303 早安）。寫的檔、欄位、回傳檔文字是既有讀者的介面，⛔ 不隨手改。
 // sleep 的形狀：Preflight（唯讀，全部守衛）→ Apply（刪 lock／now_status、組廣播）→ 呼叫端自己決定
 //          關本人的場（CloseOwnSessionNative，就地、不結算）→ 廣播。token 隨 lock 刪除失效（TASK-0307）。
 //          ⇒ 任何 blocked 都發生在第一個寫入之前（半睡半醒的狀態不存在）。
-// 與 Editor 版刻意的差異（寫在這裡讓人查得到，不是漏移植）：
-//   ① 收尾信寫入加**防覆寫**（目標檔已在就擋）＋ 跨 process 鎖 —— Editor 版沒有；編號算錯時它會靜默蓋掉舊信。
-//   ② 信落地後**不再** `WriteRaw(wake_count)`：那一步在 Editor 版本來就是 no-op（wake_count 是推導欄，
-//      WriteRaw 略過），實際做的只是把所有身分欄原樣重寫一遍＋刷快照，而它丟例外時信已經落地 ⇒ 指令失敗但信在。
+// 刻意的規格（寫在這裡讓人查得到）：
+//   ① 收尾信寫入加**防覆寫**（目標檔已在就擋）＋ 跨 process 鎖 —— 否則編號算錯時會靜默蓋掉舊信。
+//   ② 信落地後**不** `WriteRaw(wake_count)`：wake_count 是推導欄，WriteRaw 會略過；那一步實際做的只是
+//      把所有身分欄原樣重寫一遍＋刷快照，而它丟例外時信已經落地 ⇒ 指令失敗但信在。
 //   ③ sleep 的 `WriteRaw(status=offline)` 同理不做：status 由 lock 在不在推導，刪 lock 就是下線。
-//   ④ lock 讀得到檔卻解析不了（壞檔）：sleep **擋**；logout **刪掉並明說**。Editor 版把壞 lock 當成沒 lock，
-//      於是永遠刪不掉 —— 那個 persona 會一直顯示在線。
-//   ⑤ 晚安整條不需要 Editor：收工閘的 skip 理由走任務寫入端（TASK-0349），本人的活動 session（含觀影）
-//      就地關、不結算（TASK-0448；觀影重做、不遷移，原本「觀影場交 Editor 結算」那一段拔掉）。
+//   ④ lock 讀得到檔卻解析不了（壞檔）：sleep **擋**；logout **刪掉並明說**。把壞 lock 當成沒 lock
+//      會永遠刪不掉 —— 那個 persona 會一直顯示在線。
+//   ⑤ 收工閘的 skip 理由走任務寫入端（TASK-0349）；本人的活動 session（含觀影）就地關、不結算（TASK-0448）。
 //   ⑥ portrait 的 `about` 必須是現有 persona（見 SCP_PortraitWriter）。
 // 數值影響：letter 寫 wakes/<N>_<ts>.md＋_latest.md；portrait 寫兩幅畫像檔；sleep 刪 lock／now_status；
 //          （token 隨 lock 刪除失效，TASK-0307）；CloseOwnSessionNative 改 session 檔。check 純讀。
@@ -37,7 +36,7 @@ namespace SCP.Core.Letters
     public sealed class SCP_GoodnightPreflight
     {
         public bool Blocked;
-        /// <summary>收工閘帶了 skip_reason、而有單要寫理由 ⇒ 呼叫端交 `task op=wrapup_skip`（任務寫入端，TASK-0349 起不需要 Editor）。</summary>
+        /// <summary>收工閘帶了 skip_reason、而有單要寫理由 ⇒ 呼叫端交 `task op=wrapup_skip`（任務寫入端，TASK-0349）。</summary>
         public bool NeedsTaskSkipWrite;
         public string Report = "";
         /// <summary>收工閘會擋的單（sleep 才算）。</summary>
@@ -180,7 +179,7 @@ namespace SCP.Core.Letters
             return aDateOk ? aReason : null;
         }
 
-        /// <summary>今天寫過 opinion 的對象 → 那幾筆短句（畫像的材料）。判準照 Editor 版（含它的字串比對方式）。</summary>
+        /// <summary>今天寫過 opinion 的對象 → 那幾筆短句（畫像的材料）。</summary>
         public static Dictionary<string, List<string>> OpinionsWrittenToday(SCP_MorningRoots iR, string iPersona)
         {
             var aOut = new Dictionary<string, List<string>>();
@@ -355,8 +354,8 @@ namespace SCP.Core.Letters
         }
 
         /// <summary>
-        /// 收尾信落檔 —— 格式逐位元組對齊 Editor `WriteWakeLetter`（7 個機器欄、LF、作者 frontmatter 機器欄勝出並留痕）。
-        /// 回 (信路徑, 編號, 錯誤)。⚠ 目標檔已存在就擋（差異①），編號＝wakes/ 信數＋1 在鎖內算
+        /// 收尾信落檔 —— 7 個機器欄、LF、作者 frontmatter 機器欄勝出並留痕。
+        /// 回 (信路徑, 編號, 錯誤)。⚠ 目標檔已存在就擋（檔頭①），編號＝wakes/ 信數＋1 在鎖內算
         /// （鎖檔在 <c>cmd/wake_letter_write.lock</c>）。
         /// </summary>
         public static (string Path, int Number, string? Error) WriteWakeLetter(SCP_MorningRoots iR, string iActor, string iPersona, string iBody)
@@ -401,7 +400,7 @@ namespace SCP.Core.Letters
             }
         }
 
-        // 字面 "\n" 修回真換行 —— 整段無真換行且含 ≥2 個字面 \n 才動（Editor 版同判準）
+        // 字面 "\n" 修回真換行 —— 整段無真換行且含 ≥2 個字面 \n 才動
         static string NormalizeEscapedNewlines(string iBody)
         {
             if (iBody.Contains("\n")) return iBody;
@@ -410,7 +409,7 @@ namespace SCP.Core.Letters
             return iBody.Replace("\\r\\n", "\n").Replace("\\n", "\n");
         }
 
-        // 作者自寫 frontmatter 拆併 —— 機器欄勝出、作者版留痕 *_as_written（Editor 版同規則）
+        // 作者自寫 frontmatter 拆併 —— 機器欄勝出、作者版留痕 *_as_written
         static (string Remainder, List<string> Extra) SplitAuthorFrontmatter(string iBody, Dictionary<string, string> iMachine)
         {
             string s = iBody.TrimStart('\n');
@@ -438,7 +437,7 @@ namespace SCP.Core.Letters
         }
 
         // ===========================================================
-        // 區塊：step=sleep／logout —— ① Preflight（唯讀，全部守衛；需要 Editor 的情況也在這裡判）
+        // 區塊：step=sleep／logout —— ① Preflight（唯讀，全部守衛）
         // ===========================================================
         public static SCP_GoodnightPreflight SleepPreflight(SCP_MorningRoots iR, string iPersona, bool iNoLetter, string iSkipReason)
         {
@@ -483,8 +482,7 @@ namespace SCP.Core.Letters
                         + "（**理由會寫進那幾張單的時間線** —— 跳過要留在別人看得到的地方）");
                     aOut.Blocked = true; aOut.Report = aR.ToString(); return aOut;
                 }
-                // ⚠ 理由要寫進那幾張單的時間線 —— TASK-0349 之後寫入端是 Senate Server，⛔ 不再是「要 Editor」的理由
-                //   （🩸 在此之前這一格讓晚安整步交給 Editor，Editor 沒開就只能把理由記在廣播裡）。
+                // ⚠ 理由要寫進那幾張單的時間線 —— 寫入端是 Senate Server（TASK-0349），由呼叫端交 `task op=wrapup_skip`。
                 if (p.Count > 0) aOut.NeedsTaskSkipWrite = true;
 
                 // 收尾信閘
@@ -525,7 +523,7 @@ namespace SCP.Core.Letters
         }
 
         // ===========================================================
-        // 區塊：② Apply —— 刪 lock／now_status、組廣播本文（Preflight 沒擋、也不需要 Editor 時才呼叫）
+        // 區塊：② Apply —— 刪 lock／now_status、組廣播本文（Preflight 沒擋時才呼叫）
         // ===========================================================
         public static SCP_GoodnightSleep SleepApply(SCP_MorningRoots iR, string iPersona, bool iNoLetter, SCP_GoodnightPreflight iPre)
         {
@@ -570,8 +568,7 @@ namespace SCP.Core.Letters
         }
 
         /// <summary>
-        /// 關掉本人進行中的活動 session（不需要結算的種類：自由時間／施工場／未登記）。回傳一行摘要＋細節。
-        /// ⚠ 觀影場**不關**（它要結算，結算在 Editor）—— Preflight 已把那種情況導去 Editor；走到這裡還遇到就大聲說。
+        /// 關掉本人進行中的活動 session（每一種 kind，含觀影，都就地關、不結算）。回傳一行摘要＋細節。
         /// ⚠ 關場失敗不擋下線（附帶動作不得擋主動作）。
         /// </summary>
         public static string CloseOwnSessionNative(SCP_MorningRoots iR, string iPersona, bool iNoLetter)
@@ -581,7 +578,7 @@ namespace SCP.Core.Letters
             try { s = SCP_ActivitySessionStore.Load(aRoot, iPersona); }
             catch (Exception e) { return $"- 🎬 活動 session：⚠ **讀不到**（{e.Message}）—— 不是「沒有場」"; }
             if (s == null || !s.active) return "- 🎬 活動 session：**無進行中 session**（不是沒查 —— 查了，沒有）";
-            // TASK-0448：每一種 kind（含觀影）都就地關、不結算 —— 觀影重做、不遷移，原本委派 Editor 結算的那條拔掉。
+            // TASK-0448：每一種 kind（含觀影）都就地關、不結算。
             string aTag = iNoLetter ? "goodnight-logout" : "goodnight-sleep";
             bool aClosed;
             try { aClosed = SCP_ActivitySessionStore.CloseVerified(aRoot, iPersona, s, aTag); }

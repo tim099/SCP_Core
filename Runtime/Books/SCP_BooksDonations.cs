@@ -3,8 +3,7 @@
 // 數值影響：**純唯讀**。本檔不寫檔、不建目錄、不動錢。
 //
 // ⚠ 接縫切在哪：**檔案清單與排序規則住這裡一份**（`DonationFiles` / `TipFiles`），
-//   而「用哪個 JSON 方言去 parse」由呼叫端自己決定 —— Editor 那側是 `UCL.Core.JsonLib.JsonData`
-//   （它還要拿去改欄位），CLI 這側是 `SCP_JsonData`。
+//   而「怎麼 parse」由呼叫端自己決定。
 //   🩸 會漂的從來不是 parse，是**「掃哪個目錄、收哪些檔、依什麼排序」** ——
 //   兩邊各掃一次就是兩個會各自漂的真相源，而漂掉的症狀是
 //   「CLI 說 35 本、後台說 34 本，兩邊都不報錯」。
@@ -84,8 +83,7 @@ namespace SCP.Core.Books
                     ioWarnings?.Add($"`{Path.GetFileName(aDir)}/{DonationFileName}` 讀取失敗：{aErr}");
                     continue;
                 }
-                // 缺欄用資料夾名兜底 —— ⚠ 與 Editor 那側**逐字相同**的兜底，
-                //   不然同一本書在兩個入口會顯示成不同的 slug。
+                // 缺欄用資料夾名兜底。
                 if (!aData.Contains(Key_Book)) aData[Key_Book] = Path.GetFileName(aDir);
                 aOut.Add(aData);
             }
@@ -121,9 +119,7 @@ namespace SCP.Core.Books
         }
 
         // ===========================================================
-        // 區塊職責：報表（人讀輸出）—— 與 Editor 那側**同一份實作**（TASK-0234 ①）。
-        // ⚠ 版面逐字不可改：它有兩個入口（Editor／Senate CLI），而驗收條件是**逐位元組對拍**。
-        //   ⇒ 想改措辭的話要同時搬走那個對拍，不然下一個人會以為是資料變了。
+        // 區塊職責：報表（人讀輸出）—— 唯一一份實作（TASK-0234 ①）。
         // ===========================================================
         public static string RenderDonations(string iDataRoot)
         {

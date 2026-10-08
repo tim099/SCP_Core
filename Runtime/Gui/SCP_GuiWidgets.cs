@@ -1,6 +1,6 @@
 // 區塊職責：**複合元件** —— 用既有的基本節點（Button／TextField／Box）組出來的東西。
-// 物理意義：概念取自 Unity 端的 UCL_GUILayout.PopupSearch（一顆顯示現值的鈕 → 點開 → 搜尋框 ＋ 分頁的選項列）。
-//           ⭐ 但這裡**刻意不新增節點型別**：新增一種 Kind 要同時改 5 個地方
+// 物理意義：PopupSearch ＝ 一顆顯示現值的鈕 → 點開 → 搜尋框 ＋ 分頁的選項列。
+//           ⭐ 這裡**刻意不新增節點型別**：新增一種 Kind 要同時改 5 個地方
 //           （enum／撰寫端／文字 renderer／ImGui renderer／可互動元件清單），
 //           而漏掉的那一處不會報錯，只會「某個 renderer 少畫一塊」。
 //           ⇒ 用既有節點組出來的元件，四種驅動方式（視窗／文字／指令／截圖）**天生就會**。
@@ -116,7 +116,7 @@ namespace SCP.Core.Gui
             // ⭐ **頭也在這個等寬群組裡面**（不是頭在外、清單在內）：
             //    ① 對齊 —— 清單的左緣就是頭的左緣，不必去猜別人的位置
             //    ② 等寬 —— 頭通常是最長的那一條，於是整塊有一條可以往下掃的直線
-            //    （形狀取自 Unity 端：Open 鈕在左，右邊整塊 vertical scope 自己對齊自己）
+            //    （形狀：Open 鈕在左，右邊整塊 vertical scope 自己對齊自己）
             using (iUi.Box("", null, iUniformWidth: true))
             {
                 if (iUi.Button(HeaderText(iLabel, aCurText, true), iKey))
@@ -190,8 +190,8 @@ namespace SCP.Core.Gui
 
         /// <summary>
         /// 篩選：**空白分隔的關鍵字，每一個都要命中**（比對 Label 與 Value，忽略大小寫）。
-        /// <para>⚠ 刻意不是 regex。UCL 那側用 regex 並在編譯失敗時退回「不篩」——
-        /// 於是打一個 <c>(</c> 會讓清單看起來「全部都符合」，而使用者以為自己在搜尋。
+        /// <para>⚠ 刻意不是 regex。regex 編譯失敗時退回「不篩」的話，
+        /// 打一個 <c>(</c> 會讓清單看起來「全部都符合」，而使用者以為自己在搜尋。
         /// 使用者打進搜尋框的是**關鍵字不是樣式**，所以這裡用子字串比對：它永遠不會丟例外，
         /// 也不會有「打了字卻沒在篩」的狀態。</para>
         /// </summary>

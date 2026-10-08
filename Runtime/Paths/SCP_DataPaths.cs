@@ -1,5 +1,5 @@
 // 區塊職責：AgentCommands **資料根**底下的版面 —— queue 分道、酒館、信件夾、session token 表。
-// 物理意義：這些目錄名是**跨端契約**（C# Editor / python run_cmd.py / Senate 三邊都走），
+// 物理意義：這些目錄名是**跨端契約**（python run_cmd.py / Senate 都走），
 //           所以它們只能有一個拼字的地方。2026-08-30 掃到的現況：`"queues"` 在
 //           `AgentCmdClient.QueueFolder` 與 `Program.cs` 的 status 分支**各拼一次** ——
 //           改一個漏一個的症狀是 `senate cmd status` 掃一個空目錄印「沒有東西卡住」，
@@ -30,8 +30,8 @@ namespace SCP.Core.Paths
         /// <summary>
         /// 資料根層設定檔（<c>&lt;資料根&gt;/agent_settings.json</c>）—— 走 <c>SCP_JsonPrefs</c>，各消費端各佔一個頂層 section。
         /// <para>⚠ **落點是資料根不是 repo**（Tim 2026-09-21 拍板）：這裡放的是「這棵資料樹上大家要一致的那些開關」
-        /// （第一個是 TASK-0106 的 <c>tavern.writer</c>，已於 TASK-0341 拔掉）。放進 <c>senate.local.json</c> 的話 Unity Editor 那側**讀不到**
-        /// ⇒ 兩個宿主會各看各的開關，而那正是這條線要根治的病。</para>
+        /// （第一個是 TASK-0106 的 <c>tavern.writer</c>，已於 TASK-0341 拔掉）。放進 <c>senate.local.json</c>（per-repo）的話
+        /// ⇒ 指到同一棵資料樹的不同宿主會各看各的開關。</para>
         /// <para>⛔ 跟 <c>secrets_config.json</c> 不同檔：那個是憑證、不進版控；這個是行為開關、要跟資料一起被 review。</para>
         /// </summary>
         public const string SettingsFileName = "agent_settings.json";
@@ -39,7 +39,7 @@ namespace SCP.Core.Paths
         /// <summary>
         /// Cmd 回傳判定檔的目錄名（<c>&lt;某個根&gt;/_cmd_results/&lt;cmd_id&gt;.json</c>）。
         /// <para>⚠ **它掛在兩個不同的根底下，而那是刻意的**：派遣端寫在**資料根**
-        /// （<c>AgentCmdClient</c>，Editor Runner 讀它）、Server 執行器寫在**Server 根**
+        /// （<c>AgentCmdClient</c>）、Server 執行器寫在**Server 根**
         /// （<c>ServerExecutor</c>）。⇒ 共用的是**目錄名**，不是完整路徑
         /// —— 所以這裡是一個 <c>const</c>，⛔ 不是 <c>SCP_PathRegistry</c> 的衍生條目
         /// （那條從 <c>AgentCommandsRoot</c> 長出來，拿它去接 Server 根會**靜默換掉**解析結果）。</para>
@@ -133,7 +133,7 @@ namespace SCP.Core.Paths
         /// 宿主的信件夾根解析（Senate：設定檔那一格經 <c>SCP_PathRegistry</c>）。
         /// <para>契約：**只對宿主設定的那個資料根回值**，其他資料根（selftest 的暫存樹、別台的根）回 null
         /// ⇒ 走慣例值。⛔ 對陌生資料根也回設定值的話，暫存樹上的測試會寫進真的信件庫。</para>
-        /// <para>沒裝（Unity 那側、純函式測試）⇒ 一律慣例值，與 2026-10-07 之前同形。</para>
+        /// <para>沒裝（例：純函式測試）⇒ 一律慣例值。</para>
         /// </summary>
         public static Func<SCP_DataRoot, SCP_LettersRoot?>? LettersResolver { get; set; }
 
@@ -150,15 +150,15 @@ namespace SCP.Core.Paths
         /// <summary>
         /// 信件與 brief 的 <c>project</c> 定語 ＝ **資料根的完整路徑**（正規化成 <c>/</c>、去尾斜線）。**純路徑運算，不碰磁碟、不猜。**
         /// <para>沒給資料根就回 <see cref="UnstatedQualifier"/> —— 印一個猜的專案名比留空更難查。</para>
-        /// <para>🩸 2026-10-07（Tim 定案，TASK-0390）：原本回「資料根的上一層目錄名」—— 那個推導假設資料根是
-        /// <c>&lt;Unity 專案&gt;/AgentCommands</c>；資料根搬到 <c>D:/Unity/Valhalla</c> 之後它安靜地印出 <c>Unity</c>。
-        /// ⇒ 不再從資料夾名推，直接印路徑（名字保留，Unity 那側也編這份）。</para>
+        /// <para>🩸 TASK-0390（Tim 定案）：從資料夾名推專案名，資料根一搬家就安靜地印錯
+        /// （資料根在 <c>D:/Unity/Valhalla</c> 時「上一層目錄名」是 <c>Unity</c>）。
+        /// ⇒ 不從資料夾名推，直接印路徑（方法名保留，Unity 那側也編這份）。</para>
         /// <para>⚠ 它是「現地定語」的一半：另一半 <c>region</c>（貨幣 ID）的真相源是宿主的央行設定，
         /// **本層不長讀它的嘴**，由宿主傳進來。兩欄都要的理由：宿主的 <c>CurrencyId</c> 缺值時
         /// 回預設而不是空 ⇒ 兩個沒設定過的專案會印出同一個 region，而 project 在那種情況下
         /// 仍然分岔 —— **一個恆同的欄位不帶資訊**。</para>
-        /// <para>📌 放在這裡而不是各寫一份：磁碟上本來就有兩份（brief 一份、Editor 收尾信一份），
-        /// 而分岔的症狀是**信少一欄、沒有任何一層會喊**（TASK-0134 QA 2026-09-05 抓到的那格）。</para>
+        /// <para>📌 放在這裡而不是各寫一份（brief 與收尾信都要它）：
+        /// 分岔的症狀是**信少一欄、沒有任何一層會喊**（TASK-0134 QA 2026-09-05 抓到的那格）。</para>
         /// </summary>
         public static string ProjectNameOf(string? iDataRoot)
         {
@@ -191,7 +191,7 @@ namespace SCP.Core.Paths
         /// <para>物理意義：**身分是資料夾、子分道是檔名後綴** ——
         /// <c>queues/&lt;persona&gt;/queue-&lt;lane&gt;.json</c> ＋ <c>pending-&lt;lane&gt;.trigger</c>。
         /// 與 python <c>run_cmd.py</c> 的 <c>queue_path()</c> / <c>trigger_path()</c> **逐字同形**
-        /// —— Editor 端的 watcher 掃的是 <c>queue*.json</c>，形狀差一個字就等於那筆永遠不被取走。</para>
+        /// —— 掃描端認的是 <c>queue*.json</c>，形狀差一個字就等於那筆永遠不被取走。</para>
         /// <para>🩸 為什麼子分道不做成資料夾（2026-08-01 chess 的血證，現在寫在 Senate 的 <c>SenateChessGateway</c> 判準①）：
         /// 舊寫法 <c>--agent-id chess-&lt;局號&gt;</c> 長出 <c>queues/chess-1/</c> <c>queues/chess-2/</c>
         /// —— **棋局不是人**，那是身分層污染。身分要回到真正下棋的那個人身上。</para>

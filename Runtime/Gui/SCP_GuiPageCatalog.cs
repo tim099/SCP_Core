@@ -185,7 +185,7 @@ namespace SCP.Core.Gui
             return aList;
         }
 
-        /// <summary>丟掉中繼資料快取（對應 UCL 選單上那顆「↻」）。下次要用時重新探測。</summary>
+        /// <summary>丟掉中繼資料快取（入口頁那顆「↻」）。下次要用時重新探測。</summary>
         public void Invalidate() { m_Entries = null; }
 
         // 區塊職責：**自動收頁** —— 掃到的頁直接登記（發現＋建構都走反射）。
@@ -197,11 +197,10 @@ namespace SCP.Core.Gui
         //     「要收誰」＝繼承 ＋ 沒貼 <see cref="SCP_PageIgnoreAttribute"/>；
         //     「怎麼生」＝下面那條 ctor 解析。
         //
-        // ⚠ 為什麼這裡要把 context 遞進去，而 UCL 那套不必：
-        //   UCL 的 `UCL_EditorMenuPage` 走 `Activator.CreateInstance(t)`（**無參**）——
-        //   它的頁面出生時不需要人餵東西，因為資料自己去全域拿。
+        // ⚠ 為什麼這裡要把 context 遞進去，而不是 `Activator.CreateInstance(t)`（**無參**）：
+        //   無參建構的前提是頁面出生時不需要人餵東西、資料自己去全域拿。
         //   而本層刻意**沒有**那個全域（D13 ①-1 逐字：「沒有 `Ins` 單例…留著 singleton 的症狀
-        //   不是崩潰，是開第二個視窗之後兩邊互相蓋」）⇒ 同一套反射搬過來會缺一塊。
+        //   不是崩潰，是開第二個視窗之後兩邊互相蓋」）⇒ 無參建構會缺一塊。
         //   ⇒ 補法是**生的時候遞給它**，⛔ 不是把頁面改成「先生出來再塞」（那會長出
         //     一個新的失效態：還沒塞就被畫，而它的症狀是空白頁或 NullRef，不是紅字）。
         //
@@ -395,7 +394,7 @@ namespace SCP.Core.Gui
                         + "清單以頁面為準（session 存的是它），但 Create('" + kv.Key + "') 仍然查得到，請把兩邊改成同一個字");
 
                 string? aGroup = (aProbe as SCP_GuiToolPage)?.MenuGroup;
-                // opt-in：null ＝ 不列（D16 拍板，取代 UCL 的 `ShowInPageMenu` bool）。
+                // opt-in：null ＝ 不列（D16 拍板）。
                 //   ⚠ 空字串**不是** null ⇒ 「列進去、沒有分組名」照樣會列。
                 // 🔴 這裡只把它從**清單**裡拿掉，⛔ **沒有**把它從目錄裡拿掉 ——
                 //   `Create(key)` 照樣造得出來，而那是彈窗／子頁能活過 CLI 每次新 process 的唯一原因

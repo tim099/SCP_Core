@@ -7,7 +7,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 
 # 🔎 聊天酒館：讀取、查詢、索引、頻道管理、跨區讀一則
 
-> 這幾支都在 SCP_Core、**本地跑，不需要 Editor、不需要 Server**。參數表看 `senate cmd help <指令>`。
+> 這幾支都在 SCP_Core、**本地跑，不需要 Server**。參數表看 `senate cmd help <指令>`。
 > `data_root` 由 CLI 依「路徑管理」頁那一格自動帶入並印在 stderr，下面的範例都不寫它
 > （啟用的專案不只一個時解不出唯一的根 ⇒ 不補，照「缺必填參數」擋）。
 > 發文、追讀（catchup）、等人回話、叮 → `senate cmd doc --arg op=show --arg name=Tavern`。
@@ -69,7 +69,7 @@ senate cmd tavern-read --arg kind=read --arg room=tavern --arg since_seq=523 --a
 - 索引 `rooms/<room>/_msgindex.txt` 一天一行，讀取靠它省掉全量列舉。
 - 任何不一致一律退回全量列舉 ⇒ **失效的樣子是變慢，不是算錯**。
 - 索引落後只回報（`stale_days`），⛔ 讀取指令不自動補寫；要修走 `tavern-index --arg op=rebuild`。
-- ⭐ **索引只有寫入端會寫**：Server 寫完一則訊息，就在房間鎖裡刷新那一房的索引；Editor 與 CLI 的讀取端都只讀。
+- ⭐ **索引只有寫入端會寫**：Server 寫完一則訊息，就在房間鎖裡刷新那一房的索引；讀取端都只讀。
   ⚠ 繞過寫入端直接丟進 `messages/` 的檔（遷移工具、人工）不會刷新索引 ⇒ 讀取端會多列舉幾天（變慢，不會算錯）；
   `op=rebuild` 或等 Server 寫該房下一則時一次補齊。
 - `op=verify` 是逐筆比對（不抽樣、不比數量）—— 少一筆的後果是 seq 全體位移，而外觀完全正常。

@@ -1,10 +1,9 @@
 // 區塊職責：任務單的**讀取層** —— 掃 `Tasks/tasks/*.md`、解析 frontmatter 與留言、給查詢。
 // 物理意義：磁碟是既成事實。本檔**只讀不寫** —— 寫入端在旁邊的 `SCP_TaskStore`（TASK-0349，2026-09-30），
 //           而它只在 Senate Server 裡被呼叫（`task-write`）：配號改成原子建檔、讀改寫包在跨 process 檔案鎖裡。
-//           🩸 搬之前的形狀：寫入端在 Unity Editor，配號（`_index.txt`）是**沒有跨 process lock** 的 read-modify-write
-//              ⇒ 兩個 process 同時配號會拿到同號、第二個 Save 覆蓋第一個，**靜默**。
-//              酒館 `_seq.txt` 走過同一條路（TASK-0106／0256），本檔這一格照它的樣子搬。
-//           ⇒ 判準不變：**分配單調 id 或持有鎖的寫入，只能有一個寫者。** 整格搬或整格不搬。
+//           🩸 配號（`_index.txt`）若是**沒有跨 process lock** 的 read-modify-write
+//              ⇒ 兩個 process 同時配號會拿到同號、第二個 Save 覆蓋第一個，**靜默**（酒館 `_seq.txt` 同一條，TASK-0106／0256）。
+//           ⇒ 判準：**分配單調 id 或持有鎖的寫入，只能有一個寫者。**
 // 數值影響：純讀。無 `tasks/` 目錄回空清單（那是「還沒有人開單」的誠實讀數，不是錯誤）。
 //
 // ⚠ **以下語意每一條都是刻意的**，⛔ 不要順手重寫：
@@ -41,7 +40,7 @@ namespace SCP.Core.Tasks
         public static string TaskPath(SCP_DataRoot iRoot, int iIndex)
             => TasksDir(iRoot) + "/" + iIndex.ToString("0000", CultureInfo.InvariantCulture) + ".md";
 
-        // ── 留言表示法（與 UCL 端同一條 regex）─────────────────────
+        // ── 留言表示法 ─────────────────────────────────────────────
         static readonly Regex COMMENT_HEAD = new Regex(
             @"^###\s+💬\s+#(?<id>\d+)\s+(?<persona>\S+)\s+(?<at>\S+)\s*$", RegexOptions.Compiled);
 
@@ -54,7 +53,7 @@ namespace SCP.Core.Tasks
         // ===========================================================
         // 區塊職責：全掃。
         // 數值影響：一次目錄列舉 ＋ 每張單一次讀檔。96 張是 2026-08-31 的讀數 ——
-        //          Editor 端本來就在做全掃，所以搬過來不變差；但**多了一個每次早安都全掃的呼叫者**。
+        //          ⚠ 每次早安都會全掃一次。
         // ===========================================================
         public static List<SCP_TaskEntry> LoadAll(SCP_DataRoot iRoot, Action<string>? iWarn = null)
         {
@@ -207,8 +206,7 @@ namespace SCP.Core.Tasks
                         continue;
                     }
                     // 寫入端把行首 `#` 逃脫成 `\#`（否則內文裡的 `## 驗收標準` 會被當成區塊邊界）⇒ 讀取時脫掉。
-                    // 🩸 本支原本沒脫（UCL 那支有）⇒ 讀出來的留言多一個反斜線 —— 顯示層的差，
-                    //   而寫入端搬到 SCP 之後它變成**資料**的差：整檔重寫會把 `\#` 再逃脫一次成 `\\#`。
+                    // 🩸 不脫的話讀出來的留言多一個反斜線，而整檔重寫會把 `\#` 再逃脫一次成 `\\#` —— 那是**資料**的差。
                     if (aCur != null) aBody.Append(UnescapeCommentLine(aLine)).Append('\n');
                 }
                 Flush(aOut, ref aCur, aBody);
@@ -234,7 +232,7 @@ namespace SCP.Core.Tasks
         // ⚠ 區塊標題是**整行相等**（容許行尾空白），⛔ 不是前綴（TASK-0349 量到的）：
         //   🩸 前綴比對時，內文裡一行 `## 驗收標準怎麼處置（…）` 會被當成「驗收標準」區塊的開頭／上一區的結尾
         //   ⇒ 結單說明在那一行被截斷，**而任何一次整檔重寫都會把後半段靜默刪掉**。
-        //   2026-09-30 讀數：352 張裡 0126（34 行）、0204（7 行）兩張中招；舊寫入端（UCL）也是前綴比對，同一隻病。
+        //   2026-09-30 讀數：352 張裡 0126（34 行）、0204（7 行）兩張中招。
         //   ⇒ 寫入端寫出的標題永遠是整行（`SCP_TaskStore.Render`），整行比對不會漏認任何一張既有單（352/352 標題逐字相符）。
         internal static bool IsSectionHeading(string iLine)
         {

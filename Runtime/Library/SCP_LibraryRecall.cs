@@ -354,9 +354,8 @@ namespace SCP.Core.Library
         }
 
         /// <summary>
-        /// 純量節點 → 字串。⚠ 這是 UCL 端 `JsonData.GetString()`（無參版）的對應物，而兩邊語意不同：
-        /// UCL 那版對任何節點都回一個字串，本層的 <c>AsString()</c> 對非字串節點**會丟例外**。
-        /// ⛔ 所以不可以直接呼叫 —— 非字串一律回空字串，與 UCL 端的行為對齊。
+        /// 純量節點 → 字串。⚠ <c>AsString()</c> 對非字串節點**會丟例外**。
+        /// ⛔ 所以不可以直接呼叫 —— 非字串一律回空字串。
         /// </summary>
         static string NodeToString(SCP_JsonData? iNode)
         {

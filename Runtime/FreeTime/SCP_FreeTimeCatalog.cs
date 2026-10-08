@@ -4,11 +4,9 @@
 //          「頁面看到的清單跟實際擲出來的不一樣」，而它不會報錯。
 // 數值影響：Scan 純讀；WriteField／CreateActivity 各寫一個 md（原子換檔 ＋ 讀回確認）。
 //
-// 🩸 TASK-0390（Tim 2026-10-07：搬進 Senate）：原本是雙層 —— 共用層在 Unity 專案的 UCL_Core
-//   （讀 `<project_root>/.gitmodules` 找）、專案層在 `<project_root>/docs/FreeTime/Activities`。
-//   Senate＋Valhalla 不依賴 Unity 之後只剩一處，⛔ 本層不推導任何根（目錄由宿主給）。
+// ⚠ 活動目錄只有一處（TASK-0390），⛔ 本層不推導任何根（目錄由宿主給）。
 // ⚠ frontmatter 讀法刻意**不用** `SCP_LetterText.ReadFrontmatterField`：那支不要求開頭 `---`、只看前 1200 字元、
-//   不剝引號 —— 跟 Unity 版（本檔 ReadField）語意不同，而活動 md 的 `how:` 常常很長且帶引號。
+//   不剝引號 —— 跟本檔 ReadField 語意不同，而活動 md 的 `how:` 常常很長且帶引號。
 // ⚠ 方言限制：C# 9 / netstandard2.1 / 零第三方（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -139,7 +137,7 @@ namespace SCP.Core.FreeTime
                     }
                 }
             }
-            catch (Exception) { /* 讀不了 ＝ 空字串（Unity 版同側；呼叫端掃描時會因 id 回退檔名而照樣列出） */ }
+            catch (Exception) { /* 讀不了 ＝ 空字串（呼叫端掃描時會因 id 回退檔名而照樣列出） */ }
             return "";
         }
 

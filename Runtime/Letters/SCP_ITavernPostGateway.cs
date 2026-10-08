@@ -1,7 +1,7 @@
 // 區塊職責：**往酒館發一則訊息**這件事的那道閘 —— 本體只知道「去問宿主」。
 // 物理意義：酒館發文的寫入端只有一個 —— 酒館 Server 的 `tavern-write`（seq 配號、category 路由、
 //          鏡像與 Discord 轉發、發文掛的那些 hook）。⇒ 這一格**沒有本地版**，
-//          而那不是「還沒移植」，是「同時只能有一個寫入端」（seq 是全域遞增的）。
+//          因為「同時只能有一個寫入端」（seq 是全域遞增的）。
 //          ⇒ Senate 的實作（`SenateTavernPostGateway`）在本地組訊息、交給 Server 寫入。
 //          形狀同 `SCP_ICanvasGateway`。
 // 數值影響：本檔零 IO。實作會做一次 Server round-trip。
@@ -20,7 +20,7 @@ namespace SCP.Core.Letters
     /// <summary>
     /// 一次發文的四種結局（第四種「已排隊」是 TASK-0372 加的）。
     /// <para>🩸 <see cref="Unresolved"/> 是 TASK-0134 QA（summit 2026-09-05）用一次真的小歇量出來的：
-    /// 她拿到「沒發」的回報，而 <b>Editor 是開著的、廣播其實成功了</b>（<c>post_seq 19082</c>）——
+    /// 她拿到「沒發」的回報，而 <b>廣播其實成功了</b>（<c>post_seq 19082</c>）——
     /// 那一格的真實語意是「<b>等待端沒拿到回執</b>」，不是「沒發」。</para>
     /// <para>⛔ 為什麼非拆不可：兩者的**處置相反** ——
     /// 真沒發要補發；沒等到卻去補發，就是在全域遞增的 seq 上多出**第二則**。
@@ -108,13 +108,13 @@ namespace SCP.Core.Letters
         /// <summary>
         /// 宿主定語 —— 「這一則是誰在哪裡發的」。
         /// <para>🩸 同 `SCP_ICanvasGateway.HostQualifier`：委派成功的輸出跟原生的長得一模一樣，
-        /// 於是「我發了」與「Editor 替我發了」變成同一句話。</para>
+        /// 於是「我發了」與「別的宿主替我發了」變成同一句話。</para>
         /// </summary>
         string HostQualifier { get; }
 
         /// <summary>
         /// 發一則。<paramref name="iSenderPersona"/> 決定署名（⛔ 不要另外傳顯示身分 ——
-        /// 那是 UCL 端 BUG-23/24 的形狀：繞過推導不會報錯，只會署錯名字）。
+        /// 繞過推導不會報錯，只會署錯名字）。
         /// </summary>
         /// <param name="iMeta">tag／category 等；category 決定它會不會轉進 Discord。</param>
         /// <param name="oLines">過程行（宿主定語、回傳檔路徑…）—— 直接接到 Cmd 的輸出上。</param>

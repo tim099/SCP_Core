@@ -1,14 +1,11 @@
 // 區塊職責：跨 agent 共享 lesson 庫（`<data_root>/Lessons/lessons.jsonl`）的**寫入**本體 —— 去重＋append＋確認檔。
-// 物理意義：TASK-0354。「記一條教訓」不需要 Unity Editor 開著。
-//           ⭐ 輸出與 Editor 版**逐位元組同形**（jsonl 那一行、`_last_lesson.md`、`notelesson_last_op.md`）——
-//           兩個寫入端會並存一段時間（同事手上的 skill 副本不會同時換掉），而 append-only 純文字的並存
-//           **只在格式同形時才安全**：去重是拿 `"body":"…"` 的字面去比，形狀一分岔，同一條教訓就會被記兩次。
+// 物理意義：TASK-0354。
+//           ⭐ jsonl 那一行的形狀要穩：去重是拿 `"body":"…"` 的字面去比，形狀一分岔，同一條教訓就會被記兩次。
 // 數值影響：去重命中 ⇒ 零 append，只覆寫確認檔；否則 append 一行（UTF-8 無 BOM、`\n` 結尾）＋覆寫確認檔。
 //
-// ⚠ 與 Editor 版**刻意不同**的兩格（都是補洞，不是改形狀）：
-//   ① 去重＋append 包在 `SCP_FileLock` 裡 —— Editor 版沒有鎖，兩個寫入端同時記同一條會雙寫
+// ⚠ ① 去重＋append 包在 `SCP_FileLock` 裡 —— 沒有鎖的話，兩個寫入端同時記同一條會雙寫
 //      （去重讀到的都是對方 append 之前的檔）。
-//   ② 時間戳帶 `InvariantCulture` —— Editor 版沒帶，`:` 會跟著 CurrentCulture 走（在本機剛好一樣）。
+//   ② 時間戳帶 `InvariantCulture` —— 不帶的話 `:` 會跟著 CurrentCulture 走。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -39,7 +36,7 @@ namespace SCP.Core.Lessons
         public string JsonlPath = "";
         /// <summary>寫進確認檔的那一份 markdown（全域 `_last_lesson.md` 與 per-persona 鏡寫同一份）。</summary>
         public string ConfirmText = "";
-        /// <summary>去重檢查讀不動時的警告（照 Editor 版：**繼續 append**，但要說出來）。</summary>
+        /// <summary>去重檢查讀不動時的警告（**繼續 append**，但要說出來）。</summary>
         public string Warning = "";
     }
 
@@ -54,7 +51,7 @@ namespace SCP.Core.Lessons
         public static string LastLessonPath(string iDataRoot) => Path.Combine(LessonsDir(iDataRoot), LastLessonFileName);
 
         /// <summary>
-        /// tags 參數 → 清單：逗號切、trim、丟空、去重（Ordinal、保留首見順序）—— 與 Editor 版同。
+        /// tags 參數 → 清單：逗號切、trim、丟空、去重（Ordinal、保留首見順序）。
         /// </summary>
         public static List<string> ParseTags(string? iRaw)
         {
@@ -72,7 +69,7 @@ namespace SCP.Core.Lessons
         /// 去重 → append → 組確認檔內文（**不寫**確認檔，那由呼叫端決定落在哪）。
         /// <para>⚠ body 空白丟 <see cref="ArgumentException"/> —— 呼叫端應先擋。</para>
         /// </summary>
-        /// <param name="iRelJsonl">確認檔裡印的 jsonl 相對路徑（Editor 版印相對 repo 根的路徑）。</param>
+        /// <param name="iRelJsonl">確認檔裡印的 jsonl 相對路徑。</param>
         public static SCP_LessonNoteResult Note(string iDataRoot, SCP_LessonInput iIn, string iRelJsonl)
         {
             if (string.IsNullOrWhiteSpace(iIn.Body)) throw new ArgumentException("body 必填");
@@ -81,7 +78,7 @@ namespace SCP.Core.Lessons
 
             using (SCP_FileLock.Acquire(r.JsonlPath))
             {
-                // ── 去重：只看 body，比的是**緊湊字面** `"body":"<escaped>"`（Editor 版同一判準）──
+                // ── 去重：只看 body，比的是**緊湊字面** `"body":"<escaped>"` ──
                 // ⚠ 舊格式的行（冒號後有空白、`\uXXXX` 轉義、key 叫 lesson）結構上比不到 —— 照舊，不在本層修。
                 string aNeedle = "\"body\":" + ToJsonString(iIn.Body);
                 if (File.Exists(r.JsonlPath))
@@ -161,7 +158,7 @@ namespace SCP.Core.Lessons
         }
 
         /// <summary>
-        /// Editor 版 `ToJsonString` 的逐字移植：只轉 `" \ \n \r \t` 與其他 &lt; 0x20（`\u` 小寫 hex），
+        /// 只轉 `" \ \n \r \t` 與其他 &lt; 0x20（`\u` 小寫 hex），
         /// 其餘一律原樣（含非 ASCII）。⚠ 換成通用 JSON writer 會讓去重的字面比對失準。
         /// </summary>
         public static string ToJsonString(string? s)

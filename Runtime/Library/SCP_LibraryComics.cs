@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 
 // 區塊職責：掃描外部漫畫資料夾，與 Library 媒材比對。
-// 物理意義：掃描服務接受宿主解析的根；Senate 入口讀設定快照，Editor 入口讀專案偏好。
+// 物理意義：掃描服務接受宿主解析的根；Senate 入口讀設定快照。
 // 數值影響：純讀；掃描警告交回呼叫端，不建立漫畫或閱讀資料。
 namespace SCP.Core.Library
 {
@@ -103,7 +103,7 @@ namespace SCP.Core.Library
         // 區塊職責：掃外部漫畫庫 → 聚合成系列清單 → 與 Library 既有 media 三態比對。
         // 數值影響：純讀（不建檔、不改 Library）。
         // ⚠ <paramref name="oWarning"/>：掃描途中的 IO 例外交回呼叫端，⛔ 本層不自己開 log 管道
-        //   （同 `SCP_LibraryBookshelf` 的轉發警告 —— SCP_Core 叫不到 Unity 的 Debug）。
+        //   （同 `SCP_LibraryBookshelf` 的轉發警告 —— SCP_Core 沒有 logger）。
         //   🩸 而它**不是**「沒有錯誤就是空的」：根不存在與掃壞掉都回空清單，
         //   分辨它們靠的就是這個字串。
         // ===========================================================

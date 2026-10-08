@@ -70,4 +70,4 @@ cmds: [tavern-post, tavern-wait]   # 這份文件講哪幾支指令 —— help 
 
 文件根由宿主裝上（`SCP_DocStore.RootsProvider`），共用層不推導路徑。
 Senate CLI 錨在 **exe 所在的 repo**：`<repo>/Docs` 與 `<repo>/SCP_Core/Docs~` —— ⛔ 不看 cwd。
-沒裝的宿主（例：Unity 端）`doc` 回 3、`help` 的文件那一行寫「查不了」，⛔ 不會假裝沒有文件。
+沒裝的宿主 `doc` 回 3、`help` 的文件那一行寫「查不了」，⛔ 不會假裝沒有文件。

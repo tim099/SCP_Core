@@ -1,12 +1,9 @@
-// 區塊職責：persona 身分欄的**讀取本體**（共用層）—— Unity 與 senate.exe 走同一份。
+// 區塊職責：persona 身分欄的**讀取本體**（共用層）。
 // 物理意義：persona 身分讀取**只有這一份**，⛔ 不要另長複本。
-//           收斂的理由：LY 已掛 SCP_Core 且 Unity 真的編它 ⇒ **兩個宿主可以共用一份實作**，
-//           而「一份實作」正是這次移植唯一要換到的東西（複製一份到 CLI 反而更糟）。
 // 數值影響：純唯讀。`profile/` 不存在 ⇒ 回 null（＝查無此人，與 Exists 同一套判準）。
 //
 // ⚠ **不做的三件事**（少做是選擇，不是遺漏）：
-//   ① 不寫任何檔 —— 寫入（身分欄、綁定、審計）全部在 `SCP_PersonaProfileWrite`，**唯一一支**（TASK-0361：
-//      Unity 端不留寫入；本檔原本那支 `WriteBankAccount`＋`bank/_audit.log` 已併進去）
+//   ① 不寫任何檔 —— 寫入（身分欄、綁定、審計）全部在 `SCP_PersonaProfileWrite`，**唯一一支**（TASK-0361）
 //   ② 不做 lazy migration（實測 2026-08-31 本 repo 全庫 `_field_sources` ＝
 //      profile 178／absent 53／**legacy 0** ⇒ 那條路是死碼。⚠ 別台的 clone 若還沒遷完會不一樣，
 //      所以 `SrcLegacy` 常數與那條分支的**位置**保留，只是不搬「自動遷移的寫入」）
@@ -25,7 +22,7 @@ namespace SCP.Core.Letters
 {
     public static class SCP_PersonaProfile
     {
-        // ── 欄位分類（與 python `_lib/persona_profile.py`／UCL 端同名常數是**兩端同步義務**）──
+        // ── 欄位分類（與 python `_lib/persona_profile.py` 同名常數是**兩端同步義務**）──
 
         public static readonly string[] RoutingFields = { "agent", "model", "actual_agent" };
 
@@ -233,8 +230,7 @@ namespace SCP.Core.Letters
         static string ReadBankFile(string iPath) => ReadBankFile(iPath, out _);
 
         /// <summary>同上，而 <paramref name="oBusy"/> 分得出「沒有這顆檔」與「這一瞬間讀不了」（TASK-0265）。
-        /// <para>🩸 舊版 `!File.Exists ⇒ ""`：綁定檔由 Unity 與 senate 各自 Delete→Move 換檔，
-        /// 撞上那一瞬間就讀成「沒有綁定」⇒ 借別區／落央行 ⇒ 錢進了另一個帳戶。</para></summary>
+        /// <para>🩸 `!File.Exists ⇒ ""` 會把寫入端換檔的那一瞬間讀成「沒有綁定」⇒ 借別區／落央行 ⇒ 錢進了另一個帳戶。</para></summary>
         static string ReadBankFile(string iPath, out bool oBusy)
         {
             oBusy = false;
@@ -348,7 +344,7 @@ namespace SCP.Core.Letters
             oValue = null;
             string aPath = SCP_LettersPaths.ProfileDir(new SCP_LettersRoot(iLettersRoot), iPersona)
                            + "/" + iField + ".md";
-            // TASK-0265：`!File.Exists ⇒ 沒有這一欄` 會把 Unity 那側 Delete→Move 換檔的那一瞬間讀成「欄位不存在」
+            // TASK-0265：`!File.Exists ⇒ 沒有這一欄` 會把寫入端換檔的那一瞬間讀成「欄位不存在」
             //   ⇒ 合併檔少一欄而沒有任何警告。重試跨過窗口；真的不在才回 false，讀不了照舊警告。
             if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aText, out var aState))
             {

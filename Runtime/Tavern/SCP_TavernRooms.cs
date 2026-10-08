@@ -6,9 +6,7 @@
 //
 // ⚠ 本檔只做**讀取**：房間清單／房間 meta／目前 seq／成員／身分／quest 事件 —— 全部純讀。
 //
-// 🔴 `task_list`／`task_next`／`task_state` **不在本檔射程**：它們呼叫 `AutoRecoverStaleLeases`，
-//   而那支會 `AppendEvent` ⇒ 它們是「讀為主、寫一格」，與 `catchup`／`inbox_read` 同一類，
-//   歸 TASK-0106 那一側。⛔ 別因為名字裡有 list 就把它們當純讀搬進來。
+// 🔴 `task_list`／`task_next`／`task_state` **不在本檔射程**：投影在 `SCP_TavernQuestState`／`SCP_TavernQuestRender`。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -90,8 +88,7 @@ namespace SCP.Core.Tavern
         /// <summary>
         /// 列出所有房間的 meta（依 id 排序）。
         /// <para>⚠ 判準是**有 `meta.json`**，而 <see cref="SCP_TavernRead.EnumerateRoomIds"/> 的判準是
-        /// **有 `messages/`** —— 兩者不是同一個集合，⛔ 別互相代用。
-        /// Editor 側 `listrooms` 走的是前者（`LoadRooms` → `EnumerateRoomIds` → `LoadRoomMeta`）。</para>
+        /// **有 `messages/`** —— 兩者不是同一個集合，⛔ 別互相代用。`listrooms` 走的是前者。</para>
         /// </summary>
         public static List<SCP_TavernRoomMeta> LoadRooms(string iDataRoot)
         {
@@ -113,7 +110,7 @@ namespace SCP.Core.Tavern
             return aOut;
         }
 
-        /// <summary>目前的 seq（`_seq.txt`）。檔不在或解不出回 0 —— 與 Editor 側 `ReadCurrentSeq` 同語意。</summary>
+        /// <summary>目前的 seq（`_seq.txt`）。檔不在或解不出回 0。</summary>
         public static int ReadCurrentSeq(string iDataRoot, string iRoom)
         {
             string aPath = SeqPath(iDataRoot, iRoom);
@@ -122,7 +119,7 @@ namespace SCP.Core.Tavern
             catch (Exception) { return 0; }
         }
 
-        /// <summary>一房的成員 id（落盤順序，⛔ 不排序 —— Editor 側就是照落盤順序印的）。</summary>
+        /// <summary>一房的成員 id（落盤順序，⛔ 不排序）。</summary>
         public static List<string> LoadMemberIds(string iDataRoot, string iRoom)
         {
             var aOut = new List<string>();

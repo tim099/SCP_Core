@@ -7,7 +7,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 
 # 閱讀庫
 
-`senate cmd library` 在本機執行，不需要 Unity Editor。宿主每次讀取設定，使用 `SCP_PathRegistry` 與 `SenatePathBinding` 解析資料根與信件庫根；指令不接受根目錄參數。
+`senate cmd library` 在本機執行。宿主每次讀取設定，使用 `SCP_PathRegistry` 與 `SenatePathBinding` 解析資料根與信件庫根；指令不接受根目錄參數。
 
 | 根 | 設定 | 落點 |
 |---|---|---|

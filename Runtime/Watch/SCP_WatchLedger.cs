@@ -159,7 +159,7 @@ namespace SCP.Core.Watch
             string aPath = SessionsLogPath(iDataRoot);
             if (!File.Exists(aPath))
             {
-                // ⛔ 不自己造一本台帳：台帳的產生端是 Editor 的收工流程。
+                // ⛔ 不自己造一本台帳：本層只回填，不是台帳的產生端。
                 //   這裡憑空 create 會讓「台帳不存在」變成「台帳只有匯出事件」——後者更難查。
                 oWarnings.Add($"⚠ 找不到 sessions_log.jsonl —— 本次**未回填** exported_chapter（{aPath}）");
                 return new List<string>();
@@ -180,8 +180,8 @@ namespace SCP.Core.Watch
                 // ⚠ 一行一筆（jsonl）⇒ **不縮排**。縮排會讓每一筆佔多行，而讀取端是逐行 parse 的。
                 aText.Append(aRec.ToJson(iIndented: false)).Append('\n');
             }
-            // ⚠ `AppendAllText` 而不是讀回來重寫 —— 這一層有兩個寫者（另一個是 Editor），
-            //   而它們不互相蓋的唯一理由就是雙方都只 append。
+            // ⚠ `AppendAllText` 而不是讀回來重寫 —— 台帳可能不只一個寫者，
+            //   而它們不互相蓋的唯一理由就是都只 append。
             File.AppendAllText(aPath, aText.ToString(), new UTF8Encoding(false));
             return aIds;
         }

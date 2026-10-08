@@ -97,7 +97,7 @@ namespace SCP.Core.Letters
             // 機器欄位（provenance）—— 這七個以本函式為準，作者寫的同名欄留 `_as_written`。
             // 🩸 後兩欄（region／project）是 2026-09-06 補的，而它們缺席的樣子正是本檔開頭那句話：
             //   「frontmatter 少一欄不會有任何一層報錯」。TASK-0134 QA（summit 09-05）並排兩封信量到
-            //   cmd_rest 寫 5 欄、Editor 的 cmd_goodnight 寫 7 欄 ⇒ 這支寫出來的信會被讀成
+            //   cmd_rest 寫 5 欄、cmd_goodnight 寫 7 欄 ⇒ 這支寫出來的信會被讀成
             //   「2026-09-02 之前的舊信」形狀（那批**真的**沒有這兩欄），**而它是今天寫的**。
             //   ⚠ 而那封信裡正好引用了酒館 seq —— region 管的就是那條軸。
             var aMachine = new List<KeyValuePair<string, string>>

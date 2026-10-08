@@ -1,8 +1,6 @@
 // 區塊職責：**後台頁的標準骨架** —— 一排工具列（返回／首頁／自訂鈕）＋ 下面的內容。
-// 物理意義：概念取自 Unity 端的 UCL_EditorPage（TopBar：Back/Close/Help ＋ TopBarButtons ＋ ContentOnGUI）
-//           與 UCL_CommonEditorPage（ShowInPageMenu 決定要不要列進選單）。
-//           ⭐ 這裡把那兩層**合成一層**：UCL 分兩層是歷史（通用層與「加類名＋Copy」層），
-//           而這裡兩層都只有同一批消費端 —— 分兩層只會多一個「該繼承哪一個」的問題。
+// 物理意義：TopBar（導覽鈕 ＋ TopBarButtons）＋ DrawContent，以及 MenuGroup 決定要不要列進選單。
+//           ⭐ 只有**一層**基底：所有頁都是同一批消費端 —— 分兩層只會多一個「該繼承哪一個」的問題。
 // 數值影響：本層零 IO、零繪圖依賴，只往 SCP_Ui 掛節點。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
@@ -124,7 +122,7 @@ namespace SCP.Core.Gui
         /// <summary>
         /// 這一頁要不要列進入口頁的清單，以及列在哪一組。
         /// <para><c>null</c> ＝ 不列（預設，opt-in）；非 null ＝ 列進去，而**字串本身就是分組名**。</para>
-        /// <para>⭐ 取代 UCL 的 <c>ShowInPageMenu</c>（bool）。差別不只是型別：
+        /// <para>⭐ 刻意不用 bool：
         /// bool 只能回答「要不要出現」，清單一長就變成一坨沒有結構的按鈕；
         /// 字串同時回答「要不要出現」與「跟誰一國」，於是入口頁可以先篩分組再選頁。
         /// ⚠ 空字串**不等於** null —— 空字串是「列進去、但沒有分組名」，
@@ -171,8 +169,7 @@ namespace SCP.Core.Gui
         /// <summary>
         /// 工具列上要不要「原始碼」鈕。條件只有一個：**宿主裝了開檔案總管的能力**
         /// （<see cref="SCP_GuiHost.RevealInFileManager"/>）。
-        /// <para>⚠ 沒裝就不畫 —— 畫一顆按了不會有事的鈕，比沒有那顆鈕糟
-        /// （這是 UCL 那顆 Help 鈕的同一格：沒有 HelpURL 就不畫）。</para>
+        /// <para>⚠ 沒裝就不畫 —— 畫一顆按了不會有事的鈕，比沒有那顆鈕糟。</para>
         /// <para>路徑本身一定有東西可以交（精確路徑或類別名），所以不列入條件。</para>
         /// </summary>
         protected virtual bool ShowSourceButton => SCP_GuiHost.RevealInFileManager != null;
@@ -220,7 +217,7 @@ namespace SCP.Core.Gui
 
                 iUi.Label(key);
 
-                // 「這一頁的碼在哪」—— UCL 那顆 Help 鈕的同一格（位置也一樣：導覽鈕之後、自訂鈕之前）。
+                // 「這一頁的碼在哪」（位置：導覽鈕之後、自訂鈕之前）。
                 // ⚠ 標籤刻意是純文字不是 📁：那顆 emoji 在不在字型的 glyph 範圍內是另一回事，
                 //   而缺字**不報錯**，只會變成一個方塊（SenateFonts 的血證就是這一族）。
                 if (ShowSourceButton && iUi.Button($"📂", SourceButtonId)) aAction = 3;
@@ -230,8 +227,8 @@ namespace SCP.Core.Gui
                 if(iUi.Button($"📋", CopyClassButtonId)) aAction = 4;
 
                 // ⚠ 這裡刻意**不 try/catch**：工具列的按鈕炸掉是程式錯誤，
-                //   吞掉它只會讓「那顆鈕沒反應」變成沒有人查得到的事（UCL 那側有 Debug.LogException
-                //   可以吞得起來，共用層沒有 logger —— 吞了就是真的沒有讀數）。
+                //   吞掉它只會讓「那顆鈕沒反應」變成沒有人查得到的事
+                //   （共用層沒有 logger —— 吞了就是真的沒有讀數）。
                 TopBarButtons(iUi);
 
 
@@ -317,10 +314,10 @@ namespace SCP.Core.Gui
                 : aCopy(SourceClassName));
         }
 
-        /// <summary>子類在工具列上加自己的鈕（對應 UCL 的 <c>TopBarButtons</c>）。</summary>
+        /// <summary>子類在工具列上加自己的鈕。</summary>
         protected virtual void TopBarButtons(SCP_Ui iUi) { }
 
-        /// <summary>頁面內容（對應 UCL 的 <c>ContentOnGUI</c>）。</summary>
+        /// <summary>頁面內容。</summary>
         protected abstract void DrawContent(SCP_Ui iUi);
 
         /// <summary>
@@ -330,7 +327,7 @@ namespace SCP.Core.Gui
         /// </summary>
         public sealed override void Draw(SCP_Ui iUi)
         {
-            // ⭐ 工具列包在 `TopBar()` 裡 ⇒ **不跟內容一起捲**（Tim 2026-09-17，概念同 `UCL_EditorPage`）。
+            // ⭐ 工具列包在 `TopBar()` 裡 ⇒ **不跟內容一起捲**（Tim 2026-09-17）。
             //   🩸 沒有這一層時，內容一長就得先捲回最上面才按得到返回鈕 ——
             //     而那顆鈕正是「我迷路了」時要按的那一顆。
             using (iUi.TopBar()) DrawTopBar(iUi);

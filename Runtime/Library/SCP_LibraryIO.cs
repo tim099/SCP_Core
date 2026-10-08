@@ -52,7 +52,7 @@ namespace SCP.Core.Library
         public const string Key_Name = "name";
         public const string Key_NameOriginal = "name_original";
         public const string Key_Facts = "facts";
-        // ── round 條目的三欄（TASK-0166 第一刀搬 RenderRecall 時補上；鍵名與 Editor 端逐字相同）──
+        // ── round 條目的三欄（TASK-0166）──
         // ⚠ `segments` 不是裝飾：它讓「一話分兩場寫完」與「看了兩遍」在讀回視圖上分得開；
         //   不印的話那兩件事同形，而誤讀不會有任何一層報錯（TASK-0121 ③）。
         public const string Key_ReadingStartedAt = "reading_started_at";
@@ -102,8 +102,7 @@ namespace SCP.Core.Library
         /// ⇒ 判準：對拍的對象是**舊 writer**，不是磁碟；磁碟只拿來間接驗「我有沒有把舊 writer 抄對」。
         /// </remarks>
         /// <remarks>
-        /// ⭐ 非 ASCII **不需要**額外還原：<c>SCP_JsonWriter.WriteString</c> 天生照原字寫
-        /// （UCL 那版得先跑一支 <c>UnescapeNonAscii</c> 把逃脫轉回來，本層不必搬那個補丁）。
+        /// ⭐ 非 ASCII **不需要**額外還原：<c>SCP_JsonWriter.WriteString</c> 天生照原字寫。
         /// </remarks>
         public static void SaveJson(string iPath, SCP_JsonData iData)
         {
@@ -192,7 +191,7 @@ namespace SCP.Core.Library
         // 🩸 TASK-0137（2026-09-05 summit）：三支 op 全回「檔案不存在：…/reader.json」，
         //   她讀不出出口於是沒寫成接續點 —— 而場次結算 exit 0、公告照發
         //   ⇒ **場次帳是綠的、記憶帳是空的**。那是窄報，不是拒絕。
-        // ⚠ 出口指 `senate cmd library`（Cmd 殼已落地；TASK-0435 回來改掉舊的 Editor 入口形狀）。
+        // ⚠ 出口指 `senate cmd library`（TASK-0435）。
         //   期待度範圍跟 help 同一句（0-5，預設 3）—— 兩處寫不一樣，照提示打的人會被擋。
         static string NotAReaderYetMessage(string iDataRoot, string iMediaId, string iPersona,
                                            string iReaderPath)

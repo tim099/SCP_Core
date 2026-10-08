@@ -11,8 +11,8 @@ related:
 ---
 
 <!-- ⚠ 路徑寫法：本 repo 的檔案用相對路徑；跨 repo 的用 <Senate> / <UCL_Core> 角括號佔位。
-     **目前沒有 `scp_core:` prefix resolver**（只有 `ucl_core:` / `repo:` 兩個，
-     註冊在 UCL_CoreDocsBootstrap.cs）—— 需要 URL token 形式時要先補 resolver，不要自己造第三種寫法。 -->
+     URL token 形式的 prefix resolver 只有 `ucl_core:` / `repo:` / `scp_core:` 三個
+     （註冊在 UCL_CoreDocsBootstrap.cs）—— 不要自己造第四種寫法。 -->
 
 # 🧱 SCP 專案撰寫規範
 
@@ -195,7 +195,7 @@ if (!aData.TryGetString("session_key", out string aKey)) { /* 沒設定，不是
 
 ### 3.5 兩個宿主可能同時寫
 
-SCP_Core 同時活在 Unity Editor 與 Senate 裡，同一個專案的 prefs **可能被兩邊同時寫**。
+同一個專案的 prefs **可能被多個行程同時寫**。
 ⇒ 寫入必須：**temp file + atomic replace**、**未知鍵原樣保留**（§2.2 ③）、
 **寫完回讀驗證**。單純 `WriteAllText` 覆蓋會讓後寫的那邊靜默吃掉先寫的那邊。
 
@@ -350,8 +350,6 @@ SCP_DataPaths.QueueFolder(new SCP_DataRoot(aDataRoot), aPersona);
 
 ## §4.5 ⛔ 驗收：改完 code **先 build，再對 exe 實跑**（Tim 2026-08-30 拍板）
 
-這是 UCL 那側「改完 `.cs` 一律送 `Cmd_Recompile`」的對應條款 —— 同一個病，不同的宿主。
-
 | 你跑的 | 實際是什麼 |
 |---|---|
 | `dotnet run --project src/Senate.Cli` | **Debug**、framework-dependent 的 DLL |
@@ -438,8 +436,7 @@ git -C <另一份> pull --ff-only origin master
 隔天量才發現早就被同步掉了。
 ⇒ **落後的工作副本不會報錯，它會給你一個看起來完整的舊世界。**
 
-📌 而 2026-09-04 之前這一步是**等人做**的（我在收尾清單裡寫「同步是 Tim 的例行」）。
-Tim 當天拍板：**agent 自己 push & pull**。⇒ 那條「等人」的路徑退場，這一節就是它的替代品。
+📌 同步由 **agent 自己 push & pull**（Tim 2026-09-04 拍板），不等人做。
 
 ### ⛔ 掛在 `Assets/` 底下的那一份**不要 `dotnet build`**（2026-09-04）
 
@@ -452,12 +449,7 @@ error CS1704: An assembly with the same simple name 'SCP_Core' has already been 
   Try removing one of the references (e.g. '…/Assets/Plugins/SCP_Core/obj/Debug/netstandard2.1/refint…')
 ```
 
-⚠ 兩個地方會讓人查錯方向：
-
-1. **它報在 `UCL_Core`**（引用 SCP_Core 的那一邊），不是報在 SCP_Core ——
-   症狀出現的層跟成因的層不同，而我當時正在大改 UCL_Core 的 22 個檔，
-   **差一步就會去那 22 個檔裡找一個不存在的錯**。
-2. **`bin/` `obj/` 在 `.gitignore` 裡** ⇒ `git status` 不會提醒你它們躺在那裡。
+⚠ **`bin/` `obj/` 在 `.gitignore` 裡** ⇒ `git status` 不會提醒你它們躺在那裡。
 
 ⇒ 規則：**要編 SCP_Core 就編 Senate 那一份**（`D:/Unity/Senate/SCP_Core`）。
 Unity 那一份的語法驗收走 **Unity CLI 的重編**（`unity command recompile` → 輪詢 `recompile_status` → 看 `compilationFailed`，
@@ -498,8 +490,8 @@ README 原本的判準是「只放純函式 ＋ 零依賴；檔案 IO、跑 git�
 
 ### 5.1 ⚠ 共用層的 static 狀態，在 Senate Server 裡是**多執行緒**在碰（2026-09-02）
 
-Unity Editor 是單執行緒宿主，SCP_Core 裡「掃一次快取起來」的 static（`SCP_CmdRegistry`、`SCP_Reflect`）
-在那側永遠不會被同時初始化。Senate Server 每條 lane 一條 thread ⇒ **第一次同時進來的那幾個 thread 會一起做初始化**。
+SCP_Core 裡「掃一次快取起來」的 static（`SCP_CmdRegistry`、`SCP_Reflect`）在 Senate Server 裡
+每條 lane 一條 thread ⇒ **第一次同時進來的那幾個 thread 會一起做初始化**。
 
 > 🩸 2026-09-02 第一輪驗收：三條 lane 同時第一次 `SCP_CmdRegistry.Find` ⇒ 三個 thread 同時 `Discover()`
 > 清空再填同一個 `Dictionary` ⇒ `InvalidOperationException: Operations that change non-concurrent collections

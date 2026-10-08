@@ -1,15 +1,12 @@
 // 區塊職責：`senate cmd persona-profile` —— persona 設定的**寫入**入口：身分欄 set／unset、本區銀行綁定 get／set／unbind、導出綁定、換區重綁。
-// 物理意義：TASK-0354（Unity → Senate 遷移第一批 ④）。取代 UCL `ucmd run PersonaProfile`（已退場）；
-//           op 名與參數與 Editor 版同名同義，本體在 `SCP_PersonaProfileWrite`。讀取（整份 persona）仍走 `senate cmd persona`。
-//           **原生**，不需要 Unity。
+// 物理意義：本體在 `SCP_PersonaProfileWrite`（TASK-0354）。讀取（整份 persona）走 `senate cmd persona`。
 // 數值影響：只寫 persona 檔（`profile/`、`bank/`）與 `AwakenInit/_persona_write_audit.jsonl`。⛔ 不動帳本、不動錢。
 // ⭐ TASK-0361：這是 persona 檔**唯一**的寫入入口 —— 後台頁面（建 persona、email、actual_agent、Plurk 帳號）
 //   也走 `SCP_PersonaProfileWrite`，⛔ 不另留一份寫入程式碼。
 //
-// ⚠ Editor 版的另外兩個 op **刻意沒有移植**（寫在這裡，免得以為漏了）：
-//   · `refresh`：只重寫衍生快照 `_persona_profile_snapshot.json` —— Editor 自己在 domain reload 時重寫；Senate 不靠它。
-//   · `rename_agent`：在 Editor 版裡**寫入時必定失敗**（它最後呼叫 SetField(agent) 而那條路一律擋），
-//     帳號合一之後要改名走銀行後台。⇒ 要用的那天另開單，⛔ 不照抄一支壞的。
+// ⚠ **刻意沒有** `refresh`／`rename_agent` 這兩個 op（寫在這裡，免得以為漏了）：
+//   · `refresh`：只會重寫衍生快照 `_persona_profile_snapshot.json` —— Senate 不靠它。
+//   · `rename_agent`：寫 agent 欄那條路一律擋；帳號合一之後要改名走銀行後台。⇒ 要用的那天另開單。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -28,7 +25,7 @@ namespace SCP.Core.Cmd
         public override string Category => SCP_CmdCategory.Persona;
 
         public override string Summary =>
-            "persona 設定寫入：身分欄 set／unset、本區銀行綁定 get_bank／set_bank／unbind、導出綁定 migrate_bank、換區重綁 rebind_region —— **本地跑，不需要 Editor**";
+            "persona 設定寫入：身分欄 set／unset、本區銀行綁定 get_bank／set_bank／unbind、導出綁定 migrate_bank、換區重綁 rebind_region —— **本地跑**";
 
         public override string Details =>
             "create：`persona account fields actor reason`（建新 persona：先寫本區綁定、再逐欄寫身分欄；fields 是 JSON 物件，走 --arg-file；已存在 ⇒ 擋）。\n"

@@ -1,8 +1,8 @@
-// 區塊職責：`cmd plurk` —— Plurk 共用帳號流程的入口（TASK-0362：Unity `ucmd run Plurk` 的搬家版，**不需要 Editor**）。
+// 區塊職責：`cmd plurk` —— Plurk 共用帳號流程的入口（TASK-0362）。
 // 物理意義：邏輯本體在 `Runtime/Plurk/`（SCP_PlurkOps / SCP_PlurkLint / SCP_PlurkAccounts / SCP_PlurkApi）；
 //          本檔只做「參數 → 根 → 派遣 → 落回傳檔」。
-//          HTTP 走宿主注入的 `ISCP_HttpFormRequester`（SCP_Core 不碰網路）；Unity 那側沒注入 ⇒ 要連網的 op 會大聲失敗。
-// 數值影響：回傳檔 `letters/<persona 或 basecamp>/cmd/plurk_<op>.md`（與 Unity 版同一個位置）——
+//          HTTP 走宿主注入的 `ISCP_HttpFormRequester`（SCP_Core 不碰網路）；宿主沒注入 ⇒ 要連網的 op 會大聲失敗。
+// 數值影響：回傳檔 `letters/<persona 或 basecamp>/cmd/plurk_<op>.md` ——
 //          **成功或失敗都寫**（見 Execute 那段血證）。對外寫入的 op 一律要 `confirm=1`。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
@@ -23,7 +23,7 @@ namespace SCP.Core.Cmd
             "Plurk 共用帳號流程：resolve 查帳號 / lint 驗交付單 / preview 組 payload 不送 / post 發文（需 confirm=1）"
             + " / timeline·responses·friends 看別人在說什麼（唯讀）/ mentions 誰 @ 了我＋我回了沒（唯讀，優先處理）/ like·unlike 互動（需 confirm=1）"
             + " / 擴圈：profile·expand·search 唯讀、alerts（讀了就清通知），befriend·unfriend·follow·unfollow·accept·deny 需 confirm=1"
-            + " / 表情：emoticons 讀表並維護本地描述表（唯讀＋寫本地），emoadd 試新增自訂表情（需 confirm=1）—— **不需要 Editor**";
+            + " / 表情：emoticons 讀表並維護本地描述表（唯讀＋寫本地），emoadd 試新增自訂表情（需 confirm=1）";
 
         public override string Details =>
             "op（預設 resolve）：" + string.Join(" | ", SCP_PlurkOps.Ops) + "\n"
@@ -67,7 +67,6 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("alias", "表情代碼（emoadd 必填；⚠ Plurk 實測會忽略它自己編號）"),
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）—— senate CLI 沒給時用設定檔補上", iRequired: true),
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根（絕對路徑）—— senate CLI 沒給時用設定檔補上", iRequired: true),
-            // ⛔ 2026-10-07（TASK-0390）拿掉 `project_root`：本 Cmd 從不讀它、只驗存在 ⇒ 沒有 Unity 專案時整支擋下。
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -80,7 +79,7 @@ namespace SCP.Core.Cmd
 
             var aCtx = new SCP_PlurkContext(iArgs.Get("data_root").Trim(), iArgs.Get("letters_root").Trim());
             var aLetters = new SCP_LettersRoot(aCtx.LettersRoot);
-            // 回傳檔位置與 Unity 版同一個（`letters/<p>/cmd/plurk_<op>.md`；沒給 persona ⇒ basecamp）
+            // 回傳檔位置：`letters/<p>/cmd/plurk_<op>.md`（沒給 persona ⇒ basecamp）
             string aPath = SCP_LettersPaths.CmdPayload(aLetters, aPersona.Length == 0 ? "basecamp" : aPersona, "plurk", aOp);
 
             SCP_PlurkOps? aOps = null;
@@ -91,7 +90,7 @@ namespace SCP.Core.Cmd
             //   錯誤訊息說「詳見回傳檔」，**而那個回傳檔從來沒被寫出來**。
             //   指路牌指向一個不存在的東西 —— 而 Cmd 本身「正確地失敗了」，所以沒有任何一層會喊。
             // ⇒ 判準：報告是**診斷**，失敗的時候比成功的時候更需要它。
-            //   Unity 版是 try/finally（先落檔，再把例外丟出去）；這裡例外一律在 catch 收成 Fail，
+            //   例外一律在 catch 收成 Fail，
             //   落檔放在 catch **之後**無條件執行 —— 等價於 finally，而且 exit code 由失敗種類決定。
             // ===========================================================
             try

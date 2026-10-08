@@ -1,11 +1,11 @@
 // 區塊職責：**掛號信**的 CLI 入口（`senate cmd mail`）—— 寄件（扣郵資）／收件匣／確認閱讀／查郵資（TASK-0333）。
 // 物理意義：移植自 `registered_mail.py`（Tim 2026-09-30：python 端入口完全廢除，遷到 Senate CLI）。
-//          信件格式與讀取規則只有一份：`SCP_RegisteredMail`（Editor 那支寄系統信也呼叫它；早安 brief 的投遞也讀它，TASK-0347）。
+//          信件格式與讀取規則只有一份：`SCP_RegisteredMail`（寄系統信的 `SCP_TavernCreativeArchive` 也呼叫它；早安 brief 的投遞也讀它，TASK-0347）。
 //          跟既有三種東西的分界（別再開第四套）：給未來自己的信＝晚安儀式產物；酒館 @＝公開、即時、免費；
 //          掛號信＝**指名、付費、可指定未來的 wake 投遞**。
 // 數值影響：
 //   · 郵資讀 `SCP_BankPolicy.MailFee`（後台可調，讀不到回預設 5 —— ⛔ 不回 0：設定檔壞掉不該靜默變成免費）。
-//   · 郵資**蒸發，不進央行**（Tim 2026-08-01）⇒ 純 debit。扣款直接串 Server 的 `bank`（⛔ 不再繞 Editor 的 Treasury）。
+//   · 郵資**蒸發，不進央行**（Tim 2026-08-01）⇒ 純 debit。扣款直接串 Server 的 `bank`。
 //   · 先扣費再寫檔：錢是難以靜默還原的那一端。扣了但寫檔失敗 ⇒ 印出 ref 讓人開請款單退回，⛔ 不假裝沒發生。
 //   · 扣款非零一律當「沒扣到」⇒ 不寄（不確定有沒有扣到就當沒扣 —— 當成扣到了就是白寄）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
@@ -24,7 +24,7 @@ namespace SCP.Core.Cmd
         public override string Name => "mail";
         public override string Category => SCP_CmdCategory.Memory;
 
-        public override string Summary => "掛號信：寄（扣郵資，可指定未來 wake 投遞）／收件匣／確認閱讀／查郵資 —— **不需要 Editor**（扣款直接串 Server）";
+        public override string Summary => "掛號信：寄（扣郵資，可指定未來 wake 投遞）／收件匣／確認閱讀／查郵資（扣款直接串 Server）";
 
         public override string Details =>
             "· `op=send --arg from=<寄件 persona> --arg to=<收件 persona> --arg-file body=<檔> [--arg subject=…] [--arg deliver_at_wake=<N>]`\n"

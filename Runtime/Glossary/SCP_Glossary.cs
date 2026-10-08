@@ -1,8 +1,5 @@
 // 區塊職責：新詞辭典（glossary）的**唯一一份**實作 —— 解析 .md、偵測命中、附註、登記、查詢、列表。
-// 物理意義：TASK-0313（Tim 2026-09-27「glossary 功能遷移到 Senate CLI」、2026-09-28「詞典根留在 senate.local.json，
-//           Unity 端相關功能也遷到 Senate CLI」）。此前有兩份：Editor `Cmd_Glossary`（637 行）與
-//           `SCP_TavernPostCompose` 裡「逐字對齊它」的移植版 —— 兩份都對，而改一份不會讓另一份知道。
-//           ⇒ 行為逐格照 Editor 版搬（frontmatter 解析、longest-match-wins、slug 去重、附註格式、marker 字串）。
+// 物理意義：TASK-0313。只有這一份 —— 發文附註（`SCP_TavernPostCompose`）也呼叫這裡，⛔ 不另寫一份。
 // 數值影響：只有 <see cref="Register"/> 寫檔（一個 .md）；其餘純讀。詞典根**由呼叫端給**，本層不推導、不 walk cwd
 //           （詞典根的真相源是 Senate 的 `SCP_PathId.GlossaryRoot`，Tim 2026-09-27 拍板存 senate.local.json）。
 //
@@ -63,7 +60,7 @@ namespace SCP.Core.Glossary
         /// <summary>附註區塊的標頭。⚠ 逐字沿用（讀取端的 StripAutoAttachedBlocks 與冪等判斷都靠它）。</summary>
         public const string AutoAttachMarker = "📖 **本回提到的新詞** (auto-attached by Cmd_Glossary):";
 
-        /// <summary>預設詞典根的顯示前綴（Editor 版印的就是它）。</summary>
+        /// <summary>預設詞典根的顯示前綴。</summary>
         public const string DefaultDisplayPrefix = "docs/Glossary";
 
         /// <summary>發文時自動附註的上限。</summary>
@@ -71,8 +68,8 @@ namespace SCP.Core.Glossary
 
         /// <summary>
         /// 發文端請寫入端補附註的**一次性** meta 鍵（TASK-0313）。寫入端看到它才附，附完（或判定不附）一律拿掉，⛔ 不落進訊息檔。
-        /// <para>🩸 為什麼是「請求」而不是寫入端預設全附：Editor 有 20 處直接寫訊息（酒保回覆、Discord 進站、頁面按鈕…），
-        /// 以前只有 `Op_Post` 會附 —— 預設全附會讓它們從某一天起突然長出附註，而那不會報錯。</para>
+        /// <para>🩸 為什麼是「請求」而不是寫入端預設全附：寫訊息的路不只發文（酒保回覆、Discord 進站…），
+        /// 只有發文該附 —— 預設全附會讓那些訊息長出附註，而那不會報錯。</para>
         /// </summary>
         public const string AttachRequestMetaKey = "glossary-attach-request";
 

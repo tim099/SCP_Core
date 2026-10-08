@@ -3,7 +3,7 @@
 // 物理意義：提示長在**唯一的入口**上 —— 人一旦進到活動工具，那些工具的輸出一個字都沒提自由時間，流程就斷在那裡。
 //          邏輯本體在 `SCP_FreeTimeActivityOps`；本檔只做「參數 → 現場 → 分派」。
 // 數值影響：見 SCP_FreeTimeActivityOps 檔頭。回傳檔 `letters/<P>/cmd/freetime_activity.md`。
-// ⚠ 與 Unity 版刻意的差異：python `tool:` 那條路**沒有移植**（沒有任何 md 宣告它）——
+// ⚠ python `tool:` 那條路**不支援**（沒有任何 md 宣告它）——
 //   只宣告 `tool:` 的活動 op=step 會擋並說「python 工具步驟已不支援 —— 改成 cmd_steps」。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
@@ -17,7 +17,7 @@ namespace SCP.Core.Cmd
         public override string Name => "free-time-activity";
         public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_FreeTime>();
 
-        public override string Summary => "自由時間活動層：op=pick 選活動／op=step 代跑一步（in-process cmd）／op=done 收活動並指回換骰 —— **不需要 Editor**";
+        public override string Summary => "自由時間活動層：op=pick 選活動／op=step 代跑一步（in-process cmd）／op=done 收活動並指回換骰";
 
         public override string Details =>
             "迴圈：free-time step=next（骰清單＋讀未讀＋可帶 body 聊天）→ op=pick → op=step（可重複）→ op=done → 回到 step=next … 直到 Cmd 宣布收工。\n"

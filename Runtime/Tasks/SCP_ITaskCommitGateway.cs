@@ -16,7 +16,7 @@ namespace SCP.Core.Tasks
     /// <summary>推單的三態結局。⛔ 判斷「要不要手動補」一律看這個，不要看布林。</summary>
     public enum SCP_TaskAdvanceOutcome
     {
-        /// <summary>Editor 收到並回報成功。</summary>
+        /// <summary>寫入端收到並回報成功。</summary>
         Advanced = 0,
 
         /// <summary>**確定沒送出去**（送出前就被擋下）⇒ 手動補是安全的。</summary>

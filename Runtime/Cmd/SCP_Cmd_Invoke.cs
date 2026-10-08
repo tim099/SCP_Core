@@ -1,20 +1,18 @@
 // 區塊職責：`senate cmd invoke` —— 用反射呼叫**這個 process 裡**的 public static／instance 成員，
-//           不必為每一支內部 API 都寫一支專用 Cmd。**原生**，不需要 Unity。
+//           不必為每一支內部 API 都寫一支專用 Cmd。
 // 物理意義：本檔是 args dispatch 的薄層；解析與呼叫全在 `SCP_Invoker`（`Runtime/Reflect/`），
 //           而型別解析與字串→值又再往下走 `SCP_Reflect` ⇒ **三層各一個職責，沒有第二套解析器**。
 // 數值影響：副作用**完全由被呼叫的那支 API 決定** —— 它寫檔就寫檔、它扣錢就扣錢。
 //           ⛔ 本 Cmd 不做白名單：一份「安全成員」清單永遠不夠用，
 //           而它最大的作用是讓人以為已經擋住了。
 //
-// 🔴 **射程，先說，因為它跟 Unity 端那支同名而受詞不同**：
-//   Unity 端的 `Cmd_Invoke` 反射的是 **Unity Editor 的 API**（`CompilationPipeline` 那些）。
+// 🔴 **射程，先說**：
 //   ⛔ 本支反射的是 **`senate.exe` 這個 process 已載入的組件**（`Senate.Core` / `SCP_Core` / BCL）——
-//   在這裡打 `UnityEditor.*` 一定找不到，而那**不是 bug**。
+//   在這裡打 `UnityEditor.*` 一定找不到，而那**不是 bug**（要在 Unity Editor 裡跑 C# 走 Unity CLI 的 `eval`）。
 //
 // @doc-sync: <Senate>/Docs/API/Cli_Reference.md（`cmd` 節「反射呼叫本 process 的成員：invoke」＋ exit code 表下方那段 5 vs 70）
 //
-// ⚠ 第二個結構性差異（會咬人，寫在 Details 裡給使用者看）：
-//   Unity 那側的變數表是 static ＋ 常駐 Editor ⇒ 跨 Cmd 呼叫存活。
+// ⚠ 變數的壽命（會咬人，寫在 Details 裡給使用者看）：
 //   **CLI 每次呼叫都是新 process** ⇒ 變數只活在**同一次呼叫**內 ⇒ 鏈式呼叫走 `steps`。
 #nullable enable
 using System;

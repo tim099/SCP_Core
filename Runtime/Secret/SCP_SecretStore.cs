@@ -1,7 +1,6 @@
 // 區塊職責：secrets 資料夾的**位置解析 ＋ 掃描 ＋ 一鍵解密全部**（TASK-0300）。
-// 物理意義：資料夾名是專案佈局事實（入版控的 `<資料根>/secrets_config.json` 的 `m_SecretsDir`，缺檔＝`Secret`）——
-//          跟 Unity 端 `UCL_SecretsPath` 讀**同一個檔、同一個欄位、同一個預設**（那邊轉呼叫本檔的 ReadDirName）。
-//          ⛔ 不做「找不到就退回 _secrets」的 fallback（沿革見 UCL_SecretsPath 檔頭：那是「跑起來了但用的是另一個宇宙的檔」的入口）。
+// 物理意義：資料夾名是專案佈局事實（入版控的 `<資料根>/secrets_config.json` 的 `m_SecretsDir`，缺檔＝`Secret`）。
+//          ⛔ 不做「找不到就退回 _secrets」的 fallback（那是「跑起來了但用的是另一個宇宙的檔」的入口）。
 // 數值影響：
 //   · Scan 純讀；每顆 .enc 回 metadata（不需密碼）＋ 同名 .txt 明文在不在。
 //   · DecryptAll：**一組密碼套到每一顆**；明文已在的**跳過**（⛔ 不覆寫、不重解）。

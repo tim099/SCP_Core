@@ -3,7 +3,6 @@
 //           與 `SCP_Goodnight` 住同一層 ⇒ 提示下一步一律用 `SCP_CmdRegistry.InvokeOf<型別>()`，指令改名不過時。
 //           只有宿主才有的事走 `SCP_LocalRootsCmd.Host`：酒館寫入（含排隊）。
 // 數值影響：回傳檔 `letters/<P>/cmd/goodnight_<step>.md`；sleep／logout 刪 lock 與 now_status、關本人活動 session、發下線廣播。
-// ⚠ 整條不需要 Editor（TASK-0448 拔掉最後一段：觀影場交 Editor 結算）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -114,7 +113,7 @@ namespace SCP.Core.Cmd
     {
         public override string Name => "goodnight-sleep";
         public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_GoodnightCheck>();
-        public override string Summary => "晚安④下線：收工閘→解鎖→關場→下線廣播（Editor 沒開也下得了線）";
+        public override string Summary => "晚安④下線：收工閘→解鎖→關場→下線廣播";
         public override string Details => SCP_GoodnightCmds.SleepDetails
             + "\n⚠ **收工閘會實擋**：有未收工的單時非零退出。`skip_reason` 可以過閘 —— 理由寫進那幾張單的時間線並併入下線廣播。\n"
             + "⚠ 需要先寫信（goodnight-letter）。不想寫信的下線走 goodnight-logout。";
@@ -150,7 +149,7 @@ namespace SCP.Core.Cmd
     {
         internal const string SleepDetails =
             "順序是**不變式**：預檢（全部守衛，零寫入）→ 刪 lock／now_status → 關本人活動 session → 下線廣播（best-effort）。\n"
-            + "token 只住 lock，刪 lock 就是作廢。整條不需要 Editor：本人的活動 session（含觀影）就地關、不結算（TASK-0448）。";
+            + "token 只住 lock，刪 lock 就是作廢。本人的活動 session（含觀影）就地關、不結算（TASK-0448）。";
 
         internal static IReadOnlyList<SCP_CmdArgSpec> SleepSpecs(IEnumerable<SCP_CmdArgSpec> iBase, bool iSleep)
         {

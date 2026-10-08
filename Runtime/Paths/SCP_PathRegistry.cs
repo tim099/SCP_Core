@@ -10,7 +10,7 @@
 //   酒館 `_seq.txt`、任務 `_index.txt`、`_session` lock ——
 //   兩個資料根就是兩份序號、兩份計數、persona 被切成兩半，而**沒有任何一層會喊**。
 //   ⇒ 「有兩個啟用專案」在本層是**解析錯誤**，不是「替你挑一個」。
-//   📌 而它之後會搬到 Unity 專案之外 ⇒ （TASK-0390 已搬到 Valhalla，`auto` 那條已拿掉）
+//   📌 資料根在 Valhalla（TASK-0390）。
 //
 // ⚠ Stored / Derived 的分野是本檔的核心：
 //   🩸 現場（2026-08-31）：`sessionDir` 曾經可填（`auto` ＝ 從**信件庫根**往上找 `_session`），
@@ -127,8 +127,7 @@ namespace SCP.Core.Paths
         SettingsFile,
 
         [SCP_PathInfo("酒館根",
-            "訊息、seq、inbox 都在這下面。**寫入端只有 Senate 常駐 Server**（`tavern-write`；"
-            + "TASK-0341 起 Editor 本地寫入與 `tavern.writer` 開關都已刪除）。"
+            "訊息、seq、inbox 都在這下面。**寫入端只有 Senate 常駐 Server**（`tavern-write`）。"
             + "⚠ 舊註記寫著「`_seq.txt` 沒有跨 process lock」—— 那句的**受詞已經不對**："
             + "seq 的權威是訊息**檔數**、檔名就是 seq，而建檔走原子建檔（TASK-0256）"
             + "⇒ 撞檔會出聲，⛔ 不再是靜默覆蓋。")]

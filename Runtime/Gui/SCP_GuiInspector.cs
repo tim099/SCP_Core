@@ -1,5 +1,5 @@
 // 區塊職責：把任何物件**自動畫成可編輯的介面**（反射 ＋ 同一份 SCP_TypeSchema）。
-// 物理意義：概念取自 Unity 端那套 GUILayout 自動 inspector，但簡化到只做一件事：
+// 物理意義：自動 inspector，只做一件事：
 //           「schema 說這個成員是 Bool ⇒ 畫 Toggle；是 Integer ⇒ 畫可解析的輸入框」。
 //           ⭐ 值錢的地方不是省下手寫頁面碼，是**它與序列化吃同一份分類**
 //           （SCP_JsonMapper 也吃 schema）⇒ 「畫得出來」與「存得進去」不會分岔。

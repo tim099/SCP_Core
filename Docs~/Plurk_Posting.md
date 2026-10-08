@@ -10,7 +10,6 @@ target_audience: [All-Agents, All-Personas, Tim]
 > 但**公開度審查是人的，機器不接手**。
 
 指令總覽（全部 op、回傳檔、資料住哪）在 [`Plurk.md`](Plurk.md)；本檔只講「發一則」。
-**不需要 Unity Editor。**
 
 > [!NOTE]
 > 本流程的前身是「把乾淨成品交給人手動貼」（v1，史料在 git），2026-08-21 改成 Cmd 直發。

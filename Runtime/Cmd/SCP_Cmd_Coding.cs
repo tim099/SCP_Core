@@ -1,15 +1,10 @@
 // 區塊職責：`cmd coding` —— **Senate 側的 Coding 場入口**（TASK-0058 **A2**）。
 // 物理意義：改 `.cs` 的人在這裡進場，互斥與退場編譯閘都走它。
-//           ⭐ A2 能便宜的理由：session 檔是 `<DataRoot>/sessions/<persona>.json`，
-//           而兩個宿主的 DataRoot 是**同一個** ⇒ 不需要第二把鎖，只需要第二個入口。
+//           ⭐ session 檔是 `<DataRoot>/sessions/<persona>.json` ⇒ 互斥就靠這個檔，不需要另一把鎖。
 // 數值影響：`op=show` 一個位元組都不寫；`start`／`status`／`end` 各寫一次那個檔。
 //           **不發薪、不廣播** —— Coding 沒有金流，而公告是宿主的事。
 //
-// ⚠ **本 Cmd 不依賴 Editor**（`sessions` 那支也是）：Editor 沒開時照樣進得了場、退得了場。
-//   🩸 這是 A2 相對 A1 的**淨增量**：Editor 沒開時我照樣在改 SCP_Core 的 `.cs`
-//   （2026-09-05 我自己整天都是這樣），而 A1 那條路那時完全看不到我。
-//
-// ⚠ 退場的**編譯閘由宿主注入**（`SCP_CodingExitGateHost`）—— 兩個宿主的尺不同形，
+// ⚠ 退場的**編譯閘由宿主注入**（`SCP_CodingExitGateHost`）—— 各宿主的尺不同形，
 //   ⛔ 不可以合成一把。沒登記閘時**明說「未驗編譯」**，那跟「量過了是綠的」必須不同形。
 #nullable enable
 using System;
@@ -40,7 +35,7 @@ namespace SCP.Core.Cmd
         public override string Category => SCP_CmdCategory.Task;
 
         public override string Summary => "Coding 施工場（改 C# 前進場／場中更新 status 兼續期／"
-            + "**綁單後單子進 in_review 就自動收場**／退場過編譯閘）—— **不需要 Editor**";
+            + "**綁單後單子進 in_review 就自動收場**／退場過編譯閘）";
 
         public override string Details =>
             "⛔ **射程**：改 C# 的施工場**只有這一個入口**。\n"
@@ -244,7 +239,7 @@ namespace SCP.Core.Cmd
             // ===========================================================
             // 同 kind 守衛 —— ⚠ 這一格**不在** `TryStart` 裡，而那是刻意的：
             //   共用層明寫「同 kind 疊開由各 kind 自己的守衛管」⇒ **每個入口少寫這一段就等於沒有守衛**，
-            //   而它不會報錯。@summit 2026-09-05 在 Unity 那個入口補了同樣一段（`0d9eae1c`）。
+            //   而它不會報錯。
             // 🩸 而本入口的活體（basecamp QA 自己量的，2026-09-05 23:15）：
             //   Template 已持有一場 Coding（`…151531Z`，租期至 01:15）⇒ 從本入口再 `op=start`
             //   ⇒ **exit 0、輸出寫「✓ 進場」**，回讀那個檔：session_id 換掉、status 換掉、租期重設，
@@ -348,7 +343,7 @@ namespace SCP.Core.Cmd
                 SCP_ActivitySessionKind.Coding);
             string aTheirScope = aHeld != null ? aHeld.scope : "";
             // ⚠ **擋下的理由有三種，處置不同** —— 壓成一句「場被佔了」會讓人去做錯的那件事。
-            //   ⛔ 判定與措辭**不寫在這裡**：同一段話 Unity 那側也要印，寫兩份就是 TASK-0203 那隻。
+            //   ⛔ 判定與措辭**不寫在這裡**：只住 `SCP_SessionScope` 一份，寫兩份就是 TASK-0203 那隻。
             SCP_SessionScope.BlockKind aBlockKind = SCP_SessionScope.Classify(iScope, aTheirScope);
             string aWhy = "  · " + SCP_SessionScope.ReasonOf(aBlockKind, iScope, aTheirScope);
             string aScopeExit = SCP_SessionScope.ExitOf(aBlockKind,
@@ -423,7 +418,7 @@ namespace SCP.Core.Cmd
         //           不正規化的話「綁的是 0129、推進的是 129」會讓自動收場永遠不成立，
         //           而那個失效的樣子是「場就是不會自己收」—— 沒有人會知道是比對沒對上。
         // 數值影響：純字串處理，不碰檔案。
-        /// <summary>單號清單正規化。**公開**是因為 `cmd task op=claim`（Senate 入口，TASK-0349；原本是 Unity 側 `Cmd_Task`）也要用同一份判準（TASK-0202）。</summary>
+        /// <summary>單號清單正規化。**公開**是因為 `cmd task op=claim`（TASK-0349）也要用同一份判準（TASK-0202）。</summary>
         public static string NormalizeTasks(string iRaw)
         {
             var aOut = new List<string>();
@@ -634,6 +629,6 @@ namespace SCP.Core.Cmd
 
         /// <summary>射程定語 —— 只有一份。</summary>
         internal const string ScopeCaveat =
-            "⚠ 射程：不需要 Editor；退場閘量 `dotnet build`。";
+            "⚠ 射程：退場閘量 `dotnet build`。";
     }
 }

@@ -1,7 +1,6 @@
-// 區塊職責：`cmd tasks` —— 任務單的**唯讀**查詢。**原生**，不需要 Unity。
-// 物理意義：任務單是 `Tasks/tasks/<index>.md`（frontmatter markdown），磁碟就是真相源。
-//           讀取不需要 Editor，所以不該綁在「Editor 開著」這個前提上 ——
-//           而早安 brief 的 §9／§6 需要這份讀數，那兩節正是卡在這裡。
+// 區塊職責：`cmd tasks` —— 任務單的**唯讀**查詢。
+// 物理意義：任務單是 `Tasks/tasks/<index>.md`（frontmatter markdown），磁碟就是真相源；
+//           早安 brief 的 §9／§6 也要這份讀數。
 // 數值影響：純讀。⛔ **本 Cmd 不寫任何東西** —— 開單／改狀態／配號走 `senate cmd task`
 //           （寫入端是 Senate Server 的 `task-write`，TASK-0349；理由在 `SCP_TaskStore` 檔頭）。
 //
@@ -29,7 +28,7 @@ namespace SCP.Core.Cmd
         public override string Details =>
             "資料源＝`<data_root>/Tasks/tasks/*.md`（frontmatter markdown），磁碟即事實。\n"
             + "⛔ **只讀**：開單／改狀態／留言／勾格請走 `" + SCP_CmdRegistry.Invoke("task") + "`"
-            + "（寫入端是 Senate Server，不需要 Editor —— TASK-0349）\n"
+            + "（寫入端是 Senate Server —— TASK-0349）\n"
             + "⚠ 壞欄位（例如 status 寫著篩選成員 `all`）會**出聲**並落回預設，不靜默接受。";
 
         public override string Example =>
@@ -204,8 +203,8 @@ namespace SCP.Core.Cmd
 
         // ===========================================================
         // 區塊職責：收工閘的 CLI 讀數 —— 判準本體在 `SCP_TaskReconcile`（**不在本檔重算**）。
-        // 物理意義：這一格存在的理由是**對拍**：UCL 端晚安 step=check 的⑤也印同一件事，
-        //          兩邊該給出同一份清單。⛔ 只印不改（同 UCL 端的契約）。
+        // 物理意義：這一格存在的理由是**對拍**：晚安 `goodnight-check` 的⑤（`SCP_TaskReconcileReport`）也印同一件事，
+        //          兩邊該給出同一份清單。⛔ 只印不改。
         // ===========================================================
         static void AppendWrapup(SCP_CmdResult oResult, SCP_DataRoot iRoot, string iPersona,
                                  List<SCP_TaskEntry> iAll, List<string> ioWarnings)

@@ -1,13 +1,13 @@
-// 區塊職責：`cmd free-time` —— 自由時間流程的 Senate 入口（TASK-0360，**不需要 Editor**）。
+// 區塊職責：`cmd free-time` —— 自由時間流程的 Senate 入口（TASK-0360）。
 // 物理意義：同一支 Cmd 以 step 分步：start（註冊 until＋發限時券＋開場擲骰＋宣告）→ [做活動] →
 //          next（活動事件自然結束時跑：未到期重擲、到期收工）→ end（提前收工，附 reason）；
 //          list／shuffle／show 是純參考查詢（不進場、不發券、不寫 session、不發酒館）。
 //          邏輯本體在 `SCP.Core.FreeTime`；本檔只做「參數 → 現場 → 分派」。
 // 數值影響：見 SCP_FreeTimeFlow 檔頭（session 檔／券（經 voucher Cmd）／酒館（經 tavern-post Cmd）／回傳檔）。
-// ⚠ 與 Unity 版刻意的差異：
-//   ① `body` / `roll` **宣告成參數**（Unity 靜默接受未宣告的參數；本系統未宣告的名字一律擋）。
-//   ② 數值常數改讀 `<data_root>/FreeTime/freetime_settings.json`（SCP_FreeTimeSettings；檔不存在就說「使用預設值」）。
-//   ③ 酒館未讀段改成**先落回傳檔、再推游標**（Unity 版是組段落的同時就推了）。
+// ⚠ 要點：
+//   ① `body` / `roll` **宣告成參數**（未宣告的名字一律擋）。
+//   ② 數值常數讀 `<data_root>/FreeTime/freetime_settings.json`（SCP_FreeTimeSettings；檔不存在就說「使用預設值」）。
+//   ③ 酒館未讀段**先落回傳檔、再推游標**。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System.Collections.Generic;
@@ -20,7 +20,7 @@ namespace SCP.Core.Cmd
         public override string Name => "free-time";
         public override string Category => SCP_CmdCategory.Routine;
 
-        public override string Summary => "自由時間流程（step=start/next/end ＋ 純參考查詢 list/shuffle/show）—— **不需要 Editor**";
+        public override string Summary => "自由時間流程（step=start/next/end ＋ 純參考查詢 list/shuffle/show）";
 
         public override string Details =>
             "正常流程（agent 視角）：\n"

@@ -254,9 +254,8 @@ namespace SCP.Core.Prefs
         }
 
         // 區塊職責：讀整份設定檔的唯一入口（TASK-0265）—— 讀取端四處（scalar／section／Sections／Mutate）共用。
-        // 物理意義：本檔由多個進程（Editor／每顆 senate CLI／Server）各自 Mutate，而換檔那一瞬間目標檔短暫不在。
-        //          舊版四處各自 `if (!File.Exists) ⇒ 沒設定`，會把那一瞬間讀成「這個設定還沒存過」
-        //          （實例：酒館寫入模式退回 Editor）。
+        // 物理意義：本檔由多個進程（每顆 senate CLI／Server）各自 Mutate，而換檔那一瞬間目標檔短暫不在。
+        //          `if (!File.Exists) ⇒ 沒設定` 會把那一瞬間讀成「這個設定還沒存過」。
         // 數值影響：回 false 時 oMissing 分兩種 —— true ＝真的沒有這個檔（合法：還沒存過）；
         //          false ＝讀不了或壞了，oError 是給人讀的原因。⛔ 呼叫端不可把後者當成「沒設定」。
         bool TryReadRoot(out SCP_JsonData oRoot, out bool oMissing, out string oError)

@@ -7,7 +7,7 @@ target_audience: [AI_Agent]
 
 # 🌱 建立新 persona
 
-> 早安時使用者說「要一位新的」就走這裡。**本地跑，不需要 Unity Editor。**
+> 早安時使用者說「要一位新的」就走這裡。**本地跑。**
 > 參數表看 `senate cmd help persona-create`，本檔只寫流程與判斷。
 
 ## 1. 逐題問使用者（問到必需欄位都有了才 draft）

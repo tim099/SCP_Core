@@ -359,7 +359,7 @@ namespace SCP.Core.Library
                 Directory.CreateDirectory(aDir);
                 oReportPath = Path.Combine(aDir, ScanReportName);
                 // ⚠ 報告本體是 `AppendLine` 組的 ⇒ 在 Windows 上本來就是 CRLF；
-                //   走 WriteCrLf 是讓它**在哪個平台跑都一樣**，不是改版面（UCL 那側是原樣寫出）。
+                //   走 WriteCrLf 是讓它**在哪個平台跑都一樣**，不是改版面。
                 SCP_TextFile.WriteCrLf(oReportPath, aReport);
             }
             catch (Exception e)

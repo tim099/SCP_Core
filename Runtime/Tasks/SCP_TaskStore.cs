@@ -8,9 +8,8 @@
 //     `Save` 是 **private** ⇒ 呼叫端在型別上拿不到「不在鎖內的 entry」，也拿不到 `Save`。
 //   · 鎖一：process 內（每個資料根一把 `Monitor`，Server 是多執行緒的 —— Coding_Standards §5.1）。
 //   · 鎖二：跨 process（`SCP_FileLock`，鎖 `_index.txt` 旁邊那顆 `.lock`）——
-//     🩸 UCL 那支只有鎖一，檔頭自己寫著「python／另一個 Editor 實例同時寫，本鎖答不出來」。
-//     寫入端搬到 Server 之後理論上只剩一個 process，而「理論上」正是會漂的那種前提 ⇒ 這一格用機制補。
-//   · 🩸 UCL 的 `Link`／`Unlink` 是**鎖外**寫兩次（`AssertHoldsRmwLock` 每次都該叫）—— 本檔收進鎖內。
+//     寫入端在 Server 裡，理論上只有一個 process，而「理論上」正是會漂的那種前提 ⇒ 這一格用機制補。
+//   · `Link`／`Unlink` 的兩次寫入都在鎖內。
 //
 // ⚠ 配號（`Create`）的形狀換了，照酒館 `SCP_TavernWriter` 那條走過的路：
 //   舊：先把 `_index.txt` +1 寫回、再建構、再 Save ⇒ 建構丟例外（參數不合法）時**號碼已經被吃掉**
@@ -21,10 +20,10 @@
 //   ⇒ 計數檔降級成**快取**：事實是磁碟上的檔名（與酒館 `_seq.txt` 同一個判準）。
 //
 // ⚠ 落盤格式**逐位元組固定**（鍵序、`id:` 行、severity=none 不落行、`_(未填)_`、
-//   留言行首 `#` 逃脫、UTF-8 無 BOM、`\n`）—— 既有 358 張單由舊寫入端寫出，新寫入端重寫任何一張都**不該有結構 diff**。
+//   留言行首 `#` 逃脫、UTF-8 無 BOM、`\n`）—— 重寫任何一張既有單都**不該有結構 diff**。
 //   ⛔ 改格式要同時改 `SCP_TaskIO`（讀取端），而那是另一張單的事。
 // 數值影響：純檔案 IO；一次 Mutate ＝ 一次讀 ＋ 一次寫（temp → replace）。
-// ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也編這份，雖然它不再呼叫寫入面）。
+// ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
 using System.Collections.Concurrent;
@@ -72,7 +71,7 @@ namespace SCP.Core.Tasks
 
     public static class SCP_TaskStore
     {
-        /// <summary>in_progress 超過這個天數沒動 ⇒ stale。與 UCL 同一個數字。</summary>
+        /// <summary>in_progress 超過這個天數沒動 ⇒ stale。</summary>
         public const int STALE_DAYS = 14;
 
         /// <summary>撞檔重試上限 —— 與酒館寫入端同一個數字（`SCP_TavernWriter.MaxHealRetries`）。</summary>
@@ -226,7 +225,7 @@ namespace SCP.Core.Tasks
                 if (e.comments.Count == 0) e.comments = SCP_TaskIO.ReadComments(aPath);
                 if (string.IsNullOrEmpty(iCriteria)) iCriteria = ReadSection(aPath, "## 驗收標準");
                 if (string.IsNullOrEmpty(iDescription)) iDescription = ReadSection(aPath, "## 任務描述");
-                // 🩸 UCL TASK-0158：`resolution_note` 只有寫入端 —— 讀取層只解析 frontmatter，漏撈就會被整段刪掉。
+                // 🩸 TASK-0158：`resolution_note` 只有寫入端 —— 讀取層只解析 frontmatter，漏撈就會被整段刪掉。
                 if (string.IsNullOrEmpty(e.resolution_note)) e.resolution_note = ReadSection(aPath, "## 結單說明");
             }
             if (!string.IsNullOrEmpty(iActivityLine)) aTimeline.Add("- " + iActivityLine);
@@ -238,7 +237,7 @@ namespace SCP.Core.Tasks
         }
 
         // ===========================================================
-        // 區塊職責：把一張單排成磁碟格式（純函式）。⚠ 逐位元組照 UCL `Save`，見檔頭。
+        // 區塊職責：把一張單排成磁碟格式（純函式）。⚠ 格式逐位元組固定，見檔頭。
         // ===========================================================
         public static string Render(SCP_TaskEntry e, string iCriteria, string iDescription, List<string> iTimeline)
         {
@@ -399,7 +398,7 @@ namespace SCP.Core.Tasks
         // ── 查詢（寫入端的閘與回報用；讀取層沒有的那幾支）────────────
 
         /// <summary>
-        /// 還沒關掉的 blocker（UCL 同一個措辭）。⚠ 指到**不存在**的單也算未解 —— 「查不到」不等於「已經解決」。
+        /// 還沒關掉的 blocker。⚠ 指到**不存在**的單也算未解 —— 「查不到」不等於「已經解決」。
         /// </summary>
         public static List<string> OpenBlockers(SCP_DataRoot iRoot, SCP_TaskEntry? e)
         {

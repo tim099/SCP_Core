@@ -7,9 +7,8 @@
 //     給 TASK-0316 Outbound 依頻道路由用（Tim 2026-09-28）。
 //   · 封存 ＝ 把整個房間資料夾搬到 `ChatTavern/rooms_archive/<room>/`（Tim 2026-09-28）；**不刪**任何訊息，
 //     取消封存就搬回 `rooms/`。封存狀態＝**資料夾在哪一邊**（⛔ 不另存旗標：兩份真相會漂）。
-//     搬走之後 Unity 與 `SCP_TavernRead` 都看不到它（兩者都只列 `rooms/`）；寫入端（`tavern-write`）會擋下對封存房的發文
+//     搬走之後 `SCP_TavernRead` 看不到它（只列 `rooms/`）；寫入端（`tavern-write`）會擋下對封存房的發文
 //     —— 否則寫入端會在 `rooms/` 自己建一個同名新房、seq 還接著舊號。
-//   · 完全不依賴 Unity（Tim 2026-09-28：酒館之後全面遷移到 Senate）。
 // 數值影響：讀取零寫入。寫入走暫存檔再換檔，寫完回讀；驗證不過一律零寫入。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
@@ -107,11 +106,11 @@ namespace SCP.Core.Tavern
             new System.Text.RegularExpressions.Regex("^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
         /// <summary>
-        /// **建新頻道**（TASK-0328：從 Unity `Tavern op=createroom` 搬來）：建 `rooms/<id>/` ＋ `meta.json`，可同時設分類。
+        /// **建新頻道**（TASK-0328）：建 `rooms/<id>/` ＋ `meta.json`，可同時設分類。
         /// · 已經存在 ⇒ **冪等**：不動 meta（⛔ 不蓋掉別人寫的名稱與說明），只在給了分類時設分類；<paramref name="oCreated"/>=false。
         /// · 在封存區 ⇒ 擋下（要用先取消封存 —— 同名新房會跟封存那份撞）。
         /// · id 只收英數開頭、`[A-Za-z0-9_-]`、最長 64（⛔ 路徑穿越）；分類要已在清單裡（同 set-category）。
-        /// 📌 Unity 版附帶的「註冊到 Discord mirror」不搬：Discord 轉發改看頻道分類（TASK-0320）。
+        /// 📌 不註冊 Discord mirror：Discord 轉發看頻道分類（TASK-0320）。
         /// </summary>
         public static bool TryCreateChannel(string iDataRoot, string iRoom, string iName, string iDescription, string iCategory,
                                             out bool oCreated, out string? oError)
@@ -180,7 +179,7 @@ namespace SCP.Core.Tavern
             => SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)).Replace('\\', '/')
                + "/" + CategoriesFileName;
 
-        /// <summary>`ChatTavern/rooms_archive/`（與 `rooms/` 同層 —— ⛔ 不放進 `rooms/` 底下：Unity 會把它當成一個房）。</summary>
+        /// <summary>`ChatTavern/rooms_archive/`（與 `rooms/` 同層 —— ⛔ 不放進 `rooms/` 底下：會被列舉成一個房）。</summary>
         public static string ArchiveRoot(string iDataRoot)
             => SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)).Replace('\\', '/')
                + "/" + ArchiveDirName;

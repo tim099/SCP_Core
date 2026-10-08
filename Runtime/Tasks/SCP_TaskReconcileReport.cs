@@ -73,7 +73,7 @@ namespace SCP.Core.Tasks
         static bool Involves(SCP_TaskEntry e, string iPersona)
             => IsParticipantCI(e, iPersona) || string.Equals(e.reporter, iPersona, StringComparison.OrdinalIgnoreCase);
 
-        /// <summary>距上次更新幾天；updated_at 解析不了回 -1（與 Editor 版同）。</summary>
+        /// <summary>距上次更新幾天；updated_at 解析不了回 -1。</summary>
         public static int DaysSinceUpdate(SCP_TaskEntry e, DateTime iNowUtc)
         {
             if (!DateTime.TryParse(e.updated_at, CultureInfo.InvariantCulture,

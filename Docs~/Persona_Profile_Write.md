@@ -11,12 +11,12 @@ related:
 
 # 🪪 persona 設定寫入
 
-**本地跑，不需要 Unity Editor。** 讀取（整份 persona、某一欄、帳號）走 `senate cmd persona`；本指令只管寫。
+**本地跑。** 讀取（整份 persona、某一欄、帳號）走 `senate cmd persona`；本指令只管寫。
 
 > ⛔ **只寫 persona 檔＋一行審計** —— 不碰帳本、不動任何一分錢、不改央行設定。
 > 綁定決定的是「**之後**的收付進哪一戶」；既有分錄 append-only，不追溯。
 
-> ⭐ **這是 persona 檔唯一的寫入端**（TASK-0361，Tim 2026-10-01「寫入端整合到 Senate，Unity 端不留」）：
+> ⭐ **這是 persona 檔唯一的寫入端**：
 > Senate 銀行後台換綁、早安寫 model／actual_agent、建 persona、改身分欄（email、actual_agent、Plurk 帳號）
 > 全部走同一份 `SCP_PersonaProfileWrite`，稽核只有一份。
 
@@ -95,7 +95,7 @@ senate cmd persona-profile --arg op=force_release_lock    --arg persona=<p> --ar
 `{"ts","persona","fields","actor","reason"}`，`fields` 是 `profile/<欄>`、`profile/<欄> (unset)`、`bank/<區>`、`bank/<區> (deleted)`。
 `actor`／`reason` 必填 —— 寫入要能回答「是誰、憑什麼」。審計寫不進去不擋主寫入（資料已落地），但回傳會印 ⚠。
 
-## 沒有移植的 op
+## 刻意沒有的 op
 
-- `refresh`（重寫衍生快照 `_persona_profile_snapshot.json`）：Senate 不靠它；Editor 在 domain reload 時自己重寫。
-- `rename_agent`：Editor 版寫入時必定失敗（最後一步寫 `agent` 欄而那條路一律擋）；帳號合一之後改名走銀行後台。要用的那天另開單。
+- `refresh`（重寫衍生快照 `_persona_profile_snapshot.json`）：Senate 不靠它，不提供。
+- `rename_agent`：寫 `agent` 欄那條路一律擋；帳號合一之後改名走銀行後台。要用的那天另開單。

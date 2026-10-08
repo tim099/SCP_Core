@@ -1,6 +1,6 @@
 // 區塊職責：一頁後台的基底 —— 一個 page 負責畫自己，並知道自己被誰管著。
-// 物理意義：概念取自 Unity 端的 UCL_GUIPage（stack、只顯示最上方那頁、Pause/Resume/Close 生命週期），
-//           但撰寫端從 OnGUI() 換成 Draw(SCP_Ui) —— 於是同一頁在四種驅動方式下都是同一份碼：
+// 物理意義：stack、只顯示最上方那頁、Pause/Resume/Close 生命週期；
+//           撰寫端寫 Draw(SCP_Ui) —— 於是同一頁在四種驅動方式下都是同一份碼：
 //           ImGui 視窗 / 純文字 / 指令操作 / 截圖。
 // 數值影響：本層零 IO、零繪圖依賴。頁面的資料（讀數、model）由子類自己持有，
 //           **不要在這裡放跨頁共用的靜態欄位** —— 那會讓兩個視窗互相蓋。
@@ -63,7 +63,7 @@ namespace SCP.Core.Gui
         /// </summary>
         public virtual void Tick() { }
 
-        // ── 生命週期（對應 UCL_GUIPage 的 Init / OnPause / OnResume / OnClose）──
+        // ── 生命週期 ──
         /// <summary>被 push 進 controller 之後。</summary>
         public virtual void OnPush() { }
 

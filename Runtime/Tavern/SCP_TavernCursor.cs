@@ -1,11 +1,9 @@
 // 區塊職責：per-persona 酒館已讀游標的讀寫（`ChatTavern/_inbox_cursor/<persona>.json`）＋「還沒看過哪些訊息」。
-// 物理意義：TASK-0303：早安 catchup 不依賴 Editor。
-//          判準只有一條：**`ts > last_seen_ts` 即未讀**（ISO-8601 UTC 同格式時字典序＝時間序）。
+// 物理意義：TASK-0303。判準只有一條：**`ts > last_seen_ts` 即未讀**（ISO-8601 UTC 同格式時字典序＝時間序）。
 //          欄位名 `last_seen_ts` / `updated_at` 與 python 端一致，⛔ 別改。
-// ⚠ 游標是 read-modify-write。Editor 端原本只有「單調」一道擋板而**沒有跨 process 鎖** ——
+// ⚠ 游標是 read-modify-write。只有「單調」一道擋板而**沒有跨 process 鎖**的話，
 //   單調擋不住這個交錯：兩端都讀到 X，寫 Z 的先完成，另一端再寫 Y（X < Y < Z）⇒ 水位倒退、整段重播。
-//   ⇒ 本側的比較＋寫入整段包在 `SCP_FileLock` 裡。📌 Editor 端（FreeTime／StreamWatch）還沒改走這裡，
-//   它的寫入**不拿這把鎖** —— 兩端並存期間這個窗口仍在，收斂成單一實作是後續的事（寫在 TASK-0303）。
+//   ⇒ 比較＋寫入整段包在 `SCP_FileLock` 裡。
 // 數值影響：讀取由舊到新交付一批 SCAN_LIMIT 則（必要時往回捲到 BACKLOG_SCAN_CAP）；推進游標寫一次檔（原子）。
 #nullable enable
 using System;
@@ -19,7 +17,7 @@ namespace SCP.Core.Tavern
 {
     public static class SCP_TavernCursor
     {
-        /// <summary>一次交付的未讀**批量**（不是「只看得到這麼多」）。與 Editor 端同值。</summary>
+        /// <summary>一次交付的未讀**批量**（不是「只看得到這麼多」）。</summary>
         public const int SCAN_LIMIT = 60;
 
         /// <summary>回捲上限的**預設值**（則）。實際值讀 `render_settings.json` 的 `backlog_scan_cap`（酒館設定頁可改）。
@@ -57,7 +55,7 @@ namespace SCP.Core.Tavern
                 using (SCP_FileLock.Acquire(aPath))
                 {
                     string? aCur = ReadCursor(iDataRoot, iPersona);
-                    // 單調：只前進不後退（Editor 端／python 端同一條規則）
+                    // 單調：只前進不後退（python 端同一條規則）
                     if (!string.IsNullOrEmpty(aCur) && string.CompareOrdinal(iLastSeenTs, aCur) <= 0) return null;
                     var aJd = SCP_JsonData.NewObject();
                     aJd["last_seen_ts"] = iLastSeenTs;

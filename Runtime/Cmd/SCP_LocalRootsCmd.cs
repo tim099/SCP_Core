@@ -41,7 +41,7 @@ namespace SCP.Core.Cmd
     /// <summary>殼要的宿主能力。Senate 在 Program 啟動時掛上；沒掛的宿主（例：Unity）這幾支 Cmd 回 70。</summary>
     public interface ISCP_LocalCmdHost
     {
-        /// <summary>第一行的執行位置宣告（例：`⤷ Senate 就地執行（不需要 Unity Editor）`）。⛔ 共用層不寫死。</summary>
+        /// <summary>第一行的執行位置宣告（例：`⤷ Senate 就地執行`）。⛔ 共用層不寫死。</summary>
         string WhereLine { get; }
 
         /// <summary>記進回傳值 `delegate_host` 的那個字。</summary>

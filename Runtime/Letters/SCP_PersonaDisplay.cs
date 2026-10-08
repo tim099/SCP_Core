@@ -6,8 +6,7 @@
 //             · `avatar_url.md` —— 一行**公開**頭像網址（https；TASK-0320，給 Discord 用 —— Discord 只收公開網址，讀不到本機檔）。
 //               沒填 ⇒ Discord 那側用預設範本（`SCP_DiscordAvatar`），⛔ 本檔不知道範本。
 //           **顯示名一律是 persona id**（Tim 2026-09-28：不另存顯示名）。
-//           Tim 2026-09-28：「不使用之前的 UCL_Asset」「之後不做 agent fallback」
-//           ⇒ 本檔**只看 persona 自己的資料夾**：缺圖就是缺圖（顯示端畫預設圖），⛔ 不借 agent 或別人的。
+//           Tim 2026-09-28：不做 agent fallback ⇒ 本檔**只看 persona 自己的資料夾**：缺圖就是缺圖（顯示端畫預設圖），⛔ 不借 agent 或別人的。
 //           系統身分也是 persona：酒保＝`tavern-keeper`、系統訊息＝`system`。
 // 數值影響：讀取零寫入。寫入（`TrySetColor`／`TrySetAvatar`）走暫存檔再搬，失敗不留半個檔。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。

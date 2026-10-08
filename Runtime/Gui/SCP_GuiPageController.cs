@@ -1,7 +1,6 @@
 // 區塊職責：一疊頁面 —— **只畫最上方那一頁**，push／pop 就是導覽。
-// 物理意義：概念取自 Unity 端的 UCL_GUIPageController（stack、TopPage、Pause/Resume、PopUntil/PopAll）。
-//           ⭐ 但**刻意沒有 `Ins` 單例**：UCL 那份是「一個遊戲一個 controller」的前提，
-//           這裡的前提是「**一個 Window 一套 controller**」。
+// 物理意義：stack、TopPage、Pause/Resume、PopUntil/PopAll。
+//           ⭐ **刻意沒有 `Ins` 單例**：前提是「**一個 Window 一套 controller**」。
 //           把 singleton 留著的症狀不是崩潰，是第二個視窗開起來之後兩邊互相蓋 ——
 //           而畫面看起來只是「我按的那頁跑到另一個窗去了」。
 //           ⇒ 這是「把『只有一個』縮到它真正只有一個的那一層」的同一條判準。
@@ -101,8 +100,7 @@ namespace SCP.Core.Gui
 
         /// <summary>
         /// 回到最底層那一頁（＝「回首頁」）。
-        /// <para>⚠ 這不是 <see cref="PopAll"/>。UCL 那側的「Close」是 PopAll，因為它的前提是
-        /// 「關掉整組面板」；這裡的前提是**最底層那頁就是入口頁**，PopAll 會清空堆疊 ⇒
+        /// <para>⚠ 這不是 <see cref="PopAll"/>。這裡的前提是**最底層那頁就是入口頁**，PopAll 會清空堆疊 ⇒
         /// 畫面變成 controller 的「頁面堆疊是空的」那一行。那不是關閉，那是空白。</para>
         /// </summary>
         /// <returns>pop 掉幾頁（本來就在最底層 ⇒ 0）。</returns>

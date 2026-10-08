@@ -1,8 +1,7 @@
 // 區塊職責：書店那三個會動錢的動作（捐贈／發表／打賞）需要的**宿主能力**。
 // 物理意義：本體（`SCP_BooksOps`）只認得檔案與規則；而**動錢、發券、寫 log、投遞續寫包**
-//           在 Unity Editor 與 Senate Server 上是兩條完全不同的路
-//           （Editor 要 spawn `senate.exe`，Server 直接 `SCP_CmdRegistry.Dispatch`）。
-//           ⇒ 把那四格抽成介面，本體才搬得出 Unity。
+//           由宿主決定怎麼走（Senate 的實作是 `SenateBooksGateway`）。
+//           ⇒ 把那四格抽成介面，本體不綁宿主。
 // 數值影響：本介面**不定義任何規則** —— 「哪些 kind 先扣券」住在 `SCP_SpendPolicy`，
 //           實作端只負責把請求送到它該去的地方。
 //
@@ -20,7 +19,7 @@ using SCP.Core.Json;
 
 namespace SCP.Core.Books
 {
-    /// <summary>書店動錢那幾支需要的宿主能力（Editor／Server 各自實作）。</summary>
+    /// <summary>書店動錢那幾支需要的宿主能力（由宿主實作）。</summary>
     public interface SCP_IBooksGateway
     {
         /// <summary>

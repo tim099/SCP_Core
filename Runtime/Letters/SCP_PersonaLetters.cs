@@ -7,7 +7,7 @@
 //           ⭐ 2026-08-30 從 Senate.Core/PersonaLetters.cs 搬進來（六步的第 2 步）。
 //           搬的是**掃描那一半**；「信件夾根設在哪」屬於宿主的設定政策，留在 Senate。
 //           判準是那一句：功能碼不該知道設定檔的檔名與形狀（Coding_Standards.md §3）。
-//           JSON 由 System.Text.Json 換成 SCP_Json —— 前者在 Unity 那側不存在（§2）。
+//           JSON 走 SCP_Json —— System.Text.Json 在 Unity 那側不存在（§2）。
 //           ⭐ 2026-09-03（TASK-0105）lock 從資料根的 `_session/` 搬進 persona 的 `profile/`：
 //           本檔原本「從信件夾往上找第一個 `_session`」那支推導退場 —— 那是 lock 位置的第五種算法，
 //           而信件夾根一漂它就指到另一棵樹、印出一份合理但屬於別的專案的在線名單。
@@ -238,7 +238,7 @@ namespace SCP.Core.Letters
 
         // 區塊職責：**手動登出** —— 忘記登出或流程故障時，由人刪掉那顆 lock（Tim 2026-09-25）。
         // 物理意義：在線判準只看 lock 檔在不在（本檔 Scan）
-        //          ⇒ 刪 lock 就足以解除「同一 persona 不得同時登入兩次」的卡死；**不需要 Unity Editor**。
+        //          ⇒ 刪 lock 就足以解除「同一 persona 不得同時登入兩次」的卡死。
         // ⚠ 刪之前**重讀一次 lock**：畫面上看到的是上一次掃描，而那之後可能有人登出又登入了 ——
         //   預期的 session 身分（<see cref="SessionIdentity"/>）對不上就拒絕，⛔ 不刪到別人剛開的新一場。
         //   ⛔ 只比 session_key 不夠：它是 `{actual_agent}-{persona}` 的常數（`SCP_Morning` 登入端寫），

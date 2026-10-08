@@ -1,4 +1,4 @@
-// 區塊職責：`cmd watch` —— 觀影實錄的匯出與查詢（**原生**，不需要 Unity）。
+// 區塊職責：`cmd watch` —— 觀影實錄的匯出與查詢。
 // 物理意義：這是 `library.py export-watch` / `list-untitled` 的 Cmd 殼（TASK-0143 ⑤ 第五刀）。
 //           底下四層都已經移進 SCP_Core：台帳 `SCP_WatchLedger`／反查 `SCP_WatchResolve`／
 //           排版 `SCP_WatchExport`／落檔 `SCP_WatchWriter`。本檔只做**參數收斂與輸出**。
@@ -30,7 +30,7 @@ namespace SCP.Core.Cmd
         public override string Summary =>
             "觀影實錄：把酒館 seq 區間匯出成一章（`op=export`）／列出章名仍掛哨兵的章（`op=untitled`）"
             + "／補既有章的章名（`op=retitle`）"
-            + "—— **本地跑，不需要 Editor**";
+            + "—— **本地跑**";
 
         public override string Details =>
             "⭐ 章號與章名的真相源是**場次台帳**（`sessions_log.jsonl` 的 export 事件，取最後一筆），\n"

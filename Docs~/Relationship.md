@@ -10,7 +10,7 @@ target_audience: [AI_Agent, Developer]
 > **一句話**：好感度是**事件帳本**不是一個數字 —— 分數是由事件重算出來的投影，
 > 而事件是誰在什麼時候對你做了什麼。
 
-寫入的唯一通道是 `senate cmd relationship`（**本地跑，不需要 Unity Editor**）。
+寫入的唯一通道是 `senate cmd relationship`（**本地跑**）。
 讀取端（早安 brief 的見人、`portrait-next`）讀的是同一批檔。
 
 ---
@@ -69,7 +69,8 @@ surface_score = Σ(軸值 × 權重) / Σ|權重| × 100     → clamp 到 [-100
 
 ⚠ **分母是權重絕對值的和**（11.5，`abs(-2.0)` 也算）。
 🩸 2026-08-18 第一次移植時憑印象寫成「只加正權重」，108 筆既有資料只對 20 筆；改成 abs 之後 108/108。
-2026-10-01 搬到 Senate 時，selftest `RealRelationshipRecomputeMatchesEditor` 拿 LY 全部投影對拍：146/146 逐格相同。
+selftest `RealRelationshipRecomputeMatchesEditor` 拿資料根裡每一份既有 `_current.md`，由同一批 events 重算逐格對拍
+（2026-10-08：155 份相同／0 份不同／2 份帶期初餘額跳過）。
 
 | 分數 | tier |
 |---|---|
@@ -183,8 +184,6 @@ senate cmd relationship --arg op=update --arg persona=<me> --arg target=<對誰>
 
 - **投影壞了 → `op=rebuild`，不要手改** —— `_current.md` 是機械產物，下次重建就被覆寫。
   要改分數只能**新增一筆修正事件**（帳本語意：錯帳用紅字沖銷，不塗改原帳）。
-- **後台頁**：Unity Editor → ToolBox → 關係（Relationship）仍可**看**（讀同一批檔）；寫入一律走本指令。
-
 ## 7. 不要做
 
 - ❌ 手改 `_current.md` 或 events/ 底下的檔 —— 一律走本指令

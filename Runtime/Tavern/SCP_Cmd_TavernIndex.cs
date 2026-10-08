@@ -26,7 +26,7 @@ namespace SCP.Core.Tavern
         public override string Category => SCP_CmdCategory.Tavern;
 
         public override string Summary =>
-            "酒館訊息索引：驗證（索引 vs 全量列舉**逐筆**對撞）／看某房的命中狀況／顯式重建 —— **本地跑，不需要 Editor**";
+            "酒館訊息索引：驗證（索引 vs 全量列舉**逐筆**對撞）／看某房的命中狀況／顯式重建 —— **本地跑**";
 
         public override string Details =>
             "索引 `rooms/<room>/_msgindex.txt` 一天一行（`<日期>\\t<起始 seq>\\t<筆數>\\t<目錄 mtime>`）\n"
@@ -195,7 +195,7 @@ namespace SCP.Core.Tavern
                 string aMsgDir = SCP_TavernMsgIndex.MessagesDir(iDataRoot, aR);
                 if (!Directory.Exists(aMsgDir)) { aSkipped++; continue; }
 
-                // 全量列舉一次（真值），再由它重建 —— 與 Editor 側 `Rebuild(orderedPaths)` 同一份語意。
+                // 全量列舉一次（真值），再由它重建。
                 string[] aTruth = Directory.GetFiles(aMsgDir, "*.json", SearchOption.AllDirectories);
                 var aKeys = new string[aTruth.Length];
                 for (int i = 0; i < aTruth.Length; i++)

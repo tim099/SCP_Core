@@ -4,7 +4,7 @@
 // 數值影響：**純讀**。⛔ 一個位元組都不寫進 `ChatTavern/`（TASK-0240 驗收⑥）。
 //           ⚠ 包括索引 —— 索引落後只**回報**，修它走 `senate cmd tavern-index --arg op=rebuild`。
 //
-// 射程：**Editor 側 `op=query` 的 7 個 kind 全部到齊**（2026-09-18 兩刀完成）。
+// 射程：7 個 kind。
 //   · 單房：`tail`（→ `TryGetTailPaths`）／`seq`（→ `TryGetRangePaths`）
 //   · 跨房：`rooms`（O(房數)）／`search`／`by_sender`／`timeline`／`stats`（共用 `Collect()`）
 //   ⛔ 仍不在射程內：`catchup`／`inbox_read`（會推游標＝寫入）、`note_*`／`task_*`（各自的 IO 層）、
@@ -28,16 +28,14 @@ namespace SCP.Core.Tavern
         public override string Category => SCP_CmdCategory.Tavern;
 
         public override string Summary =>
-            "酒館訊息查詢（7 個 kind：tail／seq／rooms／search／by_sender／timeline／stats）—— **本地跑，不需要 Editor、不需要 Server**；走每日 seq 索引";
+            "酒館訊息查詢（7 個 kind：tail／seq／rooms／search／by_sender／timeline／stats）—— **本地跑，不需要 Server**；走每日 seq 索引";
 
         public override string Details =>
             "· `kind=tail`：單房最後 N 則。\n"
             + "· `kind=seq`：指定 `seq`、或 `from`+`to` 區間、或只給 `from`（＝到最新）、或都不給（＝最後 4000 則內）再套篩選\n"
             + "  ⛔ 只給 `to`／`to` < `from`／`seq` 與 `from`、`to` 並給 ⇒ exit 2（不會退回最後 4000 則）。\n"
             + "  （`sender_persona` / `sender` / `tag` / `grep` / `full`）。\n"
-            + "⭐ 輸出格式**逐字對齊** Editor 側 `run Tavern --arg op=query`（驗收④要逐筆對拍）。\n"
-            + "⚠ 唯一刻意差異：落盤沒有 `sender_name` 時本側降級印 `sender_id`，**並把降級筆數印在頁尾**\n"
-            + "  （Editor 那側是靜默去查帳戶資料）。⛔ 那是降級不是等價。\n"
+            + "⚠ 落盤沒有 `sender_name` 時降級印 `sender_id`，**並把降級筆數印在頁尾**。⛔ 那是降級不是等價。\n"
             + "⚠ 索引落後只回報、⛔ 不自動補寫（純讀不寫）⇒ 修它：`cmd tavern-index --arg op=rebuild`。\n"
             + "· 跨房那 5 支（`rooms`／`search`／`by_sender`／`timeline`／`stats`）：\n"
             + "  ⚠ 成本是 **O(房數 × 每房 4000 則)**，而索引救得了路徑列舉、**救不了 parse**\n"
@@ -131,7 +129,7 @@ namespace SCP.Core.Tavern
                     break;
                 case "search":
                     // 🩸 這裡傳的是**原始** room（可能是空）而不是補過預設的 `aRoom` ——
-                    //   Editor 側 `Search` 的 iRoom 來自 `GetArg(args,"room","")`，**空 ＝ 跨房**。
+                    //   `search` 的 room **空 ＝ 跨房**。
                     //   2026-09-18 出貨驗收當場抓到：`room` 的 ArgSpec 曾給預設 "tavern"
                     //   ⇒ search 的射程從「跨 52 房」靜默縮成「1 房」，而標頭印「掃 4000 則／**1 房**」
                     //   看起來完全正常。⇒ 又一次「一個正常的結果回答了另一個問題」。
@@ -161,8 +159,7 @@ namespace SCP.Core.Tavern
             aWatch.Stop();
 
             var aResult = SCP_CmdResult.Success();
-            // ⚠ 去掉尾端換行再切：不去的話 `Split` 會多生一個空 Line，
-            //   而那一格就是與 Editor 端輸出唯一的差異（2026-09-18 逐行對拍實測：`23d22 < 空行`）。
+            // ⚠ 去掉尾端換行再切：不去的話 `Split` 會多生一個空 Line（2026-09-18 逐行對拍實測：`23d22 < 空行`）。
             //   ⛔ 別用「過濾空行」去蓋掉它 —— 那會連正文裡刻意的空行一起吃掉，
             //   而那正是本專案的主軸病（我查了，然後把答案濾掉）。
             foreach (string aLine in aBody.TrimEnd('\n').Split('\n')) aResult.Lines.Add(aLine.TrimEnd());

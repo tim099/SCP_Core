@@ -1,5 +1,5 @@
 // 區塊職責：`cmd doc-edit` —— 文件編輯類自由時間活動的「改完一份之後」：登記、驗收它真的動了、指回流程（TASK-0367）。
-// 物理意義：Unity `ucmd run DocEdit` 的搬家版 —— **不需要 Editor**。邏輯本體在 `SCP_DocEdit`；本檔只做「參數 → 守衛 → 落檔」。
+// 物理意義：邏輯本體在 `SCP_DocEdit`；本檔只做「參數 → 守衛 → 落檔」。
 //          ⛔ 不搬內容、不寫任何 .md（理由見 SCP_DocEdit 檔頭）。
 // 數值影響：唯讀；回傳檔 `letters/<P>/cmd/docedit_<kind>.md`（被擋時 `docedit_<kind>-blocked.md`；沒帶 persona 不落檔，報告印在輸出）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
@@ -19,7 +19,7 @@ namespace SCP.Core.Cmd
         public override string Category => SCP_CmdCategory.Routine;
 
         public override string Summary =>
-            "文件編輯活動的一步：登記剛改完的那份 .md、驗收它在本場真的動了、指回自由時間流程 —— 不搬內容、不寫檔、**不需要 Editor**";
+            "文件編輯活動的一步：登記剛改完的那份 .md、驗收它在本場真的動了、指回自由時間流程 —— 不搬內容、不寫檔";
 
         public override string Details =>
             "三個自由時間活動共用：`doc-reflection`（kind=doc）／`letter-to-self`（kind=letter）／`constitution`。\n"
@@ -41,7 +41,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("note", "一句心得（選填）", iDefault: ""),
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）—— senate CLI 沒給時用設定檔補上", iRequired: true),
             new SCP_CmdArgSpec("letters_root", "persona 信件夾根（絕對路徑）—— senate CLI 沒給時用設定檔補上", iRequired: true),
-            new SCP_CmdArgSpec("repo_root", "宿主 repo 根（Senate 專案根；kind=doc 的相對基準、允許範圍之一）—— 宿主自動填（TASK-0390：文件住在 Senate，不在 Unity 專案）", iRequired: true),
+            new SCP_CmdArgSpec("repo_root", "宿主 repo 根（Senate 專案根；kind=doc 的相對基準、允許範圍之一）—— 宿主自動填", iRequired: true),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)

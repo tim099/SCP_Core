@@ -1,17 +1,14 @@
-// 區塊職責：`cmd persona` —— persona 身分欄的**唯讀出口**。**原生**，不需要 Unity Editor。
+// 區塊職責：`cmd persona` —— persona 身分欄的**唯讀出口**。
 //
-// 物理意義：解析本體早就在共用層（`SCP_PersonaProfile`），少的只是一個「Editor 沒開也叫得到」的嘴。
-//           在這支之前，python 端要拿**現場值**只有一條路：發 Cmd 給 Editor（`_lib/persona_profile`
-//           的第一段）。⇒ Editor 沒開就退快照／本地解析，而快照**可能是舊的**。
+// 物理意義：解析本體在共用層（`SCP_PersonaProfile`），本 Cmd 是它的 CLI 嘴；
+//           python 端（`_lib/persona_profile` 的第一段）拿**現場值**就叫這支，叫不到才退快照／本地解析。
 //
 //   🩸 TASK-0082 的活體（2026-09-07，把 `profile/email.md` 改成探針值後三段各量一次）：
 //       live → 探針值／local-parse → 探針值／**snapshot → 舊值**，
 //       而三段回的 `source` 是同一個字串 ⇒ 拿舊快照組出來的 commit trailer
 //       與拿現場值組出來的**完全同形**，落點是改不掉的 git history。
-//   ⇒ 那個洞的成因不是快照壞了，是**「正確」與「貴」被綁在一起**：
-//     要現場值就得付一趟 Editor 往返（實測 2.30s／次）並且 Editor 得開著，
-//     於是那兩段可能給舊值的備援才有存在的理由。
-//   ⇒ 本 Cmd 讓現場值變成**最便宜的那條**（senate.exe 本地跑，實測 0.37s／次、不需要 Editor）。
+//   ⇒ 洞的成因是**「正確」與「貴」被綁在一起**：現場值一貴，可能給舊值的備援就有了存在的理由。
+//   ⇒ 本 Cmd 讓現場值變成**最便宜的那條**（senate.exe 本地跑，實測 0.37s／次）。
 //
 // 數值影響：**純唯讀**（`SCP_PersonaProfile` 自己就不寫任何檔）。不動 lock、不動帳、不寫快照。
 //           查無此人回 exit 1 並印出它找過的目錄 —— 「這個人不存在」與「信件夾根設錯」是兩件事。
@@ -34,10 +31,10 @@ namespace SCP.Core.Cmd
         public override string Name => "persona";
         public override string Category => SCP_CmdCategory.Persona;
 
-        public override string Summary => "persona 身分欄唯讀查詢（agent／actual_agent／model／email／狀態）—— **本地跑，不需要 Editor**";
+        public override string Summary => "persona 身分欄唯讀查詢（agent／actual_agent／model／email／狀態）—— **本地跑**";
 
         public override string Details =>
-            "解析本體是 `SCP_PersonaProfile`（Unity 與 senate.exe 同一份），本 Cmd 只是它的 CLI 出口。\n"
+            "解析本體是 `SCP_PersonaProfile`，本 Cmd 只是它的 CLI 出口。\n"
             + "· 單一 persona：`--arg persona=<p>`；整個 pool：`--arg all=1`（兩者擇一）\n"
             + "· `--arg field=<欄名>` 只印那一欄的值（給腳本取用；查無該欄＝exit 4，**不印空字串**）\n"
             + "· `--arg json=1` 印完整 JSON；配 `all=1` 時的形狀是 `{personas, pool, generated_at}`\n"
@@ -188,8 +185,8 @@ namespace SCP.Core.Cmd
 
         // ===========================================================
         // 區塊職責：整個 pool，形狀刻意對齊 python 接縫吃的那份快照（`{personas, pool, generated_at}`）。
-        // 物理意義：那不是為了好看 —— **step 3 要把 python 的第一段從「發 Cmd 給 Editor」改成「叫這支」，
-        //   而形狀一樣就不需要在中間再長一層轉譯**（多一層轉譯 = 多一個會漂的地方）。
+        // 物理意義：那不是為了好看 —— **python 的第一段直接叫這支，
+        //   形狀一樣就不需要在中間再長一層轉譯**（多一層轉譯 = 多一個會漂的地方）。
         // 數值影響：每位 persona 都要數信、讀 lock、掃 longterm ⇒ 比單筆貴。**一次拿全部**仍然
         //   遠比「每位一次」便宜（那正是 BUG-17 那一族的形狀）。
         // ⚠ `generated_at` 照填，但語意與快照檔那個欄位**不同**：這裡是「這一趟讀的時刻」，

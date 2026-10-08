@@ -19,7 +19,7 @@ namespace SCP.Core.Bank
         /// ⛔ 沒有 fallback：留著它就永遠不知道還有誰在讀舊路徑，而讀到舊的會拿到一個**合法的錯區域名**。</summary>
         public const string SettingsRelPath = "Bank/bank_settings.json";
 
-        /// <summary>`currency_id` 缺值／壞值時的預設。⚠ 全系統只有這一份（Unity 那側轉呼叫本檔，TASK-0330）。</summary>
+        /// <summary>`currency_id` 缺值／壞值時的預設。⚠ 全系統只有這一份（TASK-0330）。</summary>
         public const string DefaultRegion = "Ducat";
 
         public static string SettingsPath(string iDataRoot)

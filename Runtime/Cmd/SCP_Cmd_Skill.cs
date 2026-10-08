@@ -33,7 +33,7 @@ namespace SCP.Core.Cmd
         public override string Category => SCP_CmdCategory.System;
         public override string Summary =>
             "skill 入口與安裝：op=show 印出一個 skill 的完整內容（依源檔宣告現讀文件合併）／list／"
-            + "status／sync／remove（裝到宿主 repo；不帶 confirm=1 只印計畫）—— **不需要 Editor**";
+            + "status／sync／remove（裝到宿主 repo；不帶 confirm=1 只印計畫）";
 
         public override string Example => SCP_CmdRegistry.Invoke("skill --arg op=show --arg name=scp-morning");
 

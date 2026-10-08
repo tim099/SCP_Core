@@ -1,9 +1,9 @@
 // 區塊職責：Plurk 的 op 本體（第一份：派遣、帳號、發文路徑）—— resolve / whoami / lint / preview / upload / post / get。
 // 物理意義：**發文的唯一寫入端**（Tim 2026-08-21：「這部分可以走 c# CMD」）。
 //          報告文字與守衛是讀者介面，⛔ 不順手改；宿主相依只有三件事：
-//            ① 路徑：UCL 全域 → 宿主傳進來的根（<see cref="SCP_PlurkContext"/>）
-//            ② HTTP：HttpClient → 宿主注入的 `ISCP_HttpFormRequester`（SCP_Core 不碰網路）
-//            ③ 同步：UniTask → 直接呼叫（SCP_Core 不碰 async）
+//            ① 路徑：宿主傳進來的根（<see cref="SCP_PlurkContext"/>）
+//            ② HTTP：宿主注入的 `ISCP_HttpFormRequester`（SCP_Core 不碰網路）
+//            ③ 同步：直接呼叫（SCP_Core 不碰 async）
 //          為什麼是 C# 而不是 python：
 //            ① 規則要長在必經路上 —— lint 若住在另一個語言的另一支工具裡，發文那條路繞得過它，
 //               而繞過去不會報錯。這裡 `post` **強制先跑 lint**，errors 非空就不送。
@@ -12,7 +12,7 @@
 // 數值影響：`resolve` / `lint` / `preview` 零副作用、不連網（lint／preview／post 起手的 nick 補齊例外，見 EnsureNicks）。
 //          `post` **預設 dry-run**：沒有 `confirm=1` 一律只印 payload 不送。
 //          真送時寫一筆 audit jsonl（時間／persona／帳號／source／內容雜湊／回傳 plurk id）。
-//          報告換行一律 `\n`（SCP 慣例；Unity 版是 `AppendLine` 的 CRLF —— 內容同、換行不同）。
+//          報告換行一律 `\n`（SCP 慣例）。
 //
 // ⛔ 發布不可回復，而 Plurk 沒有 history ⇒ 這支永遠不自動發：`confirm=1` 是人打的。
 // ⚠ 端點與參數的**驗證狀態**：事實來源在 `SCP_Core/Docs~/Plurk_Maintenance.md`（`senate cmd doc --arg op=show --arg name=Plurk_Maintenance`） §5
@@ -669,7 +669,7 @@ namespace SCP.Core.Plurk
         {
             if (!Path.IsPathRooted(iPath))
                 throw SCP_PlurkFailure.Blocked($"[Plurk] 圖片要**絕對路徑**：'{iPath}' 是相對路徑"
-                    + "（相對路徑會相對於 Editor 的工作目錄，同一份交付單換個地方跑就指到別的檔）");
+                    + "（相對路徑會相對於執行時的工作目錄，同一份交付單換個地方跑就指到別的檔）");
             if (!File.Exists(iPath))
                 throw SCP_PlurkFailure.Blocked($"[Plurk] 圖片不存在：{iPath}");
         }

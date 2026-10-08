@@ -5,11 +5,8 @@
 //           索引一天一行 ⇒ 大小跟**天數**成正比，不是跟訊息數成正比。
 // 數值影響：純加速層。任何一致性檢查不過就退回全量列舉（慢但正確），**永不給錯清單**。
 //
-// 🩸 為什麼 Senate 這側**更需要**它，而不只是「跟 Editor 對齊」（summit 2026-09-18 量）：
-//   Editor 那側的快有一半靠 `GetSortedMessageFiles` 的 static 記憶體快取攤提
-//   （`LoadMessagesAfterSeq` 檔頭逐字：「即使 domain reload 後 cache 冷，第一 tick 也只 parse
-//   自游標起的新檔」）。而 **Senate CLI 是短命 process —— 跑完就退，沒有任何 cache 可以攤提**，
-//   ⇒ 每一次呼叫都是冷的。所以在這一側索引**不是優化，是必需品**。
+// 🩸 為什麼索引**不是優化，是必需品**（summit 2026-09-18 量）：
+//   **Senate CLI 是短命 process —— 跑完就退，沒有任何記憶體 cache 可以攤提** ⇒ 每一次呼叫都是冷的。
 //   讀數（2026-09-18，LY 這棵樹）：全庫訊息檔 20,022／房間 52／tavern 日期目錄 91。
 //   ⚠ 同一天我自己用 `find` 去數那些檔案，工具**逾時 >120 秒** —— 那不是論證，是被擋了一次。
 //
@@ -22,7 +19,6 @@
 //   > 清單少一筆 → seq 全體位移 → 所有游標指到錯的訊息，而外觀完全正常。
 //
 // ⭐ 本檔是**唯一一份實作**（TASK-0335）：格式規則只住這裡；要改格式只改這裡，⛔ 別在別處再長出第二份。
-//   （來源：形狀取自 Editor 側 2026-09-08 TASK-0162 的設計，summit 2026-09-18 搬進 Senate。）
 //
 // ⚠ 索引放**房間目錄**而不是 messages/ 底下：寫在 messages/ 內會改動它的 mtime，
 //   而那正是判斷「有沒有變」的依據 —— 每寫一次索引就讓自己失效一次。
@@ -43,7 +39,7 @@ namespace SCP.Core.Tavern
     {
         public const string IndexFileName = "_msgindex.txt";
 
-        /// <summary>索引檔頭。⚠ 與 Editor 側同字串 —— 兩邊讀同一份檔，版本字不能分岔。</summary>
+        /// <summary>索引檔頭。⚠ 改了既有索引檔就整份不認。</summary>
         const string Header = "ucl_msgindex_v1";
 
         /// <summary>新格式檔名：8 位補零 seq。字典序 == 數值序。</summary>
@@ -129,7 +125,7 @@ namespace SCP.Core.Tavern
         }
 
         // ⚠ 寫法是「tmp → Replace」而不是直接 WriteAllText（TASK-0335）：
-        //   Server 每寫一則訊息就刷新一次索引，而 Editor／CLI 隨時在讀 ⇒ 直接覆寫會被讀到寫一半的檔。
+        //   Server 每寫一則訊息就刷新一次索引，而 CLI 隨時在讀 ⇒ 直接覆寫會被讀到寫一半的檔。
         //   讀到半份不會算錯（壞行整份不信、截斷的 mtime 對不上就現場列舉），但每次都會印一條解析失敗的警告。
         static void Save(string iDataRoot, string iRoom, List<DayEntry> iDays)
         {
@@ -185,7 +181,7 @@ namespace SCP.Core.Tavern
         /// <summary>
         /// 同上，外加回報**這次有幾天是現場列舉的**（不在索引裡／目錄動過）。
         /// 物理意義：這個數字就是「索引還缺幾天」。
-        ///   🩸 2026-08-19 Editor 側實測：索引停在 08-06 而資料到 08-19，落後 10 天。
+        ///   🩸 2026-08-19 實測：索引停在 08-06 而資料到 08-19，落後 10 天。
         ///     成因不是寫壞，是**成功就 early return，而重建只掛在全量列舉那條路的尾巴**
         ///     ⇒ 索引一旦存在就再也不會被擴充。⇒ 所以下面那幾支「缺天就補寫回去」。
         /// </summary>
@@ -204,18 +200,16 @@ namespace SCP.Core.Tavern
         // 物理意義：有了連號 seq ＋ 每日範圍表，任何一段的檔名都是**算得出來**的。
         // 數值影響：`tail=6` 由 O(訊息數) 降為 O(天數) 的 stat ＋ 6 個字串。
         // 邊界：回 null ＝ 這條路走不了（呼叫端退回全量列舉），**不是**「沒有訊息」。
-        // ⛔ **讀取端一律不寫索引**（Editor 與 CLI 都一樣）：
+        // ⛔ **讀取端一律不寫索引**：
         //   · TASK-0240 驗收⑥要求 CLI 讀取路徑**一個位元組都不寫進 `ChatTavern/`**；
         //     Senate CLI 是短命 process，讀時補寫等於每次讀都寫檔。
         //   · ⭐ 索引的維護者是**寫入端**：`SCP_TavernWriter.WriteMessage` 落盤後在同一個房間鎖裡呼叫
-        //     <see cref="Refresh"/>（TASK-0335）。以前維護者是 Editor 的讀取端（缺天時順手 Rebuild），
-        //     而那讓索引新不新鮮取決於「Editor 有沒有開」；現在訊息是誰寫的、索引就是誰刷的。
+        //     <see cref="Refresh"/>（TASK-0335）—— 訊息是誰寫的、索引就是誰刷的。
         //   ⇒ 讀取端只把落後**回報出來**（`oStaleDays` ＝ 這次現場列舉了幾天）。
         //   ⚠ 還會落後的情況：繞過寫入端直接丟進 messages/ 的檔（遷移工具、人工）不經過這裡 ⇒ 索引不刷，
         //     落後的樣子是「變慢」不是「算錯」；修它走 `senate cmd tavern-index --arg op=rebuild`，
         //     或等 Server 寫該房下一則訊息時一次補齊。
-        // ⭐ `TryGetRangePaths` 是本側**比 Editor 多出來的一支** —— 那邊的 `Range` 至今仍走
-        //   `LoadAllMessages`（全房載入再過濾）。⛔ 而它不改任何行為，只改成本。
+        // ⭐ `TryGetRangePaths` 讓 `Range` 不必全房載入再過濾 —— ⛔ 它不改任何行為，只改成本。
         // ===========================================================
         public static string[]? TryGetTailPaths(string iDataRoot, string iRoom, int iCount,
             out int oTotal, out int oStaleDays)

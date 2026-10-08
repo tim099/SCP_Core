@@ -20,7 +20,7 @@ namespace SCP.Core.Cmd
         public override string Category => SCP_CmdCategory.Routine;
 
         public override string Summary =>
-            "小歇片刻：記憶信落磁碟＋可選酒館廣播（酒館 Server 不在就排隊）—— 不需要 Editor；"
+            "小歇片刻：記憶信落磁碟＋可選酒館廣播（酒館 Server 不在就排隊）；"
             + "廣播 exit 6＝確定沒發／exit 7＝**不知道，先回讀別補發**";
 
         public override string Details =>
@@ -169,8 +169,7 @@ namespace SCP.Core.Cmd
             if (aNotify == "fail")
             {
                 aResult.Lines.Add("⚠ **信寫了、廣播確定沒發** —— 同事與 Tim 不知道你小歇了。");
-                // ⚠ 補發走 `tavern-post`（Senate）—— 舊的 `ucmd run Tavern op=post` 已於 TASK-0366 退場，
-                //   照舊指令補發會撞到不存在的 Cmd（TASK-0372 順手修）。
+                // ⚠ 補發走 `tavern-post`。
                 aResult.Lines.Add("   → 補發：" + SCP_CmdRegistry.Invoke("tavern-post --arg persona="
                                   + aPersona + " --arg-file body=<檔> --arg meta=category:meta"));
                 aResult.Lines.Add("   → 補發之後再跑 /compact；**記憶那半不受影響**（信已經在磁碟上）。");

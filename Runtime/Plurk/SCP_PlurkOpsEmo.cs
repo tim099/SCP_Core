@@ -5,8 +5,8 @@
 //          ⇒ 這支把面板搬進 repo：代碼／圖檔 URL **從 API 讀**，描述**由人或 agent 寫**。
 // 數值影響：`emoticons` 對 Plurk 純唯讀（`/APP/Emoticons/get`），但**會寫本地表**：
 //          `Plurk/emoticons/shared.json` ＋ 人可讀投影 `shared.md`。
-//          ⚠ 兩份都是 Unity 版寫過、git 追蹤中的檔 ⇒ 位元組相容：json 走 UCL `ToJson()` 形狀
-//            （compact、`\u` 轉義），md 走 `\r\n`（Unity 版 `AppendLine`）；列序見 <see cref="SCP_PlurkCultureLikeComparer"/>。
+//          ⚠ 兩份都是既有、git 追蹤中的檔 ⇒ 位元組相容：json 走 UCL `ToJson()` 形狀
+//            （compact、`\u` 轉義），md 走 `\r\n`；列序見 <see cref="SCP_PlurkCultureLikeComparer"/>。
 //          刷新是 **merge 不是覆寫** —— API 那邊沒有「描述」這個欄位，
 //          覆寫等於每次刷新都把人寫的擦掉，而擦掉之後跟「還沒寫」長得一模一樣。
 //          消失的條目**不刪**，標 `missing` 留著 —— 「被下架」與「我沒讀到」不可以同形。
@@ -161,7 +161,7 @@ namespace SCP.Core.Plurk
             string aAccountTag = m_Res.SecretId ?? "_";
             foreach (var aRow in aRows) aRow.AddAlias(aAccountTag + ":" + aRow.Code);
             int aKept = 0, aNew = 0;
-            // ⚠ Unity 版是 `ToDictionary`（同 key 兩列會丟例外）—— 這裡照搬那個行為：同 URL 兩列 ⇒ 失敗，⛔ 不靜默留一列
+            // ⚠ `ToDictionary`（同 key 兩列會丟例外）是刻意的：同 URL 兩列 ⇒ 失敗，⛔ 不靜默留一列
             var aByKey = aRows.ToDictionary(r => r.Key, r => r);
             foreach (var aRow in aRows)
             {
@@ -359,7 +359,7 @@ namespace SCP.Core.Plurk
                 File.WriteAllText(aFile, SCP_UclLegacyJson.ToJson(aRoot), new UTF8Encoding(false));
                 ioR.AppendLine($"- 📋 共用表: `{aFile}`（**merge 寫入**，描述不被刷新擦掉）");
 
-                // ⚠ `\r\n`：這份是 Unity 版用 `AppendLine` 寫過、git 追蹤中的檔 —— 換行換掉整份 diff 就翻過來
+                // ⚠ `\r\n`：這份是既有 CRLF、git 追蹤中的檔 —— 換行換掉整份 diff 就翻過來
                 var aMd = new SCP_PlurkText("\r\n");
                 aMd.AppendLine("# Plurk 表情共用表（描述一次，之後純文字查表）");
                 aMd.AppendLine();

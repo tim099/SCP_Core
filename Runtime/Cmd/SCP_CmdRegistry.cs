@@ -36,8 +36,7 @@ namespace SCP.Core.Cmd
         /// <para>🩸 2026-09-02：Senate Server 三條 lane 同時第一次 <see cref="Find"/> ⇒ 三個 thread 同時進
         /// <see cref="Discover"/> 清空再填同一個字典 ⇒ <c>InvalidOperationException: Operations that change
         /// non-concurrent collections must have exclusive access</c>，兩條 lane 整批失敗。
-        /// Editor 端單執行緒從沒撞過 —— **Server 是這套 registry 第一個多執行緒的消費者**，
-        /// 所以這格在 Editor 那側永遠不會現形。讀（Find／All）在 Discover 完成後是純讀，不鎖。</para>
+        /// 單執行緒的呼叫端撞不到 —— **Server 是多執行緒的消費者**，只有它會讓這格現形。讀（Find／All）在 Discover 完成後是純讀，不鎖。</para>
         /// </summary>
         static readonly object s_Lock = new object();
 

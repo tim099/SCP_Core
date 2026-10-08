@@ -1,4 +1,4 @@
-// 區塊職責：`cmd bank-resolve` —— 帳號解析的**唯讀查詢入口**。**原生，不需要 Editor／Server。**
+// 區塊職責：`cmd bank-resolve` —— 帳號解析的**唯讀查詢入口**。**不需要 Server。**
 // 物理意義：規則本體在 `SCP_BankAccountResolver`；本檔只是把它開給 CLI 與 python 用。
 // 數值影響：**零寫入。** 不動 registry、不動 ledger、不動綁定檔。
 //
@@ -20,7 +20,7 @@ namespace SCP.Core.Cmd
         public override string Category => SCP_CmdCategory.Bank;
 
         public override string Summary =>
-            "帳號解析：任何字串（persona／agent／別名／帳號）→ 正式帳號 —— **唯讀，不需要 Editor**";
+            "帳號解析：任何字串（persona／agent／別名／帳號）→ 正式帳號 —— **唯讀**";
 
         public override string Details =>
             "唯一權威＝`letters/<persona>/bank/<region>.md`（Tim 2026-09-07 拍板）。\n"

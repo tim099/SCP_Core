@@ -1,11 +1,10 @@
-// 區塊職責：trailer 的型號欄 `(vendor / version)` 組法 —— **共用層唯一實作點**，Unity 與 senate.exe 走同一份。
+// 區塊職責：trailer 的型號欄 `(vendor / version)` 組法 —— **共用層唯一實作點**。
 // 物理意義：`vendor` 是「這個工具是誰家的」（ClaudeCode → Claude），`version` 是「當時跑的是哪一版」。
 //           前者是工具身分的性質，後者是那一天的事實 —— 兩者一起寫進 git trailer，而 history 改不掉。
 // 數值影響：純唯讀、不讀任何設定檔。輸出只餵 trailer 字串，不影響帳、不影響 lock。
 //
 // 🩸 為什麼兩張表寫死在 code 裡（TASK-0187，Tim 2026-09-10 拍板）：
-//   舊實作把 key 寫死（`UCL_ActualAgent` 列舉）而 value 放 `AwakenInit/agent_models.json`。
-//   ⇒ 那個切法本身就是漂移的來源：**`UCL_Core` 是掛在多棵樹底下的 submodule，而那個檔是專案級的。**
+//   value 若放 `AwakenInit/agent_models.json`，那個切法本身就是漂移的來源：**submodule 掛在多棵樹底下，而那個檔是專案級的。**
 //   實測（2026-09-10，同一個 submodule 的 history，同一位同事、同一天）：
 //       Zeta@summit(Claude / claude-opus-5)   ← 從有那個檔的樹提交
 //       zeta@summit(claude-opus-5)            ← 從 LY 提交（LY 底下**沒有**那個檔 ⇒ vendors 全空 ⇒ 沿用原值）

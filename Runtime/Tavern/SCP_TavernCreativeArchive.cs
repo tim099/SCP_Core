@@ -2,7 +2,7 @@
 // 物理意義：TASK-0312。Senate 的發文路
 //          （`senate cmd tavern-post`）拿到 seq 之後呼叫這裡 ⇒ 判準與信文只有一份。
 //          「訊息是流，會被推走、被讀掉、被壓縮；這封是存檔，跟著你走。」—— 免費系統掛號信（fee 0，不碰帳）。
-// 邊界（三個都刻意，照 Editor 版）：
+// 邊界（三個都刻意）：
 //   - **不擋發文主流程**：寄信失敗只回原因，⛔ 不讓已經貼出去的創作看起來像失敗。
 //   - **匿名發文不寄**：sender_persona 空＝沒有可投遞的收件人。那不是錯誤，是沒有收件人。
 //   - **不防重**：同一段創作重貼兩次就會收到兩封（不寄錢，重複的代價只是多一封信）。
@@ -30,7 +30,7 @@ namespace SCP.Core.Tavern
 
         public static string RefId(string iRoom, int iSeq) => $"creative-{iRoom}-{iSeq}";
 
-        /// <summary>信文本體（逐字沿用 Editor 版）。</summary>
+        /// <summary>信文本體。</summary>
         public static string BuildBody(string iRoom, int iSeq, string iBody)
         {
             var aSb = new StringBuilder();

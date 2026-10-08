@@ -10,7 +10,7 @@
 //           顯示名（Tim 2026-09-28）：persona 的訊息印 **`Agent@persona`** —— Agent 取自訊息自己的 `sender_id`
 //             （寫入端填的是銀行帳號 id：Myth／Zeta／claude-code…）；sender_id 空、等於 persona 本身、
 //             或是系統身分（tavern-keeper／system）⇒ 只印 persona。⛔ 不去別處查 agent（訊息沒寫就是沒有）。
-//           頭像與顏色**只看那個 persona 自己的資料夾**（`SCP_PersonaDisplay`）—— ⛔ 不借 agent 的、不讀 UCL_Asset。
+//           頭像與顏色**只看那個 persona 自己的資料夾**（`SCP_PersonaDisplay`）—— ⛔ 不借 agent 的。
 // 數值影響：純讀。頭像路徑由顯示端自己載（本檔不碰圖檔內容）。
 // ⚠ 方言限制：C# 9 / netstandard2.1。
 #nullable enable

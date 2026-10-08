@@ -167,9 +167,7 @@ namespace SCP.Core.Letters
 
         // 區塊職責：見根索引的**內文**（不含 frontmatter 與 H1）——
         //          索引檔與 wake brief §1 共用**同一份渲染器**。
-        // 物理意義：兩處各寫一份的話，症狀是「索引說 18 筆、brief 說 17 筆」而兩邊都不報錯
-        //          （UCL 那側 2026-08-31 的活體：commands_schema 宣告的 op 集合與 handler 的
-        //           case 集合早已分岔，而輸出看起來完全正常）。
+        // 物理意義：兩處各寫一份的話，症狀是「索引說 18 筆、brief 說 17 筆」而兩邊都不報錯。
         // 數值影響：純讀不寫。
         /// <summary>見根索引的內文（給索引檔與 wake brief §1 共用）。</summary>
         /// <param name="iHeadingPrefix">內文小節的標題層級。索引檔用 `##`（它自己有 H1）；

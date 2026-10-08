@@ -3,7 +3,7 @@
 //          原本活動是「自己去跑各活動工具」，於是自由時間的流程提示**只活在 free-time 的回傳檔裡** ——
 //          人一旦進到活動工具，那些工具的輸出一個字都沒提自由時間，流程就斷在那裡。包一層之後，提示長在**唯一的入口**上。
 //   迴圈形狀：free-time step=next → op=pick → op=step（可重複）→ op=done → 回到 step=next … 直到 Cmd 宣布收工。
-//   ⚠ Unity 版作者記下的判斷錯誤（保留）：「活動是多步互動，Cmd 跑不完」—— **活動橫跨很多步 ≠ 一次呼叫做不完一步**。
+//   ⚠ 容易犯的判斷錯誤：「活動是多步互動，Cmd 跑不完」—— **活動橫跨很多步 ≠ 一次呼叫做不完一步**。
 //     走一子、放一個像素本來就是次秒級的一次性動作 ⇒ op=step 代跑**一步**，然後在回傳檔接上下一步。
 // 數值影響：寫 session 的 activity／activities_done（pick）；寫活動統計（pick）；op=step **in-process** 派遣一支 SCP cmd；
 //          發酒館訊息（pick／done）；每個 op 各寫一份回傳檔（`cmd/freetime_activity.md`）。
@@ -299,7 +299,7 @@ namespace SCP.Core.FreeTime
         }
 
         // ===========================================================
-        // 區塊職責：把一步交給 SCP_Core 的指令系統 —— **in-process，不 spawn**（逐格照 Unity `RunCmdStep`）。
+        // 區塊職責：把一步交給 SCP_Core 的指令系統 —— **in-process，不 spawn**。
         // 物理意義：in-process 的價值不只是快：**它不經過 shell 那一層**，引號不必同時扮「綁詞」與「當內容」兩個角色。
         // ⛔ `step_args` 在這條路上是 **cmd 原生寫法**（`--arg k=v`），**不做 `--flag value` 翻譯** ——
         //   翻譯要猜 kebab→snake 與引號規則，而猜錯的那一次我不會知道；認不得的 token 一律當場擋下（⛔ 不靜默丟掉）。
@@ -361,7 +361,7 @@ namespace SCP.Core.FreeTime
         }
 
         // ===========================================================
-        // 區塊職責：把 `step_args` 這一行字切成 token（逐格照 Unity `SplitStepArgs`）。
+        // 區塊職責：把 `step_args` 這一行字切成 token。
         // 規則兩條，分別對應引號的兩種身分：
         //   ① **引號在 token 開頭 ＝ 綁詞用**：吃到配對的收尾引號為止，**引號本身不進內容**。
         //   ② **引號在 token 中間 ＝ 內容**（JSON 語法）：原樣保留，但**它一樣會讓引號內的空白不切詞**。

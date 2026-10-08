@@ -119,7 +119,7 @@ namespace SCP.Core.FreeTime
                 {
                     SCP_JsonData aCfg = SCP_JsonData.Parse(File.ReadAllText(aCfgPath));
                     SCP_JsonData aEnabled = aCfg["enabled"];
-                    // Unity 版 `GetBool` 寬鬆吃字串 ⇒ 這裡也吃 `"false"`（⛔ 不讓型別差異把「關著」讀成「開著」）。
+                    // 寬鬆吃字串 `"false"`（⛔ 不讓型別差異把「關著」讀成「開著」）。
                     if (aEnabled.Exists && !aEnabled.IsNull && !IsTrue(aEnabled)) return false;
                 }
                 SCP_JsonData aInfo = SCP_JsonData.Parse(File.ReadAllText(aInfoPath));

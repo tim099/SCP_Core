@@ -1,7 +1,7 @@
 // 區塊職責：**Discord 圖片／附件的兩個方向**（TASK-0323）—— Inbound 附件下載落地、Outbound 挑出要上傳的圖。
 // 物理意義：
 //   · Inbound：Discord 附件 URL 帶簽章、會過期 ⇒ 必須**落地保存**，否則事後讀訊息的 agent 開不了圖。
-//     落點沿用 Unity／python 版（新舊資料混放不衝突）：`<DataRoot>/ChatTavern/media/discord/<yyyy-MM-dd>/<msgId>__<attId>__<檔名>`。
+//     落點（新舊資料混放不衝突）：`<DataRoot>/ChatTavern/media/discord/<yyyy-MM-dd>/<msgId>__<attId>__<檔名>`。
 //     ⭐ 日期取自**訊息 id（snowflake）裡的時間**，不取「現在」⇒ 寫入失敗下一輪重抓時落在同一格、已存在就不重抓。
 //     refs[].path 記 **repo 相對路徑＋斜線**（＝酒館 refs 慣例，跟畫布分享圖同形）。
 //   · Outbound：從訊息 refs 挑出本地圖檔（副檔名 png/jpg/jpeg/gif/webp、檔案實存），轉成 multipart 的檔案段。
@@ -9,7 +9,7 @@
 //   · 下載：單檔 ≤ <see cref="MaxDownloadBytes"/>（24MB；Discord 附件免費上限 25MB）。過大 ⇒ 跳過並在本文標明。
 //   · 上傳：每則最多 <see cref="MaxUploadFiles"/> 張、單檔 ≤ <see cref="MaxUploadFileBytes"/>、合計 ≤ <see cref="MaxUploadTotalBytes"/>
 //     （Discord 沒加成的伺服器每個請求約 10MB）。超過的 ⇒ 不上傳、在本文末尾列「未上傳：檔名（原因）」—— ⛔ 不靜默少一張。
-//   · 失敗一律 fail-soft：附件掛掉不能讓文字消失（同 Unity 版）。
+//   · 失敗一律 fail-soft：附件掛掉不能讓文字消失。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。會連網的只有 Download ⇒ 只給 Senate 宿主呼叫。
 #nullable enable
 using System;
@@ -38,7 +38,7 @@ namespace SCP.Core.Discord
 
         public static string MediaDir(string iDataRoot) => Path.Combine(SCP.Core.Paths.SCP_DataPaths.ChatTavern(new SCP.Core.Paths.SCP_DataRoot(iDataRoot)), "media", "discord");
 
-        /// <summary>Discord 檔名 ⇒ 本地安全檔名（對齊 Unity／python 版）。</summary>
+        /// <summary>Discord 檔名 ⇒ 本地安全檔名。</summary>
         public static string SanitizeFileName(string iName)
         {
             if (string.IsNullOrEmpty(iName)) return "unnamed";
@@ -80,7 +80,7 @@ namespace SCP.Core.Discord
             var aOut = new List<InboundAttachment>();
             if (!iAttachments.IsArray) return aOut;
             // refs 一律存「資料根相對」（TASK-0390）—— 存法在 SCP_TavernRefPath；⛔ 不用 repo 根（呼叫端給的那個是 Senate 自己的 repo，
-            //   2026-09-28 seq 22520；而「資料根上一層」在資料根搬出 Unity 專案之後是 `D:/Unity`）。iRepoRoot 保留只為了不改簽名。
+            //   2026-09-28 seq 22520）。iRepoRoot 保留只為了不改簽名。
             string aDir = Path.Combine(MediaDir(iDataRoot), DateOfSnowflake(iMsgId));
             for (int i = 0; i < iAttachments.Count; i++)
             {

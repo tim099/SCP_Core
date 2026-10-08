@@ -3,17 +3,13 @@
 //           訊息讀取在 `SCP_TavernRead`、其餘資料在 `SCP_TavernRooms`、quest 事件在 `SCP_TavernQuestRead`。
 // 數值影響：**純讀**。⛔ 一個位元組都不寫進 `ChatTavern/`（TASK-0247 驗收⑤）。
 //
-// 射程：Editor 側那幾支**純讀** op —— `read`／`members`／`listrooms`／`events_since`。
+// 射程：**純讀** op —— `read`／`members`／`listrooms`／`events_since`，以及 TRPG 任務的純讀投影 `task_list`／`task_next`／`task_state`（TASK-0287）。
 //   ⛔ 留言本（note_read／note_list）已於 2026-09-28 整組移除（Tim：「留言本目前其實好像廢棄了，應該也可以移除」；TASK-0328）
 //      —— skill 沒有任何一處提到它，全樹 7 本、最後一次寫入是 5 月。檔案留在 `rooms/<room>/notes/` 當紀錄，⛔ 沒有刪資料。
-//   🔴 ⛔ **不含 `task_list`／`task_next`／`task_state`**：量過（2026-09-20），
-//      它們會回收過期租約，而回收會 `AppendEvent`
-//      ⇒ 它們是「讀為主、寫一格」，與 `catchup`／`inbox_read` 同一類，歸 TASK-0106 那一側。
-//      📌 失效樣子很難看：平常沒有過期租約時它們**表現得像純讀**，
-//         所以「把它們當純讀」這個錯誤會在剛好有一張單過期的那天才第一次出事。
+//   🔴 那三支 task_* **不回收過期租約**（回收會 `AppendEvent`，那就不是純讀了）——
+//      平常沒有過期租約時「會回收」與「不回收」表現一樣，差別只在剛好有一張單過期的那天。
 //   ⛔ 也不含 `op=query` 那 7 個 kind —— 那是 `senate cmd tavern-query`（TASK-0240）。
 //
-// ⭐ 輸出逐字對齊 Editor 側 `run Tavern --arg op=<那支>`（驗收④要原樣 diff）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -32,14 +28,12 @@ namespace SCP.Core.Tavern
 
         public override string Summary =>
             "酒館純讀（read／members／listrooms／events_since ＋ TRPG 任務投影 task_*）"
-            + "—— **本地跑，不需要 Editor、不需要 Server**";
+            + "—— **本地跑，不需要 Server**";
 
         public override string Details =>
-            "· `kind=read`：一房的訊息（`search` > `since_seq` > `from`/`to` > 尾讀，四選一，順序同 Editor 側）。\n"
+            "· `kind=read`：一房的訊息（`search` > `since_seq` > `from`/`to` > 尾讀，四選一）。\n"
             + "· `kind=members`／`listrooms`／`events_since`：同名 op 的等價入口。⛔ 留言本（note_*）已移除（TASK-0328）。\n"
-            + "⭐ 輸出格式**逐字對齊** Editor 側 `run Tavern --arg op=<那支>`。\n"
-            + "🔴 ⛔ **沒有 `task_list`／`task_next`／`task_state`** —— 它們會 `AppendEvent`"
-            + "（回收過期租約）⇒ 不是純讀，歸 TASK-0106 那一側。\n"
+            + "· `kind=task_list`／`task_next`／`task_state`：TRPG 任務的**純讀投影**（TASK-0287）—— ⛔ 不回收過期租約、不 `AppendEvent`。\n"
             + "⚠ 房間不存在 ⇒ **出聲**（exit 1）；房間存在而結果是空的 ⇒ exit 0 並印「空」。"
             + "⛔ 兩者不同形。\n"
             + "⚠ 訊息讀取走索引；索引落後只**回報**（`stale_days`），⛔ 不自動補寫 ——"
@@ -102,11 +96,8 @@ namespace SCP.Core.Tavern
                     "  ⛔ 本層不替你補 `tavern`：補了的話打錯房名的人會拿到一個看起來正常的答案");
 
             // ── 房間存在性閘：**所有帶 room 的 kind 都過這一關** ──────────────
-            // 🔴 這是本支與 Editor 端**刻意不同**的唯一一格，而它是 TASK-0247 驗收⑥要求的：
-            //   Editor 側只有 `Op_Read` 與 `Op_NoteList` 會擋，`members`／`note_read`／`events_since`
-            //   **打錯房名時回一個空清單、exit 0** ⇒ 「這房沒人」與「沒有這一房」同形。
-            //   ⇒ 本側一律擋，⛔ 不為了逐位元組相同而把那個洞一起搬過來。
-            //   📌 驗收④的對拍因此**只涵蓋房間存在的情況** —— 不存在那格兩端本來就該不一樣。
+            // 🔴 TASK-0247 驗收⑥：不擋的話，打錯房名時回一個空清單、exit 0
+            //   ⇒ 「這房沒人」與「沒有這一房」同形。⇒ 一律擋。
             SCP_TavernRoomMeta? aRoomMeta = null;
             if (aRoom.Length > 0)
             {
@@ -134,9 +125,8 @@ namespace SCP.Core.Tavern
                     aBody = Read(aDataRoot, aRoom, aRoomMeta!, iArgs, aStat);
                     break;
                 // ── TASK-0287：TRPG 任務投影（純讀版）──────────────────────
-                // 🔴 這三支在 **Editor 側不是純讀** —— 它們開頭跑 `AutoRecoverStaleLeases`，而它會
-                //   `AppendEvent`。本側**刻意不做那一步**（理由與後果見 `SCP_TavernQuestState` 檔頭）。
-                //   ⛔ 別為了「跟 Editor 一樣」把回收搬過來：那會讓本支成為第二個寫入端。
+                // 🔴 這三支**刻意不回收過期租約**（回收會 `AppendEvent`；理由與後果見 `SCP_TavernQuestState` 檔頭）。
+                //   ⛔ 別把回收加進來：那會讓本支成為第二個寫入端。
                 case "task_list":
                     aBody = SCP_TavernQuestRender.TaskList(
                         aRoom, SCP_TavernQuestState.Compute(aDataRoot, aRoom, aStat.Warnings),
@@ -171,16 +161,15 @@ namespace SCP.Core.Tavern
                     return SCP_CmdResult.Fail(2, "✗ 不認得的 kind：" + aKind,
                         "  合法值：read / members / listrooms / events_since"
                         + " / task_list / task_state / task_next",
-                        "  ⚠ 那三支 task_* 是 **TASK-0287 的純讀投影**（⛔ 不回收過期租約 —— "
-                        + "Editor 側那三支會）；查詢那 7 個 kind 走 `tavern-query`");
+                        "  ⚠ 那三支 task_* 是 **TASK-0287 的純讀投影**（⛔ 不回收過期租約）；"
+                        + "查詢那 7 個 kind 走 `tavern-query`");
             }
             aWatch.Stop();
 
             var aResult = SCP_CmdResult.Success();
-            // ⚠ 去掉尾端換行再切 —— 不去的話會多生一個空 Line，而那一格就是與 Editor 端輸出
-            //   唯一的差異（TASK-0240 逐行對拍實測過同一格）。⛔ 別改成「過濾空行」：
+            // ⚠ 去掉尾端換行再切 —— 不去的話會多生一個空 Line。⛔ 別改成「過濾空行」：
             //   那會連正文裡刻意的空行一起吃掉。
-            // 🔴 而**逐行不 TrimEnd**：Editor 側 `listrooms` 在 description 是空的時候會印出
+            // 🔴 而**逐行不 TrimEnd**：`listrooms` 在 description 是空的時候會印出
             //   結尾帶一個空白的 `— `，那一格是輸出的一部分。
             //   🩸 第一版照抄了 `tavern-query` 的 `.TrimEnd()` ⇒ 對拍 96 行全紅，
             //     而每一行單獨看都只是「少一個看不見的空白」。
@@ -243,8 +232,8 @@ namespace SCP.Core.Tavern
 
             List<SCP_TavernMessage> aMessages;
             string aTitle;
-            // ⚠ 分支順序逐字照 Editor 側 `Op_Read`：search > since_seq > from/to > 尾讀。
-            //   ⛔ 換順序的話同時給兩個參數時兩端會走不同分支，而各自的輸出都合理。
+            // ⚠ 分支順序：search > since_seq > from/to > 尾讀（與 Details 說明一致）。
+            //   ⛔ 換順序的話同時給兩個參數時會走不同分支，而輸出看起來都合理。
             if (aSearch.Length > 0)
             {
                 aMessages = SearchMessages(iDataRoot, iRoom, aSearch,
@@ -266,7 +255,7 @@ namespace SCP.Core.Tavern
             }
             else
             {
-                // Editor 側：`tail > limit > 後台預設`，而 `limit` 被當成 tail 用時**要出聲**
+                // `tail > limit > 後台預設`，而 `limit` 被當成 tail 用時**要出聲**
                 //（Tim 2026-07-31 拍板 —— 靜默丟掉那格的代價實測是 66k token）。
                 int aN = aTail > 0 ? aTail : (aLimit > 0 ? aLimit : ReadTailCount);
                 aMessages = SCP_TavernRead.Tail(iDataRoot, iRoom, aN, ioStat);
@@ -281,9 +270,7 @@ namespace SCP.Core.Tavern
 
         /// <summary>
         /// 正文子字串搜尋。⚠ 射程是**最後 <see cref="SearchScanCap"/> 則**，⛔ 不是全房 ——
-        /// 而 Editor 側 `IO.Search` 走的是**全房載入再過濾**，兩者**不是同一個集合**。
-        /// 📌 所以這一格在對拍時是**已知可能不符**的那一格：命中數落在 4000 則之外時會少。
-        /// ⛔ 要單獨報，不混進「移植壞了」——「射程不同」與「搬錯了」的 diff 長得一樣。
+        /// 命中落在 4000 則之外時會少（掃描量印在頁尾）。
         /// </summary>
         static List<SCP_TavernMessage> SearchMessages(string iDataRoot, string iRoom, string iNeedle,
                                                       int iLimit, SCP_TavernReadStat ioStat)
@@ -336,7 +323,7 @@ namespace SCP.Core.Tavern
         }
 
         /// <summary>
-        /// 顯示名，逐字照 Editor 側 `UCL_AgentIdParser.Display(sender_id, sender_persona, sender_name)`：
+        /// 顯示名：
         /// 底名 ＝ `sender_name`，空的降級成 `sender_id`，兩個都空 ⇒ `?`；
         /// **有 persona 就接 `@&lt;persona&gt;`**。
         /// <para>🩸 第一版只回 `sender_name` ⇒ 對拍時每一則都少了 `@summit` 那半，
@@ -417,7 +404,7 @@ namespace SCP.Core.Tavern
                 if (ev.Data.Count > 0)
                 {
                     var aPieces = new List<string>();
-                    // 偏好順序逐字照 Editor 側：summary > reason > lease_until > 其它頭兩個
+                    // 偏好順序：summary > reason > lease_until > 其它頭兩個
                     if (ev.Data.TryGetValue("summary", out string aS)) aPieces.Add(Truncate(aS, 40));
                     else if (ev.Data.TryGetValue("reason", out string aR)) aPieces.Add("reason: " + Truncate(aR, 40));
                     else if (ev.Data.TryGetValue("lease_until", out string aLu)) aPieces.Add("lease→" + aLu);

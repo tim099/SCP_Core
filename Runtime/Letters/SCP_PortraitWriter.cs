@@ -1,7 +1,5 @@
 // 區塊職責：寫一幅見人畫像 —— 事實源進自己的 sketchbook，公開層投遞到對方的 portraits。
-// 物理意義：移植自 `Tools~/AgentCommands/portraits.py write_portrait`（TASK-0305）。
-//          舊路是 Editor spawn python，而 python 腳本路徑靠 `UCL_EditorPath.CorePath`（AssetDatabase）找 ——
-//          那是晚安 portrait 一步需要 Editor 的唯一理由。檔名、frontmatter、CRLF 行尾逐位元組對齊 python 版，
+// 物理意義：TASK-0305。檔名、frontmatter、CRLF 行尾逐位元組對齊 python `portraits.py write_portrait`，
 //          既有讀者（SCP_PortraitView／portrait-next／portraits.py mine）不必改。
 // ⚠ 不覆寫任何既有檔 —— 檔名帶 UTC 時間戳，同一天寫兩幅就是兩幅（改觀的形狀是多一個版本）。
 // ⚠ private_body **只寫進 sketchbook**，投遞件裡不留任何「另有私層」的痕跡（Tim 2026-08-04 拍板）。

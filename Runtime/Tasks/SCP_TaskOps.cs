@@ -78,7 +78,7 @@ namespace SCP.Core.Tasks
         // ===========================================================
         // 區塊職責：每個 op **必填**與**會讀**的鍵。
         // ⚠ 兩欄的保守方向相反：Required 從嚴（多列會砍掉合法呼叫）、Known 從寬（少列會擋掉合法呼叫）。
-        //   🩸 Known 存在的理由（UCL 2026-09-21）：`--arg kind=related_to` 打錯參數名被靜默吃掉 ⇒
+        //   🩸 Known 存在的理由（2026-09-21）：`--arg kind=related_to` 打錯參數名被靜默吃掉 ⇒
         //      `op_link` 取預設 `blocked_by` ⇒ 兩張單被標成阻塞，回傳 ✓Success。
         // ⚠ `persona` 不在這裡 —— 它是呼叫者身分，每個 op 都吃。
         // ===========================================================
@@ -355,7 +355,7 @@ namespace SCP.Core.Tasks
             });
             if (!aWrote)
                 throw new SCP_TaskOpException($"[Task] TASK-{aIndex:0000} 認領沒有落檔 —— 鎖內重讀時那張單不在了（被刪或被搬）⇒ **寫入沒有發生**。");
-            e = SCP_TaskIO.Find(c.Root, aIndex) ?? e;   // 回報用落檔後那一份（🩸 UCL 2026-09-11：剛加的人不在成功回報裡）
+            e = SCP_TaskIO.Find(c.Root, aIndex) ?? e;   // 回報用落檔後那一份（🩸 2026-09-11：不重讀的話，剛加的人不在成功回報裡）
             c.R.Index = aIndex; c.R.Wrote = 1;
             c.R.Headline = aWhyNoMove == null ? $"✓ {e.Id} 已認領：{aFrom} → in_progress（{aRole}）" : $"✓ {e.Id} 加入為 {aRole}（狀態維持 {aFrom}）";
             c.Rep.AppendLine($"## ✅ {e.Id} 已認領");
@@ -1166,8 +1166,7 @@ namespace SCP.Core.Tasks
 
         // ===========================================================
         // 區塊職責：晚安收工閘的**顯式跳過** —— 把理由寫進那張單的時間線。
-        // 物理意義：跳過要留在**別人看得到的地方**（basecamp 拍板：可跳過但留名，比不可跳過更持久）。
-        //   🩸 搬家的理由：這一格是晚安 sleep 那一步「要 Editor」的原因之一（TASK-0349 ③）。
+        // 物理意義：跳過要留在**別人看得到的地方**（basecamp 拍板：可跳過但留名，比不可跳過更持久；TASK-0349 ③）。
         // ===========================================================
         static void OpWrapupSkip(Ctx c)
         {

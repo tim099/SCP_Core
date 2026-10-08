@@ -15,13 +15,9 @@
 //   ② **`decided_by` / `decision_note` 不可省**：三個月後要答得出「誰批的、憑什麼」。
 //   ③ ⚠ **每次裁決都先回讀狀態**：已經不是 pending 就拒絕。
 //      ⇒ 這格防的是**同一張單被批第二次**，而重複撥款的代價跟「是誰批的第二次」無關。
-//      📌 射程（2026-09-22 量的，⛔ 不是推的）：**裁決**這個動作今天只有本層做得到 ——
-//        Unity 端的 `Approve` 全樹**零呼叫端**（唯一會按它的那一頁已退場，只剩兩處註解提到它）。
-//        ⛔ 而那兩個資料夾**不是只有本層在寫**：Unity 端仍會 `Create`（開單）與 `Close`（取消）
-//        ⇒ 「單一裁決者」成立，「單一寫入端」不成立，兩者別混。
-//      ⭐ 2026-09-28（TASK-0325 第一批）：開單／撤單也搬進本層（`CreatePayout`／`CreateTransfer`／`Cancel`，出口 `cmd bank-request`），
-//        Unity 的 `Treasury op=request|transfer_request|request_cancel|request_list` 改成指路 ⇒ **單一寫入端也成立了**。
-//        檔名、欄位順序、JSON 樣式逐項對齊 Unity 版（`UclLegacy`：tab 縮排），新舊單混放同一個資料夾。
+//      📌 射程：裁決、開單、撤單都只有本層做（`CreatePayout`／`CreateTransfer`／`Cancel`，出口 `cmd bank-request`）
+//        ⇒ 單一裁決者、單一寫入端。
+//        檔名、欄位順序、JSON 樣式沿用既有單據（`UclLegacy`：tab 縮排），新舊單混放同一個資料夾。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -329,7 +325,7 @@ namespace SCP.Core.Bank
 
         /// <summary>
         /// 開一張**轉帳單**（A → B，守恆）。⛔ 不動任何錢。擋下：缺任一方／A＝B／金額不是正整數／缺理由。
-        /// ⚠ **不檢查出款方是不是合法帳戶** —— 歸戶的出款方本來就常是孤兒帳戶（同 Unity 版）。
+        /// ⚠ **不檢查出款方是不是合法帳戶** —— 歸戶的出款方本來就常是孤兒帳戶。
         /// </summary>
         public static bool CreateTransfer(string iDataRoot, string iFromBank, string iToBank, int iAmount, string iReason,
                                           string iKind, string iRequesterAgent, string iRequesterPersona, string iCurrency,

@@ -1,4 +1,4 @@
-// 區塊職責：`cmd root-index` —— 重建見根索引（掃 fragments/ frontmatter）。**原生**，不需要 Unity。
+// 區塊職責：`cmd root-index` —— 重建見根索引（掃 fragments/ frontmatter）。
 // 物理意義：索引是視圖不是真相源 ⇒ 這支永遠可以重跑，重跑的結果只取決於碎片檔本身。
 //           組裝邏輯在 SCP_Fragments（Runtime/Letters），本檔只做「參數 → 呼叫 → 回報」。
 // 數值影響：整份覆寫 `fragments/_root_index.md`；無碎片時**不建檔**（回報「沒有碎片」而不是生一個空索引）。

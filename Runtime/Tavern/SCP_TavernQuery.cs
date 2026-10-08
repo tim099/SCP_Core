@@ -30,13 +30,13 @@ namespace SCP.Core.Tavern
     /// </summary>
     public static partial class SCP_TavernQuery
     {
-        /// <summary>單房掃描上限（`kind=seq` 不給區間時用）。⚠ 與 Editor 側同值。</summary>
+        /// <summary>單房掃描上限（`kind=seq` 不給區間時用）。</summary>
         const int SCAN_PER_ROOM = 4000;
 
         public const int DefaultBodyClip = 200;
 
         // ===========================================================
-        // 呈現（⛔ 逐字對齊 Editor 側，見檔頭）
+        // 呈現（見檔頭）
         // ===========================================================
         static DateTime ParseTs(string iTs)
         {
@@ -89,7 +89,7 @@ namespace SCP.Core.Tavern
             {
                 ioSb.AppendLine();
                 ioSb.AppendLine($"⚠ **{iDegraded}** 則落盤沒有 `sender_name` ⇒ 顯示降級成 `sender_id`。"
-                    + "⛔ 本側沒有顯示名查詢器（Editor 那側有），所以這一格是**降級**不是等價。");
+                    + "⛔ 沒有顯示名查詢器，所以這一格是**降級**不是等價。");
             }
             foreach (string aW in iStat.Warnings)
             {

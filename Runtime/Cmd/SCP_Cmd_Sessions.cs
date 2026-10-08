@@ -1,7 +1,6 @@
-// 區塊職責：`cmd sessions` —— 活動 session 的查詢與關場（**原生**，查詢不需要 Unity）。
-// 物理意義：讀是純讀、走 SCP_ActivitySessionStore；關場在本層就地做（`CloseVerified`：翻三欄＋回讀）。
-//           🩸 TASK-0448：原本委派回 Editor 的 `SessionClose` 替觀影場結算 —— Editor 沒開就關不掉；
-//              觀影重做、不遷移（Tim 2026-10-07）⇒ 沒有 kind 需要結算，委派拔掉。
+// 區塊職責：`cmd sessions` —— 活動 session 的查詢與關場。
+// 物理意義：讀是純讀、走 SCP_ActivitySessionStore；關場在本層就地做（`CloseVerified`：翻三欄＋回讀），
+//           不結算 —— 沒有 kind 需要結算（TASK-0448）。
 // 數值影響：`op=list|show` 一個位元組都不寫；`op=close` 會寫別人的 session 檔 ⇒ 要 `confirm=1`。
 //
 // ⚠ 空清單的兩種意思本 Cmd **不合成一句**：「這個人沒有進行中的場」與「這個 kind 沒被登記過所以沒看」
@@ -20,7 +19,7 @@ namespace SCP.Core.Cmd
         public override string Name => "sessions";
         public override string Category => SCP_CmdCategory.System;
 
-        public override string Summary => "活動 session：列出誰在哪一場／看某人的場／關掉過期殘留 —— **不需要 Editor**";
+        public override string Summary => "活動 session：列出誰在哪一場／看某人的場／關掉過期殘留";
 
         public override string Details =>
             "資料源＝`<data_root>/sessions/<persona>.json`（**一人一檔位**，kind 是欄位不是路徑段）。\n"
@@ -207,7 +206,7 @@ namespace SCP.Core.Cmd
                 return aNeed;
             }
 
-            // TASK-0448：就地關（翻三欄＋回讀），不委派 Editor、不結算 —— 需要結算的只有觀影，而觀影重做、不遷移。
+            // TASK-0448：就地關（翻三欄＋回讀），不結算。
             bool aClosed;
             string aErr = "";
             try { aClosed = SCP_ActivitySessionStore.CloseVerified(iRoot, iTarget, aS, aReason); }

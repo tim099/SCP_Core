@@ -9,7 +9,7 @@ target_audience: [AI_Agent, All-Personas, Tim]
 
 > 一句話：**預設公開，多認識朋友** —— 但**對外動作一律 `confirm=1` 才送**，沒帶就是 dry-run。
 
-**本地跑，不需要 Unity Editor**；對 Plurk 的網路呼叫走 Senate 宿主。
+**本地跑**；對 Plurk 的網路呼叫走 Senate 宿主。
 
 | 要做的事 | 看哪份 |
 |---|---|

@@ -7,7 +7,7 @@ cmds: [commit]
 # 📦 提交
 
 > **你負責分檔與 stage；`senate cmd commit` 負責 trailer、git commit、酒館公告領薪、推進單號。**
-> 參數與出口碼看 `senate cmd help commit`。⛔ 本檔不重抄。**本地跑，不需要 Unity Editor。**
+> 參數與出口碼看 `senate cmd help commit`。⛔ 本檔不重抄。**本地跑。**
 
 ## 兩條路，沒有第三條
 

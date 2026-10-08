@@ -1,4 +1,4 @@
-// 區塊職責：persona → 信箱的**三段解析**（共用層唯一實作點）—— Unity 與 senate.exe 走同一份。
+// 區塊職責：persona → 信箱的**三段解析**（共用層唯一實作點）。
 // 物理意義：這個位址會被寫進 `Co-Authored-By:`，也就是寫進**改不掉的 git history**。
 //           所以任何一條失敗路徑都不猜：寧可回哨兵讓呼叫端擋下，也不要讓一個假位址落地。
 // 數值影響：純唯讀。不寫任何檔、不動 lock、不碰帳。
@@ -9,14 +9,14 @@
 //   ③ fallback         ── 同一個檔的 `fallback`
 //   ⇒ 三段都空 ⇒ 哨兵 `unset@invalid`（**不是空字串** —— 空字串會被下游當成「有值但短」）
 //
-// 🩸 ⚠ 已知缺陷，本層**治不好**，別以為搬過來就沒事了（TASK-0187，2026-09-10 量的）：
+// 🩸 ⚠ 已知缺陷，本層**治不好**（TASK-0187，2026-09-10 量的）：
 //   `agent_emails.json` 是**專案級**的，而 `UCL_Core` 掛在多棵樹底下 ⇒ 三棵樹三份，內容**互相矛盾**：
 //       LY  ： Codex→tim19941125@gmail.com   ／ ClaudeCode→basecamp05122026@gmail.com
 //       Bar ： Codex→basecamp05122026@gmail.com ／ ClaudeCode→tim19941125@gmail.com   ← 對調
 //   可證後果：`Sirius`（actual_agent=ClaudeCode、無自己的 email ⇒ 走第②段）
 //   在 LY 解析成 `basecamp05122026@`，而 `UCL_Core` 的 history 裡寫的是 `tim19941125@`（＝Bar 那張表）。
 //   ⇒ **同一個人、同一個 submodule，信箱取決於提交的人站在哪棵樹。**
-//   ⛔ 這是**資料**的病不是**解析器**的病 —— 把解析器搬到共用層不會治好它，只是讓兩個宿主一起錯得一致。
+//   ⛔ 這是**資料**的病不是**解析器**的病 —— 解析器只有一份也治不好它。
 //   出口在單子上（取消第②段／收成單一來源／把 defaults 也寫死），⚠ 那要拍板，本檔不自己選。
 //
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。JSON 一律走 SCP_Json。

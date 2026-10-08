@@ -1,7 +1,6 @@
 // 區塊職責：persona **信件夾根**底下的版面 —— 一個人的信、憲法、見叢、見林、見森、Cmd 回傳檔。
 // 物理意義：這批版面原本散在 `SCP_WakeLetters`（8 支）與 Senate 的 `PersonaLetters`
-//           （`profile` 判準、`_persona_` lock 前綴）兩處。收攏成一份的理由跟 UCL 那側
-//           `UCL_LettersPath` 一樣，而那條規則是踩出來的：
+//           （`profile` 判準、`_persona_` lock 前綴）兩處。收攏成一份的理由是踩出來的：
 //           🩸 2026-08-18 之前三支 Cmd 各自組回傳檔路徑，
 //             其中一支連 letters 根都自己推 —— **同一個目錄的第四種算法**。
 //             於是「回傳檔搬進 cmd/ 子目錄」從改一行變成 12 處各改一次，
@@ -13,7 +12,7 @@ namespace SCP.Core.Paths
 {
     public static class SCP_LettersPaths
     {
-        // ── 目錄／檔名常數（跨端契約：Editor 端 UCL_LettersPath 同名）──────
+        // ── 目錄／檔名常數 ──────
 
         /// <summary>persona 的**判準**：信件夾底下有這個子目錄的才算一個人。</summary>
         public const string ProfileDirName = "profile";
@@ -22,13 +21,12 @@ namespace SCP.Core.Paths
         // 區塊職責：persona 的 **session lock** 檔名（`profile/_session.json`）。
         // 物理意義：「這個人現在在線」的真相源。登入寫、登出刪 —— 檔在＝在線。
         //          它住在 persona 自己的 profile/ 底下而不是資料根的 `_session/`（TASK-0105，2026-09-03）：
-        //          🩸 舊位置的代價是**找 lock 的算法有五種**（Editor 兩支、SCP 兩支、Editor 頁一支），
+        //          🩸 舊位置的代價是**找 lock 的算法有五種**，
         //            其中 SCP 那支是「從信件夾往上找第一個 `_session`」—— 信件夾根一漂，
         //            lock 就跟著指到另一棵樹，而每一頁都印得出一份合理的在線名單。
         //          搬進 profile/ 之後，lock 的位置由 persona 目錄**唯一決定**，沒有第二個輸入。
         // ⚠ runtime 狀態不入版控：各 letters repo 的 `.gitignore` 基線（`letters/Template/.gitignore`）
         //   擋 `/profile/_session.json`。lock 含 session_token，而 letters remote 可能是公開的。
-        // ⚠ 對側契約：Editor 端 `UCL_LettersPath.SessionLock()` 同一個檔名。
         // ===========================================================
         public const string SessionLockFileName = "_session.json";
 
@@ -204,7 +202,7 @@ namespace SCP.Core.Paths
         public static string LastLoginPath(SCP_LettersRoot iRoot, string iPersona)
             => ProfileDir(iRoot, iPersona) + "/" + LastLoginFileName;
 
-        /// <summary>now_status 檔名（TASK-0294：與 lock 分開讀寫；Editor 端 <c>UCL_LettersPath.NowStatusFileName</c> 同一個名字）。</summary>
+        /// <summary>now_status 檔名（TASK-0294：與 lock 分開讀寫）。</summary>
         public const string NowStatusFileName = "now_status.json";
 
         /// <summary>某個 persona 的目前狀態（<c>&lt;persona&gt;/cmd/now_status.json</c>）—— 只供顯示，不閘任何行為。</summary>

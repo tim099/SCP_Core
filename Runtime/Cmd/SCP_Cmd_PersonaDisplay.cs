@@ -15,7 +15,7 @@ namespace SCP.Core.Cmd
         public override string Name => "persona-display";
         public override string Category => SCP_CmdCategory.Persona;
 
-        public override string Summary => "persona 顯示資料（頭像 avatar.png／顏色 color.md）：列出、查看、改顏色、換頭像 —— **本地跑，不需要 Editor**";
+        public override string Summary => "persona 顯示資料（頭像 avatar.png／顏色 color.md）：列出、查看、改顏色、換頭像 —— **本地跑**";
 
         public override string Details =>
             "資料住 `<letters>/<persona>/profile/`。顯示名一律是 persona id；沒有頭像／顏色 ⇒ 顯示端畫預設（⛔ 不借 agent 或別人的）。\n"

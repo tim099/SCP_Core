@@ -3,7 +3,7 @@
 //   · token 住 secrets 資料夾（`SCP_SecretStore.ResolveDir`，現況 `AgentCommands/Secret/`）：
 //     `discord_bot_token.enc`（密文，入 git）＋ `discord_bot_token.txt`（明文，**本機自己的**，Secret repo 的 .gitignore 擋掉）。
 //     Tim 2026-09-28：「本機設定的話直接輸出一份解密後檔案（不用跑兩遍）」⇒ `TrySetToken` 一次寫兩份。
-//   · 讀 token 的順序：環境變數 `DISCORD_INBOUND_BOT_TOKEN` ＞ 明文檔（同舊 Unity daemon，⇒ 同一台機器行為不變）。
+//   · 讀 token 的順序：環境變數 `DISCORD_INBOUND_BOT_TOKEN` ＞ 明文檔。
 //   · API 呼叫走宿主注入的 `ISCP_HttpHeaderFetcher`（SCP_Core 不引入網路，見 `SCP_RateSource.cs` 守衛①）。
 //   · Server／頻道清單存 `ChatTavern/discord/discord_guilds_cache.json`：**按了重新整理才打 API**，頁面平常只讀快取。
 // 數值影響：
@@ -176,7 +176,7 @@ namespace SCP.Core.Discord
             if (!(SCP_HttpFetch.Current is ISCP_HttpHeaderFetcher aFetch))
             {
                 oError = SCP_HttpFetch.Current == null
-                    ? "本宿主沒有註冊抓取器（Unity 那側刻意不註冊）⇒ 這支要在 Senate 跑"
+                    ? "本宿主沒有註冊抓取器 ⇒ 這支要在 Senate 跑"
                     : $"本宿主的抓取器（{SCP_HttpFetch.Current.FetcherName}）不能帶標頭 ⇒ 打不了 Discord API";
                 return false;
             }

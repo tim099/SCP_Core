@@ -647,7 +647,7 @@ namespace SCP.Core.FreeTime
             }
         }
 
-        /// <summary>blocked：回傳檔照寫，再回非零（同 Unity 版每一個守衛的手勢：先 WritePayload，再 throw）。</summary>
+        /// <summary>blocked：回傳檔照寫，再回非零（每一個守衛都是這個手勢）。</summary>
         public static SCP_CmdResult Blocked(SCP_FreeTimeContext iCtx, string iPath, StringBuilder ioR, string iWhat)
         {
             AppendTail(ioR, iCtx);

@@ -61,7 +61,7 @@ namespace SCP.Core.Git
     /// <summary>一個 repo 的自動提交設定。檔案位置：<c>&lt;repoRoot&gt;/.ucl_autocommit.json</c>。</summary>
     public sealed class SCP_AutoCommitConfig
     {
-        /// <summary>設定檔檔名（放 repo 根）。⚠ 名字沿用 UCL 時代的 —— 那是磁碟上的契約，不是品牌。</summary>
+        /// <summary>設定檔檔名（放 repo 根）。⚠ 名字裡的 `ucl` 是磁碟上的契約，不是品牌。</summary>
         public const string FileName = ".ucl_autocommit.json";
 
         /// <summary>

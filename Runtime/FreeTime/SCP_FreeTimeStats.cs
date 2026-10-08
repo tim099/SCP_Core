@@ -3,7 +3,7 @@
 //          而沒有任何一層會說「這件事你 12 場沒碰過」。⇒ 飢餓度 ＝ 本 persona 已跑過的場次 − 該活動最後被選中的場次。
 //          by persona：每個人做的事不一樣，全域統計會讓多數人的偏好把少數人的空白抹平。
 // 數值影響：存 `letters/<persona>/profile/freetime_activity_stats.md`（profile 欄慣例：檔名＝欄位、內文＝值；
-//          本欄的值是**壓縮 JSON**，與 Unity 版逐字同格式）。只影響骰面排序與名字後綴，**不擋任何事**。
+//          本欄的值是**壓縮 JSON**，與既有檔逐字同格式）。只影響骰面排序與名字後綴，**不擋任何事**。
 //          讀不到／解析失敗一律當「沒有統計」（不置頂），但 `Loaded=false` 讓呼叫端印「沒有讀數」而不是「0 場」——
 //          把讀取失敗印成 0 場飢餓會讓一個真的空白被隱藏。
 // ⚠ 寫入端只有兩處：step=start 推場次（BumpSession）、op=pick 記選中（RecordPick）。
@@ -38,7 +38,7 @@ namespace SCP.Core.FreeTime
         public int SessionsTotal;
         /// <summary>最後寫入時刻（ISO）。</summary>
         public string UpdatedAt = "";
-        /// <summary>活動 id → 紀錄（id 比對不分大小寫，同 Unity 版）。</summary>
+        /// <summary>活動 id → 紀錄（id 比對不分大小寫）。</summary>
         public Dictionary<string, SCP_FreeTimeActivityStat> Activities
             = new Dictionary<string, SCP_FreeTimeActivityStat>(StringComparer.OrdinalIgnoreCase);
         /// <summary>
@@ -92,7 +92,7 @@ namespace SCP.Core.FreeTime
                 if (!aJd.IsObject) { aRes.LoadError = "統計檔不是 JSON 物件：" + aPath; return aRes; }
                 aRes.SessionsTotal = aJd.GetInt("sessions_total", 0);
                 aRes.UpdatedAt = aJd.GetString("updated_at", "");
-                // 🩸 2026-08-24 首次實跑（Unity 版）：空字典被寫成 `"activities":null`，而「鍵存在」不等於「有值」
+                // 🩸 2026-08-24 首次實跑：空字典被寫成 `"activities":null`，而「鍵存在」不等於「有值」
                 //   ⇒ 判定要看**值本身**是不是物件，不是看鍵在不在。
                 SCP_JsonData aActs = aJd["activities"];
                 if (aActs.IsObject)
@@ -126,7 +126,7 @@ namespace SCP.Core.FreeTime
             var aJd = SCP_JsonData.NewObject();
             aJd["sessions_total"] = iStats.SessionsTotal;
             aJd["updated_at"] = DateTime.UtcNow.ToString("o");
-            // ⚠ 沒有內容就**不要寫那個鍵**（Unity 版的空字典會寫成 null，而 null 是讀取端處理不了的第三種狀態）。
+            // ⚠ 沒有內容就**不要寫那個鍵**（空字典寫成 null 的話，null 是讀取端處理不了的第三種狀態）。
             if (iStats.Activities.Count > 0)
             {
                 var aActs = SCP_JsonData.NewObject();
@@ -142,7 +142,7 @@ namespace SCP.Core.FreeTime
             }
             Directory.CreateDirectory(Path.GetDirectoryName(aPath)!);
             string aTmp = aPath + ".tmp";
-            // 壓縮 JSON —— 與 Unity `JsonData.ToJson()` 同形（既有檔就是這個樣子，換格式會讓整批檔逐位元組翻紅）。
+            // 壓縮 JSON —— 既有檔就是這個樣子，換格式會讓整批檔逐位元組翻紅。
             File.WriteAllText(aTmp, SCP_JsonWriter.Write(aJd, false), new UTF8Encoding(false));
             SCP_TextFile.ReplaceOrMove(aTmp, aPath);
         }

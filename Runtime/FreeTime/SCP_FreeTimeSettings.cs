@@ -1,5 +1,5 @@
-// 區塊職責：自由時間的**可調數值**（`<data_root>/FreeTime/freetime_settings.json`）—— 取代 Unity 版散在三支檔裡的常數。
-// 物理意義：TASK-0360 搬家時 Tim 拍板：每場幾張限時券、券的緩衝、囤券門檻、飢餓門檻／置頂上限、
+// 區塊職責：自由時間的**可調數值**（`<data_root>/FreeTime/freetime_settings.json`）。
+// 物理意義：TASK-0360 Tim 拍板：每場幾張限時券、券的緩衝、囤券門檻、飢餓門檻／置頂上限、
 //          配對簡報列幾筆 inbox —— 這六格原本是寫死在程式裡的 `const`，
 //          改它要改 code、要編譯、要等人 commit。搬成一份資料之後，後台頁就能改。
 // 數值影響：每支 Cmd 呼叫**讀一次**、整趟傳遞（⛔ 不在半路重讀 —— 同一趟裡兩處讀到不同值會讓骰面自相矛盾）。
@@ -46,7 +46,7 @@ namespace SCP.Core.FreeTime
         /// </summary>
         public int StarveHoistMax = 2;
 
-        /// <summary>配對簡報裡酒館 inbox 列最新幾筆（Unity 版寫死 10）。全部都在 inbox 檔裡，這裡只決定一眼看得完多少。</summary>
+        /// <summary>配對簡報裡酒館 inbox 列最新幾筆。全部都在 inbox 檔裡，這裡只決定一眼看得完多少。</summary>
         public int InboxHeadsShown = 10;
 
         /// <summary>設定檔路徑：<c>&lt;data_root&gt;/FreeTime/freetime_settings.json</c>。</summary>

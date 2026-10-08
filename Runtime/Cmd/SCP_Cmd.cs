@@ -1,14 +1,13 @@
 // 區塊職責：**SCP_CMD 的指令基底與回傳型別** —— 一支 Cmd 是什麼、它回什麼。
-// 物理意義：這套系統跟 UCL_Core 的 AgentCommand 是同一個概念，但**沒有 queue**：
-//           CLI 直接呼叫 C#，同一個 process 同步跑完回來。
+// 物理意義：**沒有 queue**：CLI 直接呼叫 C#，同一個 process 同步跑完回來。
 //           ⇒ 沒有 trigger 檔、沒有 Watcher、沒有「從 queue 消失代表結束」那套推論，
 //             也就沒有那套推論會漂的那些坑。回傳值就是回傳值。
 // 數值影響：本檔零 IO。
 //
-// 📌 與 UCL_Core AgentCommand 的對照（有意保留的相同 / 有意不同）：
-//   相同：宣告式的參數規格、機器可讀的回報（📄 產出檔 / 🔢 純量）、help 由系統產生不是手寫。
-//   不同：① 無 queue（見上）② 未宣告的參數名一律擋（UCL 是靜默取預設 ⇒ BUG-14）
-//        ③ 不依賴 Unity —— 本組檔案只用 netstandard2.1 的東西，任何宿主都跑得動。
+// 📌 設計要點：
+//   · 宣告式的參數規格、機器可讀的回報（📄 產出檔 / 🔢 純量）、help 由系統產生不是手寫。
+//   · 未宣告的參數名一律擋（靜默取預設會把打錯的名字吃掉 ⇒ BUG-14）。
+//   · 本組檔案只用 netstandard2.1 的東西，任何宿主都跑得動。
 using System;
 using System.Collections.Generic;
 
@@ -17,8 +16,8 @@ namespace SCP.Core.Cmd
     /// <summary>
     /// 這支 Cmd 的工作**實際在哪裡發生** —— 移植進度的機器可讀欄位。
     /// <para>⚠ 存在的理由是《無定語的成功》：一支委派出去的 Cmd 跑完之後，輸出長得跟原生的
-    /// 一模一樣，於是「我在 CLI 上跑完了」與「Editor 替我跑完了」變成同一句話 ——
-    /// 而後者在 Editor 沒開時會失敗，且失敗訊息看起來像 CLI 自己的 bug。</para>
+    /// 一模一樣，於是「我在 CLI 上跑完了」與「Server 替我跑完了」變成同一句話 ——
+    /// 而後者在 Server 沒開時會失敗，且失敗訊息看起來像 CLI 自己的 bug。</para>
     /// <para>📌 它同時是**待移植清單的唯一落點**：清單由 <c>help</c> 從這個欄位印出來，
     /// 不另外維護一份 md —— 兩份清單遲早各說各話，而且兩邊都不報錯。</para>
     /// </summary>
@@ -52,7 +51,7 @@ namespace SCP.Core.Cmd
 
         /// <summary>
         /// 純量回報（對應 run_cmd 的 `🔢 key = value`）。
-        /// <para>⚠ 跟路徑**分開放**：混在一起會讓 seq 這種數字被當成路徑去開（UCL 端的血證）。</para>
+        /// <para>⚠ 跟路徑**分開放**：混在一起會讓 seq 這種數字被當成路徑去開。</para>
         /// </summary>
         public List<KeyValuePair<string, string>> Values = new List<KeyValuePair<string, string>>();
 

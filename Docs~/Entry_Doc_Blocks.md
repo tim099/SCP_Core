@@ -109,4 +109,3 @@ sed 's|{{UCL_CORE_PATH}}|Assets/Plugins/UCL_Core|g' ClaudeTemplate/CLAUDE.md | d
   ⇒ 三個 target 一律 append 是錯的：`.agents/rules/UCL_Core_Entry.md` 是 UCL 專屬檔，
   該維持整檔覆寫。這格要 Tim 拍。
 - **skill 管理頁**還沒接這一層（引擎在，UI 沒有）。
-- **Unity 那側零讀數** —— 以上全部只在 .NET 這側跑過。

@@ -1,6 +1,5 @@
-// 區塊職責：`senate cmd note-lesson` —— 記一條跨 agent 共享的 lesson（`Lessons/lessons.jsonl`）。**原生**，不需要 Unity。
-// 物理意義：TASK-0354（Unity → Senate 遷移第一批 ④）。取代 UCL `ucmd run NoteLesson`（已退場）。
-//           參數與 Editor 版同名同義（body／actor／category／title／tags／persona），寫出來的檔逐位元組同形
+// 區塊職責：`senate cmd note-lesson` —— 記一條跨 agent 共享的 lesson（`Lessons/lessons.jsonl`）。
+// 物理意義：參數 body／actor／category／title／tags／persona（TASK-0354）
 //           —— 本體在 `SCP_LessonLog`，本檔只做參數→輸入、落確認檔、附自由時間提示。
 // 數值影響：jsonl append 0 或 1 行；覆寫 `Lessons/_last_lesson.md`；給了 persona 再鏡寫一份到
 //           `letters/<persona>/cmd/notelesson_last_op.md`。不發酒館、不動錢。
@@ -22,7 +21,7 @@ namespace SCP.Core.Cmd
         public override string Name => "note-lesson";
         public override string Category => SCP_CmdCategory.Memory;
 
-        public override string Summary => "記一條跨 agent 共享的 lesson（去重＋append `Lessons/lessons.jsonl`）—— **本地跑，不需要 Editor**";
+        public override string Summary => "記一條跨 agent 共享的 lesson（去重＋append `Lessons/lessons.jsonl`）—— **本地跑**";
 
         public override string Details =>
             "去重只看 body（trim 後完全相同 ⇒ 不 append，回傳檔寫「重複，skip」；⛔ 不是失敗）。\n"
@@ -55,7 +54,7 @@ namespace SCP.Core.Cmd
             string aActor = iArgs.Get("actor").Trim();
             if (aActor.Length == 0) aActor = aPersona;
             if (aActor.Length == 0) aActor = "unknown";
-            // ⚠ 與 Editor 版同：沒給（或給空字串）⇒ general；只給空白 ⇒ trim 成空字串照寫（不替它補預設）
+            // ⚠ 沒給（或給空字串）⇒ general；只給空白 ⇒ trim 成空字串照寫（不替它補預設）
             string aRawCat = iArgs.Get("category");
             string aCategory = aRawCat.Length == 0 ? "general" : aRawCat.Trim();
 
@@ -77,7 +76,7 @@ namespace SCP.Core.Cmd
             if (!r.Duplicate)
             {
                 var sb = new StringBuilder(aText);
-                // 自由時間提示查的是 **actor**（Editor 版同）
+                // 自由時間提示查的是 **actor**
                 SCP_FreeTimeHint.Append(sb, new SCP_DataRoot(aData), aActor, out string aHintWarn);
                 if (aHintWarn.Length > 0) aResult.Lines.Add("⚠ " + aHintWarn);
                 aText = sb.ToString();

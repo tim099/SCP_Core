@@ -1,18 +1,14 @@
-// 區塊職責：早安流程（wake／brief／intro 前置與標頭）的**邏輯層** —— 不需要 Unity Editor。
-// 物理意義：TASK-0303（Tim 2026-09-26：「Editor 卡住時早安也卡住，讓早安不再依賴 Editor」）。
-//          寫入的檔、欄位名、格式逐一對齊 Editor 版（lock／memo／profile 兩欄／審計行；`_tokens.json` 已退場 TASK-0307），
-//          ⇒ Editor 端、python 端、SCP_PersonaLetters 等既有讀者**不必改**就讀得懂。
-// 與 Editor 版刻意的差異（寫在這裡讓人查得到，不是漏移植）：
-//   ① lock 讀得到檔卻解析不了（Unknown）⇒ **擋**。Editor 版 ReadLock 回 null ⇒ 當成離線放行，
-//      然後覆寫那顆壞 lock ——「壞 lock」與「沒人在線」同形，放行的方向是製造分身。
-//   ② （TASK-0307 起不再有 `_tokens.json`；token 只住 lock。）
-//   ③ 舊位置 lock（`_session/_persona_*.json`）**不搬**：有就擋並指路（搬遷是一次性維護，
+// 區塊職責：早安流程（wake／brief／intro 前置與標頭）的**邏輯層**。
+// 物理意義：TASK-0303。寫入的檔、欄位名、格式（lock／memo／profile 兩欄／審計行）是既有讀者
+//          （python 端、SCP_PersonaLetters…）的介面，⛔ 不隨手改。token 只住 lock（TASK-0307）。
+// 刻意的規格（寫在這裡讓人查得到）：
+//   ① lock 讀得到檔卻解析不了（Unknown）⇒ **擋**。當成離線放行會覆寫那顆壞 lock ——
+//      「壞 lock」與「沒人在線」同形，放行的方向是製造分身。
+//   ② 舊位置 lock（`_session/_persona_*.json`）**不搬**：有就擋並指路（搬遷是一次性維護，
 //      Bar 實測 NothingToDo；而搬錯方向的代價是放行第二次登入）。
-//   ④ 帳戶存在判準讀 `Bank/accounts/`（`SCP_BankAccounts.TryLoad`）—— Editor 版還在列舉遷移前的
-//      `Treasury/accounts/`，而且大小寫敏感（`Codex.json` vs `codex.json`）。
-//   ⑤ `_persona_profile_snapshot.json` **不刷新**（Editor 版每次寫 profile 都整池重寫）——
-//      它是衍生快照，讀者是 Editor 頁與 python，而 python 端已明說不靠它（persona_profile.py:98）。
-//   ⑥ 見林書籤換算（RebaseBookmark）不做：Editor 版的換算結果**從不落盤**（WriteRaw 略過推導欄），只印一行。
+//   ③ 帳戶存在判準讀 `Bank/accounts/`（`SCP_BankAccounts.TryLoad`）。
+//   ④ `_persona_profile_snapshot.json` **不刷新** —— 它是衍生快照，python 端已明說不靠它（persona_profile.py:98）。
+//   ⑤ 見林書籤換算（RebaseBookmark）不做：換算結果不落盤（WriteRaw 略過推導欄），只印一行。
 // 數值影響：wake 寫 lock（含 session_token）／memo／profile/{model,actual_agent}.md／profile/_last_login.json／審計 jsonl，刪 now_status。
 //          到新區（本區沒綁）時另可能開一個戶（種子 1000）＋寫本區綁定（TASK-0441，見 EnsureRegionBinding）。
 //          brief 寫 cmd/wake_brief.md。其餘純讀。
@@ -45,14 +41,13 @@ namespace SCP.Core.Letters
     {
         public string DataRoot = "";
         public string LettersRoot = "";
-        /// <summary>顯示路徑的基準根（Senate 宿主給 Senate 專案根；Unity 宿主給 Unity 專案根）。⛔ 詞典根不再從它推（TASK-0390）。</summary>
+        /// <summary>顯示路徑的基準根（Senate 宿主給 Senate 專案根）。⛔ 詞典根不再從它推（TASK-0390）。</summary>
         public string ProjectRoot = "";
 
         string? m_GlossaryRoot;
         /// <summary>
         /// 詞典根（`SCP_PathId.GlossaryRoot`）—— **只由宿主解析後給**（Senate 走 PathsPage 那一格）；沒給 ＝ 空字串 ＝ 沒有詞典。
-        /// <para>🩸 2026-10-07（TASK-0390）：這裡原本自己推 `<ProjectRoot>/` ＋ 描述表的 auto 後綴 —— 那是第二份算式，
-        /// 描述表的上游改成 Senate 專案根之後，它拼出 `<Unity 專案>/Glossary`（兩邊都不報錯）。⇒ 不推、不猜。</para>
+        /// <para>🩸 TASK-0390：本層自己從 `<ProjectRoot>/` 推就是第二份算式 —— 上游一改，兩份拼出不同的根而都不報錯。⇒ 不推、不猜。</para>
         /// </summary>
         public string GlossaryRoot
         {
@@ -553,7 +548,7 @@ namespace SCP.Core.Letters
             { "anthropic", "claude-code" },
         };
 
-        /// <summary>agent 字串歸 canonical key：直中 → case-insensitive → alias → 原樣返回（Editor 版同規則）。</summary>
+        /// <summary>agent 字串歸 canonical key：直中 → case-insensitive → alias → 原樣返回。</summary>
         public static string NormalizeAgent(SCP_JsonData iMeta, string iAgent)
         {
             if (string.IsNullOrEmpty(iAgent)) return iAgent;
@@ -608,9 +603,8 @@ namespace SCP.Core.Letters
         // ── profile 寫入（identity 欄）───────────────────────────────
 
         /// <summary>
-        /// 寫一個 identity 欄 —— 走**唯一的寫入端** `SCP_PersonaProfileWrite.SetField`（TASK-0361：原本這裡有一份私有的
-        /// 寫檔＋審計，審計行的形狀還跟 Editor 版不同（中文沒轉義），同一個檔兩種寫法）。
-        /// 寫不進去丟例外（與原本的 WriteAtomic 同）；審計寫不進去不擋主寫入（資料已落地）。
+        /// 寫一個 identity 欄 —— 走**唯一的寫入端** `SCP_PersonaProfileWrite.SetField`（TASK-0361；⛔ 不在這裡另寫一份寫檔＋審計）。
+        /// 寫不進去丟例外；審計寫不進去不擋主寫入（資料已落地）。
         /// </summary>
         static void WriteProfileField(SCP_MorningRoots iR, string iPersona, string iField, string iValue,
                                       string iActor, string iReason)
@@ -656,7 +650,7 @@ namespace SCP.Core.Letters
             return aList;
         }
 
-        /// <summary>出生證明：`<詞典根>/personas/&lt;P&gt;.md` → 根層 → 遞迴（Editor 版同搜尋規則）。</summary>
+        /// <summary>出生證明：`<詞典根>/personas/&lt;P&gt;.md` → 根層 → 遞迴。</summary>
         public static string? FindGlossaryPersonaEntry(SCP_MorningRoots iR, string iPersona)
         {
             string aRoot = iR.GlossaryRoot;
@@ -738,7 +732,7 @@ namespace SCP.Core.Letters
                 File.Exists(Path.Combine(SCP_LettersPaths.ProfileDir(iR.Letters, iPersona), "character.md"))
                     ? $"   素材：建立時的角色設定 `profile/character.md`（起點不是定稿；自介用自己的話寫）。"
                     : "   （沒有建立時的角色設定檔 —— 全憑自己寫）",
-                // TASK-0313：入口改 `senate cmd glossary`（不需要 Editor）。⚠ term／one_line 是必填 —— 舊提示漏了這兩格，照著打一定被擋。
+                // TASK-0313：入口 `senate cmd glossary`。⚠ term／one_line 是必填 —— 提示漏了這兩格，照著打一定被擋。
                 $"   寫法：{SCP_CmdRegistry.InvokeNamed("glossary", $"--arg op=register --arg persona={iPersona} --arg slug={iPersona} --arg term=\"{iPersona} 大小姐\" --arg category=persona --arg one_line=<一句話> --arg-file body=<檔>")}",
                 "   ⚠ 工具新建預設寫 Docs/Glossary/ 根層，persona 條目慣例放 personas/，寫完手動搬。",
             };

@@ -1,11 +1,11 @@
-// 區塊職責：在 Senate 側把「一則 persona 發言」組成要交給寫入端的 SCP_TavernMessage —— 不需要 Unity Editor。
-// 物理意義：負責發文**寫入前**那一段（TASK-0303：早安 intro 不再依賴 Editor）。
-//          寫入端（Server 的 `tavern-write`）已經負責 seq／ts／uuid／@mention 通知／發薪（TASK-0296／0299），
-//          這裡只補它**之前**還只有 Editor 做的事：
+// 區塊職責：在 Senate 側把「一則 persona 發言」組成要交給寫入端的 SCP_TavernMessage。
+// 物理意義：負責發文**寫入前**那一段（TASK-0303）。
+//          寫入端（Server 的 `tavern-write`）負責 seq／ts／uuid／@mention 通知／發薪（TASK-0296／0299），
+//          這裡負責：
 //            ① sender_id   ＝ persona 的 agent（profile 反推；沒有就用 persona 名）
 //            ② sender_name ＝ **persona id**（Tim 2026-09-28，TASK-0317：顯示名不另存，直接用 persona id）
 //            ③ 頭像        ＝ **不在訊息上蓋**：顯示端照 persona 去它的信件夾拿（`SCP_TavernDisplay`／`SCP_PersonaDisplay`）
-//                            ⇒ 換頭像不必改歷史訊息；⛔ 也不再讀 UCL_Asset 的 persona 卡／identity 卡
+//                            ⇒ 換頭像不必改歷史訊息
 //            ④ glossary 自動附註（唯一實作 `SCP_Glossary`，TASK-0313；寫入端 `tavern-write` 對沒附過的訊息會再補一次，冪等）
 //            ⑤ 酒保 CLI 指令判定（`SCP_TavernCli`，TASK-0312）⇒ 打 `tag=cli-cmd`／`cli_cmd=true`、跳過 ④
 // ⚠ 不在這裡的（各有自己的一支，呼叫端串）：meta schema（`SCP_TavernMetaSchema`，寫入前擋）、
@@ -57,7 +57,7 @@ namespace SCP.Core.Tavern
             // ② sender_name ＝ persona id（TASK-0317）
             string aName = iPersona;
 
-            // ⑤ 酒保 CLI 指令（TASK-0312，判準 SCP_TavernCli —— 與 Editor 同一支）：是指令 ⇒ 不附詞典、打分流標記。
+            // ⑤ 酒保 CLI 指令（TASK-0312，判準 SCP_TavernCli）：是指令 ⇒ 不附詞典、打分流標記。
             //   🩸 2026-08-19：附註被當成指令的一部分，群發把整本詞典打進別人輸入框並按 Enter。
             bool aIsCli = SCP_TavernCli.LooksLikeCliCommand(iDataRoot, iBody);
 
@@ -78,7 +78,7 @@ namespace SCP.Core.Tavern
             foreach (var kv in iMeta) aMsg.Meta[kv.Key] = kv.Value;
             if (aIsCli)
             {
-                // 已有 tag 不覆蓋（發話端顯式給的優先），改用獨立鍵保證分流訊號不丟 —— 逐字照 Editor `Op_Post`。
+                // 已有 tag 不覆蓋（發話端顯式給的優先），改用獨立鍵保證分流訊號不丟。
                 if (!aMsg.Meta.TryGetValue("tag", out string? aTag) || string.IsNullOrEmpty(aTag))
                     aMsg.Meta["tag"] = SCP_TavernCli.Tag;
                 aMsg.Meta[SCP_TavernCli.MetaKey] = "true";
@@ -140,8 +140,7 @@ namespace SCP.Core.Tavern
         }
 
         // ── glossary 自動附註 ⇒ 唯一實作在 `SCP.Core.Glossary.SCP_Glossary`（TASK-0313）────────────
-        //   此前這裡是一份「逐字對齊 Editor Cmd_Glossary」的移植版；兩份都對，而改一份不會讓另一份知道。
-        //   ⇒ 本檔只留兩個薄包裝（既有呼叫端與 selftest 用），⛔ 不再持有任何解析／偵測邏輯。
+        //   本檔只留兩個薄包裝（既有呼叫端與 selftest 用），⛔ 不再持有任何解析／偵測邏輯。
 
         /// <summary>詞典附註裡印的路徑前綴 —— 委派 <see cref="SCP_Glossary.DisplayPrefix"/>。</summary>
         public static string GlossaryDisplayPrefix(string iProjectRoot, string iGlossaryRoot)

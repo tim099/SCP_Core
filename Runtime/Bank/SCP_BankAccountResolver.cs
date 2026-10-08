@@ -6,9 +6,8 @@
 // 數值影響：解析結果決定 ledger entry 的 `account_id` ⇒ **錯一格就是錢進錯帳戶**。
 //           本類純讀，唯一的寫入是 <see cref="CloseAccount"/>（closed_accounts 的唯一寫入端）。
 //
-// ⛔ 為什麼這支住在 SCP_Core 而不是 Unity 那側（TASK-0269）：
-//   同一條規則在 2026-09-22 之前有**三份實作**（Unity 的 645 行 resolver／python 的 292 行／
-//   這裡）。三份讀同一個權威，⇒ 差異不會在當下報錯，只會在其中一份先過期的那天現形。
+// ⛔ 為什麼只能有這一份（TASK-0269）：
+//   同一條規則若有多份實作、各自讀同一個權威，⇒ 差異不會在當下報錯，只會在其中一份先過期的那天現形。
 //   🩸 已經現形過一次：2026-08-20 `Sirius` 的帳戶改名，反向表沒跟著改 ⇒ **錯了 18 天沒有人喊**。
 //
 // ⚠ 路徑一律由呼叫端傳進來（`iLettersRoot` / `iDataRoot`）——
@@ -146,7 +145,7 @@ namespace SCP.Core.Bank
 
             // ── ① registry：system_accounts / agent_banks（legacy） / agent_aliases / closed_accounts ──
             string aRegistry = RegistryPath(iDataRoot);
-            // 🔴 TASK-0265：registry 由 Editor（PersonaAgentAdminPage）與 senate（CloseAccount）各自 Delete→Move 換檔；
+            // 🔴 TASK-0265：registry 有多個寫入端（例：CloseAccount）各自 Delete→Move 換檔；
             //   舊版 `File.Exists` 撞上那一瞬間 ⇒ 整段跳過 ⇒ closed_accounts 空 ⇒ **已銷戶帳戶解析成開著**，而且被快取。
             //   ⇒ 重試跨過窗口；重試用完仍讀不了 ⇒ 本輪照答但**不落快取**（同綁定那一格）。
             bool aRegistryBusy = false;

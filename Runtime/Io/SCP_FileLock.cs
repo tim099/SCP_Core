@@ -1,11 +1,10 @@
 // 區塊職責：**跨 process 的互斥**，給「讀整個檔 → 改 → 寫回整個檔」那種臨界區用。
-// 物理意義：TASK-0263。`queue.json` 有多個寫入端（每顆 CLI／Unity Editor／Server 執行器），
+// 物理意義：TASK-0263。`queue.json` 有多個寫入端（每顆 CLI／Server 執行器），
 //           而它們全都是 read-modify-write ⇒ 兩邊各自讀到同一份舊內容、各自寫回，
 //           **後寫的那份把先寫的那一筆整個吃掉**。
 //
 // 🩸 為什麼既有的「atomic replace ＋ 重試」擋不住（那是 2026-09-21 咬人的那一格）：
-//   `WriteAtomic` 的註解白紙黑字寫著「Editor 與 Server 可能同時碰同一個 queue」，
-//   而它做的是 temp → move、撞檔鎖就 backoff 重試 ——
+//   `WriteAtomic` 做的是 temp → move、撞檔鎖就 backoff 重試 ——
 //   **那保護的是「寫到一半的檔」，不是「讀到一半的世界」。**
 //   ⇒ 名字叫 atomic 的是那次替換，⛔ 不是整段讀改寫。兩者中間隔著一整個決策。
 //   實測（60 筆併發委派）：落盤 55，而 60 顆 client **全部 exit 0**。
@@ -98,7 +97,7 @@ namespace SCP.Core.Io
     /// <summary>
     /// <see cref="SCP_FileLock.Acquire"/> 等鎖逾時。仍是 <see cref="IOException"/>（既有 <c>catch (IOException)</c> 照接得到），
     /// 但呼叫端**認得出這一格**：它的處置是「稍後重試／去找誰握著」，不是「路徑壞了」。
-    /// <para>🩸 2026-09-27：`senate ucmd` 等 queue 鎖 20 秒後丟出裸 IOException、沒人接 ⇒ 整顆 senate.exe 崩潰
+    /// <para>🩸 2026-09-27：CLI 等 queue 鎖 20 秒後丟出裸 IOException、沒人接 ⇒ 整顆 senate.exe 崩潰
     /// （0xe0434352 對話框）。未處理例外**不跑 finally** ⇒ 對話框開著時那顆行程連同它手上的鎖都還活著，
     /// 下一個呼叫者又等 20 秒、又崩一次。⇒ 型別要讓 CLI 能在 catch 裡分辨它，⛔ 不靠比對訊息字串。</para>
     /// </summary>

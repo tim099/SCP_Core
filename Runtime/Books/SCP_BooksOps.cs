@@ -1,12 +1,10 @@
 // 區塊職責：書店三個**會動錢的動作**的本體 —— 捐贈 / 發表 / 打賞（＋補發打賞券）。
-// 物理意義：2026-09-18（TASK-0166 ①）起住在 SCP_Core。
-//           搬得動的前提是今天才成立的：**錢有了跨宿主的入口**
-//           （`senate cmd bank --arg op=pay`，Tim 同日拍板「金流全面改串新銀行」）——
-//           在那之前這幾支綁死在 Editor 的舊帳本上，搬出去就沒有錢可動。
+// 物理意義：住在 SCP_Core（TASK-0166 ①）；錢一律走銀行入口
+//           （`senate cmd bank --arg op=pay`，Tim 2026-09-18 拍板「金流全面改串新銀行」）。
 // 數值影響：寫 `Books/<slug>/_donation.json` 與 `Books/tips/<ts>_<persona>_<tipId>.json`；
 //           錢與券由 <see cref="SCP_IBooksGateway"/> 動，⛔ 本層自己一毛都不碰。
 //
-// 🩸 判準（每一條都是從 Unity 那版帶過來的血證，⛔ 不是重新設計）：
+// 🩸 判準（每一條都有血證）：
 //   ① **帳與券分開結算**：打賞的 debit 落帳後，任一券發放失敗 **不回滾帳**（帳不可造假），
 //      改記 `voucher_status: pending_*`，之後 `op=retry-tips` 補發。
 //   ② **`publish` 要回寫草稿 store 的兩個狀態欄**。少了它，「已經在藏書架上」與「還在寫」

@@ -4,10 +4,10 @@
 //           · 頭像：`SCP_DiscordConfigStore.ResolveAvatarUrl`（persona 自填 ＞ 範本）。
 //           · @：`allowed_mentions.parse = []`（⛔ 永遠不解析 @everyone／@here／身分組）。
 //             **常駐送出**（`SendNew`）把內文登記過的 `@名字` 換成 `<@id>`，並只把那幾個 id 放進 `allowed_mentions.users` ⇒
-//             只通知真的被 @ 的人（`SCP_DiscordMentions`，TASK-0380；Unity 版的行為）。
+//             只通知真的被 @ 的人（`SCP_DiscordMentions`，TASK-0380）。
 //             **手動補發**（`op=backfill`）不換、不通知 —— 補發舊訊息不該把人叫起來。
 //           · ⛔ 不回送：從 Discord 轉進來的訊息（`SCP_TavernMentions.IsExternalRelay`）一律跳過。
-//           · 只送 `kind=chat`（同 Unity 版預設）。
+//           · 只送 `kind=chat`。
 //           · 圖（TASK-0323）：訊息 refs 裡的本地圖檔 ⇒ **第一段**改走 multipart 一起上傳（`SCP_DiscordMedia.CollectUploads`；
 //             上限見那支）。沒帶上的圖在本文末尾列「未上傳：檔名（原因）」。
 //             Discord 明確拒收（400／413）⇒ **退回純文字重送一次**並標明「圖片上傳失敗」—— ⛔ 不因圖讓整則卡住；

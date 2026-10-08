@@ -4,7 +4,7 @@
 //          分類三軸的規則本體仍在 `SCP_BooksClassification`，讀寫 `_donation.json` 走 `SCP_BooksOps` 的同一支 writer。
 // 數值影響：shelf／series 唯讀；classify 只改 `_donation.json` 的三個分類欄位（＋補寫 origin）與 `_series.json`，**不動錢**。
 //
-// 設計決策（Tim 2026-08-19，隨 Unity 版原樣搬來）：
+// 設計決策（Tim 2026-08-19）：
 //   · **沒有系列的書單獨列出 —— 等於一本一系列。** 總覽只有一種列。
 //   · 系列可巢狀（世界觀 › 三部曲 › 冊），巢狀路徑由 `_series.json` 的 parent 串出來。
 //   · 酒館史（`history-*`）天生同屬 `tavern-history` —— 不必逐本 classify 就會歸位。
@@ -158,7 +158,6 @@ namespace SCP.Core.Books
 
         // ===========================================================
         // op=shelf —— 藏書總覽：一列一個系列（單書亦然），標明幾冊
-        // ⚠ 版面逐字沿用 Unity 版（驗收是逐行對拍）；唯一刻意的差異是「查書單」那行指令改成 `senate cmd book`。
         // ===========================================================
         public static string RenderShelf(string iDataRoot, string? iKindFilter)
         {
@@ -405,7 +404,7 @@ namespace SCP.Core.Books
 
         // ===========================================================
         // op=normalize_donations —— 把全部 `_donation.json` 統一成正典版面（Tim 2026-10-05）。
-        // 物理意義：磁碟上同時有兩種 writer 的沉積 —— tab 縮排／冒號後無空格／結尾無換行（Unity 舊 writer，量到 14 份）與
+        // 物理意義：磁碟上同時有兩種 writer 的沉積 —— tab 縮排／冒號後無空格／結尾無換行（舊 writer，量到 14 份）與
         //          2 空格／冒號後有空格／結尾換行（`SCP_BooksOps.SaveJson`，Senate 的正典）。
         //          🩸 第一次實跑 classify 就撞到（2026-10-05）：兩種版面並存時，任何一支 writer 動一本書都會把它整檔換版面
         //          （內容逐鍵相同、位元組不同 —— TASK-0234 警告的 BUG-6 形狀）。統一之後 writer 只有一種版面。

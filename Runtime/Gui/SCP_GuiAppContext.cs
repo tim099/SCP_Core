@@ -79,13 +79,12 @@ namespace SCP.Core.Gui
         Paths.SCP_PathResolution LettersRoot { get; }
 
         /// <summary>
-        /// 自由時間活動目錄（<see cref="Paths.SCP_PathId.FreeTimeActivitiesRoot"/>）—— 與 CLI 替 cmd 填 `activities_root` 同一個解析器。
-        /// <para>TASK-0390：原本這一格是 Unity 專案根（頁面拿它推 UCL_Core 共用層＋專案層）；活動搬進 Senate 之後只要這一個目錄。</para>
+        /// 自由時間活動目錄（<see cref="Paths.SCP_PathId.FreeTimeActivitiesRoot"/>）—— 與 CLI 替 cmd 填 `activities_root` 同一個解析器（TASK-0390）。
         /// </summary>
         Paths.SCP_PathResolution FreeTimeActivitiesRoot { get; }
 
         /// <summary>
-        /// 宿主想補在尺寸頁底下的說明（例：CLI 的一次性覆寫旗標、Unity 的 Editor 行為）。
+        /// 宿主想補在尺寸頁底下的說明（例：CLI 的一次性覆寫旗標）。
         /// <para>⚠ 為什麼要這一格：尺寸頁的**功能**是共用的，但它底下那幾句註腳
         /// （「`--scale` 不寫回檔案」）**只在某一個宿主為真**。
         /// 把宿主專屬的句子硬留在共用頁裡，另一個宿主的使用者會讀到一句假話 ——
@@ -113,10 +112,10 @@ namespace SCP.Core.Gui
         /// <summary>
         /// **宿主自己**（它的 git root）—— skill 的**唯一**安裝對象（TASK-0390）。
         /// <para>🩸 為什麼不是被管理的專案：
-        /// 我第一版照 UCL 那頁的模型假設「安裝對象＝被管理的專案」，
+        /// 第一版假設「安裝對象＝被管理的專案」，
         /// 但那個模型的前提是**頁面住在它要裝的那個專案裡**。這裡不是 ——
         /// 這裡是外部工具，而在這裡跑的 agent 需要的是**這個 repo** 的 skill。
-        /// ⇒ 預設裝自己，管理的專案是額外選項。</para>
+        /// ⇒ 只裝自己。</para>
         /// </summary>
         SCP_GuiProjectRef HostProject { get; }
 

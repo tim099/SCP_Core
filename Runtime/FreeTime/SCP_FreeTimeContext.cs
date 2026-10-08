@@ -54,7 +54,7 @@ namespace SCP.Core.FreeTime
     {
         public string DataRootRaw = "";
         public string LettersRootRaw = "";
-        /// <summary>自由時間活動 md 目錄（宿主給；TASK-0390 起單一目錄，不再分 UCL_Core 共用層／Unity 專案層）。</summary>
+        /// <summary>自由時間活動 md 目錄（宿主給；單一目錄，TASK-0390）。</summary>
         public string ActivitiesRoot = "";
         public SCP_DataRoot Data;
         public SCP_LettersRoot Letters;
@@ -237,7 +237,7 @@ namespace SCP.Core.FreeTime
 
         /// <summary>
         /// 自由時間的開場／換骰／收工／活動宣告。**best-effort**：失敗只回報，⛔ 不擋步驟、不丟例外。
-        /// <para>🩸 2026-08-14（Unity 版，apex-one 讀 code 抓到）：這裡曾經是「讀不到 bank → return 0」，也就是**沒錢就沒聲音**
+        /// <para>🩸 2026-08-14（apex-one 讀 code 抓到）：這裡曾經是「讀不到 bank → return 0」，也就是**沒錢就沒聲音**
         /// —— 宣告安靜地不出現，同事只會以為「她這場沒發」。發言權與收款權是兩回事；本入口不碰 bank。</para>
         /// </summary>
         public SCP_FreeTimePostResult Post(string iPersona, string iBody, string iSubtag)

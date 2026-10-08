@@ -88,7 +88,7 @@ ephemeral（永遠不進候選）：`*.log`、`*.tmp`、`_last_op.md`、`_last_v
 
 ## 3. 設定檔 `.ucl_autocommit.json`
 
-放在該 repo 根。**設定檔是加入的唯一憑據**（沒有就不收，不猜規則）。欄位名沿用 UCL 時代（磁碟上的契約）：
+放在該 repo 根。**設定檔是加入的唯一憑據**（沒有就不收，不猜規則）。欄位名是磁碟上的契約：
 
 ```json
 {
@@ -166,5 +166,5 @@ ephemeral（永遠不進候選）：`*.log`、`*.tmp`、`_last_op.md`、`_last_v
 ## 8. 血證（本次下沉）
 
 - 🩸 **未登記的巢狀 repo 會被當成 runtime 檔收走**（TASK-0340 沙盒）：新信件庫 `ChatTavern/baton/letters/alice/` 被 `ChatTavern/` 前綴吃進 runtime 群（預設勾選），
-  `git add` 會把它塞成沒有 `.gitmodules` 的 gitlink，而那不會報錯。UCL 版規則表同形。⇒ `dir/` 結尾的條目一律歸 `__subptr`。
+  `git add` 會把它塞成沒有 `.gitmodules` 的 gitlink，而那不會報錯。⇒ `dir/` 結尾的條目一律歸 `__subptr`。
 - 🩸 **兩個入口、兩套守衛**：同一件事，Cmd 有 BUG-30 三道守衛、頁面沒有，而兩邊各自看起來都正常。⇒ 下沉後只剩一條提交路徑。

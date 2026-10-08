@@ -16,8 +16,8 @@
 //     它是「某個人的」或「大家共用的」。留一個沒人用的槽＝留一個會漂的地方。
 //   · persona override **寫在 persona profile**（`SCP_PersonaProfileWrite.SetField`，actor/reason 必填），
 //     不寫 `AwakenInit/personas/<name>.json` —— 那個舊源 2026-08-19 起**只出不進，寫了不會生效**。
-//   · registry `AwakenInit/plurk_accounts.json` 是 Unity 版用 UCL `ToJsonBeautify` 寫的（CRLF、`\u` 轉義、
-//     鍵序 SharedSecretId／Note／Nicks）⇒ 本檔走 `SCP_UclLegacyJson` 寫，**位元組相容**（兩邊輪流寫不翻動 git diff）。
+//   · registry `AwakenInit/plurk_accounts.json` 是 UCL `ToJsonBeautify` 格式（CRLF、`\u` 轉義、
+//     鍵序 SharedSecretId／Note／Nicks）⇒ 本檔走 `SCP_UclLegacyJson` 寫，**位元組相容**（寫回不翻動 git diff）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -34,8 +34,8 @@ namespace SCP.Core.Plurk
 {
     /// <summary>
     /// 一趟 Plurk 操作的根（宿主傳進來，本層不推導）。
-    /// <para>⚠ Unity 版走 `UCL_AgentCommandsPath.DataRoot` 這種全域 —— 那讓「哪棵資料樹」變成隱性狀態
-    /// （TASK-0184 的血證：台帳按 data_root 分裂，而一行帳不說自己是哪棵樹寫的）。這裡改成顯式傳。</para>
+    /// <para>⚠ 根一律顯式傳，⛔ 不走全域 —— 全域讓「哪棵資料樹」變成隱性狀態
+    /// （TASK-0184 的血證：台帳按 data_root 分裂，而一行帳不說自己是哪棵樹寫的）。</para>
     /// </summary>
     public sealed class SCP_PlurkContext
     {
@@ -211,7 +211,7 @@ namespace SCP.Core.Plurk
             return v as string ?? Convert.ToString(v, CultureInfo.InvariantCulture) ?? "";
         }
 
-        /// <summary>registry 的 UCL legacy 形狀（鍵序＝Unity 版 `UnityJsonSerializable` 的欄位宣告序）。</summary>
+        /// <summary>registry 的 UCL legacy 形狀（鍵序＝既有檔的欄位序）。</summary>
         public static string Serialize(SCP_PlurkAccountsConfig iConfig)
         {
             var aRoot = new SCP_UclLegacyObject();

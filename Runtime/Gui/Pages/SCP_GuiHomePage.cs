@@ -1,5 +1,5 @@
 // 區塊職責：**入口頁**（stack 的最底層）—— 調介面尺寸 ＋ 進到其他頁。
-// 物理意義：概念取自 Unity 端的 UCL_EditorMenuPage（「Page 選擇器」下拉）＋ UCL_ToolBoxPage（分組摺疊的入口鈕）。
+// 物理意義：「Page 選擇器」下拉 ＋ 分組摺疊的入口鈕。
 //           取得清單的方式問**頁面目錄**（SCP_GuiPageCatalog），不自己掃 assembly。
 //
 //           ⭐ 2026-08-30 從 Senate.Cli/Pages/HomePage.cs 搬進 SCP_Core（六步的第 3 步）——
@@ -44,7 +44,7 @@ namespace SCP.Core.Gui
 
         protected override void TopBarButtons(SCP_Ui g)
         {
-            // 對應 UCL 選單上那顆「↻」—— 丟掉目錄的中繼資料快取後重新探測
+            // 丟掉目錄的中繼資料快取後重新探測
             if (g.Button("↻ 重掃頁面清單", "home/reload")) m_Catalog.Invalidate();
         }
 
@@ -137,9 +137,9 @@ namespace SCP.Core.Gui
             DrawGroupFolds(g);
         }
 
-        // ── ③ 分組摺疊入口（Tim 2026-09-28：參考 Unity UCL_ToolBoxPage）─────────────
+        // ── ③ 分組摺疊入口（Tim 2026-09-28）─────────────
         // 物理意義：取代原本那一排「直接進入」鈕 —— 頁面一多，一排鈕會長到看不完。
-        //           每個分組一個摺疊框（**預設收合**，同 ToolBox：收著也看得到組名與頁數），展開後一頁一顆鈕。
+        //           每個分組一個摺疊框（**預設收合**：收著也看得到組名與頁數），展開後一頁一顆鈕。
         // 數值影響：純導覽。id 用 page key 不用序號（清單順序會隨分組／標題改變）；摺疊 id 用分組名。
         void DrawGroupFolds(SCP_Ui g)
         {

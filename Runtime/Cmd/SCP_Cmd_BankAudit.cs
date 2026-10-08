@@ -1,4 +1,4 @@
-// 區塊職責：`cmd bank-audit` —— 金流綁定的**唯讀健檢**。**原生，不需要 Unity Editor。**
+// 區塊職責：`cmd bank-audit` —— 金流綁定的**唯讀健檢**。
 //
 // 物理意義：Tim 2026-09-07 拍板：**`letters/<persona>/bank/<region>.md` 才是權威版本**（用哪個帳戶）。
 //           ⇒ 本 Cmd 從「對兩張表」改成「**一張表的健檢**」——
@@ -66,7 +66,7 @@ namespace SCP.Core.Cmd
         public override string Category => SCP_CmdCategory.Bank;
 
         public override string Summary =>
-            "金流綁定健檢：`bank/<region>.md`（唯一權威）逐位檢查帳戶存不存在／有沒有銷戶 —— **唯讀，不需要 Editor**";
+            "金流綁定健檢：`bank/<region>.md`（唯一權威）逐位檢查帳戶存不存在／有沒有銷戶 —— **唯讀**";
 
         public override string Details =>
             "唯一權威＝`letters/<persona>/bank/<region>.md`（Tim 2026-09-07 拍板）。\n"

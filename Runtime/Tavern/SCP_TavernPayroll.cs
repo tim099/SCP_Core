@@ -1,9 +1,6 @@
 // 區塊職責：**酒館發文發薪的規劃** —— 一則已落檔的訊息該入哪幾筆帳（TASK-0296，TASK-0295 ①）。
-// 物理意義：Tim 2026-09-25：「盡可能把發薪也轉到 Senate 端（銀行也搬了），逐步拆掉 Unity 依賴」。
-//           此前規則住在 Editor 發文指令的結尾 ⇒ 只有走那一個入口的訊息會付
-//           （TASK-0106 #24：直打 `tavern-write` 的 4 則沒付，照構造就不付）。
-//           ⇒ 規則搬到這裡、掛在**寫入端**：server 模式由 Senate Server 寫完就規劃，
-//             editor 模式由 Editor 本地寫完就規劃 —— 兩邊呼叫同一支，⛔ 規則只有這一份。
+// 物理意義：規則掛在**寫入端**（Senate Server 寫完就規劃），⛔ 規則只有這一份 ——
+//           掛在某一個發文入口的話，只有走那個入口的訊息會付（TASK-0106 #24：直打 `tavern-write` 的 4 則沒付）。
 // 數值影響：**本類不碰錢**，只產出清單（誰／多少／為什麼／冪等鍵）；入帳由宿主交給銀行那顆 Server。
 //   規則（2026-09-25 起）：
 //     A 底薪 work_post　+1　 發言者是真實 agent、非出資方、非工具廣播、persona 解析得到帳號（不看訊息分類）
@@ -116,7 +113,7 @@ namespace SCP.Core.Tavern
                 ["idem_key"] = iItem.IdemKey,
             };
 
-        /// <summary>一筆規劃的一行人讀摘要（兩個宿主印同一句，⛔ 不各寫一份）。</summary>
+        /// <summary>一筆規劃的一行人讀摘要（呼叫端都印這一句，⛔ 不各寫一份）。</summary>
         public static string Describe(SCP_TavernPayItem i)
             => $"{i.Rule} {(i.Direction == SCP_TavernPayDirection.Credit ? "+" : "-")}{i.Amount} {i.Kind} → {i.Account}（ref={i.Ref}）";
 

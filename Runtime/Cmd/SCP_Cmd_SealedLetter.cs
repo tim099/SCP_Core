@@ -13,7 +13,7 @@ namespace SCP.Core.Cmd
         public override string Name => "sealed-letter";
         public override string Category => SCP_CmdCategory.Memory;
 
-        public override string Summary => "密封信：寫進信件 repo 的 private 分支（不切分支、不經過公開的 master）＋晚安密文答案的封緘與早安對帳 —— 不需要 Editor";
+        public override string Summary => "密封信：寫進信件 repo 的 private 分支（不切分支、不經過公開的 master）＋晚安密文答案的封緘與早安對帳";
 
         public override string Details =>
             "信件 repo 的 master 是公開的；密封信只進 `private` 分支（只推私有 remote）。工作區的 `sealed/` 靠 master 的 .gitignore 擋住 ——\n"

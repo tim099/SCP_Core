@@ -2,7 +2,7 @@
 // 物理意義：提示指 `free-time`／`free-time-activity`。
 //           判準與掛載條件（活動入口、有 markdown 回傳面、拿得到 persona）見 FreeTime 文件「維護」那節，⛔ 這裡不重抄。
 // 數值影響：純輸出。不在自由時間時一個字都不印（無關的 Cmd 每次多一段噪音，會讓人開始略過整個區塊）。
-//           ⚠ 與 Editor 版唯一的差別：換行一律 `\n`（Editor 版用 AppendLine ⇒ Windows 上是 `\r\n`）。
+//           ⚠ 換行一律 `\n`（⛔ 不用 AppendLine —— Windows 上會是 `\r\n`）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;

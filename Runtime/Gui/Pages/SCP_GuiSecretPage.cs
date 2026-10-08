@@ -1,10 +1,9 @@
-// 區塊職責：**加密檔管理頁**（Senate 版，TASK-0300）—— 列 secrets 資料夾的 .enc、一鍵解密全部、從明文加密。
-// 物理意義：移植自 Unity 端 `UCL_SecretManagerPage`（全面改用 Senate 端的方向）；邏輯全在 `SCP_SecretStore`／`SCP_SecretCrypto`，
-//          本頁只畫與收輸入 ⇒ 不需要 Unity Editor。
+// 區塊職責：**加密檔管理頁**（TASK-0300）—— 列 secrets 資料夾的 .enc、一鍵解密全部、從明文加密。
+// 物理意義：邏輯全在 `SCP_SecretStore`／`SCP_SecretCrypto`，本頁只畫與收輸入。
 //          「一鍵解密」＝**同一組密碼套到每一顆，明文已在的跳過**（Tim 2026-09-25）；結果逐顆分五種印。
 // 數值影響：
 //   · 密碼欄走 `SCP_Ui.PasswordField`：畫面遮罩、文字 renderer 不印、⛔ 不進落盤的 state；按完即清空。
-//   · 提示（hint）預設不顯示 —— 它是給「忘記密碼的自己」的線索，不該開頁就攤在畫面上（UCL 版同一格：顯示提示是一顆鈕）。
+//   · 提示（hint）預設不顯示 —— 它是給「忘記密碼的自己」的線索，不該開頁就攤在畫面上（顯示提示是一顆鈕）。
 //   · 加密覆寫既有 .enc 要兩段式（勾「覆寫」才會寫）—— 覆寫之後舊密碼就解不開新檔，回不來。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。視窗文字不放 emoji（字型沒有那些字 ⇒ 方框）。
 #nullable enable
@@ -66,7 +65,7 @@ namespace SCP.Core.Gui
                 return;
             }
 
-            g.Note($"掃描資料夾：`{m_Dir}`（名稱來自 `{SCP_SecretStore.ConfigFileName}` 的 `{SCP_SecretStore.ConfigKey}`，缺檔＝`{SCP_SecretStore.DefaultDirName}`；與 Unity 端讀同一個檔）");
+            g.Note($"掃描資料夾：`{m_Dir}`（名稱來自 `{SCP_SecretStore.ConfigFileName}` 的 `{SCP_SecretStore.ConfigKey}`，缺檔＝`{SCP_SecretStore.DefaultDirName}`）");
             if (m_DirWarning != null) g.Note("⚠ " + m_DirWarning);
             if (!Directory.Exists(m_Dir)) { g.Note("⚠ 資料夾不存在 ⇒ 這不是「沒有加密檔」，是位置不對或還沒建"); return; }
             if (m_Message != null) g.Note(m_Message);

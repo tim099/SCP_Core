@@ -30,7 +30,7 @@ namespace SCP.Core.Library
         public const string ReaderJsonName = "reader.json";
         public const string MediaJsonName = "media.json";
         public const string WorkJsonName = "work.json";
-        // ── 讀者層底下的三個檔名（TASK-0166 第一刀補上；與 Editor 端逐字相同）──
+        // ── 讀者層底下的三個檔名（TASK-0166）──
         public const string ChapterJsonName = "chapter.json";
         public const string ProfileJsonName = "profile.json";
         public const string BookshelfName = "bookshelf.md";
@@ -45,9 +45,7 @@ namespace SCP.Core.Library
         static readonly Regex k_ChapterIdPattern = new Regex(@"^\d{4}$");
 
         // ── 路徑（全部吃 iDataRoot，⛔ 沒有靜態推導的那條路）──────────────────
-        // 🩸 UCL 那版是 `static string BookNotesRoot => …UCL_RepoPath.AgentCommandsDir…`，
-        //   在 Editor 裡成立是因為那時只有一個專案在跑。CLI 這側同一支行程可以被指到任何一棵樹，
-        //   靜態推導會讓「我以為在算 A 專案」與「它算的是 B 專案」在字串上長得一模一樣
+        // 🩸 同一支行程可以被指到任何一棵樹，靜態推導會讓「我以為在算 A 專案」與「它算的是 B 專案」在字串上長得一模一樣
         //   （TASK-0126 就是這一族：讀對樹、寫錯樹，而回讀跟著寫入端走所以全綠）。
         public static string LibraryRoot(string iDataRoot)
         {
@@ -116,7 +114,7 @@ namespace SCP.Core.Library
         }
 
         // ── 唯讀列舉 ──────────────────────────────────────────────────────
-        // 數值影響：排序一律 `StringComparer.Ordinal` —— 與 UCL 那版同一把尺。
+        // 數值影響：排序一律 `StringComparer.Ordinal`。
         //   ⚠ 不用預設字串比較：那會隨作業系統的文化設定變，而「順序不一樣」在對拍時
         //     跟「內容不一樣」長得一模一樣。
 

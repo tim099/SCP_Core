@@ -1,6 +1,5 @@
 // 區塊職責：`senate cmd relationship` —— 好感度的**唯一寫入通道**：update 寫事件／add-opinion 加看法／show／list／rebuild。
-// 物理意義：TASK-0354（Unity → Senate 遷移第一批 ④）。取代 UCL `ucmd run Relationship`（已退場）；
-//           參數與 op 與 Editor 版同名同義，本體在 `SCP_RelationshipStore`。**原生**，不需要 Unity。
+// 物理意義：本體在 `SCP_RelationshipStore`（TASK-0354）。
 //           跟「錢一律走 Cmd」同一個理由：重算與落檔的規則只有這一份，直寫檔案會繞過它而且不會報錯。
 // 數值影響：寫 `letters/<persona>/relationship/` 底下的檔；回傳檔 `letters/<persona>/cmd/relationship_<op>.md`。
 //           不動錢、不發酒館訊息。
@@ -23,7 +22,7 @@ namespace SCP.Core.Cmd
         public override string Category => SCP_CmdCategory.Memory;
 
         public override string Summary =>
-            "好感度（relationship）寫入：update 寫一筆事件／add-opinion 加看法／show／list／rebuild —— **本地跑，不需要 Editor**";
+            "好感度（relationship）寫入：update 寫一筆事件／add-opinion 加看法／show／list／rebuild —— **本地跑**";
 
         public override string Details =>
             "update：`target`＋`reason`＋至少一軸 delta（[-1,1]，建議一次 2~4 軸）；選填 `opinion` 順手寫一則看法。\n"
@@ -209,7 +208,7 @@ namespace SCP.Core.Cmd
             string aRaw = RequireTarget(iArgs, out SCP_CmdResult? aFail);
             if (aFail != null) return aFail;
             string aTarget = SCP_RelationshipStore.CanonicalTarget(iRoot, aRaw);
-            // ⚠ show 是純讀：Editor 版會順手釘 `_target.txt`，這裡不寫
+            // ⚠ show 是純讀：不釘 `_target.txt`
             string aDir = SCP_RelationshipStore.TargetDir(iRoot, iPersona, aTarget, false);
             string aCur = Path.Combine(aDir, SCP_Relationship.CurrentFileName);
             if (!File.Exists(aCur)) { ioR.Append("## （").Append(iPersona).Append(" 對 ").Append(aTarget).Append(" 還沒有任何紀錄）\n"); return null; }
@@ -256,7 +255,7 @@ namespace SCP.Core.Cmd
                 {
                     string[] aDirs = Directory.GetDirectories(d);
                     Array.Sort(aDirs, StringComparer.Ordinal);
-                    // ⚠ target 名取 `_target.txt` 的主人（Editor 版拿資料夾名 ⇒ 帶後綴的夾每跑一次就再疊一層）
+                    // ⚠ target 名取 `_target.txt` 的主人（拿資料夾名的話，帶後綴的夾每跑一次就再疊一層）
                     foreach (string t in aDirs) aList.Add(SCP_RelationshipStore.OwnerOf(t) ?? Path.GetFileName(t));
                 }
             }

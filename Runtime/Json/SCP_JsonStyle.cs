@@ -56,10 +56,10 @@ namespace SCP.Core.Json
             => new SCP_JsonStyle(SCP_JsonWriter.DefaultIndent, true, false, false);
 
         /// <summary>
-        /// Unity 端 `UCL_JsonLib.ToJsonBeautify` 的版面：tab 縮排、冒號後**不**補空格、Allman 開括號。
+        /// UCL legacy 版面（`UCL_JsonLib.ToJsonBeautify` 的形狀）：tab 縮排、冒號後**不**補空格、Allman 開括號。
         /// <para>⚠ 這不是「比較好看的風格」，是**磁碟上既有檔的形狀**。閱讀庫
         /// （`BookNotes/Library`）595 份 JSON 裡 429 份是這一種 ——
-        /// 寫入端搬進 SCP_Core 時若用 <see cref="Default"/>，那 429 份第一次被寫到就整批翻紅，
+        /// 寫入端若用 <see cref="Default"/>，那 429 份第一次被寫到就整批翻紅，
         /// 而翻紅的內容**逐鍵相同**，沒有任何一層會喊。</para>
         /// </summary>
         /// <para>📌 版面規格的事實源是 `UCL_JsonData.SerializeValueBeautify`（**不是**我對磁碟的取樣）——

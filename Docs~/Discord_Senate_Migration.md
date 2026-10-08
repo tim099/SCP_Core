@@ -1,17 +1,15 @@
 # Discord 收發搬到 Senate —— 其他專案的遷移指南
 
-> 適用：任何用 UCL_Core／SCP_Core 的消費端專案（第一個是 **LY**）。
-> Bar 已於 2026-09-28 走完（TASK-0317～0320）；本文記的是**換一個專案重跑時會咬人的地方**。
+> 適用：要把一棵資料樹接上 Senate Discord 收發的專案（Bar 已接；下一個是 **LY**）。
+> 本文記的是**換一個專案重跑時會咬人的地方**。
 > 操作細節看各支 Cmd 的 `senate cmd help <name>`，本文只寫順序與注意事項。
 
-## 0. 先知道的三件事（不看這三格會出事）
+## 0. 先知道的兩件事（不看這兩格會出事）
 
-1. ⛔ **拉新版 UCL_Core 的那一刻，Unity 端的 Discord Inbound 就停了**（TASK-0319 廢棄，`IsLive` 恆為 false）。
-   Senate 版 Inbound（TASK-0316 ④）做好之前，**Discord → 酒館沒有任何一條路**。⇒ 挑一個「收不到也沒關係」的時間點拉。
-2. ⚠ **Outbound 在 TASK-0316 ③ 之前仍然是 Unity 在送**（Unity 版轉發，讀 `PromptQueue/notify_config.json`）。
-   Senate 這邊的設定頁現在只是「設定」—— `outbound.enabled` 打開也不會送。⛔ 等 Senate 版上線後，**兩邊不能同時開**（會雙發）。
-3. ⚠ **新版 UCL_Core 依賴 SCP_Core**（2026-09-28 量：UCL_Core 內 50 支 .cs 用到 `SCP.Core`）。
-   專案裡沒有 `Assets/Plugins/SCP_Core` 的話，拉完 UCL_Core **Unity 會編不過** ⇒ 先把 SCP_Core 掛成 submodule（`https://github.com/tim099/SCP_Core`，master）。
+1. ⭐ **Discord 收發只在 Senate 酒館 Server 跑**（Inbound／Outbound 兩個 job，每一圈各跑一次）。
+   Server 沒開 ⇒ 兩個方向都停。
+2. ⚠ **Outbound 開關是 `discord_config.json` 的 `outbound.enabled`**（每一圈讀）。
+   ⛔ 同一棵資料樹**只能有一個轉發端**（會雙發）—— 還有別的程式在讀 `PromptQueue/notify_config.json` 轉發的話，先關掉再開。
 
 ## 1. 資料夾與檔案（新版的樣子）
 
@@ -19,7 +17,7 @@
 |---|---|---|---|
 | 頻道分類清單 | `ChatTavern/channel_categories.json` | 頻道管理頁／`cmd channel` | ✅ |
 | 每個頻道的分類 | `ChatTavern/rooms/<房>/channel.json` | 同上 | ✅（[chat] 群） |
-| 封存的頻道 | `ChatTavern/rooms_archive/<房>/`（整個資料夾搬過去） | 同上 | ✅（[chat] 群，需新版 UCL_Core 的 AutoCommit 規則） |
+| 封存的頻道 | `ChatTavern/rooms_archive/<房>/`（整個資料夾搬過去） | 同上 | ✅（[chat] 群，AutoCommit 規則把它跟 `rooms/` 歸同一群） |
 | 收發開關／webhook 清單／分類 → webhook／頭像範本 | `ChatTavern/discord/discord_config.json` | Discord 轉發設定／Webhook 頁、`cmd discord-relay` | ✅ |
 | webhook URL（**寫死金鑰加密**） | `ChatTavern/discord/discord_webhooks.enc` | 同上 | ✅（密文） |
 | Discord 頻道 → 酒館頻道（Inbound） | `ChatTavern/discord/discord_channel_routing.json` | Discord Bot 頁、`cmd discord-bot` | ✅ |
@@ -48,7 +46,7 @@
 7. **webhook**：Webhook 頁「從 notify_config 匯入 Main」⇒ 只匯 `tavern_mirror.webhook_urls`、逐條驗證、綁 Main（舊檔明文不動）。
    quest（1 條）與銀行流水（2 條）**不匯**：quest 層不搬、銀行流水是 TASK-0321。
 8. **分類 → webhook**：Discord 轉發設定頁逐分類勾選。⛔ **未分類的頻道不送**（webhook 綁分類）。
-   ⚠ Unity 版只送 `tavern_mirror.rooms` 登記的房（LY：7 房）；Senate 版改成「有分類的房才送」⇒ 要送的房先在頻道管理頁設好分類。
+   ⚠ 只有「有分類的房」才送，`notify_config.json` 的 `tavern_mirror.rooms` 不讀 ⇒ 要送的房先在頻道管理頁設好分類（LY 的 `tavern_mirror.rooms` 登記了 7 房）。
 9. **頭像網址**：預設範本 `https://raw.githubusercontent.com/tim099/ArtGallery/master/RawImages/avatar_{persona}.png`。
    ⚠ GitHub 的 `blob/` 網址是網頁不是圖片 ⇒ 範本一律用 raw 形式。範本外的 persona 在「persona 顯示資料」頁填（寫 `profile/avatar_url.md`）。
    「檢查全部頭像網址」看哪些是 404（Bar 2026-09-28：pinnacle／system／Template／zenith）。
@@ -63,4 +61,4 @@
 
 ## 4. 相關單
 
-TASK-0316（收發本體、Unity 端移除）／0317（酒館頁＋persona 顯示）／0318（頻道管理與封存）／0319（Bot 設定頁）／0320（Outbound 設定）／0321（銀行流水鏡像，備忘）。
+TASK-0316（收發本體）／0317（酒館頁＋persona 顯示）／0318（頻道管理與封存）／0319（Bot 設定頁）／0320（Outbound 設定）／0321（銀行流水鏡像，備忘）。

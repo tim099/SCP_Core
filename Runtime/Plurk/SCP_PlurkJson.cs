@@ -1,11 +1,11 @@
-// 區塊職責：Plurk 移植層的共用小零件 —— UCL `JsonData` 形狀的薄殼、回應取值、報告文字、失敗型別、排序器。
+// 區塊職責：Plurk 層的共用小零件 —— UCL `JsonData` 形狀的薄殼、回應取值、報告文字、失敗型別、排序器。
 // 物理意義：本檔讀 API 回應的方式**依賴 UCL `JsonData` 的兩個怪癖**：
 //            ① `ToJson()` 把非 ASCII 轉成 `\uXXXX` ⇒ `JsonScalar` 拿到的是**轉義過的**字串，
 //               呼叫端再走 `UnescapeJson` 還原（沒走的那幾格就印轉義形 —— 那也是輸出的一部分）
 //            ② 數字照 UCL parser 分型（無小數點 ⇒ int／long 原樣；有小數點 ⇒ double `R`）
 //          ⇒ 換成 `SCP_JsonData`（原文保存、字串不轉義）的話，同一份回應會印出**不同的報告**，
 //            而差異只在少數欄位，看起來像資料變了。⇒ 本檔把樹建在 `SCP_UclLegacyJson`
-//            （為 UCL 位元組相容而建的那一份）上，取值語意逐格對齊 Unity 版。
+//            （為 UCL 位元組相容而建的那一份）上，取值語意照 UCL `JsonData`。
 // 數值影響：純記憶體，零 IO。⛔ 本檔不給新格式用 —— 新檔一律 `SCP_JsonWriter`。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
@@ -90,8 +90,7 @@ namespace SCP.Core.Plurk
 
     /// <summary>
     /// 一支 op 的失敗。<see cref="ExitCode"/>：2 ＝ 被擋／用法錯（沒有對外動作發生）；1 ＝ API／連線失敗。
-    /// <para>⚠ 存在的理由：Unity 版一律 `throw new Exception` 交給 runner 判失敗；搬到 SCP 之後
-    /// 「被規則擋下」與「對方回 4xx」要給不同的 exit code —— 兩者的處置相反（一個改文案、一個查連線）。</para>
+    /// <para>⚠ 存在的理由：「被規則擋下」與「對方回 4xx」要給不同的 exit code —— 兩者的處置相反（一個改文案、一個查連線）。</para>
     /// </summary>
     public sealed class SCP_PlurkFailure : Exception
     {
@@ -104,7 +103,7 @@ namespace SCP.Core.Plurk
 
     /// <summary>
     /// 報告文字。換行字元由建構子決定 —— 回傳檔走 SCP 慣例 `\n`；
-    /// `shared.md` 這種 Unity 版用 `AppendLine` 寫過、而人與 git 都在讀的檔走 `\r\n`（位元組相容）。
+    /// `shared.md` 這種既有 CRLF、而人與 git 都在讀的檔走 `\r\n`（位元組相容）。
     /// </summary>
     public sealed class SCP_PlurkText
     {
@@ -120,7 +119,7 @@ namespace SCP.Core.Plurk
     }
 
     /// <summary>
-    /// Unity 版 `OrderBy(r => r.Tier)`（預設比較器＝文化相依）在表情表上的**實測**排序規則的模擬。
+    /// 表情表既有列序（`OrderBy(r => r.Tier)`，預設比較器＝文化相依）的**實測**排序規則的模擬。
     /// <para>🩸 為什麼不用 Ordinal：Senate 開 `InvariantGlobalization` ⇒ 文化比較退化成 ordinal，
     /// 而 `shared.json` 現有 273 列是 Mono 的文化比較排的（不分大小寫、`-` 與 `'` 不計權重）——
     /// 用 ordinal 重寫一次，整份表的列序翻動、git diff 一大片，而內容一個字都沒變。</para>

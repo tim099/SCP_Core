@@ -4,7 +4,7 @@
 //           判準寫在這裡免得下一個人把兩套規矩搞混。
 // 數值影響：一次同步 ＝ 逐檔比對 bytes（不算 hash）＋ 只寫不同的那些 ＋ 掃孤兒 ＋ 寫標記檔。
 //
-// 🩸 行尾**跟隨源檔**（不寫死）。UCL 那支 python 在這一族踩了三次，其中兩次是修法本身造成的：
+// 🩸 行尾**跟隨源檔**（不寫死）。這一族踩過三次，其中兩次是修法本身造成的：
 //   ① 寫入端沒帶 newline ⇒ 行尾由執行環境決定
 //   ② 修法寫死 `\n` ⇒ 製造了反方向的漂移（源檔是 CRLF 的那批，安裝端變 LF）
 //   ③ up-to-date 比對用 ReadAllText（會把 CRLF 翻回 LF）⇒ **檢查看不見自己造成的差異**，
@@ -161,7 +161,7 @@ namespace SCP.Core.Skills
         /// 某個 skill 在某個 target **該落地的全部檔**（相對路徑 → 位元組）——**比對與寫入共用這一份**。
         /// <para>入口模式（源檔 frontmatter 有 `docs:`）：只有 SKILL.md，由 <see cref="SCP_SkillEntry.RenderEntry"/> 產生。
         /// 鏡像模式：源目錄每一個檔原樣。兩種模式下 Antigravity 的 SKILL.md 都注入 `trigger:`（python 同規則）。</para>
-        /// <para>🩸 為什麼要先算「該落地的位元組」：UCL python 踩過「比對用一把尺、寫入用另一把」——
+        /// <para>🩸 為什麼要先算「該落地的位元組」：踩過「比對用一把尺、寫入用另一把」——
         /// 檢查看不見自己造成的差異，於是壞掉的那份永遠被跳過（見檔頭）。</para>
         /// </summary>
         static Dictionary<string, byte[]> Expected(string iSrcDir, string iSkill, SCP_SkillTarget iTarget, out bool oEntry)

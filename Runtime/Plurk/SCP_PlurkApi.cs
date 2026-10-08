@@ -2,11 +2,11 @@
 // 物理意義：⛔ **SCP_Core 不碰網路**（2026-09-23 拍板，見 `SCP_RateSource.cs` 守衛①）：
 //            HTTP 一律走宿主注入的 `SCP_HttpFetch.Current as ISCP_HttpFormRequester`；
 //            沒注入 ⇒ **大聲失敗**，⛔ 不退回任何別的送法（那只會換來一個看起來像簽章錯的 4xx）。
-//          簽章本體逐字照搬 Unity 版（RFC 3986 `Q()`、HMAC-SHA1、RandomNumberGenerator nonce）。
-// 數值影響：每次 `Call` 一個 HTTPS POST（同步；逾時 25 秒，上傳 60 秒 —— 同 Unity 版）。
+//          簽章：RFC 3986 `Q()`、HMAC-SHA1、RandomNumberGenerator nonce。
+// 數值影響：每次 `Call` 一個 HTTPS POST（同步；逾時 25 秒，上傳 60 秒）。
 //          ⛔ 憑證值一律不印、不進例外訊息（外洩沒有錯誤訊息）。
 // ⚠ 連線層失敗（逾時／DNS，`TryPostForm` 回 false）⇒ **丟例外**，⛔ 不壓成 `http=0` 往下走：
-//   Unity 版那一格是 `HttpClient` 自己丟出來的；而逾時時**對方可能已經收到了** ——
+//   逾時時**對方可能已經收到了** ——
 //   壓成 `(0, "")` 的話 post 那條會印「內容未發出」，那句話在這個情況下是假的。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable

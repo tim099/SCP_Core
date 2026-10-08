@@ -7,7 +7,7 @@
 //   · 酒館未讀：**會推已讀游標**（Tim 2026-08-18：換骰是高頻動作，只看不推的話未讀會整場堆積）。
 //     ⚠ 順序不可反：**先把回傳檔寫下去、再推游標** —— 反過來的話回傳檔寫入失敗時訊息已被標成已讀，
 //       那批訊息永遠不會再出現在任何人的未讀裡，而且沒有錯誤訊息。⇒ 本檔只**組**這一段並交出「可推到哪」，
-//       推游標由呼叫端在回傳檔落地之後呼叫 <see cref="AdvanceUnread"/>（Unity 版是印出來的同時就推了 —— 那是本次刻意改掉的一格）。
+//       推游標由呼叫端在回傳檔落地之後呼叫 <see cref="AdvanceUnread"/>。
 // ⚠ 在線判準走 `SCP_PersonaLetters.Scan`（**lock 檔在＝在線**）。
 //   ⛔ 不用 persona registry 的 status 欄：登出流程沒走完時 status 會停在 online，拿它當來源會 @ 到不在的人。
 // ⚠ 方言限制：C# 9 / netstandard2.1 / 零第三方（Unity 那側也要編這份）。
@@ -54,7 +54,7 @@ namespace SCP.Core.FreeTime
                 if (p.Online == SCP_PersonaOnline.Online) aOut.Add(p);
                 else if (p.Online == SCP_PersonaOnline.Unknown) oUnknown++;
             }
-            aOut.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));   // Unity 版用 Ordinal
+            aOut.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));   // Ordinal
             return aOut;
         }
 

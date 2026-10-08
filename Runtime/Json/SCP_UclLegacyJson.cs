@@ -1,8 +1,8 @@
-// 區塊職責：UCL `JsonData` 的**位元組級**相容層 —— 只給「Editor 版寫過、而現在要由 Senate 接手寫」的那幾份檔用。
+// 區塊職責：UCL `JsonData` 的**位元組級**相容層 —— 只給磁碟上既有、用這套格式寫成的那幾份檔用。
 // 物理意義：TASK-0354。persona 的結構欄（`profile/{identity_vector,vector_history,fork_lineage}.md`）與
-//           寫入審計（`AwakenInit/_persona_write_audit.jsonl`）是 Editor 版用 UCL `JsonData.ToJsonBeautify`／`ToJson`
-//           寫的，而那套格式跟 `SCP_JsonWriter`（含 `SCP_JsonStyle.UclLegacy`）有三格不同：
-//             ① 換行是 `\r\n`（Editor 版用 `Environment.NewLine`，在 Windows 上）
+//           寫入審計（`AwakenInit/_persona_write_audit.jsonl`）是 UCL `JsonData.ToJsonBeautify`／`ToJson`
+//           的格式，而那套格式跟 `SCP_JsonWriter`（含 `SCP_JsonStyle.UclLegacy`）有三格不同：
+//             ① 換行是 `\r\n`
 //             ② 根陣列前面先換一行（`\r\n[`）、空陣列是 `\r\n[\r\n\r\n]`
 //             ③ 字串只有 32..126 原樣，其餘一律 `\uXXXX`（小寫 hex）—— 中文會被轉義
 //           ⇒ 用通用 writer 改寫一次，git diff 就整份翻動，而內容一個字都沒變。

@@ -1,11 +1,11 @@
 // 區塊職責：「叮 / 醒來時的酒館 catch-up」—— 在線一覽 ＋ 未讀訊息 ＋ persona inbox，組成一份簡報並（可選）推游標。
-// 物理意義：輸出落在 `letters/<p>/cmd/ding_brief.md`（TASK-0303：早安 catchup 不依賴 Editor）。
+// 物理意義：輸出落在 `letters/<p>/cmd/ding_brief.md`（TASK-0303）。
 // ⚠ 順序不可反：**先組出簡報、再推游標**。反過來的話，回傳檔寫入失敗時訊息已被標成已讀
 //   ⇒ 那批訊息永遠不會再出現在任何人的未讀裡，而且沒有錯誤訊息。
 //   ⇒ 本類只**組**簡報並回傳「可推到哪」；真正推游標由呼叫端在回傳檔落地之後呼叫 AdvanceAfterWrite。
-// 與 Editor 版刻意的差異（兩處，都寫在這裡讓人查得到）：
-//   ① 補足段的去重比 **seq**（Editor 比物件參考 —— 它有共用快取，本側每次讀都是新物件）。
-//   ② 在線名單讀不了的 lock（Unknown）照 Editor 版丟掉，但**計數印出來**（Editor 只寫 warning log，畫面上看不到）。
+// 刻意的規格（寫在這裡讓人查得到）：
+//   ① 補足段的去重比 **seq**（⛔ 不比物件參考 —— 每次讀都是新物件）。
+//   ② 在線名單讀不了的 lock（Unknown）不列進名單，但**計數印出來**（⛔ 不只寫 log —— 畫面上要看得到）。
 // 數值影響：純讀（游標推進另走 AdvanceAfterWrite）。
 #nullable enable
 using System;
@@ -213,7 +213,7 @@ namespace SCP.Core.Tavern
                 if (p.Online == SCP_PersonaOnline.Online) online.Add(p);
                 else if (p.Online == SCP_PersonaOnline.Unknown && File.Exists(p.LockPath)) unknown++;
             }
-            online.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));   // Editor 版用 Ordinal
+            online.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));   // Ordinal
             sb.AppendLine($"## 🟢 在線（{online.Count}）");
             if (online.Count == 0)
                 sb.AppendLine("- （查不到任何 lock）—— **空不代表沒人**，只代表這裡讀不到。");
@@ -250,7 +250,7 @@ namespace SCP.Core.Tavern
             try
             {
                 string aPath = SCP_TavernInbox.InboxPath(iDataRoot, "tavern", iPersona);
-                // Editor 版 ReadInbox 對不存在的檔回字面 "(inbox 為空)"（非空白）⇒ 下面印「0 筆待處理」。照抄這個行為。
+                // 不存在的檔當成字面 "(inbox 為空)"（非空白）⇒ 下面印「0 筆待處理」。
                 raw = File.Exists(aPath) ? File.ReadAllText(aPath, Encoding.UTF8) : "(inbox 為空)";
             }
             catch (Exception e)

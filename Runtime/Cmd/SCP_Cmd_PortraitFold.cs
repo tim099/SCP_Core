@@ -1,4 +1,4 @@
-// 區塊職責：`cmd portrait-fold` —— 見人濃縮的 Cmd 介面（**原生**，不需要 Unity）。
+// 區塊職責：`cmd portrait-fold` —— 見人濃縮的 Cmd 介面。
 // 物理意義：邏輯在 SCP_PortraitConsolidate，本檔只做「參數 → 呼叫 → 回報」。
 // 數值影響：寫一個版本檔 ＋ 搬 N 幅畫像進 `raw/`（只搬不刪）。被守衛擋下時一個字都不寫。
 //

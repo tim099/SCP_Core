@@ -1,12 +1,11 @@
-// 區塊職責：寫一封**掛號信**（收件匣＋寄件備份兩份）—— 兩個宿主共用的那一份。
-// 物理意義：移植自 UCL_Core `UCL_RegisteredMailIO.Send`（TASK-0312，epic 0295 ③ 第三刀：creative 留念信要在 Senate 寄得出去）。
-//          Editor 那支改成呼叫這裡 ⇒ 信件格式只剩一份（py 端 `mailbox` 掃描與 ack 回執都靠這個格式，分岔不會報錯，
+// 區塊職責：寫一封**掛號信**（收件匣＋寄件備份兩份）—— 唯一的一份。
+// 物理意義：TASK-0312。信件格式只有這一份（py 端 `mailbox` 掃描與 ack 回執都靠這個格式，分岔不會報錯，
 //          只會「信照讀、寄件者永遠等不到回執」）。
 // 數值影響：寫 `letters/<to>/mailbox/<ts>__from_<from>.md` 與 `letters/<from>/outbox/<ts>__to_<to>.md`，不動帳。
 //          ⛔ 寫檔失敗回 false，**絕不拋例外** —— 呼叫端多半是「主操作已經完成」的路徑（錢已入帳／訊息已發出），
 //          一封通知信寫失敗不該讓它看起來像失敗。原因放在 oError 給呼叫端說出來（不靜默）。
-// ⚠ 落檔改走 `SCP_TextFile.ReplaceOrMove`：Editor 舊版是「先 Delete 再 Move」（中間一格檔案不存在，Coding_Standards §1.1 點名的錯法）。
-//   產物位元組不變（同一份 UTF-8 無 BOM 內容，換行由 AppendLine ＝ 本機 NewLine，兩個宿主都在 Windows 上跑）。
+// ⚠ 落檔走 `SCP_TextFile.ReplaceOrMove`（⛔ 不要「先 Delete 再 Move」：中間一格檔案不存在，Coding_Standards §1.1 點名的錯法）。
+//   UTF-8 無 BOM，換行由 AppendLine ＝ 本機 NewLine。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -68,7 +67,7 @@ namespace SCP.Core.Letters
             }
         }
 
-        /// <summary>信件內文（frontmatter ＋ 標題 ＋ 本文）—— 逐字沿用 Editor 版，py 端靠 frontmatter 讀。</summary>
+        /// <summary>信件內文（frontmatter ＋ 標題 ＋ 本文）—— py 端靠 frontmatter 讀。</summary>
         public static string BuildContent(string iFrom, string iTo, string iSubject, string iBody,
                                           int iFee, string iFeeRef, int? iDeliverAtWake)
         {

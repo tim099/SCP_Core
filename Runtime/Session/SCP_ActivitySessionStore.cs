@@ -1,7 +1,6 @@
 // 區塊職責：活動 session 的**唯一** IO 入口 —— 路徑 / 讀 / 寫 / 收工 / 現況查詢 / 全員掃描。
 // 物理意義：⛔ 不要長第二個 IO 入口 —— 同一份檔兩套讀寫，漂掉時不會報錯。
-// 數值影響：一次讀 / 寫一個檔。檔案格式與位置**逐鍵、逐字相同**（`<DataRoot>/sessions/<persona>.json`）
-//           ⇒ 既有檔不需遷移；同一份檔 Unity 與 Senate 兩邊讀到的是同一個東西。
+// 數值影響：一次讀 / 寫一個檔（`<DataRoot>/sessions/<persona>.json`）。
 //
 // ⚠ **一人一檔位**：kind 是檔案裡的欄位，不是路徑段。⇒「同一個人同時兩種 session」在形狀層不可能，
 //   而它的另一半是：**寫入端會覆蓋** —— 這一層因此提供 <see cref="TryStart"/>（先查再寫），
@@ -21,7 +20,7 @@ namespace SCP.Core.Session
 {
     public static class SCP_ActivitySessionStore
     {
-        /// <summary>session 檔住的目錄名（跨端契約 —— UCL 那側同名，改了要對兩邊）。</summary>
+        /// <summary>session 檔住的目錄名（改了既有檔就讀不到）。</summary>
         public const string SessionsDirName = "sessions";
 
         static readonly UTF8Encoding s_Utf8NoBom = new UTF8Encoding(false);
@@ -72,8 +71,8 @@ namespace SCP.Core.Session
         {
             string? aPath = PathOf(iRoot, iPersona);
             if (aPath == null) return null;
-            // 🔴 TASK-0265：`Save` 是 Delete→Move（Editor 與 CLI 兩個進程都會寫）⇒ 舊版 `!File.Exists ⇒ null`
-            //   把換檔那一瞬間讀成「沒有進行中的 session」⇒ TryStart 守衛放行、覆寫一場正在跑的（TASK-0056 那個病）。
+            // 🔴 TASK-0265：`Save` 是 Delete→Move（可能有多個進程在寫）⇒ `!File.Exists ⇒ null`
+            //   會把換檔那一瞬間讀成「沒有進行中的 session」⇒ TryStart 守衛放行、覆寫一場正在跑的（TASK-0056 那個病）。
             //   ⇒ 重試跨過窗口。⚠ 射程：重試用完仍 Busy 時照舊回 null（與壞檔同一條路，見 catch）；
             //   而 LoadAll 走目錄列表 —— 換檔那一瞬間那顆檔**不在列表裡**，這一層救不到它。
             if (!SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(aPath, out string aText, out _)) return null;
@@ -368,9 +367,7 @@ namespace SCP.Core.Session
         /// <para>翻三欄後**回讀磁碟**，回讀說關了才回 true（`Save` 回 true 不算數）。</para>
         /// </summary>
         /// <remarks>
-        /// 🩸 TASK-0448（Tim 2026-10-07「應該要徹底遷移到 Senate 端」）：這裡原本叫 `CloseWithSettlement`，
-        /// 有結算的 kind 會整步委派回 Unity Editor 的 `SessionClose`（結算寫的是**舊** Treasury 帳本）——
-        /// Editor 沒開，Senate 就關不掉觀影場。需要結算的只有觀影，而觀影確定重做、不遷移 ⇒ 不再有結算，就地關。
+        /// TASK-0448：每一種 kind（含觀影）都不結算，就地關。
         /// </remarks>
         public static bool CloseVerified(SCP_DataRoot iRoot, string? iPersona, SCP_ActivitySession ioSession, string? iReason)
         {

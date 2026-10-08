@@ -4,8 +4,7 @@
 //           那些數字各自都對，但**沒有任何一處知道另一處**，於是調一次尺寸要改三個檔，
 //           而漏掉的那一個不會報錯，只會「有一半變大了」。
 //           ⇒ 本類別把它們收成一份資料：呼叫端問 style 拿數字，renderer 只負責畫。
-//           概念取自 Unity 端的 UCL_GUIStyle（全域 Scale ＋ GetScaledSize ＋ Small/Medium/Big/XL 四段），
-//           但**刻意不照抄 GUIStyle 那層** —— 這裡沒有任何 UI 函式庫的型別，
+//           形狀是全域 Scale ＋ Scaled ＋ Small/Medium/Big/XL 四段；這裡沒有任何 UI 函式庫的型別，
 //           所以同一份設定 ImGui、純文字、（未來的）HTML renderer 都吃得下。
 // 數值影響：純資料，零 IO、零繪圖依賴。基準值（Base*）＝「scale 1.0 的樣子」，
 //           實際值＝基準 × <see cref="Scale"/>。
@@ -24,7 +23,7 @@ using SCP.Core.Json;
 
 namespace SCP.Core.Gui
 {
-    /// <summary>使用者可選的四段尺寸（對應 UCL_GUIStyle 的 Small / Medium / Big / XL）。</summary>
+    /// <summary>使用者可選的四段尺寸（Small / Medium / Big / XL）。</summary>
     public enum SCP_GuiSize
     {
         Small,
@@ -141,7 +140,7 @@ namespace SCP.Core.Gui
         public float TitleFontMul { get; set; } = 1.15f;
 
         // ── 縮放後的實際值 ────────────────────────────────────────
-        /// <summary>把任何寫死的尺寸乘上當前 <see cref="Scale"/>。等同 UCL_GUIStyle.GetScaledSize。</summary>
+        /// <summary>把任何寫死的尺寸乘上當前 <see cref="Scale"/>。</summary>
         public float Scaled(float iBase) { return iBase * m_Scale; }
 
         /// <summary>同 <see cref="Scaled"/>，四捨五入成整數（字級／像素寬用）。</summary>
@@ -206,7 +205,7 @@ namespace SCP.Core.Gui
                 ScaledInt(BaseCellPaddingX), ScaledInt(BaseCellPaddingY), TextWidth);
         }
 
-        // ── 尺寸選擇器（對應 UCL_GUIStyle.SetSizeOnGUI）────────────
+        // ── 尺寸選擇器 ────────────
         /// <summary>
         /// 畫一排尺寸按鈕，回傳這一輪被按下的那一段（沒人按 ⇒ null）。
         /// <para>⚠ 本方法**不改自己也不寫檔** —— 套用與持久化由呼叫端做。

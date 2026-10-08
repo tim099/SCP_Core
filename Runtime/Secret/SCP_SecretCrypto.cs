@@ -1,8 +1,6 @@
-// 區塊職責：secret 對稱加解密（UCLS1 格式）—— **本專案唯一的加解密實作**（TASK-0300 由 UCL_Core 搬入）。
+// 區塊職責：secret 對稱加解密（UCLS1 格式）—— **本專案唯一的加解密實作**（TASK-0300）。
 // 物理意義：純 .NET BCL（System.Security.Cryptography）：PBKDF2-SHA256 導 key ＋ AES-256-CBC ＋
-//          HMAC-SHA256 Encrypt-then-MAC。Unity（netstandard2.1）與 senate.exe（net10）編同一份 ⇒
-//          Unity 加的檔 Senate 解得開、反之亦然。UCL_Core 的 `UCL_SecretCrypto` 只剩轉呼叫本檔，⛔ 不留第二份。
-//          格式與演算法**逐位元組搬自** `UCL_SecretCrypto`（2026-07-22 版，沿革見 UCL_Core git 歷史）。
+//          HMAC-SHA256 Encrypt-then-MAC。⛔ 不留第二份。
 // 設計取捨：
 //   - Encrypt-then-MAC：先驗 HMAC 才解密 → 密碼錯／竄改在 AES 前就擋下（不洩 padding oracle）。
 //   - metadata（hint/label/created）是明文行、不參與 KDF → 不需密碼就讀得到（失憶救援）。
@@ -229,7 +227,6 @@ namespace SCP.Core.Secret
 
         /// <summary>
         /// 自測：四種 round-trip ＋ 錯密碼拒絕 ＋ 竄改偵測。全過回摘要；任一失敗 throw。
-        /// （Editor 端 `UCL_SecretCrypto.SelfTest` 轉呼叫這支 —— 同一份實作。）
         /// </summary>
         public static string SelfTest()
         {

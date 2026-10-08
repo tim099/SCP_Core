@@ -1,14 +1,13 @@
 // 區塊職責：quest 投影的**渲染層**（Senate 側）—— `task_list` / `task_state` / `task_next` 三支的輸出。
-// 物理意義：TASK-0287。三支的版面逐字固定，⛔ 不隨手改：
-//           理由是驗收③要做輸出對拍 —— 版面不同的話那個比對就沒有受詞了。
+// 物理意義：TASK-0287。三支的版面固定，⛔ 不隨手改。
 // 數值影響：**純讀**，只組字串。
 //
 // ⚠ 小數一律走 `InvariantCulture`：`age` 那一格是 `F1`，而**小數點符號是 culture 的**。
-//   兩端目前都會給 `.`，⛔ 但我不把逐位元組相同這件事交給 culture 去決定。
+//   ⛔ 不把版面交給 culture 去決定。
 //
-// 🔴 與 Editor 的**已知差異**（⛔ 不假裝沒有，見 SCP_TavernQuestState 檔頭）：
-//   ① 本側不回收過期租約 ⇒ 過期的 lease 照實顯示 STALE（Editor 會先回收再顯示成 pending）。
-//   ② `age` / STALE 依賴 now ⇒ 兩端在不同時刻跑必然不同。
+// 🔴 已知行為（見 SCP_TavernQuestState 檔頭）：
+//   ① 不回收過期租約 ⇒ 過期的 lease 照實顯示 STALE。
+//   ② `age` / STALE 依賴 now ⇒ 不同時刻跑必然不同。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -57,7 +56,7 @@ namespace SCP.Core.Tavern
                 SCP_QuestTaskState aSt = aKv.Value;
                 string aEff = SCP_TavernQuestState.EffectiveStatus(aSt, iStates);
 
-                // ⚠ `stale` 是 orthogonal flag，⛔ 不吃掉原 status（同 Editor 側）：
+                // ⚠ `stale` 是 orthogonal flag，⛔ 不吃掉原 status：
                 //   一個 task 可以同時是 claimed 又 stale，filter 寫 status=stale 時兩者都算命中。
                 if (aStatusFilters.Count > 0)
                 {
@@ -142,8 +141,8 @@ namespace SCP.Core.Tavern
             }
 
             // 排序：優先度＋老化 → suggested_owner 命中 → downstream_weight → created_seq asc
-            // ⚠ 四層逐字同 Editor 側；少一層或換順序 ⇒ 同一份資料兩端會給**不同的建議**，
-            //   而兩邊的輸出都合理 —— 那種不一致沒有人會發現。
+            // ⚠ 四層固定；少一層或換順序 ⇒ 同一份資料會給**不同的建議**，
+            //   而輸出看起來都合理 —— 那種改變沒有人會發現。
             aCandidates.Sort((a, b) =>
             {
                 int aSa = SCP_TavernQuestState.PriorityScore(a);

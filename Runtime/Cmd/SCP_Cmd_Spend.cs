@@ -1,6 +1,6 @@
 // 區塊職責：**消費時間**的 CLI 入口（`senate cmd spend`）—— 擲一份可消費清單（前三項遞減折扣）／列出全部通道（TASK-0333）。
 // 物理意義：移植自 `spend_menu.py`（Tim 2026-09-30：python 端入口完全廢除，遷到 Senate CLI）。清單與擲骰規則在 `SCP_SpendMenu`。
-//          · 餘額直接問 Server 的 `bank`（py 版繞 Editor 的 Treasury）；帳號沒給就用 persona 解析（`SCP_BankAccountResolver`）。
+//          · 餘額直接問 Server 的 `bank`；帳號沒給就用 persona 解析（`SCP_BankAccountResolver`）。
 //          · 擲骰結果同步進酒館（帶 persona 才發；`no_post=1` 可關）—— 消費從一個人的動作變成看得見的事件
 //            （Tim 2026-08-01：沒有人看得到的行為，不會因為多一個工具就開始發生）。發文失敗只警告，不影響擲骰本體。
 // 數值影響：**不動任何錢**。餘額問不到 ⇒ 額度印「不知道」，⛔ 不印 0（0 是「查到了沒錢」，看起來會像破產）。
@@ -22,7 +22,7 @@ namespace SCP.Core.Cmd
         public override string Name => "spend";
         public override string Category => SCP_CmdCategory.Routine;
 
-        public override string Summary => "消費時間：擲一份可消費清單（前三項 50／20／10% 折扣、額度＝餘額 10%）／列出全部通道 —— **不需要 Editor、不動任何錢**";
+        public override string Summary => "消費時間：擲一份可消費清單（前三項 50／20／10% 折扣、額度＝餘額 10%）／列出全部通道 —— **不動任何錢**";
 
         public override string Details =>
             "· `op=roll --arg persona=<me> [--arg account=<帳號>] [--arg count=3] [--arg no_post=1]`：擲清單、算額度，帶 persona 會同步到酒館。\n"

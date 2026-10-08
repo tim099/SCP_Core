@@ -105,7 +105,7 @@ namespace SCP.Core.Market
 
     /// <summary>
     /// 全域抓取器插座。宿主（Senate CLI／Server）啟動時塞一個進來；
-    /// Unity 那側**刻意不塞** ⇒ `op=sync` 會明說「本宿主沒有抓取器」而不是靜默沒事。
+    /// 沒塞的宿主 ⇒ `op=sync` 會明說「本宿主沒有抓取器」而不是靜默沒事。
     /// </summary>
     public static class SCP_HttpFetch
     {

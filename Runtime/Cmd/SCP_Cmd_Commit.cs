@@ -1,5 +1,5 @@
 // 區塊職責：`senate cmd commit` —— commit 的最後一步：組 trailer、提交、公告領薪、推進單號。
-//           **git 與 trailer 本地跑（Editor 沒開也成）；公告走酒館 Server、推單走任務寫入端（TASK-0349）——都不需要 Editor。**
+//           **git 與 trailer 本地跑；公告走酒館 Server、推單走任務寫入端（TASK-0349）。**
 // 物理意義：trailer 以前是手打的，於是它會漂 —— 同一位同事出現過 (GPT)/(GPT-5)/(GPT-5.6) 與兩種
 //           domain。身分／型號／信箱三欄全部推導自檔案，手不碰就不會漂。
 //           而**公告不是附帶動作，是領薪** —— 漏發就是錢沒領到（血證：新制上線後
@@ -43,7 +43,7 @@ namespace SCP.Core.Cmd
 
         public override string Summary =>
             "提交（只做最後一步，**不 stage 不 push**）：組 Co-Authored-By ＋ git commit ——"
-            + " 本地跑，Editor 沒開也成；**酒館公告領薪交酒館 Server、單號推進交任務寫入端**（TASK-0349）"
+            + " 本地跑；**酒館公告領薪交酒館 Server、單號推進交任務寫入端**（TASK-0349）"
             + "（公告：exit 6 確定沒發／等不到回執＝**exit 7 不知道，先回讀別補發**）";
 
         public override string Details =>
@@ -128,7 +128,7 @@ namespace SCP.Core.Cmd
             if (aRegionWhy != null)
                 aResult.Lines.Add("⚠ 區域判定說明（" + aRegionWhy + "）⇒ 使用 `" + aRegion + "`");
 
-            // ── ① trailer（本地跑，不需要 Editor）──────────────────────────
+            // ── ① trailer（本地跑）──────────────────────────
             List<string> aTrailers = new List<string>();
             List<string> aProblems = new List<string>();
             BuildTrailers(aPersonas, aLettersRoot, aRegion, aDataRoot, aAllowUnset,
@@ -203,7 +203,7 @@ namespace SCP.Core.Cmd
             if (aPosted.Outcome == SCP_TavernPostOutcome.NotPosted)
             {
                 aResult.Lines.Add("⚠ **commit 落地了（" + aSha + "）；公告確定沒發** —— 只有領薪那步沒完成。");
-                // ⚠ 補發走 `tavern-post`（Senate）—— 舊的 `ucmd run Tavern op=post` 已於 TASK-0366 退場（TASK-0372 順手修）。
+                // ⚠ 補發走 `tavern-post`。
                 aResult.Lines.Add("   → 補發：" + SCP_CmdRegistry.Invoke("tavern-post --arg persona=" + aPrimary
                                   + " --arg-file body=<檔> --arg \"meta=tag:commit;sha:" + aSha + ";category:meta\""));
                 aResult.Lines.Add("   ⛔ 單號推進本次**沒有做**（它掛在公告成功之後）。");

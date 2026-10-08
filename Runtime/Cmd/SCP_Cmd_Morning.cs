@@ -1,6 +1,6 @@
 // 區塊職責：早安四步的 `senate cmd` 入口 —— `morning-wake` / `morning-brief` / `morning-intro` / `morning-catchup`，
 //          以及跟 catchup 同一支的 `tavern-catchup`（叮協議的「讀」）。
-// 物理意義：TASK-0303 起四支就是本地跑（不委派 Editor），邏輯本體在 `SCP_Morning`／`SCP_TavernCatchup`／`SCP_TavernPostCompose`。
+// 物理意義：四支都本地跑，邏輯本體在 `SCP_Morning`／`SCP_TavernCatchup`／`SCP_TavernPostCompose`。
 //           TASK-0406（Tim 2026-10-05）把入口本身從 Senate.Core 搬到這裡：
 //           ① 「下一步指令定義在 Senate.Core，是否可以遷移到 SCP_Core」⇒ 搬了之後 `SCP_Morning` 與這幾支住在同一層，
 //              提示下一步改用 `SCP_CmdRegistry.InvokeOf<型別>()` —— 名字取自 Cmd 本身，改名不過時、打錯是編譯錯誤。
@@ -32,7 +32,7 @@ namespace SCP.Core.Cmd
         public override string Name => "morning-wake";
         public override string Category => SCP_CmdCategory.Routine;
 
-        public override string Summary => "早安①登入：守衛＋狀態寫入（不廣播）—— 本地跑，不需要 Editor";
+        public override string Summary => "早安①登入：守衛＋狀態寫入（不廣播）—— 本地跑";
 
         public override string Details =>
             "寫 lock（含 session_token）／memo／profile（model・actual_agent），推導 wake_count，\n"
@@ -103,7 +103,7 @@ namespace SCP.Core.Cmd
         public override string Name => "morning-brief";
         public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_MorningWake>();
 
-        public override string Summary => "早安②生成 wake brief（全量 SCP_WakeBrief）—— 本地跑，不需要 Editor";
+        public override string Summary => "早安②生成 wake brief（全量 SCP_WakeBrief）—— 本地跑";
 
         public override string Details =>
             "就地跑 `SCP_WakeBrief`（brief 的唯一生產端），組全量 brief：\n"
@@ -376,7 +376,7 @@ namespace SCP.Core.Cmd
         public override string Name => "morning-catchup";
         public override string Parent => SCP_CmdRegistry.NameOf<SCP.Core.Cmd.SCP_Cmd_MorningWake>();
 
-        public override string Summary => "早安④酒館 catchup（在線同事＋未讀＋inbox）—— 本地跑，不需要 Editor";
+        public override string Summary => "早安④酒館 catchup（在線同事＋未讀＋inbox）—— 本地跑";
 
         public override string Example => SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningCatchup>("--arg persona=Template");
 
@@ -388,7 +388,7 @@ namespace SCP.Core.Cmd
         public override string Name => "tavern-catchup";
         public override string Category => SCP_CmdCategory.Tavern;
 
-        public override string Summary => $"酒館 catchup（叮協議的「讀」：在線同事＋未讀＋inbox）—— 與 {SCP_CmdRegistry.NameOf<SCP_Cmd_MorningCatchup>()} 同一支，不需要 Editor";
+        public override string Summary => $"酒館 catchup（叮協議的「讀」：在線同事＋未讀＋inbox）—— 與 {SCP_CmdRegistry.NameOf<SCP_Cmd_MorningCatchup>()} 同一支";
 
         public override string Example => SCP_CmdRegistry.InvokeOf<SCP_Cmd_TavernCatchup>("--arg persona=Template");
 

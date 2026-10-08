@@ -1,10 +1,10 @@
 // 區塊職責：畫布的所有子路徑（events / 快取 / 預覽 / 快照 / notes / claims / meta）。
 // 物理意義：畫布狀態是 **per-project** 的，住資料根底下的 `Canvas/`。
-//           資料根由**宿主**給（Senate 是 senate.local.json 的專案設定、Unity 那側是既有解析器），
+//           資料根由**宿主**給（Senate 是 senate.local.json 的專案設定），
 //           本層一律不推導、不 walk cwd。
 // 🩸 為什麼這一段刻意沒有「找根」的邏輯（TASK-0112，2026-09-03，Tim 抓到的）：
-//    python 那側三個儲存根原本是相對 cwd 的字串。shell 的 cwd 停在 Assets/Plugins/UCL_Core 時放點，
-//    工具就在 UCL_Core 底下**長出一棵新的 AgentCommands 樹** —— 寫進去、回讀出來、四層全綠，
+//    python 那側三個儲存根原本是相對 cwd 的字串。shell 的 cwd 停在別的目錄時放點，
+//    工具就在那個目錄底下**長出一棵新的 AgentCommands 樹** —— 寫進去、回讀出來、四層全綠，
 //    而真畫布 history 是 0、ledger 卻真的扣了 10 token。
 //    ⇒ 「回讀」與「寫入」共用同一個錯的根時，綠不是證據，它只是同一個錯抄了兩遍。
 //    ⇒ 所以這裡只接受呼叫端給的資料根；解析失敗是宿主的事，不在這裡猜一個看起來合理的。

@@ -2,17 +2,13 @@
 // 物理意義：TASK-0287。供 `task_list` / `task_state` / `task_next` 三個 kind 使用。
 // 數值影響：**純讀**。⛔ 不寫、不建目錄、不回收過期租約 —— 見下面那段，那是本檔最重要的一格。
 //
-// 🔴 **本層刻意不做 lease 回收**（與 Editor 側的差別，⛔ 別把它當成漏掉的）：
-//   Editor 的三支 op 每一支開頭都跑 `AutoRecoverStaleLeases`，而它 `AppendEvent` ⇒ **會寫**。
-//   ⇒ 那三支在 Editor 側其實**不是純讀 op**（TASK-0239 §四把它們分在純讀那格，是錯的）。
-//   本層若照抄，它就成為第二個寫入端 —— 撞 TASK-0106「單一寫入端」拍板，
+// 🔴 **本層刻意不做 lease 回收**（⛔ 別把它當成漏掉的）：
+//   回收要 `AppendEvent` ⇒ **會寫**；本層若做，它就成為第二個寫入端 —— 撞 TASK-0106「單一寫入端」拍板，
 //   也與 TASK-0287 ①「Server 沒跑也跑得完」結構互斥。⇒ 選純讀，並把缺口寫在單上（⑦）。
-//   ⚠ 後果要說清楚：**Editor 沒開時沒有人在回收過期租約** ⇒ 本層會把過期的 lease 照實顯示成 STALE，
+//   ⚠ 後果要說清楚：**沒有人在回收過期租約** ⇒ 本層會把過期的 lease 照實顯示成 STALE，
 //     而那正是它的真相（回收只是把 STALE 變成 pending，⛔ 它不產生新資訊）。
 //
-// 🔴 `AgeDays` / `AgeFactor` / `IsStale` 依賴 **now** ⇒ 兩端在不同時刻跑**必然不同**。
-//   ⇒ 跟 Editor 做輸出對拍時，那幾個欄位**結構上比不了**（TASK-0287 ③ 的受詞因此收窄）。
-//   ⛔ 不是實作不一致，是那個比較本身沒有受詞。
+// 🔴 `AgeDays` / `AgeFactor` / `IsStale` 依賴 **now** ⇒ 不同時刻跑**必然不同**。
 //
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
@@ -21,7 +17,7 @@ using System.Collections.Generic;
 
 namespace SCP.Core.Tavern
 {
-    /// <summary>事件重放算出的 task 當前狀態（純衍生，⛔ 不持久化）。欄位語意逐字對齊 Editor 側。</summary>
+    /// <summary>事件重放算出的 task 當前狀態（純衍生，⛔ 不持久化）。</summary>
     public sealed class SCP_QuestTaskState
     {
         public string Id = "";
@@ -75,7 +71,7 @@ namespace SCP.Core.Tavern
             return aStates;
         }
 
-        /// <summary>單筆事件的狀態轉移 —— ⚠ case 標籤與 data 的 key 都**逐字**對齊 Editor 側。</summary>
+        /// <summary>單筆事件的狀態轉移 —— ⚠ case 標籤與 data 的 key 都是事件檔的 wire format，⛔ 別改。</summary>
         static void ApplyEvent(SCP_QuestTaskState ioSt, SCP_TavernQuestEvent iEv)
         {
             string aV;
@@ -141,7 +137,7 @@ namespace SCP.Core.Tavern
                     if (iEv.Data.TryGetValue("lease_until", out aV)) ioSt.LeaseUntil = aV;
                     break;
 
-                // ⛔ 未知 type 一律不動狀態（與 Editor 側同語意）—— 它們仍然進 Lifecycle。
+                // ⛔ 未知 type 一律不動狀態 —— 它們仍然進 Lifecycle。
             }
         }
 
@@ -186,7 +182,7 @@ namespace SCP.Core.Tavern
             return true;
         }
 
-        /// <summary>顯示用狀態：pending 且 ready ⇒ 印 `ready`（與 Editor 側同語意）。</summary>
+        /// <summary>顯示用狀態：pending 且 ready ⇒ 印 `ready`。</summary>
         public static string EffectiveStatus(SCP_QuestTaskState iSt, Dictionary<string, SCP_QuestTaskState> iAll)
             => iSt.Status == "pending" && IsReady(iSt, iAll) ? "ready" : iSt.Status;
 

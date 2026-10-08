@@ -1,12 +1,12 @@
 // 區塊職責：child process 註冊中心 —— 本程式開的每一顆外部 process 都在此登記，
 //           以「每 process 一個 json 檔」持久化，**跨 process 生命週期**仍能接管既有 process。
-// 物理意義：解三族問題（概念取自 Unity 端的 UCL_ProcessRegistryService，Tim 2026-07-27 拍板）：
+// 物理意義：解三族問題（Tim 2026-07-27 拍板）：
 //           ① 多顆同功能 daemon 併跑互踩
 //           ② 宿主重啟／domain reload 後失去 Process 物件 ⇒ 那顆變成沒人管得到的孤兒
 //           ③ 光憑 PID 誤殺別人 —— **PID 會被 OS 回收再發**
 //           ⇒ 身分＝PID ＋ process name ＋ start time (UTC) **三重比對**。
 //             start time 是 kernel 記的，同一個 PID 的不同世代必不同 ⇒ 那是唯一可靠的世代標記。
-//           ⚠ CLI 型宿主（一次呼叫一個 process）比 Editor 更需要這個：沒有常駐記憶體，
+//           ⚠ CLI 型宿主（一次呼叫一個 process）特別需要這個：沒有常駐記憶體，
 //             「上一次跑到哪」只能存在檔案裡。
 // 數值影響：寫 <see cref="RegistryDir"/> 底下的記錄檔（runtime 狀態，**不該入版控**）。
 //           kill 只對身分驗證 Alive 的下手；PidReused / Unknown 一律拒絕動手（那才是本檔存在的理由）。

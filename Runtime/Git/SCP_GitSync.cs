@@ -173,8 +173,8 @@ namespace SCP.Core.Git
             string iCurrentBranch, Action<string>? iLog = null)
         {
             // 安全線①：dirty 就不切 —— 切 branch 會吃掉未收的工作。
-            // ⚠ 這把尺**現在**才量，不吃掃描快照：掃描與按下按鈕之間，宿主（Unity Editor）
-            //   會 import asset、寫 .meta、存 scene。照片乾淨、現在髒了的話，
+            // ⚠ 這把尺**現在**才量，不吃掃描快照：掃描與按下按鈕之間，工作目錄可能被別的程式改
+            //   （例：開著的 Unity Editor 會 import asset、寫 .meta、存 scene）。照片乾淨、現在髒了的話，
             //   「dirty 就跳過」的承諾會靜默失效，而報告照印 ✓。
             SCP_GitDirtyState aDirty = SCP_GitRepo.DirtyState(iRepoDir);
             if (aDirty != SCP_GitDirtyState.Clean)

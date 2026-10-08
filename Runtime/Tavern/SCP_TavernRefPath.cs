@@ -1,12 +1,12 @@
 // 區塊職責：酒館訊息附件路徑（refs）的**存法與解法** —— 唯一一處（TASK-0390，Tim 2026-10-07）。
 // 物理意義：refs 存「**資料根相對**」的 `x/y/z`；讀的時候一律接上**當下設定的資料根**（AgentCommandsRoot）⇒ `<資料根>/x/y/z`。
 //           資料根搬家（後台改設定）時舊訊息跟著走，⛔ 訊息裡不烘進任何機器路徑。
-//   · 舊慣例是「擁有 AgentCommands 的 Unity 專案」相對 ⇒ 存成 `AgentCommands/x/y/z`（2026-10-07 實測：全部 refs 裡
+//   · 舊 refs 存成 `AgentCommands/x/y/z`（2026-10-07 實測：全部 refs 裡
 //     ChatTavern 398、Canvas 240、Sculpture 6 筆都是這個形狀）。讀取時去掉這個前綴再接資料根 —— 不用改任何舊檔。
-//   🩸 舊推法是「資料根的上一層＝repo 根」：資料根搬到 `D:/Unity/Valhalla` 之後那一層變成 `D:/Unity`，
-//     舊 refs 全部解成 `D:/Unity/AgentCommands/...`（不存在），Discord 轉發的附圖安靜地被跳過。
+//   🩸 ⛔ 不用「資料根的上一層」當基準：資料根一搬家，那一層就跟著變，
+//     refs 全部解到不存在的路徑，Discord 轉發的附圖安靜地被跳過。
 // 數值影響：純字串＋Path 運算，零 IO。
-// ⚠ 資料根外的絕對路徑照原樣存（呼叫端要說出來）；相對路徑一律當資料根相對，⛔ 不再接受「Unity 專案相對」。
+// ⚠ 資料根外的絕對路徑照原樣存（呼叫端要說出來）；相對路徑一律當資料根相對，⛔ 沒有別的基準。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -16,7 +16,7 @@ namespace SCP.Core.Tavern
 {
     public static class SCP_TavernRefPath
     {
-        /// <summary>舊慣例的前綴（Unity 專案相對時，資料根就叫這個名字）。</summary>
+        /// <summary>舊慣例的前綴（既有 refs 裡的 `AgentCommands/…`）。</summary>
         public const string LegacyPrefix = "AgentCommands/";
 
         /// <summary>

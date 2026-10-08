@@ -20,7 +20,7 @@ namespace SCP.Core.Cmd
 
         public override string Summary =>
             "閱讀庫（work → media → reader）：建檔／登記讀者／落章節心得／書籤／人物與看法版本史／追回檔。"
-            + "**本地跑，Editor 沒開也成。**";
+            + "**本地跑。**";
 
         public override string Details =>
             "⚠ 這裡是**閱讀線**（`BookNotes/Library/` 的 work → media → reader），\n"
@@ -506,7 +506,7 @@ namespace SCP.Core.Cmd
         }
 
         // ── op=share（發酒館 ＋ 回寫 shared_seq）──────────────────────────────
-        // 區塊職責：把某章某 round 的心得發進酒館，並把 seq 落回該 round 當 receipt（Unity 版 Op_Share 的對應，TASK-0399）。
+        // 區塊職責：把某章某 round 的心得發進酒館，並把 seq 落回該 round 當 receipt（TASK-0399）。
         // 物理意義：組稿共用 op=share_body 同一份（SCP_LibraryShare.BuildShareBody）；發文走宿主登記的發文閘
         //          （Senate＝Senate 組訊息＋酒館 Server 寫入，計酬記在 persona 上；房間固定 tavern）。
         //          ⛔ 本層不自己組訊息、不碰錢。

@@ -1,9 +1,8 @@
 // 區塊職責：T26 Solo Alter 配對發言間隔 —— 「這一則要不要延後、延多久」的判準（只判，不等）。
 // 物理意義：TASK-0312。Alter 機制觸發後 agent 容易 self↔alter ping-pong
 //          秒回、失去慢速意義；純 SKILL.md 自律守不住 ⇒ 寫入端自動延遲（不擋訊息）。
-//          Editor 版在 handler 裡 `await` 剩餘秒數；Senate 版把訊息放進酒館 Server 的延後發文匣（`SenateTavernDeferred`），
-//          到點由 Server 投回 tavern lane —— **兩邊用同一支判準**，⛔ 不各算一份。
-// 延遲秒數（hierarchy 由高到低，逐字照 Editor）：
+//          要延後的訊息放進酒館 Server 的延後發文匣（`SenateTavernDeferred`），到點由 Server 投回 tavern lane。
+// 延遲秒數（hierarchy 由高到低）：
 //   1. meta alter-pacing-bypass=true → 不延遲
 //   2. meta alter-delay-sec=N（N ≥ 0）→ min(N, 900)
 //   3. meta tag 含 idle-self-talk／idle-standby／standby → 720s
@@ -65,7 +64,7 @@ namespace SCP.Core.Tavern
         /// 這一則還要等多久。回 <c>null</c> ＝ 不延遲（bypass／有效秒數 0／上一則不是搭檔／沒有上一則／ts 解析不出）。
         /// </summary>
         /// <param name="iLastSenderId">同房最後一則的 sender_id（沒有上一則就給 null）。</param>
-        /// <param name="iLastTs">那一則的 ts（ISO 8601；解析不出 ⇒ 不延遲，照 Editor）。</param>
+        /// <param name="iLastTs">那一則的 ts（ISO 8601；解析不出 ⇒ 不延遲）。</param>
         public static TimeSpan? Remaining(IReadOnlyDictionary<string, string>? iMeta, string iSenderId,
                                           string? iLastSenderId, string? iLastTs, DateTime iNowUtc)
         {

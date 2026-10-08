@@ -1,7 +1,7 @@
 // 區塊職責：`cmd bank-request` —— **開請款單／轉帳單、撤單、列單**的 CLI 出口（TASK-0325）。
 // 物理意義：agent 主張「該付我」或「這筆該從 A 搬到 B」的正規管道 —— 有單據、可審批、可駁回、可追溯。
 //           審批仍是 `cmd bank --arg op=approve|reject`（Server）；本支**只寫單子、一毛錢都不動**。
-//           單子是一張一檔（uuid 檔名）⇒ 本地跑就好，不需要 Server、不需要 Editor。
+//           單子是一張一檔（uuid 檔名）⇒ 本地跑就好，不需要 Server。
 // 數值影響：`op=list` 零寫入；`op=request`／`op=transfer` 各寫一個新檔；`op=cancel` 只改那張單的裁決欄（pending ⇒ cancelled）。
 //           驗證不過一律零寫入。
 // ⚠ 帳戶一律給**帳號 id**（例 cc / zeta / Myth），⛔ 不是 persona 名 —— 本支不推斷（2026-07-31 血證：錢進影子帳戶）。
@@ -19,10 +19,10 @@ namespace SCP.Core.Cmd
         public override string Name => "bank-request";
         public override string Category => SCP_CmdCategory.Bank;
 
-        public override string Summary => "開請款單／轉帳單、撤單、列單（**只寫單子、不動錢**；審批走 `bank op=approve`）—— **本地跑，不需要 Editor**";
+        public override string Summary => "開請款單／轉帳單、撤單、列單（**只寫單子、不動錢**；審批走 `bank op=approve`）—— **本地跑**";
 
         public override string Details =>
-            "單據：`<data_root>/Bank/requests/<日>/*__request.json`、`Bank/transfer_requests/<日>/*__transfer.json`（跟 Unity 版同格式、同位置）。\n"
+            "單據：`<data_root>/Bank/requests/<日>/*__request.json`、`Bank/transfer_requests/<日>/*__transfer.json`。\n"
             + "· `op=request --arg target_bank=<收款帳號> --arg amount=N --arg-file reason=<檔> [--arg source_kind=...] [--arg source_ref=SHA/seq/單號] [--arg funding=central|mint]`\n"
             + "    funding 沒給：`source_kind=work_post_backfill`（補薪）⇒ mint；其他 ⇒ 留空，審批端用央行撥款。\n"
             + "    ⚠ `source_kind`／`source_ref` **只記在這張請款單上，不會進帳本**：核准後帳本一律寫 `kind=payout_request`、`ref=<請款單號>`（TASK-0396）。\n"

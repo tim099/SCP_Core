@@ -23,7 +23,7 @@ namespace SCP.Core.Cmd
         public override string Category => SCP_CmdCategory.Persona;
 
         public override string Summary =>
-            "建立新 persona（可 fork、可同時新開 agent＝開戶）：draft 零寫入預覽／create confirm=1 才寫 —— 本地跑，不需要 Editor";
+            "建立新 persona（可 fork、可同時新開 agent＝開戶）：draft 零寫入預覽／create confirm=1 才寫 —— 本地跑";
 
         public override string Details =>
             "必填只有 `persona`（＝參考角色，同時是 persona id）；其餘沒填的設定標「待本人填寫」，由那位 persona 第一次早安時自己補。\n"

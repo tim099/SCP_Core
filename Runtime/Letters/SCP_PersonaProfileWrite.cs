@@ -1,18 +1,17 @@
 // 區塊職責：persona 設定的**寫入**本體 —— 身分欄 set／unset、本區銀行綁定 set／unbind、換區重綁（複製）、寫入審計。
-// 物理意義：TASK-0354。persona 檔的寫入那半，讓 `senate cmd persona-profile`
-//           不需要 Unity Editor。讀取那半早就在 `SCP_PersonaProfile`（本檔只寫，讀回驗證走它）。
-//           ⭐ 寫出來的檔與 Editor 版**逐位元組同形**：純量欄 `值\n`、結構欄 UCL beautify（`\r\n`＋`\uXXXX`）、
-//           綁定檔 `帳號\n`、審計一行 UCL 緊湊 JSON（`\uXXXX`）。
-// ⭐ TASK-0361（Tim 2026-10-01「寫入端整合到 Senate，Unity 端不留」）：**persona 檔的唯一寫入端**。
-//   CLI（`persona-profile`）、Senate 銀行後台換綁、早安寫 model／actual_agent、Unity 頁面（經 CLI）全部走這裡；
-//   稽核只有 `_persona_write_audit.jsonl` 一份（原本銀行後台另寫 `bank/_audit.log`，已收掉）。
+// 物理意義：TASK-0354。persona 檔的寫入那半；讀取那半在 `SCP_PersonaProfile`（本檔只寫，讀回驗證走它）。
+//           ⭐ 檔案形狀：純量欄 `值\n`、結構欄 beautify（`\r\n`＋`\uXXXX`）、
+//           綁定檔 `帳號\n`、審計一行緊湊 JSON（`\uXXXX`）。
+// ⭐ TASK-0361：**persona 檔的唯一寫入端**。
+//   CLI（`persona-profile`）、Senate 銀行後台換綁、早安寫 model／actual_agent 全部走這裡；
+//   稽核只有 `_persona_write_audit.jsonl` 一份。
 // 數值影響：只寫 `letters/<p>/profile/<field>.md`、`letters/<p>/bank/<region>.md` 與 `AwakenInit/_persona_write_audit.jsonl`。
 //           ⛔ **不碰帳本、不動任何一分錢、不改央行設定**（綁定只決定「之後的收付進哪一戶」，既有分錄不追溯）。
 //
-// ⚠ 與 Editor 版刻意不同的格（都寫在這裡，免得以為是漏移植）：
-//   ① 不刷新 `_persona_profile_snapshot.json`：衍生快照，SCP_Morning 寫 profile 時已經做過同一個判斷（它的檔頭 ⑤）。
-//   ② 綁定寫入要求 persona 存在（Editor 版不查 ⇒ 打錯名字會長出 `letters/<typo>/bank/`）。
-//   ③ 寫檔走 tmp＋Replace（Editor 版是 Delete＋Move，中間有一格「檔案不存在」）。
+// ⚠ 刻意的規格（都寫在這裡，免得以為是遺漏）：
+//   ① 不刷新 `_persona_profile_snapshot.json`：衍生快照，SCP_Morning 寫 profile 時已經做過同一個判斷（它的檔頭 ④）。
+//   ② 綁定寫入要求 persona 存在（不查 ⇒ 打錯名字會長出 `letters/<typo>/bank/`）。
+//   ③ 寫檔走 tmp＋Replace（Delete＋Move 中間有一格「檔案不存在」）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -58,7 +57,7 @@ namespace SCP.Core.Letters
 
         // ── 審計 ─────────────────────────────────────────────────
         /// <summary>
-        /// append 一行審計（UCL 緊湊 JSON，key 順序 ts, persona, fields, actor, reason）。
+        /// append 一行審計（緊湊 JSON，key 順序 ts, persona, fields, actor, reason）。
         /// 回 "" ＝ 成功；否則是錯誤訊息 —— ⚠ 審計失敗**不擋主寫入**（資料已落地），但呼叫端要印出來。
         /// </summary>
         public static string AppendAudit(string iDataRoot, string iPersona, string iFields, string iActor, string iReason)
@@ -151,8 +150,7 @@ namespace SCP.Core.Letters
 
         /// <summary>
         /// **建一個新 persona**：建 `profile/`、寫本區綁定、逐欄寫身分欄（每欄一行審計）、最後一行總結審計。
-        /// <para>移植自 Editor 版身分後台的「建 persona」（`WriteBankAccount` ＋ `WriteRaw`，TASK-0361）。
-        /// 總結那一行的形狀照 `WriteRaw`：`profile:[a,b] skipped(推導欄):[..] refused(走 set_bank):[agent]`。</para>
+        /// <para>TASK-0361。總結那一行的形狀：`profile:[a,b] skipped(推導欄):[..] refused(走 set_bank):[agent]`。</para>
         /// <para>⚠ 順序刻意先綁定再寫身分欄：先有帳號歸屬，錢才不會在半成品狀態落央行。</para>
         /// </summary>
         /// <param name="iFields">JSON 物件：身分欄 → 值（結構欄是陣列；`forked_from`／`forked_at` 可為 null）。</param>
@@ -248,7 +246,7 @@ namespace SCP.Core.Letters
         // ── 銀行綁定（一區一檔）─────────────────────────────────────
         /// <summary>
         /// 寫 persona 在 <paramref name="iRegion"/> 的綁定（`帳號\n`）＋ 審計 `bank/&lt;region&gt;`。
-        /// 同值照寫照審計（與 Editor 版同）。
+        /// 同值照寫照審計。
         /// </summary>
         public static bool WriteBankBinding(string iLettersRoot, string iDataRoot, string iPersona, string iRegion, string iAccount,
                                             string iActor, string iReason, out string oAuditWarn, out string oError)
@@ -292,7 +290,7 @@ namespace SCP.Core.Letters
             return true;
         }
 
-        // ── session lock（`profile/_session.json`）——後台操作的兩支（TASK-0361：Unity 登入狀態頁原本直寫）──
+        // ── session lock（`profile/_session.json`）——後台操作的兩支（TASK-0361）──
         // ⚠ lock 的**建立**只在早安（`SCP_Morning`）、**正常刪除**只在晚安（`SCP_Goodnight.SleepApply`）；
         //   這裡只收後台的兩個例外動作，每一筆都留審計（lock 本身不入版控，事後沒有別的地方查得到是誰動的）。
 
@@ -356,7 +354,6 @@ namespace SCP.Core.Letters
         /// <summary>
         /// 新專案第一次用區域綁定：把全 pool 目前解析得到的帳號（本區沒有就是借別區的那一個）**寫成本區自己的綁定**。
         /// 本區已有 ⇒ 跳過（<paramref name="iOverwrite"/> 才覆寫）；解析不到 ⇒ 跳過；本區這一瞬間讀不了 ⇒ 失敗（⛔ 不覆寫）。
-        /// <para>⚠ Editor 版讀的是 `persona.agent`，而它本來就是從綁定檔推導的（本區 → 借別區）⇒ 兩者同值。</para>
         /// </summary>
         public static MigrateReport MigrateBank(string iLettersRoot, string iDataRoot, string iRegion,
                                                 string iActor, string iReason, bool iDryRun, bool iOverwrite)

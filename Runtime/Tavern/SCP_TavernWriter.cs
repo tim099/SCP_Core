@@ -1,7 +1,6 @@
 // 區塊職責：酒館訊息的**寫入臨界區**（Senate 側）—— TASK-0106 的第一塊。
 // 物理意義：「算 seq（＝訊息檔數＋1）→ 原子建檔 → 寫 `_seq.txt` 快取」三件事在同一個 per-room 臨界區裡。
-//           ⭐ 這一份是酒館訊息**唯一的寫入端**，活在 Server 那一顆 process 裡（TASK-0341，2026-09-30：
-//           Editor 本地寫入與 `tavern.writer` 開關都已刪除，Editor 一律委派 `tavern-write`）。
+//           ⭐ 這一份是酒館訊息**唯一的寫入端**，活在 Server 那一顆 process 裡（TASK-0341）。
 //
 // 數值影響：seq 的權威是**訊息檔數**（`_seq.txt` 只是給 wait 機制讀的 cache，不是 atomic counter）；
 //           檔名就是 seq（`{seq:D8}.json`）⇒ 撞號＝撞檔名，而撞檔名由 `FileMode.CreateNew` 當場量到。
@@ -9,11 +8,11 @@
 // 🩸 為什麼建檔用 CreateNew 而不是「先 File.Exists 再寫」（TASK-0256，2026-09-21 summit）：
 //    後者是 check-then-write，兩個寫入端同時判「不存在」⇒ 兩邊都寫同一個路徑 ⇒ 後寫的覆蓋先寫的，
 //    而 seq 不重號、兩邊都回成功 ⇒ **訊息消失而沒有任何一層會叫**。
-//    ⇒ 本檔從第一行起就沒有那個窗口，⛔ 別為了「跟 Editor 那側長得一樣」把它改回去。
+//    ⇒ 本檔沒有那個窗口，⛔ 別把它改回去。
 //
-// 🩸 而計數快取的字典是**跨房共用**的（Editor 那側 `s_RoomMessageCounts` 同形）：
+// 🩸 而計數快取的字典是**跨房共用**的：
 //    per-room lock 只保證同房序列化，兩個**不同房**的寫入會同時改同一個 Dictionary。
-//    Editor 是單執行緒所以碰不到；Server 的執行器是「同 lane 串行、跨 lane 並行」⇒ **碰得到**。
+//    Server 的執行器是「同 lane 串行、跨 lane 並行」⇒ **碰得到**。
 //    ⇒ 本檔用 `ConcurrentDictionary`，⛔ 不是把 lock 放大成全域（那會讓跨房寫入互相排隊）。
 //
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
@@ -60,19 +59,18 @@ namespace SCP.Core.Tavern
 
     /// <summary>
     /// 酒館訊息寫入（Senate 側）。⚠ 這是**臨界區本體**，不是發文流程 ——
-    /// mention 通知、Discord 鏡像、category 路由那些掛在 Editor 的 `AppendMessage` 上，⛔ 不在本檔射程。
+    /// mention 通知、Discord 鏡像、category 路由那些在臨界區外（mention 由 Senate `Cmd_TavernWrite` 寫完呼叫），⛔ 不在本檔射程。
     /// </summary>
     public static class SCP_TavernWriter
     {
-        /// <summary>寫入端簽章的鍵（與 Editor 側逐字相同）。</summary>
+        /// <summary>寫入端簽章的鍵。</summary>
         public const string WriterSignatureKey = "_writer";
 
-        /// <summary>行程 id 的鍵（與 Editor 側逐字相同）。</summary>
+        /// <summary>行程 id 的鍵。</summary>
         public const string WriterPidKey = "_pid";
 
         /// <summary>
-        /// 本寫入端的簽章。⛔ **刻意跟 Editor 那側的 `cmd_tavern_v2` 不同** ——
-        /// 落盤之後要分得出「這則是誰寫的」，而那是搬家期間唯一一條事後查得到的路徑。
+        /// 本寫入端的簽章 —— 落盤之後要分得出「這則是誰寫的」（舊訊息上的 `cmd_tavern_v2` 是另一個寫入端）。
         /// ⚠ 目前全樹**沒有任何消費端**在讀這個欄位（2026-09-21 實查）⇒ 改它不會動到行為，
         /// 而它的價值全在「有人來問的時候答得出來」。
         /// </summary>
@@ -94,7 +92,7 @@ namespace SCP.Core.Tavern
 
         const int MaxHealRetries = 3;
 
-        // per-room lock 池：不同房互不阻塞（同 Editor 側的取捨）。
+        // per-room lock 池：不同房互不阻塞。
         static readonly ConcurrentDictionary<string, object> s_RoomLocks
             = new ConcurrentDictionary<string, object>(StringComparer.Ordinal);
 
@@ -217,7 +215,7 @@ namespace SCP.Core.Tavern
 
         /// <summary>
         /// 寫 `_seq.txt`。⚠ 它是**給 wait 機制讀的 cache**，不是配號來源
-        /// ⇒ 寫失敗不影響「訊息已經落盤」這個事實，所以這裡吞掉例外（同 Editor 側）。
+        /// ⇒ 寫失敗不影響「訊息已經落盤」這個事實，所以這裡吞掉例外。
         /// </summary>
         static void WriteSeqCache(string iDataRoot, string iRoom, int iSeq)
         {
@@ -235,9 +233,9 @@ namespace SCP.Core.Tavern
         }
 
         // ===========================================================
-        // 區塊職責：序列化 —— **逐位元組對齊 Editor 側 `SerializeMessageNoSeq`**
+        // 區塊職責：序列化 —— **落盤形狀逐位元組固定**
         // ⛔ 這裡不可以「順手用 JSON 函式庫」：欄位順序、選填欄位的省略規則、跳脫表
-        //    任何一格不同，兩個寫入端寫出來的同一則訊息就會不同形，
+        //    任何一格不同，同一則訊息就會跟既有訊息不同形，
         //    而那種壞法**讀得出來、對得起來、只有 diff 看得見**。
         // ⚠ seq **不寫進內容**（它活在檔名裡）—— 這條是刻意的，不是漏了。
         // ===========================================================
@@ -305,7 +303,7 @@ namespace SCP.Core.Tavern
             void Comma() { if (!aFirst) aSb.Append(','); aFirst = false; }
         }
 
-        /// <summary>跳脫表逐字對齊 Editor 側（⛔ 不是「差不多的 JSON 跳脫」）。</summary>
+        /// <summary>跳脫表逐字固定（⛔ 不是「差不多的 JSON 跳脫」）。</summary>
         static string Escape(string? iStr)
         {
             if (iStr == null) return "";

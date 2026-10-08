@@ -1,6 +1,6 @@
 // 區塊職責：`cmd channel` —— 頻道（酒館房間）管理的 CLI 出口：分類清單、頻道分類、封存（TASK-0318）。
 // 物理意義：讀寫全走 `SCP_TavernChannels`（與 Senate 後台「頻道管理」頁同一份）；本 Cmd 只是薄殼。
-//           **分類要先新增，頻道才能選它**（Tim 2026-09-28）。完全不需要 Unity。
+//           **分類要先新增，頻道才能選它**（Tim 2026-09-28）。
 // 數值影響：`op=list`／`op=categories` 零寫入；其餘 op 寫 `channel_categories.json` 或 `rooms/<room>/channel.json`，
 //           驗證不過一律零寫入。封存 ＝ 把整個房間資料夾搬到 `ChatTavern/rooms_archive/`（取消封存搬回來），⛔ 不刪任何訊息。
 #nullable enable
@@ -17,7 +17,7 @@ namespace SCP.Core.Cmd
         public override string Name => "channel";
         public override string Category => SCP_CmdCategory.Tavern;
 
-        public override string Summary => "頻道（酒館房間）管理：頻道分類清單（先新增才能選）、設定頻道分類、封存／取消封存 —— **本地跑，不需要 Editor**";
+        public override string Summary => "頻道（酒館房間）管理：頻道分類清單（先新增才能選）、設定頻道分類、封存／取消封存 —— **本地跑**";
 
         public override string Details =>
             "資料：分類清單 `ChatTavern/channel_categories.json`；頻道設定 `ChatTavern/rooms/<room>/channel.json`（⛔ 不寫 meta.json）。\n"
@@ -27,7 +27,7 @@ namespace SCP.Core.Cmd
             + "· `op=remove-category --arg name=<分類>`：刪除分類 —— 還有頻道在用就擋下並列出是哪些。\n"
             + "· `op=set-category --arg room=<房> --arg category=<分類>`：設頻道分類；`category` 留空 ＝ 未分類。分類要已在清單裡。\n"
             + "· `op=archive`／`op=unarchive --arg room=<房>`：封存／取消封存 ＝ 把房間資料夾搬到 `rooms_archive/`／搬回 `rooms/`（目的地有同名資料夾就擋下）。\n"
-            + "· `op=create --arg room=<房間 id> [--arg name=<顯示名>] [--arg description=...] [--arg category=<分類>]`：建新頻道（TASK-0328，取代 Unity `Tavern op=createroom`）。\n"
+            + "· `op=create --arg room=<房間 id> [--arg name=<顯示名>] [--arg description=...] [--arg category=<分類>]`：建新頻道（TASK-0328）。\n"
             + "    已存在 ⇒ 冪等（不動名稱與說明，只在給了分類時設分類）；在封存區 ⇒ 擋下。⚠ 沒給分類 ⇒ 未分類 ⇒ **不會轉發到 Discord**。";
 
         public override string Example =>

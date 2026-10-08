@@ -4,7 +4,7 @@
 //           （`free-time-activity op=step` in-process 派遣）。
 //           十個子命令是 `op` 的十個值（同 `library` 的形狀：一支 Cmd、op 分派）。
 // 數值影響：寫的是 `<data_root>/Chess/games/<n>.json`；廣播與發券走 `SCP_ChessGatewayHost` 裝上的閘。
-// ⚠ **本 Cmd 是 Native**：棋局本體在本地跑，Editor 沒開也下得了棋 ——
+// ⚠ **本 Cmd 是 Native**：棋局本體在本地跑 ——
 //   但**廣播與發券**需要宿主裝的閘（`SCP_ChessGatewayHost`），宿主不在時那兩件事會出聲失敗、
 //   ⛔ 不回滾棋步（同 python：best-effort）。
 #nullable enable

@@ -5,11 +5,10 @@
 //
 // 🔴 `seq` **不在檔案裡** —— 它是讀的時候**依相對路徑字典序**現算出來的（1-based）。
 //   ⇒ 這件事有兩個後果，兩個都要記：
-//   ① 本層必須**逐字沿用** Editor 側的排序規則（`string.CompareOrdinal` 比相對路徑），
-//      換一種排序 ⇒ 同一筆事件在兩端拿到**不同的 seq**，而 `events_since` 的輸出仍然完全合理。
+//   ① 排序規則固定（`string.CompareOrdinal` 比相對路徑），
+//      換一種排序 ⇒ 同一筆事件拿到**不同的 seq**，而 `events_since` 的輸出仍然完全合理。
 //   ② 中間插進一個更早的檔（例如補寫歷史）會讓**它之後所有事件的 seq 位移一格** ——
-//      那不是本層造成的，但 `since_seq` 的使用者會踩到。⛔ 本層不「修正」它：
-//      修正的話兩端就不一致了，而不一致的那一端沒有人會發現。
+//      那不是本層造成的，但 `since_seq` 的使用者會踩到。⛔ 本層不「修正」它。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
@@ -38,7 +37,7 @@ namespace SCP.Core.Tavern
             => Path.Combine(SCP_TavernRooms.RoomDir(iDataRoot, iRoom), "events").Replace('\\', '/');
 
         /// <summary>
-        /// 讀一房全部 quest 事件（排序與 seq 計算逐字照 Editor 側 `PerMsgFile.LoadAllEvents`）。
+        /// 讀一房全部 quest 事件（排序與 seq 計算見檔頭）。
         /// <para>⚠ 讀不動的檔**計入 <paramref name="oWarn"/>**，⛔ 不靜默跳過 ——
         /// 靜默跳過會讓之後每一筆的 seq 都少一格，而輸出看起來完全正常。</para>
         /// </summary>
@@ -82,11 +81,10 @@ namespace SCP.Core.Tavern
                 {
                     if (oWarn != null)
                         oWarn.Add("⚠ 讀不動事件檔 " + Path.GetFileName(aFile) + "：" + e.Message
-                                  + "（本筆不佔 seq —— 與 Editor 側同語意）");
+                                  + "（本筆不佔 seq）");
                 }
-                // ⚠ **號在這裡才發**：Editor 側是 `if (e != null) e.seq = ++seq`
-                //   ⇒ 解析失敗那筆**不佔號**。號在 try 裡面發的話，一個壞檔會讓
-                //   它之後每一筆的 seq 都比 Editor 側多一 —— 而兩邊的輸出都合理。
+                // ⚠ **號在這裡才發** ⇒ 解析失敗那筆**不佔號**。號在 try 裡面發的話，一個壞檔會讓
+                //   它之後每一筆的 seq 都多一 —— 而輸出看起來仍然合理。
                 if (aEvent == null) continue;
                 aEvent.Seq = ++aSeq;
                 aOut.Add(aEvent);

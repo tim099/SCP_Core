@@ -1,4 +1,4 @@
-// 區塊職責：`cmd consolidate` —— 見林（longterm digest）與見森（forest fold）。**原生**，不需要 Unity。
+// 區塊職責：`cmd consolidate` —— 見林（longterm digest）與見森（forest fold）。
 // 物理意義：兩段式，跟寫信同一個分工：**工具負責持久化與算狀態，反思的內容 agent 自己寫**。
 //           不給 body ＝ inspect（印狀態＋列本段待濃縮的信）；給了 body ＝ 寫檔。
 //           ⇒ 工具代筆的見林不是那個人的記憶，它只是一份摘要（憲法⑥）。

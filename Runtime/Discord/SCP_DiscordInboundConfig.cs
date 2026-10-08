@@ -10,7 +10,6 @@
 //     白名單**不擋人，只標記**（Tim 2026-09-30）⇒ 沒有啟用開關了；舊檔的 `enabled` 在下一次寫入時拔掉（標記見 SCP_DiscordInbound）。
 //     新檔不在 ⇒ 照舊讀 notify_config（`Source` 會說）；第一次寫入就寫新檔，⛔ 不回寫 notify_config
 //     （那個檔裡有明文 webhook，不為了白名單整份重寫它）。
-//   · Unity 端 Inbound 已廢棄（Tim 2026-09-28）⇒ 本檔只顧 Senate 這一側。
 // 數值影響：讀取零寫入；寫入走暫存檔再換檔、寫完回讀；驗證不過一律零寫入。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable

@@ -1,9 +1,9 @@
 // 區塊職責：**活動 session 管理頁** —— 列出每個人的場（進行中／殘留／已收工）、對殘留補收工。
 // 物理意義：資料讀走 `SCP_ActivitySessionStore`（純讀）；關場走 `SCP_ActivitySessionStore.CloseVerified`
-//           （與 `sessions op=close` 同一個門；TASK-0448 起就地做、不委派 Editor、不結算）。
+//           （與 `sessions op=close` 同一個門；就地做、不結算，TASK-0448）。
 // 數值影響：讀＝每次 Refresh 掃一次 `sessions/*.json`；寫＝只有「補收工」那一條，且要二段確認。
 //
-// ⚠ 三條界線是從舊頁**原樣搬過來的，不是新加的**：
+// ⚠ 三條界線：
 //   ① **補收工只對「殘留」開放**（active 但已過 end_ts）。進行中的場要走該 kind 的 `step=end` ——
 //      那裡才有收工公告與同場者判定，從後台直接關會留下對不上的帳。
 //   ② 二段確認（第一次 arm、再按一次才真的動）—— 誤點的後果是關掉別人**真的在跑**的場。
@@ -245,8 +245,7 @@ namespace SCP.Core.Gui
         // ── 關場 ────────────────────────────────────────────────
 
         /// <summary>
-        /// 關一場（同步）。關場是本地翻三欄＋回讀（TASK-0448），幾毫秒的事 ⇒ 不再需要背景 task。
-        /// <para>🩸 舊版是委派 Editor 的 1〜3 秒 round-trip，才有「背景 task＋⏳ 委派中」那一套；委派拔掉後它就是死碼。</para>
+        /// 關一場（同步）。關場是本地翻三欄＋回讀（TASK-0448），幾毫秒的事 ⇒ 不需要背景 task。
         /// </summary>
         void StartClose(string iPersona)
         {
@@ -265,7 +264,7 @@ namespace SCP.Core.Gui
                 return "⛔ `" + iPersona + "` 的場又變回進行中了 ⇒ 未動作（進行中要走該 kind 的 step=end）";
             if (!aS.active) return "・`" + iPersona + "` 已經收過工 ⇒ 未動作";
 
-            // TASK-0448：就地關（翻三欄＋回讀），不委派 Editor、不結算 —— 與 `sessions op=close` 同一個門。
+            // TASK-0448：就地關（翻三欄＋回讀），不結算 —— 與 `sessions op=close` 同一個門。
             bool aClosed = SCP_ActivitySessionStore.CloseVerified(aRoot, iPersona, aS, "closed-by-admin-page");
             return "・關場：Senate 就地翻三欄（kind=" + (aS.kind.Length == 0 ? "未標" : aS.kind) + "）—— 不結算"
                    + "\n・回讀磁碟：" + (aClosed ? "active=false ✅ 關成了" : "active=true ❌ **沒關成**");
