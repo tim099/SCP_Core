@@ -792,14 +792,164 @@ namespace SCP.Core.Sculpture
             new[] { new[] { 0, 1, 0 }, new[] { 1, 1, 0 }, new[] { 1, 0, 0 }, new[] { 0, 0, 0 } },
         };
 
+        public const string MergeGreedy = "greedy";
+        public const string MergeNone = "none";
+
+        /// <summary>四個角（世界座標）轉 OBJ y-up（wx, wz, wy），叉積跟法線反向就反轉頂點序。</summary>
+        static int[][] ObjQuad(int[][] iWorld, int[] iObjNormal)
+        {
+            var pts = new int[4][];
+            for (int k = 0; k < 4; k++) pts[k] = new[] { iWorld[k][0], iWorld[k][2], iWorld[k][1] };
+            long ux = pts[1][0] - pts[0][0], uy = pts[1][1] - pts[0][1], uz = pts[1][2] - pts[0][2];
+            long vx = pts[2][0] - pts[0][0], vy = pts[2][1] - pts[0][1], vz = pts[2][2] - pts[0][2];
+            long cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+            if (cx * iObjNormal[0] + cy * iObjNormal[1] + cz * iObjNormal[2] < 0) Array.Reverse(pts);
+            return pts;
+        }
+
+        // merge=none：逐 voxel 面、每面 4 個獨立 v ＋ 1 個 vn —— bytes 與 python cmd_export 相同（⛔ 不要順手共用頂點）。
+        static int WriteObjPerVoxel(StringBuilder iO, List<(int X, int Y, int Z, int Color)> iVox,
+                                    HashSet<(int, int, int)> iSet, SortedSet<int> iColors, out int oVerts)
+        {
+            int vi = 1, ni = 1, aFaces = 0;
+            var aWorld = new int[4][];
+            foreach (int c in iColors)
+            {
+                iO.Append("usemtl c").Append(c.ToString(CultureInfo.InvariantCulture)).Append('\n');
+                foreach (var e in iVox)
+                {
+                    if (e.Color != c) continue;
+                    for (int f = 0; f < 6; f++)
+                    {
+                        int[] d = s_FaceDir[f];
+                        if (iSet.Contains((e.X + d[0], e.Y + d[1], e.Z + d[2]))) continue;   // 被鄰居遮住的面不出
+                        for (int k = 0; k < 4; k++)
+                        {
+                            int[] o = s_FaceCorners[f][k];
+                            aWorld[k] = new[] { e.X + o[0], e.Y + o[1], e.Z + o[2] };
+                        }
+                        int[] nrm = { d[0], d[2], d[1] };
+                        foreach (int[] p in ObjQuad(aWorld, nrm))
+                            iO.Append("v ").Append(p[0]).Append(' ').Append(p[1]).Append(' ').Append(p[2]).Append('\n');
+                        iO.Append("vn ").Append(nrm[0]).Append(' ').Append(nrm[1]).Append(' ').Append(nrm[2]).Append('\n');
+                        iO.Append("f ").Append(vi).Append("//").Append(ni).Append(' ').Append(vi + 1).Append("//").Append(ni)
+                          .Append(' ').Append(vi + 2).Append("//").Append(ni).Append(' ').Append(vi + 3).Append("//").Append(ni).Append('\n');
+                        vi += 4; ni += 1; aFaces++;
+                    }
+                }
+            }
+            oVerts = vi - 1;
+            return aFaces;
+        }
+
+        // 區塊職責：merge=greedy —— 同色、同方向、同一層的露出面合成矩形（greedy meshing），頂點與法線共用。
+        // 物理意義：每個 (顏色, 面方向, 層) 是一張 2D 遮罩；照 (v, u) 掃，先往 u 長到斷、再往 v 長到整列都在，吃掉那塊。
+        //   不保證最少矩形，但線性、決定性（同輸入同 bytes）。整顆同色立方體 ⇒ 6 面。
+        // ⚠ 大矩形的邊可能貼著另一側的小矩形 ⇒ T 型接點：一般算繪沒事，要 watertight（3D 列印）的用 merge=none。
+        static int WriteObjGreedy(StringBuilder iO, List<(int X, int Y, int Z, int Color)> iVox,
+                                  HashSet<(int, int, int)> iSet, out int oVerts)
+        {
+            // (color, face, layer) → 露出面的 (u, v)；u／v ＝ 法線軸以外的兩軸，照 x→y→z 順序
+            var aMasks = new SortedDictionary<(int Color, int Face, int Layer), HashSet<(int U, int V)>>();
+            foreach (var e in iVox)
+            {
+                int[] aP = { e.X, e.Y, e.Z };
+                for (int f = 0; f < 6; f++)
+                {
+                    int[] d = s_FaceDir[f];
+                    if (iSet.Contains((e.X + d[0], e.Y + d[1], e.Z + d[2]))) continue;
+                    int a = f / 2, au = a == 0 ? 1 : 0, av = a == 2 ? 1 : 2;
+                    var aKey = (e.Color, f, aP[a]);
+                    if (!aMasks.TryGetValue(aKey, out var aCells)) aMasks[aKey] = aCells = new HashSet<(int, int)>();
+                    aCells.Add((aP[au], aP[av]));
+                }
+            }
+
+            var aVertIndex = new Dictionary<(int, int, int), int>();
+            var aVerts = new StringBuilder();
+            var aNormIndex = new Dictionary<(int, int, int), int>();
+            var aNorms = new StringBuilder();
+            var aFacesByColor = new SortedDictionary<int, StringBuilder>();
+            int aFaces = 0;
+            int Vert(int[] p)
+            {
+                var k = (p[0], p[1], p[2]);
+                if (aVertIndex.TryGetValue(k, out int i)) return i;
+                aVertIndex[k] = i = aVertIndex.Count + 1;
+                aVerts.Append("v ").Append(p[0]).Append(' ').Append(p[1]).Append(' ').Append(p[2]).Append('\n');
+                return i;
+            }
+            int Norm(int[] n)
+            {
+                var k = (n[0], n[1], n[2]);
+                if (aNormIndex.TryGetValue(k, out int i)) return i;
+                aNormIndex[k] = i = aNormIndex.Count + 1;
+                aNorms.Append("vn ").Append(n[0]).Append(' ').Append(n[1]).Append(' ').Append(n[2]).Append('\n');
+                return i;
+            }
+
+            foreach (var kv in aMasks)
+            {
+                int f = kv.Key.Face, a = f / 2, au = a == 0 ? 1 : 0, av = a == 2 ? 1 : 2;
+                int[] d = s_FaceDir[f];
+                int aPlane = kv.Key.Layer + (d[a] > 0 ? 1 : 0);
+                int[] nrm = { d[0], d[2], d[1] };
+                int ni = Norm(nrm);
+                if (!aFacesByColor.TryGetValue(kv.Key.Color, out StringBuilder? aF))
+                    aFacesByColor[kv.Key.Color] = aF = new StringBuilder();
+
+                HashSet<(int U, int V)> aCells = kv.Value;
+                var aOrder = new List<(int U, int V)>(aCells);
+                aOrder.Sort((p, q) => p.V != q.V ? p.V.CompareTo(q.V) : p.U.CompareTo(q.U));
+                foreach (var c in aOrder)
+                {
+                    if (!aCells.Contains(c)) continue;
+                    int w = 1;
+                    while (aCells.Contains((c.U + w, c.V))) w++;
+                    int h = 1;
+                    while (true)
+                    {
+                        bool aRow = true;
+                        for (int i = 0; i < w && aRow; i++) aRow = aCells.Contains((c.U + i, c.V + h));
+                        if (!aRow) break;
+                        h++;
+                    }
+                    for (int i = 0; i < w; i++)
+                        for (int j = 0; j < h; j++) aCells.Remove((c.U + i, c.V + j));
+
+                    int[][] aWorld = new int[4][];
+                    int[][] aUv = { new[] { c.U, c.V }, new[] { c.U + w, c.V }, new[] { c.U + w, c.V + h }, new[] { c.U, c.V + h } };
+                    for (int k = 0; k < 4; k++)
+                    {
+                        var p = new int[3];
+                        p[a] = aPlane; p[au] = aUv[k][0]; p[av] = aUv[k][1];
+                        aWorld[k] = p;
+                    }
+                    aF.Append('f');
+                    foreach (int[] p in ObjQuad(aWorld, nrm)) aF.Append(' ').Append(Vert(p)).Append("//").Append(ni);
+                    aF.Append('\n');
+                    aFaces++;
+                }
+            }
+
+            iO.Append(aVerts).Append(aNorms);
+            foreach (var kv in aFacesByColor)
+                iO.Append("usemtl c").Append(kv.Key.ToString(CultureInfo.InvariantCulture)).Append('\n').Append(kv.Value);
+            oVerts = aVertIndex.Count;
+            return aFaces;
+        }
+
         /// <summary>
         /// python <c>cmd_export</c>：.obj(+.mtl)／MagicaVoxel .vox。六方向鄰居存在即不出面；obj 是 Y-up（世界 z 寫到 obj y），
-        /// 每面用叉積驗外向、不合就反轉頂點序。輸出 bytes 與 python 相同（文字檔用平台換行，與 python 文字模式同）。
+        /// 每面用叉積驗外向、不合就反轉頂點序。
+        /// obj 的 merge：greedy（預設）＝同色共面合成矩形、頂點共用；none ＝逐 voxel 面，bytes 與 python 相同。
         /// </summary>
         public SCP_SculptResult Export(SCP_SculptExportArgs iArgs)
         {
             if (iArgs.Format != "obj" && iArgs.Format != "vox")
                 return SCP_SculptResult.Error(2, "--format 只能是 obj 或 vox：" + iArgs.Format);
+            if (iArgs.Merge != MergeGreedy && iArgs.Merge != MergeNone)
+                return SCP_SculptResult.Error(2, "--merge 只能是 greedy 或 none：" + iArgs.Merge);
             SCP_SculptSpace aSpace;
             try { aSpace = LoadSpace(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); }
             List<(int X, int Y, int Z, int Color)> aVox = Filter(aSpace, iArgs.Region, iArgs.ExcludeColor);
@@ -832,43 +982,19 @@ namespace SCP.Core.Sculpture
 
                 var aO = new StringBuilder();
                 aO.Append("mtllib ").Append(Path.GetFileName(aMtl)).Append('\n');
-                int vi = 1, ni = 1, aFaces = 0;
-                var pts = new int[4][];
-                foreach (int c in aColors)
-                {
-                    aO.Append("usemtl c").Append(c.ToString(CultureInfo.InvariantCulture)).Append('\n');
-                    foreach (var e in aVox)
-                    {
-                        if (e.Color != c) continue;
-                        for (int f = 0; f < 6; f++)
-                        {
-                            int[] d = s_FaceDir[f];
-                            if (aSet.Contains((e.X + d[0], e.Y + d[1], e.Z + d[2]))) continue;   // 被鄰居遮住的面不出
-                            for (int k = 0; k < 4; k++)
-                            {
-                                int[] o = s_FaceCorners[f][k];
-                                pts[k] = new[] { e.X + o[0], e.Z + o[2], e.Y + o[1] };   // OBJ y-up：(wx, wz, wy)
-                            }
-                            int[] nrm = { d[0], d[2], d[1] };
-                            long ux = pts[1][0] - pts[0][0], uy = pts[1][1] - pts[0][1], uz = pts[1][2] - pts[0][2];
-                            long vx = pts[2][0] - pts[0][0], vy = pts[2][1] - pts[0][1], vz = pts[2][2] - pts[0][2];
-                            long cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
-                            if (cx * nrm[0] + cy * nrm[1] + cz * nrm[2] < 0) Array.Reverse(pts);
-                            foreach (int[] p in pts)
-                                aO.Append("v ").Append(p[0]).Append(' ').Append(p[1]).Append(' ').Append(p[2]).Append('\n');
-                            aO.Append("vn ").Append(nrm[0]).Append(' ').Append(nrm[1]).Append(' ').Append(nrm[2]).Append('\n');
-                            aO.Append("f ").Append(vi).Append("//").Append(ni).Append(' ').Append(vi + 1).Append("//").Append(ni)
-                              .Append(' ').Append(vi + 2).Append("//").Append(ni).Append(' ').Append(vi + 3).Append("//").Append(ni).Append('\n');
-                            vi += 4; ni += 1; aFaces++;
-                        }
-                    }
-                }
+                int aFaces, aVerts;
+                if (iArgs.Merge == MergeNone) aFaces = WriteObjPerVoxel(aO, aVox, aSet, aColors, out aVerts);
+                else aFaces = WriteObjGreedy(aO, aVox, aSet, out aVerts);
                 SCP_SculptPy.WriteTextFile(aOutPath, aO.ToString());
                 aRes.FaceCount = aFaces;
+                aRes.VertexCount = aVerts;
+                aRes.Merge = iArgs.Merge;
                 aRes.MtlPath = aMtl;
                 aRes.Lines.Add("# 📦 OBJ 匯出完成");
                 aRes.Lines.Add("  voxels    : " + aVox.Count);
-                aRes.Lines.Add("  faces     : " + aFaces + " (culled)");
+                aRes.Lines.Add("  merge     : " + iArgs.Merge);
+                aRes.Lines.Add("  faces     : " + aFaces + (iArgs.Merge == MergeNone ? " (culled)" : " (culled + greedy)"));
+                aRes.Lines.Add("  vertices  : " + aVerts);
                 aRes.Lines.Add("  obj       : " + aOutPath);
                 aRes.Lines.Add("  mtl       : " + aMtl);
                 return aRes;

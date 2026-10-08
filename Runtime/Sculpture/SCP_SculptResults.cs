@@ -115,6 +115,10 @@ namespace SCP.Core.Sculpture
         public string Format = "";
         public int VoxelCount;
         public int FaceCount;
+        /// <summary>obj 寫出的 `v` 行數（merge=none 不共用頂點 ⇒ 面數×4）。</summary>
+        public int VertexCount;
+        /// <summary>obj 用的合併方式（greedy／none）；vox 為空。</summary>
+        public string Merge = "";
         /// <summary>obj ⇒ .obj 路徑；vox ⇒ .vox 路徑。</summary>
         public string OutputPath = "";
         /// <summary>obj 才有。</summary>

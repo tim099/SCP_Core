@@ -69,6 +69,8 @@ namespace SCP.Core.Sculpture
         public string ExcludeColor = "";
         public string Out = "";
         public string OutDir = "";
+        /// <summary>obj 的面合併：greedy（同色共面合成矩形＋頂點共用，預設）／none（逐 voxel 面，舊輸出）。vox 不吃。</summary>
+        public string Merge = SCP_SculptEngine.MergeGreedy;
     }
 
     public sealed class SCP_SculptExhibitRegisterArgs
