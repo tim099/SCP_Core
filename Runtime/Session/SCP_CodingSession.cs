@@ -47,12 +47,5 @@ namespace SCP.Core.Session
         //   （`Senate/SCP_Core` 與 `LY/Assets/Plugins/SCP_Core`）**視為不衝突**。
         //   代價已知且被選擇：兩人各改一份副本的同一支檔時這道閘不叫，要到 push 分叉才現形。
         public string scope = "";
-
-        // 區塊職責：收場當下工作區還剩幾個未提交的 `Assets/**/*.cs`。
-        // 物理意義：**這是資訊，不是閘**（Tim 2026-09-10 拍板）——
-        //           擋下會讓場握得更久，而**縮短持有**正是自動收場存在的理由。
-        //           但下一個進場的人要看得到「上一場在樹上留了什麼」。
-        // 數值影響：只寫進 session 檔並印出來，⛔ 一格都不影響收不收。
-        public string left_dirty_cs = "";
     }
 }

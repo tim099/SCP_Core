@@ -1,10 +1,10 @@
 // 區塊職責：**Discord → 酒館（Inbound）的一輪輪詢**（TASK-0316 ④）—— 抓新訊息、過濾、轉成酒館訊息、附件落地、游標。
 // 物理意義：
 //   · REST 輪詢：`GET /channels/{id}/messages?after=<游標>&limit=50`（Discord 由新到舊回，這裡反轉成舊到新）。
-//     沒有游標 ⇒ **baseline**：只記最新一則的 id、⛔ 不回放歷史（同 Unity 版）。Gateway 即時推送是之後的事。
-//   · 欄位語意對齊 Unity 版（下游零改動）：sender_id=`discord:<uid>`、sender_name＝顯示名、kind=chat、
+//     沒有游標 ⇒ **baseline**：只記最新一則的 id、⛔ 不回放歷史。Gateway 即時推送是之後的事。
+//   · 欄位語意：sender_id=`discord:<uid>`、sender_name＝顯示名、kind=chat、
 //     meta.source=`discord`（⇒ `SCP_TavernMentions.IsExternalRelay` 認得、Outbound ⛔ 不回送）、discord_msg_id／channel_id／guild_id、
-//     source_class／channel_label、`relay=senate`（區分 Unity 的 `native`）、`discord_whitelisted`（true／false）。
+//     source_class／channel_label、`relay=senate`、`discord_whitelisted`（true／false）。
 //   · 過濾：bot 發的、webhook 發的（⛔ 否則 Outbound 送出去的會被收回來，無限迴圈）、空內容沒附件的 —— 逐筆記原因。
 //   · 白名單**不擋人，只標記**（Tim 2026-09-30）：白名單外的照收，顯示名後綴「（白名單外）」＋ meta `discord_whitelisted=false`。
 //     ⇒ 標在顯示名上是刻意的：catchup／query／酒館頁／inbox 都印顯示名，**一個點就全部看得到**（⛔ 不在四個顯示端各抄一份判準）；
@@ -13,8 +13,7 @@
 //   · 附件（TASK-0323）：**下載落地**到 `ChatTavern/media/discord/<日期>/`（`SCP_DiscordMedia`），訊息 `refs` 帶 repo 相對路徑
 //     ⇒ agent 讀完訊息可以直接開圖。本文末尾照舊列一行 `[Discord 附件 N 個] …`（沒落地的那幾個標明原因：過大／下載失敗）；
 //     meta 記 `attachments`（總數）與 `attachments_saved`（落地數）。⛔ 附件失敗不擋文字（fail-soft）。偷看模式不下載。
-//   · 游標：`ChatTavern/discord/discord_inbound_state.json`。第一次接手時讀 Unity 的 `PromptQueue/_tavern_state.json`
-//     —— 那份 **24 小時內更新過才沿用**（接得上 Unity 停掉後的空窗）；更舊的 ⇒ baseline（🩸 Bar 有一條停在 08-01，沿用會灌兩個月）。
+//   · 游標：`ChatTavern/discord/discord_inbound_state.json`。
 // 數值影響：本檔**不寫酒館** —— 回傳要寫的訊息，由宿主交給 `tavern-write`（單一寫入端；@ 通知／詞典／封存閘都在那裡）。
 //           游標由宿主在**寫成功之後**才推（`CommitCursor`）⇒ 寫入失敗的那則下一輪重抓。⛔ token 不出現在任何輸出。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。會連網 ⇒ 只給 Senate 宿主呼叫。
@@ -59,7 +58,6 @@ namespace SCP.Core.Discord
         public const int FetchLimit = 50;
         /// <summary>白名單外的發言者，顯示名後面接這一段（見檔頭「白名單不擋人，只標記」）。</summary>
         public const string NotWhitelistedSuffix = "（白名單外）";
-        static readonly TimeSpan UnityCursorMaxAge = TimeSpan.FromHours(24);
 
         static string StatePath(string iDataRoot) => SCP_DiscordPaths.Dir(iDataRoot) + "/" + StateFileName;
         static readonly object s_StateLock = new object();
@@ -83,7 +81,7 @@ namespace SCP.Core.Discord
             SCP.Core.Io.SCP_TextFile.ReplaceOrMove(p + ".tmp", p);
         }
 
-        /// <summary>這個頻道的游標；沒有 ⇒ 試著接手 Unity 的（24 小時內才算）；都沒有 ⇒ 空（baseline）。</summary>
+        /// <summary>這個頻道的游標；沒有 ⇒ 空（baseline）。</summary>
         public static string GetCursor(string iDataRoot, string iChannelId, out string oNote)
         {
             oNote = "";
@@ -92,23 +90,6 @@ namespace SCP.Core.Discord
                 SCP_JsonData s = LoadState(iDataRoot);
                 string aHave = s["channels"][iChannelId].GetString("last_message_id", "");
                 if (aHave.Length > 0) return aHave;
-                // 第一次：看 Unity 留下的
-                try
-                {
-                    string aUnity = Path.Combine(iDataRoot, "PromptQueue", "_tavern_state.json");
-                    if (File.Exists(aUnity))
-                    {
-                        SCP_JsonData u = SCP_JsonParser.Parse(File.ReadAllText(aUnity, Encoding.UTF8))["inbound"]["channels"][iChannelId];
-                        string aId = u.GetString("last_message_id", ""), aAt = u.GetString("updated_at", "");
-                        if (aId.Length > 0 && DateTime.TryParse(aAt, CultureInfo.InvariantCulture,
-                                DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime aUtc))
-                        {
-                            if (DateTime.UtcNow - aUtc <= UnityCursorMaxAge) { oNote = $"接手 Unity 的游標（{aAt}）"; return aId; }
-                            oNote = $"Unity 的游標太舊（{aAt}）⇒ 從現在開始、不補歷史";
-                        }
-                    }
-                }
-                catch (Exception) { /* 讀不到 ⇒ baseline */ }
                 return "";
             }
         }

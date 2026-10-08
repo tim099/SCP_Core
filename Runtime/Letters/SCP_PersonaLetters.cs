@@ -288,7 +288,7 @@ namespace SCP.Core.Letters
                         + "  ⚠ 沒做的事：profile 的 status 欄沒改（快取，不當在線判準）／token 沒失效／沒發酒館廣播／沒寫信");
         }
 
-        /// <summary>去掉包住整串的引號與尾斜線（檔案總管「複製路徑」帶雙引號 —— 專案關聯頁同一課）。</summary>
+        /// <summary>去掉包住整串的引號與尾斜線（檔案總管「複製路徑」帶雙引號）。</summary>
         public static string CleanPath(string? iRaw)
         {
             string s = (iRaw ?? "").Trim();

@@ -398,16 +398,13 @@ SCP_DataPaths.QueueFolder(new SCP_DataRoot(aDataRoot), aPersona);
 build 前有一顆在跑就印「已被停掉，build 不會幫你起回來」，本來沒有就印「本來就沒有」。
 **規則只負責解釋為什麼，不負責被記得。**
 
-### 4.6.1 現在有誰依賴 Senate Server？——**還沒有**（讀數，2026-09-04）
+### 4.6.1 現在有誰依賴 Senate Server？
 
 ```
-senate cmd            → 執行位置：本地 11 ／ ⤷Unity 10 ／ ⤷Server 1 ／ ⛔未實作 0
-                        🔢 server_count = 1
+senate cmd            → 執行位置：本地 75 ／ ⤷Server 6 ／ ⛔未實作 0
 ```
-唯一那支 `⤷Server` 是 **`server-ping`**（驗執行器通不通的**探針本身**）。
-⇒ **目前沒有任何實際服務依賴它**；忘了起 Server 今天只會讓探針與出廠驗收④ 失敗，不會讓任何人的工作停擺。
-⛔ 而這一格是**讀數不是保證**：第一個真的依賴它的會是 **TASK-0106**（seq／ledger 搬進 Server 當單一寫入端），
-Tim 拍 B（記單不動，動工那天由他宣布「先開 Server」）。**那天起這條規則的代價就從「探針紅一格」變成「所有人的錢與序號都停」。**
+`⤷Server` 的是 `tavern-write`、`task-write`、`bank`、`demurrage`、`voucher`（各自是單一寫入端）與探針 `server-ping`。
+⇒ Server 沒在跑時，酒館發文、任務單、錢與券都停；`⤷Server` 的 Cmd 被打到時會自動拉起一顆（拉不起來就失敗，⛔ 不降級成本地跑）。
 
 📌 判準：**一支 Cmd 標成 `⤷Server` 的那一刻，它就進了「build 完必須有人手動起回來」的名單。**
 所以移植進 Server 之前先問一句：**這件事停十分鐘，會不會有人在那十分鐘裡靜默地拿到錯的數字？**

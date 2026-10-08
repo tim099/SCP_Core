@@ -1,6 +1,5 @@
 // 區塊職責：`cmd coding` —— **Senate 側的 Coding 場入口**（TASK-0058 **A2**）。
-// 物理意義：A1 只做了 Unity 那側 ⇒ 在 `Senate` / `SCP_Core` 改 `.cs` 的人（每天都有）
-//           **既不會被本場擋下、也擋不下別人**，而畫面上看起來一切正常。
+// 物理意義：改 `.cs` 的人在這裡進場，互斥與退場編譯閘都走它。
 //           ⭐ A2 能便宜的理由：session 檔是 `<DataRoot>/sessions/<persona>.json`，
 //           而兩個宿主的 DataRoot 是**同一個** ⇒ 不需要第二把鎖，只需要第二個入口。
 // 數值影響：`op=show` 一個位元組都不寫；`start`／`status`／`end` 各寫一次那個檔。
@@ -44,8 +43,8 @@ namespace SCP.Core.Cmd
             + "**綁單後單子進 in_review 就自動收場**／退場過編譯閘）—— **不需要 Editor**";
 
         public override string Details =>
-            "⛔ **射程**：改 C# 的施工場**只有這一個入口**（Unity 側的入口已刪，TASK-0454）—— 改 Senate 與改 Unity 都走這裡。\n"
-            + "退場閘：一律 `dotnet build`；**範圍碰到這一場的 Unity 專案**時另外讀那個專案的 Unity 編譯狀態，兩把各自判、任一把紅就擋。\n"
+            "⛔ **射程**：改 C# 的施工場**只有這一個入口**。\n"
+            + "退場閘：`dotnet build`（宿主注入）。\n"
             + "⭐ 全域互斥由 `SCP_ActivitySessionStore.TryStart` 那一層保證，本 Cmd 不自己判 ——\n"
             + "   自己判就是第三份判準，而它會跟前兩份不一致且**不報錯**。\n"
             + "📐 **施工範圍**（TASK-0201）：`op=start --arg scope=<絕對路徑>` 宣告這一場要動哪一塊，\n"
@@ -71,10 +70,6 @@ namespace SCP.Core.Cmd
             + "   · 五種「不收」各自說得出理由：`no-session`／`unbound`／\n"
             + "     `task-missing`（**查無 ≠ 做完**）／`still-working`／\n"
             + "     **`compile-red`（⛔ 紅燈不收，場還是你的）**。\n"
-            + "   · ⚠ 收場時工作區還有未提交的 Unity C# ⇒ **照收**，只把清單記進 session 檔並印出來\n"
-            + "     —— **那是資訊不是閘**：擋下會讓場握得更久，而縮短持有正是它存在的理由。\n"
-            + "   · ⛔ 射程只到 **Unity 端 C#**（含 `Assets/` 底下的 submodule）：\n"
-            + "     Senate 是獨立 repo、獨立編譯，可以同步改，不被這道閘排隊。\n"
             + "⛔ Senate 這一側的閘量的是**編譯**（`dotnet build`）；`build.sh` 出廠驗收**不在射程內**\n"
             + "   （它會覆寫正在執行的 `senate.exe`，從 CLI 裡面跑不了）—— 那一格是人要另外跑的。";
 
@@ -241,7 +236,7 @@ namespace SCP.Core.Cmd
                     return SCP_CmdResult.Fail(2,
                         "✗ --arg scope 解析不了：`" + iScope + "`"
                             + (aScopeErr.Length > 0 ? "（" + aScopeErr + "）" : ""),
-                        "  要的是**絕對路徑**，例：`D:/Unity/LY/Assets/Plugins/UCL_Core`；多段用 `|` 分隔（TASK-0301）");
+                        "  要的是**絕對路徑**，例：`D:/Unity/Senate/src`；多段用 `|` 分隔（TASK-0301）");
             }
 
             DateTime aNow = DateTime.Now;
@@ -464,79 +459,6 @@ namespace SCP.Core.Cmd
                 .AddValue("tasks", aRead);
         }
 
-        // 區塊職責：列出工作區還沒提交的 `Assets/**/*.cs`。
-        // 物理意義：射程**只到 Unity 端 C#**（Tim 2026-09-10：Senate 那邊可以同步改）——
-        //           Senate 是獨立 repo、獨立編譯，不共用 Unity 的組件，不該被這道閘排隊。
-        // 數值影響：純唯讀。**這是資訊不是閘** —— 有東西也照收，只記進 session 檔並印出來。
-        static List<string> DirtyUnityCs(SCP_DataRoot iRoot)
-        {
-            var aOut = new List<string>();
-            // data_root 是 `<專案>/AgentCommands` ⇒ Unity 專案根是它的上一層。⚠ 舊假設（TASK-0390 待改）：資料根搬到 Valhalla 後不成立。
-            // ⛔ 不假設：推導完**驗它真的是 git 工作目錄**，不是就回空（呼叫端會說「沒量到」）。
-            string aProj = Path.GetDirectoryName(iRoot.Value.TrimEnd('/', '\\')) ?? "";
-            if (aProj.Length == 0 || !SCP_Git.IsRepo(aProj)) return aOut;
-            CollectDirtyCs(aProj, "", aOut);
-            // 🩸 **根層的 git status 看不見 submodule 裡的檔** —— 它只報「這個 submodule 變了」。
-            //   而本專案的 Unity C# 幾乎全住在 `Assets/Plugins/SCP_Core` 與 `Assets/Plugins/UCL_Core`
-            //   這兩顆 submodule 裡 ⇒ 只掃根層的話，`left_dirty_cs` 會在**真的有髒檔時回 0**。
-            //   （2026-09-10 探針實測：改髒 `Assets/Plugins/SCP_Core/**/*.cs` ⇒ 讀數 0。
-            //     那不是「範圍小」，那是**錯的讀數** —— 而它看起來跟乾淨一模一樣。）
-            foreach (string aSub in SubmodulesUnderAssets(aProj))
-                CollectDirtyCs(Path.Combine(aProj, aSub), aSub + "/", aOut);
-            return aOut;
-        }
-
-        /// <summary>`.gitmodules` 裡路徑以 `Assets/` 開頭的 submodule —— 射程只到 Unity 那側。</summary>
-        static List<string> SubmodulesUnderAssets(string iProjRoot)
-        {
-            var aOut = new List<string>();
-            SCP_GitResult aR = SCP_Git.Run(iProjRoot, "config", "--file", ".gitmodules",
-                                           "--get-regexp", "path");
-            if (!aR.Ok) return aOut;
-            foreach (string aLine in aR.OutLines())
-            {
-                int aSp = aLine.IndexOf(' ');
-                if (aSp <= 0 || aSp + 1 >= aLine.Length) continue;
-                string aPath = aLine.Substring(aSp + 1).Trim();
-                if (aPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase)) aOut.Add(aPath);
-            }
-            return aOut;
-        }
-
-        /// <summary>porcelain 行首的狀態欄（1~2 個狀態字元 ＋ 空白）—— 見 CollectDirtyCs 的血證。</summary>
-        static readonly Regex s_PorcelainHead = new Regex(@"^[ MADRCU?!]{1,2}\s+");
-
-        /// <summary>單一 repo 的髒 `.cs`；<paramref name="iPrefix"/> 讓 submodule 內的路徑印得出全貌。</summary>
-        static void CollectDirtyCs(string iRepo, string iPrefix, List<string> oOut)
-        {
-            var aOut = oOut;
-            if (!SCP_Git.IsRepo(iRepo)) return;
-            SCP_GitResult aSt = SCP_Git.Run(iRepo, "status", "--porcelain=v1", "--untracked-files=all");
-            if (!aSt.Ok) return;
-            foreach (string aLine in aSt.OutLines())
-            {
-                string aL = aLine.TrimEnd();
-                if (aL.Length < 4) continue;
-                // 🩸 ⛔ 不要用 `Substring(3)` —— porcelain 原始行是 `XY path`（前 3 格固定），
-                //   但 `SCP_Git.OutLines()` **會把左邊的空白去掉** ⇒ ` M path` 進來時已經是 `M path`，
-                //   固定切 3 個字會**多吃掉路徑的第一個字元**。
-                //   （2026-09-10 探針實測：印出 `UCL_Core/CL_Core_Scripts/…`，開頭的 U 不見了。
-                //     那種壞法不會報錯，只會產出一條**看起來很像真的**的假路徑。）
-                //   ⇒ 改成把狀態欄整段吃掉，不假設它有幾個字。
-                Match aM = s_PorcelainHead.Match(aL);
-                if (!aM.Success) continue;
-                string aPath = aL.Substring(aM.Length).Trim();
-                int aArrow = aPath.IndexOf(" -> ", StringComparison.Ordinal);
-                if (aArrow >= 0) aPath = aPath.Substring(aArrow + 4);
-                aPath = aPath.Trim('"');
-                if (!aPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)) continue;
-                string aFull = iPrefix + aPath;
-                // ⚠ 射程守衛：只收 `Assets/` 底下的 —— submodule 那條已經由 iPrefix 保證，
-                //   根層那條要靠這一行（`Senate/` 不在這棵樹裡，本來就進不來）。
-                if (aFull.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase)) aOut.Add(aFull);
-            }
-        }
-
         // 區塊職責：綁定單全部離開施工狀態 ⇒ 自動收場。
         // 物理意義：目的是**縮短持有**（Tim 2026-09-10）—— 判準是 `in_review` **不是** `done`，
         //           不等全部驗完。`in_review` 被退回就下次動工開新的場，⛔ 不把舊場接回來。
@@ -596,8 +518,6 @@ namespace SCP.Core.Cmd
                                                      + " --arg force=1 --arg force_reason=<為什麼帶著紅燈退場>"))
                     .AddValue("autoclose", "compile-red");
 
-            List<string> aDirty = DirtyUnityCs(iRoot);
-            aS.left_dirty_cs = string.Join(",", aDirty.ToArray());
             SCP_ActivitySessionStore.Close(iRoot, iPersona, aS, "coding-autoclose");
             var aBack = SCP_ActivitySessionStore.Load(iRoot, iPersona);
             bool aClosed = aBack != null && !aBack.active;
@@ -608,17 +528,8 @@ namespace SCP.Core.Cmd
                 "- 🔒 編譯閘：" + (aVerdict == null
                     ? "**本宿主沒有登記退出閘 ⇒ 未驗編譯**（這不是綠燈，是沒有量）"
                     : "**綠燈** —— " + aVerdict.Value.Summary));
-            if (aDirty.Count > 0)
-            {
-                // ⚠ 這一段是**資訊不是閘**：擋下會讓場握得更久，而縮短持有正是它存在的理由。
-                aOk.Lines.Add("⚠ 收場時工作區還有 **" + aDirty.Count + " 個未提交的 Unity C#**"
-                              + "（已記進 session 檔，下一個進場的人看得到）：");
-                foreach (string aF in aDirty) aOk.Lines.Add("     - " + aF);
-                aOk.Lines.Add("  ⛔ 這**不擋收場** —— 但它們還沒進版控，別忘了。");
-            }
             aOk.Lines.Add("· `in_review` 被退回時 ⇒ **下次動工開新的場**（⛔ 不把這一場接回來）。");
-            return aOk.AddValue("autoclose", "closed")
-                      .AddValue("left_dirty_cs", aDirty.Count.ToString(CultureInfo.InvariantCulture));
+            return aOk.AddValue("autoclose", "closed");
         }
 
         static SCP_CmdResult OpEnd(SCP_DataRoot iRoot, string iPersona, bool iForce, string iForceReason)
@@ -723,6 +634,6 @@ namespace SCP.Core.Cmd
 
         /// <summary>射程定語 —— 只有一份。</summary>
         internal const string ScopeCaveat =
-            "⚠ 射程：不需要 Editor；改 Unity C# 也走本入口 —— 範圍碰到 Unity 專案時，退場閘另外量 Unity 編譯。";
+            "⚠ 射程：不需要 Editor；退場閘量 `dotnet build`。";
     }
 }

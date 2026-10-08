@@ -45,9 +45,6 @@ namespace SCP.Core.Library
 
     public static class SCP_LibraryComics
     {
-        /// <summary>給 Python／CLI 唯讀消費的本機快照檔名（Editor 端 write-on-change 落盤；gitignored）。</summary>
-        public const string ComicRootSnapshotFileName = ".comic_root.local";
-
         /// <summary>同事自己創作的內部漫畫住這裡 —— 它們**沒有**外部實體資料夾，⛔ 不算失聯。</summary>
         public const string InternalComicDirName = "ArtGallery";
 

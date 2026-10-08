@@ -27,18 +27,11 @@ namespace SCP.Core.Cmd
         /// <summary>本 process 自己跑完，不需要任何外部宿主。</summary>
         Native = 0,
 
-        /// <summary>
-        /// 委派給 Unity Editor 執行（走 AgentCommand 檔案協議）。
-        /// <para>⚠ 這代表 **Editor 沒開就跑不完** —— 宣告成這個值的 Cmd 有義務在輸出裡
-        /// 講出「這一步是誰跑的、在哪個資料根」。</para>
-        /// </summary>
-        DelegatedToUnity = 1,
-
         /// <summary>還沒有實作 —— **登記在案的缺口**，不是「打錯名字」。</summary>
         NotPorted = 2,
 
         /// <summary>
-        /// 委派給 Senate 常駐 Server 執行（走同一套 AgentCommand 檔案協議，根是 Senate 自己的）。
+        /// 委派給 Senate 常駐 Server 執行（走 AgentCommand 檔案協議，根是 Senate 自己的）。
         /// <para>⚠ 這代表 **Server 沒在跑就跑不完**，而且**不降級成本地跑**：這類 Cmd 存在的理由是
         /// 「只有一顆 process 在寫」（Senate D20），本地跑就是第二個寫入者。</para>
         /// </summary>

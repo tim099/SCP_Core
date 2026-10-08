@@ -91,7 +91,7 @@ namespace SCP.Core.Canvas
     }
 
     /// <summary>
-    /// 宿主在啟動時把**工廠**裝上（與 <c>UnityDelegateCmd.ConfigProvider</c> 同形）。
+    /// 宿主在啟動時把**工廠**裝上（與 <c>SenateConfigSource.Provider</c> 同形）。
     /// <para>⚠ 沒裝上時 <see cref="For"/> 回 null，而呼叫端**必須 fail loud** ——
     /// 不准 fallback 到一個「假裝付過了」的實作：那種假成功會讓像素落盤而錢沒扣，
     /// 而帳本對不上要到很久以後才有人發現。</para>

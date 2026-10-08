@@ -66,8 +66,7 @@ namespace SCP.Core.Cmd
             // 區塊職責：把「呼叫端打的字」換成「實際讀的那個目錄」
             // 物理意義：`--arg data_root=<相對值>` 是照 **process cwd** 解析的（實測：同一個
             //          `data_root=AgentCommands` 在專案根讀得到 193 張、在 `D:/Unity` 找不到），
-            //          而設定檔那條路走 `SCP_ProjectPaths.ResolveDataRoot`，基準是 **Unity 專案根** ——
-            //          同一個參數名、兩條路、兩個基準。
+            //          而宿主補的那條是設定檔的絕對路徑 —— 同一個參數名、兩個基準。
             // 🩸 逐字回音會讓兩棵樹上的成功輸出**一模一樣**：`· 資料源：AgentCommands/Tasks/tasks`
             //   在 Bar 與 LY 底下同形，而它讀的是不同的單。定語不能靠讀的人自己補。
             // ⛔ 射程：這裡只改**回音**（顯示層）。統一兩條路的解析基準是契約變更，不在本刀。

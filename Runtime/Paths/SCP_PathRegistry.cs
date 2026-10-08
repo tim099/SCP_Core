@@ -59,35 +59,25 @@ namespace SCP.Core.Paths
     {
         [SCP_PathInfo("Senate 專案根（宿主 repo 根）",
             "宿主程式自己所在的那棵 repo（Senate：exe 往上找到的 `.git`）—— **宿主給、不存、唯讀**。"
-            + " 跟著宿主走的內容（例：詞典 submodule `Glossary/`）從這裡推。"
-            + " ⛔ 跟「Unity 專案根」是兩件事：那是 Unity CLI 串接目標，這一格是 Server 自己（TASK-0390）。")]
+            + " 跟著宿主走的內容（例：詞典 submodule `Glossary/`）從這裡推。")]
         [SCP_PathHost(SCP_PathScope.Global)]
         HostRepoRoot,
 
         [SCP_PathInfo("自由時間活動目錄",
-            "自由時間可擲的活動 md（一活動一檔、frontmatter 定義）。跟著 Senate 走（TASK-0390，Tim 2026-10-07：搬進 Senate）——"
-            + " 原本是 Unity 專案 UCL_Core 的共用層＋專案層兩處。放 `SenateData/config/`（入版控、文件庫不掃）。")]
+            "自由時間可擲的活動 md（一活動一檔、frontmatter 定義）。放 `SenateData/config/`（入版控、文件庫不掃）。")]
         [SCP_PathDerived(SCP_PathId.HostRepoRoot, "SenateData/config/freetime_activities", SCP_PathScope.Global)]
         FreeTimeActivitiesRoot,
 
         [SCP_PathInfo("知識庫 target 定義檔",
             "`kb_targets.json`：知識庫要收哪些語料（glob 前綴：無＝Senate 專案根／`scp_core:`＝SCP_Core／`data:`＝資料根）。"
-            + " 跟著 Senate 走（TASK-0390）—— 原本在 Unity 專案的 `UCL_Core/Tools~/AgentCommands/`。")]
+            + " 跟著 Senate 走。")]
         [SCP_PathDerived(SCP_PathId.HostRepoRoot, "SenateData/config/kb_targets.json", SCP_PathScope.Global)]
         KbTargetsFile,
 
-        [SCP_PathInfo("Unity 專案根（選填）",
-            "標記施工目標用的 Unity 專案 git repo 根（透過 Unity CLI 串接）—— **非必須**（Tim 2026-10-07）。"
-            + " TASK-0390（Tim 2026-10-07）：Senate＋Valhalla 不依賴它；資料根、信件根、詞典根都不從它推。"
-            + " 沒設時只有 Unity 那幾支指令（unity-recompile／unity-compile-status／ucmd）會說「沒有目標專案」。")]
-        [SCP_PathStored("root", SCP_PathScope.Project)]
-        UnityProjectRoot,
-
         [SCP_PathInfo("詞典根（glossary）",
             "新詞辭典的 .md 住這裡（酒館發文的詞典附註、早安的出生證明 `personas/<P>.md` 都從這裡讀）。"
-            + " `auto` ＝ `<宿主 repo 根>/Glossary`（Tim 2026-10-07：詞典裝成 Senate 的 submodule；之前是 `<Unity 專案根>/Docs/Glossary`）。"
-            + " 存 senate.local.json（Tim 2026-09-27）；**只有 Senate 讀它** —— 詞典的操作全在 `senate cmd glossary`，"
-            + "Editor 發的文由寫入端 `tavern-write` 補附註（TASK-0313，Tim 2026-09-28：Unity 端不碰詞典）。")]
+            + " `auto` ＝ `<宿主 repo 根>/Glossary`（詞典是 Senate 的 submodule）。"
+            + " 存 senate.local.json；**只有 Senate 讀它** —— 詞典的操作全在 `senate cmd glossary`，附註由寫入端 `tavern-write` 補。")]
         [SCP_PathStored("glossaryRoot", SCP_PathScope.Global)]
         [SCP_PathAuto(SCP_PathId.HostRepoRoot, "Glossary")]
         GlossaryRoot,
@@ -96,16 +86,13 @@ namespace SCP.Core.Paths
             "外部實體漫畫（`<根>/<作品> 01/0001/001.jpg`）住的資料夾，閱讀線 `senate cmd library op=comics` 與漫畫閱讀心得用它（TASK-0400）。"
             + " **空白＝沒有外部漫畫庫**（那不是錯誤：同事自己畫的內部漫畫在 `ArtGallery/Comic`，不靠這一格）。"
             + " ⛔ **沒有上游可以推導**（它是這台機器上的一個資料夾，不是專案內的東西）。"
-            + " 存 senate.local.json（機器路徑不入版控）；**這一格是唯一真相源** ——"
-            + " 舊的 `<Unity 專案根>/.comic_root.local` 快照（Unity 閱讀心得管理頁寫的）**不再被讀**：它還在而本格空白時，"
-            + "`op=comics` 會明說「舊快照有值、本格沒有」，⛔ 不靜默採用。")]
+            + " 存 senate.local.json（機器路徑不入版控）；**這一格是唯一真相源**。")]
         [SCP_PathStored("comicRoot", SCP_PathScope.Global, BlankMeans = "沒有外部漫畫庫（只讀內部 ArtGallery/Comic）")]
         ComicRoot,
 
         [SCP_PathInfo("AgentCommands 資料根",
             "**Global —— 只有一組**（Tim 2026-08-31）。酒館 seq／任務單號／session lock 全都假設只有一棵樹。"
-            + " Stored 的理由：它可以不在專案裡（pointer 檔 `.agentcommands_root.local` 就是為此存在），"
-            + "已搬到 Unity 專案之外（Valhalla）。⛔ 2026-10-07（TASK-0390）起**不支援 auto**：「從 Unity 專案推」那條路已拿掉，資料根要明說。")]
+            + " 存 senate.local.json，⛔ **不支援 auto**：資料根要明說。")]
         [SCP_PathStored("agentCommandsRoot", SCP_PathScope.Global)]
         AgentCommandsRoot,
 
@@ -134,7 +121,7 @@ namespace SCP.Core.Paths
         [SCP_PathInfo("資料根層設定檔",
             "`agent_settings.json` —— 這棵資料樹上**大家要一致**的那些開關（第一個是 `tavern.writer`，已於 TASK-0341 拔掉）。"
             + "⚠ 它跟 `senate.local.json` 的差別是**誰讀得到**：那個檔只有 Senate 看得見，"
-            + "而這裡的開關 Unity Editor 與 Server 兩側都要照著走。"
+            + "而這裡的開關是資料樹上每一個讀寫端都要照著走的。"
             + "⛔ 檔不在 ＝ 全部走預設值，那不是錯誤。")]
         [SCP_PathDerived(SCP_PathId.AgentCommandsRoot, SCP_DataPaths.SettingsFileName, SCP_PathScope.Global)]
         SettingsFile,

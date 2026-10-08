@@ -17,16 +17,14 @@ using SCP.Core.Paths;
 
 namespace SCP.Core.Cmd
 {
-    /// <summary>宿主解析出來的「這一筆要做在哪個專案」。</summary>
+    /// <summary>宿主解析出來的「這一筆要做在哪個資料根」。</summary>
     public sealed class SCP_LocalTarget
     {
         public string ProjectName = "";
         public string DataRoot = "";
         public string ProjectRoot = "";
-        /// <summary>人看的定語（例：`LY（D:/Unity/LY/AgentCommands）`）—— 第一行要帶著它。</summary>
+        /// <summary>人看的定語（例：`資料根 D:/Unity/Valhalla`）—— 第一行要帶著它。</summary>
         public string Describe = "";
-        /// <summary>「為什麼選這一個」（例：未給 --project ⇒ 用唯一啟用的專案）。空字串 ＝ 不必說明。</summary>
-        public string SelectionNote = "";
         /// <summary>詞典根；null ⇒ 解不出來（原因在 <see cref="GlossaryError"/>），殼**說出來**、本次不附詞典（不猜根，TASK-0390）。</summary>
         public string? GlossaryRoot;
         public string? GlossaryError;
@@ -49,8 +47,8 @@ namespace SCP.Core.Cmd
         /// <summary>記進回傳值 `delegate_host` 的那個字。</summary>
         string HostId { get; }
 
-        /// <summary>選專案。<paramref name="iTargetDataRoot"/> 非空 ⇒ 以資料根選（比不到就擋，⛔ 不退回預設專案）。</summary>
-        bool TryResolve(string iProject, string iTargetDataRoot, out SCP_LocalTarget oTarget, out string oError, out string oHint);
+        /// <summary>解資料根。<paramref name="iTargetDataRoot"/> 非空 ⇒ 必須就是設定的那一組（比不到就擋）。</summary>
+        bool TryResolve(string iTargetDataRoot, out SCP_LocalTarget oTarget, out string oError, out string oHint);
 
         /// <summary>執行環境標記（登入時記進 lock）。</summary>
         string DetectEnvMarker();
@@ -78,8 +76,6 @@ namespace SCP.Core.Cmd
         {
             yield return new SCP_CmdArgSpec("persona",
                 "要對誰做這一步。⚠ **一律顯式**：猜錯的代價是動到別人的 session", iRequired: true);
-            yield return new SCP_CmdArgSpec("project",
-                "哪個專案（senate.local.json 的 projects[].name）。只有一個啟用專案時可省略");
         }
 
         /// <summary>本步的主體。回傳要附在結果最後的回傳檔路徑（可為 null）。</summary>
@@ -93,7 +89,7 @@ namespace SCP.Core.Cmd
         protected virtual bool AcceptsTargetDataRoot => false;
 
         protected static SCP_CmdArgSpec TargetDataRootSpec() => new SCP_CmdArgSpec("target_data_root",
-            "以 AgentCommands 資料根選專案（Unity Editor 呼叫時給它自己的根）—— 比不到啟用中的專案就擋，⛔ 不退回預設專案");
+            "呼叫端宣告的資料根 —— 必須是設定的那一組，比不到就擋（⛔ 不服務第二棵樹）");
 
         public sealed override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
         {
@@ -101,7 +97,7 @@ namespace SCP.Core.Cmd
             if (aHost == null)
                 return SCP_CmdResult.Fail(70, "✗ 宿主沒有裝上本地 Cmd 的宿主能力（SCP_LocalRootsCmd.Host）—— 程式錯誤，不是用法錯");
             string aTargetDr = AcceptsTargetDataRoot ? iArgs.Get("target_data_root").Trim() : "";
-            if (!aHost.TryResolve(iArgs.Get("project"), aTargetDr, out SCP_LocalTarget aWhere, out string aErr, out string aHint))
+            if (!aHost.TryResolve(aTargetDr, out SCP_LocalTarget aWhere, out string aErr, out string aHint))
                 return SCP_CmdResult.Fail(2, "✗ " + aErr, "  " + aHint);
 
             var aRoots = new SCP_MorningRoots
@@ -113,7 +109,6 @@ namespace SCP.Core.Cmd
             var aResult = new SCP_CmdResult();
             // 定語第一行 —— 在做任何事之前就印，失敗訊息也要帶著它。
             aResult.Lines.Add($"{aHost.WhereLine} @ {aWhere.Describe}");
-            if (aWhere.SelectionNote.Length > 0) aResult.Lines.Add("· " + aWhere.SelectionNote);
             aResult.AddValue("delegate_host", aHost.HostId);
             aResult.AddValue("project", aWhere.ProjectName);
             aResult.AddValue("data_root", aRoots.DataRoot);

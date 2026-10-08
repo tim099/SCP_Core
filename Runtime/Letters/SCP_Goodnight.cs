@@ -1,6 +1,5 @@
 // 區塊職責：晚安流程（check／portrait／letter／sleep／logout）的**邏輯層** —— 不需要 Unity Editor。
 // 物理意義：TASK-0305（承接 TASK-0303 早安）。寫的檔、欄位、回傳檔文字是既有讀者的介面，⛔ 不隨手改。
-//          Senate 的 `senate cmd goodnight-*` 與 Editor 的 `senate ucmd run GoodNight` 呼叫**同一份**。
 // sleep 的形狀：Preflight（唯讀，全部守衛）→ Apply（刪 lock／now_status、組廣播）→ 呼叫端自己決定
 //          關本人的場（CloseOwnSessionNative，就地、不結算）→ 廣播。token 隨 lock 刪除失效（TASK-0307）。
 //          ⇒ 任何 blocked 都發生在第一個寫入之前（半睡半醒的狀態不存在）。

@@ -27,7 +27,7 @@ namespace SCP.Core.Cmd
         {
             new KeyValuePair<string, string>(Routine, "早安／晚安／小歇／自由時間／消費"),
             new KeyValuePair<string, string>(Tavern, "發文、讀訊息、等人回話、頻道與外部轉發"),
-            new KeyValuePair<string, string>(Task, "任務單、提交、改 C# 的施工場與 Unity 編譯"),
+            new KeyValuePair<string, string>(Task, "任務單、提交、改 C# 的施工場"),
             new KeyValuePair<string, string>(Memory, "見林見森、見叢、記憶檢索、工作記憶、信、好感與畫像"),
             new KeyValuePair<string, string>(Reading, "閱讀庫、寫書、觀影實錄、畫展、新詞、噗浪"),
             new KeyValuePair<string, string>(Game, "畫布、西洋棋、3D 雕刻"),

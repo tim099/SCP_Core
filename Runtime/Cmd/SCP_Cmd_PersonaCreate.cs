@@ -55,7 +55,6 @@ namespace SCP.Core.Cmd
                     new SCP_CmdArgSpec("op", "draft（預設，零寫入）／create／repo（letters 變成 git repo；帶 remote_url ⇒ 接上遠端並登記 submodule）", iDefault: "draft", iChoices: new[] { "draft", "create", "repo" }),
                     new SCP_CmdArgSpec("remote_url", "op=repo：letters 的遠端（Tim 在 GitHub 開好之後給）；不給 ⇒ 只做本地 init"),
                     new SCP_CmdArgSpec("persona", "參考角色＝persona id（資料夾名）", iRequired: true),
-                    new SCP_CmdArgSpec("project", "哪個專案（senate.local.json 的 projects[].name）。只有一個啟用專案時可省略"),
                     new SCP_CmdArgSpec("agent", "綁定的 agent（agent_banks 的 key）；新開 agent 時是新名字。不給 ⇒ 由 actual_agent 推建議值"),
                     new SCP_CmdArgSpec("new_agent_account", "給了 ⇒ 同時新開 agent：agent_banks[agent]＝這個帳號，並開戶"),
                     new SCP_CmdArgSpec("seed", $"新開 agent 的種子額度（預設 {SCP_PersonaCreate.DefaultAgentSeed}；0 ＝ 只開戶）", iDefault: SCP_PersonaCreate.DefaultAgentSeed.ToString(CultureInfo.InvariantCulture)),

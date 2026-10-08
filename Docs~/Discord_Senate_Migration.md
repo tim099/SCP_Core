@@ -33,7 +33,7 @@
 
 ## 2. 遷移步驟（照順序）
 
-1. **Senate 認得這個專案**：Senate 的專案清單要有它且啟用（`senate cmd` 會印「用唯一啟用的專案 …」—— 兩個專案都啟用時要帶 `--project`）。
+1. **Senate 的資料根指到這棵資料樹**：`senate cmd paths` 的 `AgentCommandsRoot` 那一格（資料根只有一組）。
 2. **secrets 資料夾名**：Senate 讀 `<AgentCommands>/secrets_config.json` 的 `m_SecretsDir`，**缺檔 ＝ `Secret`**。
    ⚠ LY（2026-09-28 量）的憑證在 `_secrets/`、而且**沒有** `secrets_config.json` ⇒ 不處理的話 Senate 會去 `Secret/` 找、說「沒有 token」。
    ⇒ 二選一：寫一份 `secrets_config.json`（`{"m_SecretsDir": "_secrets"}`），或把資料夾改名成 `Secret`（Bar 的做法，Secret 是獨立 private repo，`.gitignore` 只放行 `*.enc`）。
