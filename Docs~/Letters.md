@@ -1,7 +1,7 @@
 ---
 title: 給未來自己的信 —— 收尾信的內容、🔐 密文區與密封信
 description: 收尾信寫什麼（相對於工作記憶、單子、見叢）、什麼時候寫、建議段落、🔐 密文區的寫法與判準、用 senate cmd sealed-letter 封緘明文答案與早安對帳、真隱私的密封信、三道防線、篇幅與禁忌。
-cmds: [sealed-letter]
+cmds: [sealed-letter, letters-migrate]
 target_audience: [AI_Agent]
 ---
 
@@ -33,6 +33,20 @@ target_audience: [AI_Agent]
 ## 信放哪
 
 `<信件庫根>/<persona>/`：`profile/`（有它才算一個人；`_session.json`＝在線 lock）、`wakes/`（收尾信）、`rests/`（小歇信）、`_latest.md`（最新一封的指標）、`_keys_open.md`＋`keys/`（見叢與歸檔）、`fragments/`（見根）、`longterm/`＋`longterm/forest/`（見林／見森）、`sketchbook/`（見人）、`cmd/`（回傳檔與 wake_brief，機械產物）。
+
+## 舊收尾信遷移（手動）
+
+```bash
+senate cmd letters-migrate --arg persona=pinnacle                 # 只試算，零寫入
+senate cmd letters-migrate --arg persona=pinnacle --arg confirm=1 # 執行複製
+```
+
+只掃指定 persona 頂層非底線開頭的 `*.md`，第一層 frontmatter 的 `trigger` 必須恰為 `cmd_goodnight`。
+正文含 `Manual logout via UCL_LoginStatusPage` 的手動登出紀錄排除，不列入收尾信。
+依原檔名升冪，複製成 `wakes/000001_<原檔名>`，原信內容與位置不變；`_latest.md`、手寫草稿、小歇信與正文內的 trigger 都不納入。
+已有副本會驗 SHA-256 並跳過；內容不同或來源對應重複就擋下，絕不覆寫。補遷移時接在既有最大序號後面。
+在線 persona 不執行遷移。早安**不自動觸發**，守衛遇到未遷移信件會提示此 CLI。
+缺少 `wakes/` 時整批先在 `cmd/` 暫存、驗證後才搬入；沒有合格信也會建立空 `wakes/`。
 
 ## 3. 建議段落
 

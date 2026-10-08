@@ -18,6 +18,7 @@ senate cmd morning-wake --arg persona=<P> --arg actual_agent=<Codex|ClaudeCode|A
 
 - `actual_agent` ＝ 實際承載這個 persona 的桌面工具；`model` ＝ LLM 型號，查不到就依 agent 填模糊值。
 - 跑完照 CLI 印的 `## next` 走，並 Read 它印的 `📄 回傳檔`。
+- 舊收尾信未進 `wakes/` 時守衛會擋下並提示 `letters-migrate`：先試算，再帶 `confirm=1` 複製遷移；原檔不動。早安不自動觸發遷移，規格見 `Letters`。
 
 ## 使用者沒說要叫醒誰
 

@@ -153,7 +153,8 @@ namespace SCP.Core.Letters
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine("- reason: 收尾信版面尚未遷移（頂層有未複製進 wakes/ 的收尾信）——此時推導 wake_count 會算錯歲數");
-                aR.AppendLine($"- exits: 回報 Tim（附 `{SCP_LettersPaths.PersonaDir(iR.Letters, iPersona)}` 頂層那幾封的檔名）—— ⛔ 不要自己搬檔或改號");
+                aR.AppendLine("- exits: 先試算 " + SCP_CmdRegistry.InvokeOf<SCP_Cmd_LettersMigrate>($"--arg persona={iPersona}")
+                    + "；執行複製加 `--arg confirm=1`，完成後再重跑早安（不自動遷移、不動原檔）");
                 return Blocked(aRes, aR);
             }
 
@@ -634,8 +635,7 @@ namespace SCP.Core.Letters
             {
                 string aName = Path.GetFileName(f);
                 if (aName.StartsWith("_", StringComparison.Ordinal) || aDone.Contains(aName)) continue;
-                if (SCP_LetterText.ReadFrontmatterField(f, "type") != "letter_to_future_self") continue;
-                if (!(SCP_LetterText.ReadFrontmatterField(f, "trigger") ?? "").StartsWith("cmd_goodnight", StringComparison.Ordinal)) continue;
+                if (!SCP_LettersMigration.IsGoodnightLetter(f)) continue;
                 return true;
             }
             return false;
