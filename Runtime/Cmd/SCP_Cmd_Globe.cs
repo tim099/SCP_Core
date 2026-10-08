@@ -21,7 +21,7 @@ namespace SCP.Core.Cmd
 
         public override string Details =>
             "等角立方體球：6 面 × N×N 格（預設 N=2048，約 4.9 km／格），一格 24-bit RGB（全彩）；沒畫過＝顯示 meta 的底色。\n"
-            + "op：status（預設）｜init｜base｜cell｜point｜line｜polygon｜fill｜erase｜undo｜zone｜render｜history\n"
+            + "op：status（預設）｜init｜base｜cell｜point｜line｜polygon｜fill｜erase｜undo｜zone｜render｜history｜regrid\n"
             + "· 橡皮擦：op=erase --arg shape=point|line|polygon|fill（參數同那一種畫法）⇒ 擦回底色（大海）。\n"
             + "· 施工區：op=zone --arg sub=add|list|show|join|update —— 標記「誰在這塊畫什麼」，可重疊、⛔ 不擋任何人下筆。\n"
             + "  規劃進度：sub=plan（加計畫項）｜sub=check（勾項＝署名）｜sub=log（記做了什麼、下一步）；畫的時候帶 --arg zone=<id>，show 會自動統計這區畫了多少。\n"
@@ -29,6 +29,10 @@ namespace SCP.Core.Cmd
             + "· 經緯度一律 lat,lon（度；北緯／東經為正）。點列：points=\"lat,lon;lat,lon;…\"（長的走 --arg-file）。\n"
             + "· color：#RRGGBB 或 r,g,b（全彩）；color=empty ＝ 擦回底色。\n"
             + "· undo 一次退最後一筆仍有效的繪製；事件只追加不刪。\n"
+            + "· regrid：每面邊長 ×整數倍（預設 ×2：每格 4.9 km → 2.4 km），舊畫的每一格變成 2×2 格、一格都不位移；預設只預覽（dry-run），--arg confirm=1 才真的做。\n"
+            + "  事件只追加（不改舊事件檔）；做完之後舊版程式讀這顆球會直接報錯（不認得的 mapping），不會安靜地算錯。\n"
+            + "· radius／width／max_cells 的單位預設是「初始格」（建立時的格，約 4.9 km）—— regrid 之後自動換算成實際格數，所以同樣的指令畫出同樣大小；\n"
+            + "  想直接指定實際格數 ⇒ --arg unit=cell（數字可以是小數，例：radius=0.5 ＝ 初始格的一半）。\n"
             + "⚠ polygon 是 prototype：不能含極點、經度跨度要 < 180°。fill（油漆桶）超過 max_cells 整筆拒絕。";
 
         public override string Example =>
@@ -38,8 +42,12 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("letters_root", "信件夾根（Senate CLI 從設定自動補）；render 給了 persona 時圖寫進 <persona>/cmd/"),
-            new SCP_CmdArgSpec("op", "status｜init｜base｜cell｜point｜line｜polygon｜fill｜erase｜undo｜zone｜render｜history",
-                               iChoices: new[] { "status", "init", "base", "cell", "point", "line", "polygon", "fill", "erase", "undo", "zone", "render", "history" }),
+            new SCP_CmdArgSpec("op", "status｜init｜base｜cell｜point｜line｜polygon｜fill｜erase｜undo｜zone｜render｜history｜regrid",
+                               iChoices: new[] { "status", "init", "base", "cell", "point", "line", "polygon", "fill", "erase", "undo", "zone", "render", "history", "regrid" }),
+            new SCP_CmdArgSpec("factor", "regrid：每面邊長的倍率（整數 ≥ 2，預設 2；每面最多 8192 格）"),
+            new SCP_CmdArgSpec("confirm", "regrid：=1 才真的做（沒帶 ⇒ dry-run，只印會發生什麼、零寫入）"),
+            new SCP_CmdArgSpec("unit", "point／line／fill：radius／width／max_cells 的單位 —— initial（預設，初始格；regrid 後自動換算）｜cell（實際格數）",
+                               iChoices: new[] { "initial", "cell" }),
             new SCP_CmdArgSpec("shape", "erase：point｜line｜polygon｜fill（預設 point）", iChoices: new[] { "point", "line", "polygon", "fill" }),
             new SCP_CmdArgSpec("sub", "zone：add｜list｜show｜join｜update｜plan｜check｜log", iChoices: new[] { "add", "list", "show", "join", "update", "plan", "check", "log" }),
             new SCP_CmdArgSpec("zone", "point／line／polygon／fill／erase：這一筆算在哪個施工區（zone show 依此統計進度）"),
@@ -56,10 +64,10 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("color", "point／line／polygon／fill：#RRGGBB｜r,g,b｜empty；base／init：底色"),
             new SCP_CmdArgSpec("lat", "cell／point／fill：緯度（度）"),
             new SCP_CmdArgSpec("lon", "cell／point／fill：經度（度）"),
-            new SCP_CmdArgSpec("radius", "point：半徑（格數，預設 0＝一格）"),
-            new SCP_CmdArgSpec("width", "line：筆寬半徑（格數，預設 0＝一格寬）"),
+            new SCP_CmdArgSpec("radius", "point：半徑（預設單位＝初始格，regrid 後自動換算；可小數；預設 0＝最細的一格）"),
+            new SCP_CmdArgSpec("width", "line：筆寬半徑（單位同 radius；預設 0＝一格寬）"),
             new SCP_CmdArgSpec("points", "line／polygon：lat,lon;lat,lon;…"),
-            new SCP_CmdArgSpec("max_cells", "fill：最多塗幾格（預設 200000；超過整筆拒絕）"),
+            new SCP_CmdArgSpec("max_cells", "fill：最多塗幾格（預設 200000 個初始格的面積，regrid 後自動換算；超過整筆拒絕）"),
             new SCP_CmdArgSpec("note", "寫進事件的一句話"),
             new SCP_CmdArgSpec("center", "render：畫面中心 lat,lon（預設 23.7,121）"),
             new SCP_CmdArgSpec("zoom", "render：放大倍率（1＝整個半球）"),
@@ -103,6 +111,7 @@ namespace SCP.Core.Cmd
                     case "undo": return Undo(aStore, iArgs);
                     case "render": return Render(aStore, iArgs);
                     case "history": return History(aStore, iArgs);
+                    case "regrid": return Regrid(aStore, iArgs);
                     default: return SCP_CmdResult.Fail(2, "✗ 不認得的 op：" + aOp);
                 }
             }
@@ -117,11 +126,15 @@ namespace SCP.Core.Cmd
             SCP_GlobeState s = iStore.Load();
             int aPainted = s.Cells.PaintedCount();
             var r = new SCP_CmdResult();
-            r.Lines.Add($"# 🌍 球面　N={s.Meta.N}（6×{s.Meta.N}² = {s.Grid.CellCount:N0} 格，每格約 {40075.0 / 4 / s.Meta.N:0.0} km）");
+            r.Lines.Add($"# 🌍 球面　N={s.Grid.N}（6×{s.Grid.N}² = {s.Grid.CellCount:N0} 格，每格約 {40075.0 / 4 / s.Grid.N:0.0} km）"
+                        + (s.InitialN != s.Grid.N ? $"　初始 N={s.InitialN}（regrid ×{s.Grid.N / s.InitialN}，初始格單位自動換算 ×{s.Grid.N / s.InitialN}）" : ""));
+            if (s.Meta.GetInitialN() != s.Grid.N && s.Meta.N != s.Grid.N) r.Lines.Add($"  ⚠ meta 記的 N={s.Meta.N} 與事件重播的 N={s.Grid.N} 不一致（regrid 寫到一半？）—— 事件為準；再跑一次 op=regrid 可修復");
             r.Lines.Add($"  底色：{s.Meta.BaseColor}　格子：rgb24 全彩（{s.Cells.Tile}² 分塊、只存畫過的）");
             r.Lines.Add($"  事件：{s.LastSeq} 筆（仍有效的繪製 {s.Stack.Count} 筆）　已畫格子：{aPainted:N0}");
             r.Lines.Add($"  根：{iStore.Paths.Root}" + (s.FromCache ? "（讀快取＋補重播）" : "（從頭重播）"));
-            return r.AddValue("initialized", "1").AddValue("n", s.Meta.N.ToString(CultureInfo.InvariantCulture))
+            return r.AddValue("initialized", "1").AddValue("n", s.Grid.N.ToString(CultureInfo.InvariantCulture))
+                    .AddValue("initial_n", s.InitialN.ToString(CultureInfo.InvariantCulture))
+                    .AddValue("regrids", (s.Regrids.Count / 2).ToString(CultureInfo.InvariantCulture))
                     .AddValue("base_color", s.Meta.BaseColor)
                     .AddValue("events", s.LastSeq.ToString(CultureInfo.InvariantCulture))
                     .AddValue("undoable", s.Stack.Count.ToString(CultureInfo.InvariantCulture))
@@ -306,14 +319,14 @@ namespace SCP.Core.Cmd
             foreach (SCP_GlobeEvent e in aAll)
             {
                 if (e.Zone != z.Id || e.Op == "undo" || aUndone.Contains(e.Seq)) continue;
-                aEvents++; aCells += e.Cells.Count / 3;
+                aEvents++; aCells += e.CountCells();
                 aWho[e.Persona] = (aWho.TryGetValue(e.Persona, out int n) ? n : 0) + 1;
                 aRecent.Add(e);
             }
             r.Lines.Add($"## 繪製（帶 zone={z.Id} 的有效事件）：{aEvents} 筆、{aCells:N0} 格"
                         + (aWho.Count > 0 ? "　" + string.Join("、", aWho.Select(kv => kv.Key + "×" + kv.Value)) : ""));
             for (int k = Math.Max(0, aRecent.Count - 5); k < aRecent.Count; k++)
-                r.Lines.Add($"  #{aRecent[k].Seq} {aRecent[k].At} {aRecent[k].Persona} {aRecent[k].Op} {aRecent[k].Cells.Count / 3:N0} 格" + (aRecent[k].Note.Length > 0 ? "　" + aRecent[k].Note : ""));
+                r.Lines.Add($"  #{aRecent[k].Seq} {aRecent[k].At} {aRecent[k].Persona} {aRecent[k].Op} {aRecent[k].CountCells():N0} 格" + (aRecent[k].Note.Length > 0 ? "　" + aRecent[k].Note : ""));
             return r.AddValue("items", z.Items.Count.ToString(CultureInfo.InvariantCulture))
                     .AddValue("items_done", z.Items.FindAll(x => x.Done).Count.ToString(CultureInfo.InvariantCulture))
                     .AddValue("events", aEvents.ToString(CultureInfo.InvariantCulture))
@@ -354,6 +367,11 @@ namespace SCP.Core.Cmd
 
             SCP_GlobeMeta aMeta = iStore.LoadMeta();
             var g = new SCP_GlobeGrid(aMeta.N, aMeta.Faces);
+            string aUnit = iArgs.Get("unit").Trim();
+            if (aUnit.Length == 0) aUnit = "initial";
+            if (aUnit != "initial" && aUnit != "cell") return SCP_CmdResult.Fail(2, "✗ unit 只能是 initial｜cell：" + aUnit);
+            // 初始格 → 實際格數：regrid 之後 N 變大，同一個數字要乘回去，不然畫出來的東西會突然縮水
+            double aScale = aUnit == "cell" ? 1.0 : (double)aMeta.N / aMeta.GetInitialN();
             List<int> aCells;
             string aDesc;
             switch (iOp)
@@ -362,8 +380,8 @@ namespace SCP.Core.Cmd
                 {
                     if (!LatLonArg(iArgs, out SCP_GlobeLatLon p, out string w)) return SCP_CmdResult.Fail(2, "✗ " + w);
                     if (!NumArg(iArgs, "radius", 0, 0, 2000, out double rad, out w)) return SCP_CmdResult.Fail(2, "✗ " + w);
-                    aCells = SCP_GlobeDraw.Point(g, p, rad);
-                    aDesc = $"點 ({F(p.Lat)},{F(p.Lon)}) 半徑 {F(rad)} 格";
+                    aCells = SCP_GlobeDraw.Point(g, p, rad * aScale);
+                    aDesc = $"點 ({F(p.Lat)},{F(p.Lon)}) 半徑 {ScaleText(rad, aScale)}";
                     break;
                 }
                 case "line":
@@ -373,8 +391,8 @@ namespace SCP.Core.Cmd
                     if (iOp == "line")
                     {
                         if (!NumArg(iArgs, "width", 0, 0, 200, out double wd, out w)) return SCP_CmdResult.Fail(2, "✗ " + w);
-                        aCells = SCP_GlobeDraw.Line(g, pts, wd);
-                        aDesc = $"線 {pts.Count} 點 筆寬半徑 {F(wd)} 格";
+                        aCells = SCP_GlobeDraw.Line(g, pts, wd * aScale);
+                        aDesc = $"線 {pts.Count} 點 筆寬半徑 {ScaleText(wd, aScale)}";
                     }
                     else
                     {
@@ -388,15 +406,17 @@ namespace SCP.Core.Cmd
                     if (!LatLonArg(iArgs, out SCP_GlobeLatLon p, out string w)) return SCP_CmdResult.Fail(2, "✗ " + w);
                     if (!NumArg(iArgs, "max_cells", DefaultMaxFill, 1, 20_000_000, out double mx, out w)) return SCP_CmdResult.Fail(2, "✗ " + w);
                     SCP_GlobeState s = iStore.Load();
-                    aCells = SCP_GlobeDraw.Flood(s.Grid, s.Cells, p, (int)mx);
-                    aDesc = $"油漆桶 ({F(p.Lat)},{F(p.Lon)})";
+                    if (s.Grid.N != g.N) return SCP_CmdResult.Fail(2, $"✗ meta 記的 N={g.N} 與事件重播的 N={s.Grid.N} 不一致（regrid 寫到一半？）⇒ 一格都沒寫；再跑一次 op=regrid 可修復");
+                    long aMaxCells = (long)Math.Min(int.MaxValue, Math.Round(mx * aScale * aScale));
+                    aCells = SCP_GlobeDraw.Flood(s.Grid, s.Cells, p, (int)aMaxCells);
+                    aDesc = $"油漆桶 ({F(p.Lat)},{F(p.Lon)})" + (aScale != 1.0 ? $"（上限 {F(mx)} 初始格 ＝ {aMaxCells:N0} 格）" : "");
                     break;
                 }
             }
             string aZone = iArgs.Get("zone").Trim();
             if (aZone.Length > 0 && new SCP_GlobeZones(iStore.Paths).Find(aZone) == null)
                 return SCP_CmdResult.Fail(2, "✗ 沒有這個施工區：" + aZone + "（先 op=zone --arg sub=list）");
-            SCP_GlobeEvent? e = iStore.Paint(iErase ? "erase-" + iOp : iOp, aPersona, iArgs.Get("note").Trim(), aCells, aValue, aZone);
+            SCP_GlobeEvent? e = iStore.Paint(iErase ? "erase-" + iOp : iOp, aPersona, iArgs.Get("note").Trim(), aCells, aValue, aZone, g.N);
             var r = new SCP_CmdResult();
             string aColorText = aValue == SCP_GlobeCells.Empty ? "empty（擦回底色）" : SCP_GlobeCells.ToHex(aValue);
             if (e == null)
@@ -404,13 +424,51 @@ namespace SCP.Core.Cmd
                 r.Lines.Add($"· {aDesc}：涵蓋 {aCells.Count:N0} 格，全部已經是 {aColorText} ⇒ 沒有寫事件");
                 return r.AddValue("changed", "0").AddValue("covered", aCells.Count.ToString(CultureInfo.InvariantCulture));
             }
-            int aChanged = e.Cells.Count / 3;
+            int aChanged = e.CountCells();
             r.Lines.Add($"✓ 事件 #{e.Seq} {aDesc}：涵蓋 {aCells.Count:N0} 格、實際改了 {aChanged:N0} 格 → {aColorText}");
             r.Lines.Add("  ↶ 畫錯了：op=undo");
             return r.AddValue("seq", e.Seq.ToString(CultureInfo.InvariantCulture))
                     .AddValue("changed", aChanged.ToString(CultureInfo.InvariantCulture))
                     .AddValue("covered", aCells.Count.ToString(CultureInfo.InvariantCulture))
                     .AddOutput(iStore.Paths.EventFile(e.Seq));
+        }
+
+        static string ScaleText(double iValue, double iScale)
+            => iScale == 1.0 ? F(iValue) + " 格" : $"{F(iValue)}（初始格）＝ {F(iValue * iScale)} 格";
+
+        /// <summary>regrid：每面邊長 ×整數倍。預設 dry-run；confirm=1 才寫。做完逐項讀回（N、有畫的格數 ×f²）。</summary>
+        static SCP_CmdResult Regrid(SCP_GlobeStore iStore, SCP_CmdArgs iArgs)
+        {
+            string aPersona = iArgs.Get("persona").Trim();
+            if (aPersona.Length == 0) return SCP_CmdResult.Fail(2, "✗ regrid 要給 persona（記進事件）");
+            if (!NumArg(iArgs, "factor", 2, 2, 64, out double aFd, out string w) || aFd != Math.Floor(aFd))
+                return SCP_CmdResult.Fail(2, "✗ factor 要是 2..64 的整數：" + iArgs.Get("factor").Trim());
+            int f = (int)aFd;
+            SCP_GlobeState s = iStore.Load();
+            int aCur = s.Grid.N;
+            long aNew = (long)aCur * f;
+            if (aNew > SCP_GlobeMeta.MaxN) return SCP_CmdResult.Fail(2, $"✗ regrid 之後每面 {aNew} 格，超過上限 {SCP_GlobeMeta.MaxN}（目前 {aCur}）");
+            long aPainted = s.Cells.PaintedCount();
+            var r = new SCP_CmdResult();
+            r.Lines.Add($"# 🔎 regrid ×{f}：每面 {aCur} → {aNew} 格（每格約 {40075.0 / 4 / aCur:0.0} → {40075.0 / 4 / aNew:0.0} km）");
+            r.Lines.Add($"  有畫的格子 {aPainted:N0} → {aPainted * f * f:N0}（每格變 {f}×{f}；一格都不位移）");
+            r.Lines.Add($"  整顆球 {s.Grid.CellCount:N0} → {6L * aNew * aNew:N0} 格；舊事件一個檔都不動，追加一筆 regrid 事件");
+            r.Lines.Add("  ⚠ 之後舊版程式讀這顆球會直接報錯（mapping 改成 v2），請確認大家都用新版再做");
+            if (iArgs.Get("confirm").Trim() != "1")
+            {
+                r.Lines.Add("· 這是 dry-run（零寫入）⇒ 要真的做：加 --arg confirm=1");
+                return r.AddValue("regrid", "dry_run").AddValue("from_n", aCur.ToString(CultureInfo.InvariantCulture))
+                        .AddValue("to_n", aNew.ToString(CultureInfo.InvariantCulture));
+            }
+            SCP_GlobeEvent e = iStore.Regrid(aPersona, f, iArgs.Get("note").Trim());
+            SCP_GlobeState s2 = iStore.Load();
+            bool aOk = s2.Grid.N == aNew && s2.Cells.PaintedCount() == aPainted * f * f && s2.Regrids.Count >= 2 && s2.Regrids[s2.Regrids.Count - 2] == e.Seq;
+            if (!aOk)
+                return SCP_CmdResult.Fail(1, $"✗ 讀回對不上：N={s2.Grid.N}（要 {aNew}）、有畫的格子 {s2.Cells.PaintedCount():N0}（要 {aPainted * f * f:N0}）—— 事件 #{e.Seq} 已落盤，請檢查");
+            r.Lines.Add($"✓ 事件 #{e.Seq} regrid 完成；讀回：N={s2.Grid.N}、有畫的格子 {s2.Cells.PaintedCount():N0}（＝舊的 ×{f * f}）");
+            return r.AddValue("regrid", "done").AddValue("seq", e.Seq.ToString(CultureInfo.InvariantCulture))
+                    .AddValue("n", s2.Grid.N.ToString(CultureInfo.InvariantCulture))
+                    .AddValue("painted", s2.Cells.PaintedCount().ToString(CultureInfo.InvariantCulture)).AddOutput(iStore.Paths.EventFile(e.Seq));
         }
 
         static SCP_CmdResult Undo(SCP_GlobeStore iStore, SCP_CmdArgs iArgs)
@@ -421,10 +479,10 @@ namespace SCP.Core.Cmd
             SCP_GlobeEvent? e = iStore.Undo(aPersona);
             if (e == null) return SCP_CmdResult.Fail(1, "· 沒有可以退的繪製（全部都已經退回了，或還沒畫過）").AddValue("seq", "0");
             SCP_GlobeEvent t = iStore.ReadEvent(e.Target);
-            return SCP_CmdResult.Success($"↶ 事件 #{e.Seq}：退回 #{t.Seq}（{t.Op}，{t.Persona}，{t.Cells.Count / 3:N0} 格）")
+            return SCP_CmdResult.Success($"↶ 事件 #{e.Seq}：退回 #{t.Seq}（{t.Op}，{t.Persona}，{t.CountCells():N0} 格）")
                 .AddValue("seq", e.Seq.ToString(CultureInfo.InvariantCulture))
                 .AddValue("target", t.Seq.ToString(CultureInfo.InvariantCulture))
-                .AddValue("restored", (t.Cells.Count / 3).ToString(CultureInfo.InvariantCulture));
+                .AddValue("restored", t.CountCells().ToString(CultureInfo.InvariantCulture));
         }
 
         static SCP_CmdResult Render(SCP_GlobeStore iStore, SCP_CmdArgs iArgs)
@@ -484,7 +542,9 @@ namespace SCP.Core.Cmd
             foreach (SCP_GlobeEvent e in iStore.History((int)n))
                 r.Lines.Add(e.Op == "undo"
                     ? $"#{e.Seq}  {e.At}  {e.Persona}  undo → 退 #{e.Target}"
-                    : $"#{e.Seq}  {e.At}  {e.Persona}  {e.Op}  {e.Cells.Count / 3:N0} 格" + (e.Note.Length > 0 ? "　" + e.Note : ""));
+                    : e.Op == "regrid"
+                        ? $"#{e.Seq}  {e.At}  {e.Persona}  regrid → 每面 {e.GridN} 格" + (e.Note.Length > 0 ? "　" + e.Note : "")
+                        : $"#{e.Seq}  {e.At}  {e.Persona}  {e.Op}  {e.CountCells():N0} 格" + (e.Note.Length > 0 ? "　" + e.Note : ""));
             if (r.Lines.Count == 0) r.Lines.Add("（還沒有事件）");
             return r;
         }

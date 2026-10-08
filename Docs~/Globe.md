@@ -24,10 +24,10 @@ target_audience: [AI_Agent, Tools_Maintainer]
 
 | 東西 | 位置 | 角色 |
 |---|---|---|
-| `meta.json` | `<資料根>/Globe/` | N、底色、**每一面的基底向量**（Normal／U／V）、格子編碼 `rgb24` |
-| `events/NNNNNN.json` | 同上 | **正本**。一筆一檔、只追加；繪製事件逐格記 `[index, 新值, 舊值]` |
+| `meta.json` | `<資料根>/Globe/` | N、`InitialN`（建立時的 N）、底色、**每一面的基底向量**（Normal／U／V）、格子編碼 `rgb24`、`Mapping`（出現緊湊事件或 regrid 後是 `equiangular-cube-v2`） |
+| `events/NNNNNN.json` | 同上 | **正本**。一筆一檔、只追加；繪製事件存**緊湊區段** `Runs`＝`[起點 index, 長度, 新值, 舊值]`…（連續格子且新舊值都相同才併成一段；舊事件的 `Cells` 三元組照樣讀得懂）；`regrid` 事件記新的 `GridN` |
 | `zones/<id>.json` | 同上 | 施工區（公告用，不影響格子） |
-| `_cache/` | 同上 | 重播捷徑（256² 分塊，只存畫過的分塊）。刪掉會從頭重播，⛔ 不是正本 |
+| `_cache/` | 同上 | 重播捷徑（256² 分塊，只存畫過的分塊；N 不同的分塊放不同夾：`tiles`／`tiles_<N>`）。刪掉會從頭重播，⛔ 不是正本 |
 
 - **格子**：等角立方體球，6 面 × N×N（N=2048 ⇒ 2516 萬格、約 4.9 km／格），每格面積最大／最小 ≈ 1.40，極區不變形。
   `index = face·N² + j·N + i`；面序 `+X +Y +Z −X −Y −Z`。世界座標 +Z＝北極、經度 0 在 +X、東經 90 在 +Y。
@@ -40,8 +40,23 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - 點列：`lat,lon;lat,lon;…`（或一行一點；長的走 `--arg-file points=<檔>`）。
 - 橡皮擦：`op=erase --arg shape=point|line|polygon|fill`，參數同那一種畫法，擦回底色。`fill` 形狀＝擦掉一整塊同色連通區（例：擦掉一座島）。
 - 油漆桶超過 `max_cells`（預設 20 萬）**整筆拒絕**——通常是輪廓沒封口、漏進海裡了。
+- **單位**：`radius`／`width`／`max_cells` 預設的單位是**初始格**（建立時的格，N=2048 ⇒ 約 4.9 km；`max_cells` 是初始格的面積），regrid 之後自動換算成實際格數（半徑、筆寬 ×N／InitialN，上限 ×(N／InitialN)²）⇒ 同一句指令畫出同樣大小。
+  要直接指定實際格數 ⇒ `--arg unit=cell`；數字可以是小數（`radius=0.5` ＝ 初始格的一半）；`radius=0` ＝ 最細的一格。
+- 事件裡記的格數（`history`、施工區統計）是**實際格數**，不換算：regrid 前後同一塊面積的格數差 ×4 是正常的。
 - 塗的格子全部已經是那個顏色 ⇒ 不寫事件（`changed=0`）。
 - 改底色走 `op=base`，**一格都不動**。
+
+## 2.1 regrid（把解析度加倍）
+
+`op=regrid --arg persona=<你> [--arg factor=2] [--arg confirm=1]`：每面邊長 ×整數倍（N=2048 ⇒ 4096，每格 4.9 km → 2.4 km）。**預設只預覽（dry-run，零寫入）**，帶 `confirm=1` 才真的做。
+
+- 等角網格是**巢狀**的：舊格邊界一定落在新格邊界上 ⇒ 舊畫的每一格剛好變成 f×f 格、值照抄、一格都不位移。但舊的鋸齒也原樣保留（事件只記格子、沒有當時的多邊形頂點，沒辦法重畫得更細）；以後新畫的才有新精度。
+- **事件只追加**：舊事件一個檔都不改，只追加一筆 `regrid` 事件（`GridN`＝新的 N）。事件裡的 index 屬於**寫下它那一刻的 N**，重播時由 regrid 事件推出，不另存。
+- **Undo 跨過 regrid**：退一筆 regrid 之前畫的 ⇒ 它的舊 index 展開成 f×f 個子格再還原（只有「最後一筆有效繪製」能被退，所以那一塊在 regrid 之後沒人動過）。regrid 本身不能 undo。
+- **舊版程式讀這顆球會大聲報錯**：`Mapping` 改成 `equiangular-cube-v2`，舊版的 `LoadMeta` 會丟「不認得的 mapping」。⛔ 不要在還有人用舊版時 regrid —— 舊版靠這個保護，不是靠版本檢查。
+- 每次寫入都帶「我是照哪個 N 算格子的」：進鎖後發現球面已經不是那個 N（中間有人 regrid）⇒ 整筆拒絕、零寫入。
+- 快取：N 對不上的快取不會被誤用；regrid 之前存的舊快取還能用（補重播 regrid 事件）。regrid 之後的分塊放 `_cache/tiles_<N>/`，舊的 `tiles/` 留著不動。
+- 上限：每面 8192 格。世界地圖輸出寬度上限仍是 8192（N=4096 時等於隔一格取樣）。
 
 ## 3. Undo
 
@@ -71,6 +86,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
   - `projection=equirect`：整顆球攤成世界地圖（經度 −180→180、緯度 90→−90，寬：高＝2：1，不打光），`size`＝寬（16–8192，預設 4096；8192＝赤道一格一像素）。
   - 寫到哪：給 `persona` ⇒ 自己的 `<letters>/<persona>/cmd/globe_view.png`（每人一張，不互蓋）；`--arg out=<絕對路徑>`；或 `--arg export=1` ⇒ `Globe/exports/globe_<view|map>_<UTC 時間戳>.png`（不入版控、不互蓋；跟 `out` 擇一）。
 - 後台頁「球面繪製」（`senate ui --page globe`）：視角、經緯線／施工區框線／面接縫開關、畫筆、橡皮擦、施工區、Undo、底色；寫入走同一支 `cmd globe`。
+  預覽圖是渲染完**直接放進記憶體影像登記處**（`SCP_GuiImageStore`，key `globe/view`）再由視窗變貼圖，⛔ 不寫 `view.png`、不讀回 —— 檔案被別的程式鎖住時舊做法會停在舊圖而不報錯。只有 TopBar 的「輸出」與 `cmd globe op=render` 會產出 PNG。
   TopBar「輸出目前視角」「輸出世界地圖」＝ `op=render export=1`，用畫面上的視角與三個開關，尺寸在「視角」折疊裡設；「開啟輸出資料夾」開 `Globe/exports/`。
 
 ## 6. 自由時間

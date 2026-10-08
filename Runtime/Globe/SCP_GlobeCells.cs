@@ -100,6 +100,36 @@ namespace SCP.Core.Globe
             return true;
         }
 
+        /// <summary>
+        /// regrid：每面邊長 ×<paramref name="iFactor"/>，舊的每一格變成 factor×factor 格、值照抄（等角網格是巢狀的 —— 舊格邊界一定落在新格邊界上，
+        /// 所以舊畫的圖一格都不會位移）。回傳新容器（所有有畫的分塊都標髒，下一次存快取會整批寫出）；原容器不動。
+        /// </summary>
+        public SCP_GlobeCells Expand(int iFactor)
+        {
+            if (iFactor < 2) throw new SCP_GlobeException("regrid 倍率要 ≥ 2：" + iFactor);
+            long aNewN = (long)N * iFactor;
+            if (aNewN > SCP_GlobeMeta.MaxN) throw new SCP_GlobeException($"regrid 之後每面 {aNewN} 格，超過上限 {SCP_GlobeMeta.MaxN}");
+            int aF = iFactor, aNN = (int)aNewN, tps = TilesPerSide;
+            var c = new SCP_GlobeCells(aNN);
+            foreach (KeyValuePair<int, byte[]> kv in m_Tiles)
+            {
+                int tx = kv.Key % tps, ty = (kv.Key / tps) % tps, face = kv.Key / (tps * tps);
+                byte[] t = kv.Value;
+                for (int jj = 0; jj < Tile; jj++)
+                    for (int ii = 0; ii < Tile; ii++)
+                    {
+                        int o = (jj * Tile + ii) * 3;
+                        int v = (t[o] << 16) | (t[o + 1] << 8) | t[o + 2];
+                        if (v == Empty) continue;
+                        int i = tx * Tile + ii, j = ty * Tile + jj;
+                        for (int b = 0; b < aF; b++)
+                            for (int a = 0; a < aF; a++)
+                                c.Set(face * aNN * aNN + (j * aF + b) * aNN + (i * aF + a), v);
+                    }
+            }
+            return c;
+        }
+
         public SCP_GlobeCells Clone()
         {
             var c = new SCP_GlobeCells(N);

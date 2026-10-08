@@ -159,6 +159,10 @@ namespace SCP.Core.Gui
         /// <summary>密碼欄的顯示字：只說有沒有填，⛔ 不印內容也不印長度。</summary>
         public static string MaskedText(string iValue) => string.IsNullOrEmpty(iValue) ? "（未輸入）" : "（已輸入，不顯示）";
 
+        /// <summary>有圖嗎：路徑非空；記憶體影像（`mem:`）則要登記處真的有那一張（key 在、圖不在 ＝ 還沒渲染 ＝ 無圖）。</summary>
+        static bool HasImage(string iValue)
+            => iValue.Length > 0 && (!SCP_GuiImageStore.IsMemory(iValue) || SCP_GuiImageStore.Has(SCP_GuiImageStore.KeyOf(iValue)!));
+
         static string Inline(SCP_GuiNode iNode) => iNode.Kind switch
         {
             SCP_GuiNodeKind.Button => $"[ {iNode.Text} ]",
@@ -166,7 +170,7 @@ namespace SCP.Core.Gui
             SCP_GuiNodeKind.TextField => $"{iNode.Text}: ⟨{(iNode.Masked ? MaskedText(iNode.Value) : iNode.Value)}⟩",
             SCP_GuiNodeKind.Slider => SliderText(iNode),
             SCP_GuiNodeKind.Note => $"· {iNode.Text}",
-            SCP_GuiNodeKind.Image => iNode.Value.Length > 0 ? $"[圖：{iNode.Text}]" : $"[無圖：{iNode.Text}]",
+            SCP_GuiNodeKind.Image => HasImage(iNode.Value) ? $"[圖：{iNode.Text}]" : $"[無圖：{iNode.Text}]",
             _ => iNode.Text,
         };
 
