@@ -1,6 +1,8 @@
-// 區塊職責：球面的 **CPU 預覽渲染** —— 正交投影看一個半球：每個螢幕像素解析求交 → 方向 → 格子 → 取色（最近鄰）。
-// 物理意義：沒有 mesh、沒有貼圖取樣；格子的方塊邊緣是「最近鄰」自然留下的。光照只是看得出球面的 Lambert，
-//          疊圖（經緯線、面接縫）是除錯用的讀數，不寫回格子。
+// 區塊職責：球面的 **CPU 渲染** —— 兩種投影：
+//          ortho ＝ 正交投影看一個半球（每個螢幕像素解析求交 → 方向 → 格子 → 取色）；
+//          equirect ＝ 整顆球攤成世界地圖（經度 −180→180 對橫軸、緯度 90→−90 對直軸，寬：高＝2：1）。
+// 物理意義：沒有 mesh、沒有貼圖取樣；格子的方塊邊緣是「最近鄰」自然留下的。正交投影的光照只是看得出球面的 Lambert，
+//          世界地圖不打光（地圖要讀顏色，不要讀陰影）。疊圖（經緯線、施工區框線、面接縫）是讀數，不寫回格子。
 // 數值影響：純函式 → RGBA8（由上到下）。決定性：同樣的格子＋參數 ⇒ 同樣的 bytes。
 using System;
 using SCP.Core.Canvas;
@@ -9,10 +11,16 @@ namespace SCP.Core.Globe
 {
     public sealed class SCP_GlobeView
     {
+        public const string ProjOrtho = "ortho", ProjEquirect = "equirect";
+        /// <summary>ortho（看一個半球）｜equirect（世界地圖；不吃 CenterLat／CenterLon／Zoom）。</summary>
+        public string Projection = ProjOrtho;
         public double CenterLat = 23.7, CenterLon = 121.0;
         /// <summary>1 ＝ 整個半球剛好塞滿；2 ＝ 放大兩倍。</summary>
         public double Zoom = 1;
+        /// <summary>ortho：正方形邊長；equirect：寬（高＝寬／2）。</summary>
         public int Size = 720;
+        public int Width => Size;
+        public int Height => Projection == ProjEquirect ? Math.Max(1, Size / 2) : Size;
         /// <summary>經緯線間隔（度）；0 ＝ 不畫。</summary>
         public double Graticule = 10;
         public bool Seams;
@@ -22,10 +30,16 @@ namespace SCP.Core.Globe
 
     public static class SCP_GlobeRender
     {
+        public const int MaxOrthoSize = 4096;
+        /// <summary>世界地圖最寬 8192：赤道一圈是 4N 格（N=2048 ⇒ 8192），再寬只是把同一格放大。</summary>
+        public const int MaxEquirectWidth = 8192;
+
         public static byte[] RenderRgba(SCP_GlobeState s, SCP_GlobeView v)
         {
+            if (v.Projection == SCP_GlobeView.ProjEquirect) return RenderEquirect(s, v);
+            if (v.Projection != SCP_GlobeView.ProjOrtho) throw new SCP_GlobeException("projection 要是 ortho 或 equirect：" + v.Projection);
             int W = v.Size, H = v.Size;
-            if (W < 16 || W > 4096) throw new SCP_GlobeException("size 要在 16..4096：" + W);
+            if (W < 16 || W > MaxOrthoSize) throw new SCP_GlobeException($"size 要在 16..{MaxOrthoSize}：" + W);
             if (!(v.Zoom > 0) || v.Zoom > 1000) throw new SCP_GlobeException("zoom 要在 (0, 1000]：" + v.Zoom);
             var rgba = new byte[W * H * 4];
             var face = new sbyte[W * H];
@@ -72,23 +86,70 @@ namespace SCP.Core.Globe
                     rgba[o] = Clamp(R); rgba[o + 1] = Clamp(G); rgba[o + 2] = Clamp(B); rgba[o + 3] = 255;
                 }
 
-            if (v.Seams)
-                for (int py = 0; py < H; py++)
-                    for (int px = 0; px < W; px++)
-                    {
-                        int f = face[py * W + px];
-                        if (f < 0) continue;
-                        bool aEdge = (px + 1 < W && face[py * W + px + 1] >= 0 && face[py * W + px + 1] != f)
-                                     || (py + 1 < H && face[(py + 1) * W + px] >= 0 && face[(py + 1) * W + px] != f);
-                        if (!aEdge) continue;
-                        int o = (py * W + px) * 4;
-                        rgba[o] = 255; rgba[o + 1] = 80; rgba[o + 2] = 200;
-                    }
+            if (v.Seams) DrawSeams(rgba, face, W, H);
             return rgba;
         }
 
+        /// <summary>
+        /// 世界地圖（等距圓柱）：像素中心 ⇒ 經緯度 ⇒ 格子 ⇒ 原色（不打光）。
+        /// 經緯線與施工區框線的容許寬度用「一個像素對應幾度」量，所以任何寬度下都是約一像素寬的線。
+        /// </summary>
+        static byte[] RenderEquirect(SCP_GlobeState s, SCP_GlobeView v)
+        {
+            int W = v.Width, H = v.Height;
+            if (W < 16 || W > MaxEquirectWidth) throw new SCP_GlobeException($"世界地圖寬要在 16..{MaxEquirectWidth}：" + W);
+            var rgba = new byte[W * H * 4];
+            var face = new sbyte[W * H];
+            SCP_GlobeGrid g = s.Grid;
+            int aBase = s.BaseRgb;
+            double aDegX = 360.0 / W, aDegY = 180.0 / H;
+            for (int py = 0; py < H; py++)
+            {
+                double aLat = 90 - (py + 0.5) * aDegY;
+                for (int px = 0; px < W; px++)
+                {
+                    double aLon = -180 + (px + 0.5) * aDegX;
+                    SCP_GlobeGrid.LatLonToDir(aLat, aLon, out double dx, out double dy, out double dz);
+                    int idx = g.DirToCell(dx, dy, dz);
+                    face[py * W + px] = (sbyte)(idx / (g.N * g.N));
+                    int c = s.Cells.Get(idx);
+                    if (c == SCP_GlobeCells.Empty) c = aBase;
+                    double R = (c >> 16) & 255, G = (c >> 8) & 255, B = c & 255;
+                    // 施工區框線：ZoneEdge 的經度差會乘 cos(lat)，這裡要的是「一像素」⇒ 先除回去
+                    double aCos = Math.Max(Math.Cos(aLat * Math.PI / 180), 0.01);
+                    if (v.Zones.Count > 0 && ZoneEdge(v.Zones, aLat, aLon, Math.Max(aDegY, aDegX * aCos) * 1.5, out int zr, out int zg, out int zb))
+                    { R = zr; G = zg; B = zb; }
+                    else if (v.Graticule > 0)
+                    {
+                        double eLat = Math.Abs(aLat - Math.Round(aLat / v.Graticule) * v.Graticule);
+                        double eLon = Math.Abs(aLon - Math.Round(aLon / v.Graticule) * v.Graticule);
+                        if (eLat < aDegY * 0.5 || eLon < aDegX * 0.5) { R = R * 0.55 + 255 * 0.45; G = G * 0.55 + 255 * 0.45; B = B * 0.55 + 255 * 0.45; }
+                    }
+                    int o = (py * W + px) * 4;
+                    rgba[o] = Clamp(R); rgba[o + 1] = Clamp(G); rgba[o + 2] = Clamp(B); rgba[o + 3] = 255;
+                }
+            }
+            if (v.Seams) DrawSeams(rgba, face, W, H);
+            return rgba;
+        }
+
+        static void DrawSeams(byte[] rgba, sbyte[] face, int W, int H)
+        {
+            for (int py = 0; py < H; py++)
+                for (int px = 0; px < W; px++)
+                {
+                    int f = face[py * W + px];
+                    if (f < 0) continue;
+                    bool aEdge = (px + 1 < W && face[py * W + px + 1] >= 0 && face[py * W + px + 1] != f)
+                                 || (py + 1 < H && face[(py + 1) * W + px] >= 0 && face[(py + 1) * W + px] != f);
+                    if (!aEdge) continue;
+                    int o = (py * W + px) * 4;
+                    rgba[o] = 255; rgba[o + 1] = 80; rgba[o + 2] = 200;
+                }
+        }
+
         public static byte[] RenderPng(SCP_GlobeState s, SCP_GlobeView v)
-            => SCP_CanvasPng.EncodeRgbaRows(RenderRgba(s, v), v.Size, v.Size);
+            => SCP_CanvasPng.EncodeRgbaRows(RenderRgba(s, v), v.Width, v.Height);
 
         /// <summary>這個經緯度是不是落在某個施工區的框線上（框內、離任一邊 &lt; tol 度）。顏色看狀態。</summary>
         static bool ZoneEdge(System.Collections.Generic.List<SCP_GlobeZone> iZones, double iLat, double iLon, double iTol, out int r, out int g, out int b)

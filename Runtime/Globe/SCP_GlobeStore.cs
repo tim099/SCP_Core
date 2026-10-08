@@ -32,6 +32,11 @@ namespace SCP.Core.Globe
         /// <summary>寫入鎖的目標（鎖檔＝它＋.lock）。</summary>
         public string LockTarget => Path.Combine(Root, "globe");
         public string EventFile(int iSeq) => Path.Combine(Events, iSeq.ToString("D6", CultureInfo.InvariantCulture) + ".json");
+        /// <summary>輸出的圖（不入版控；跟 Sculpture/exports 同一個慣例）。</summary>
+        public string ExportsDir => Path.Combine(Root, "exports");
+        /// <summary>一張輸出圖的路徑：檔名帶到毫秒，連按兩次不會互相蓋掉。<paramref name="iKind"/>＝view｜map。</summary>
+        public string ExportFile(string iKind, DateTime iUtc)
+            => Path.Combine(ExportsDir, "globe_" + iKind + "_" + iUtc.ToString("yyyyMMdd'T'HHmmssfff", CultureInfo.InvariantCulture) + ".png");
     }
 
     public sealed class SCP_GlobeMeta

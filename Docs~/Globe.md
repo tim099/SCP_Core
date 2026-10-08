@@ -66,9 +66,12 @@ target_audience: [AI_Agent, Tools_Maintainer]
 
 ## 5. 看
 
-- `op=render`：CPU 正交投影輸出 PNG（最近鄰取色，決定性）。`graticule=<度>` 疊經緯線（0＝關）、`zones=1` 疊施工區框線、`seams=1` 疊面接縫（除錯用）。
-  給 `persona` ⇒ 寫進自己的 `<letters>/<persona>/cmd/globe_view.png`（每人一張，不互蓋）；或 `--arg out=<絕對路徑>`。
+- `op=render`：CPU 渲染輸出 PNG（最近鄰取色，決定性）。`graticule=<度>` 疊經緯線（0＝關）、`zones=1` 疊施工區框線、`seams=1` 疊面接縫（除錯用）。
+  - `projection=ortho`（預設）：看一個半球，`center`／`zoom`，`size`＝邊長（16–4096，預設 720）。
+  - `projection=equirect`：整顆球攤成世界地圖（經度 −180→180、緯度 90→−90，寬：高＝2：1，不打光），`size`＝寬（16–8192，預設 4096；8192＝赤道一格一像素）。
+  - 寫到哪：給 `persona` ⇒ 自己的 `<letters>/<persona>/cmd/globe_view.png`（每人一張，不互蓋）；`--arg out=<絕對路徑>`；或 `--arg export=1` ⇒ `Globe/exports/globe_<view|map>_<UTC 時間戳>.png`（不入版控、不互蓋；跟 `out` 擇一）。
 - 後台頁「球面繪製」（`senate ui --page globe`）：視角、經緯線／施工區框線／面接縫開關、畫筆、橡皮擦、施工區、Undo、底色；寫入走同一支 `cmd globe`。
+  TopBar「輸出目前視角」「輸出世界地圖」＝ `op=render export=1`，用畫面上的視角與三個開關，尺寸在「視角」折疊裡設；「開啟輸出資料夾」開 `Globe/exports/`。
 
 ## 6. 自由時間
 

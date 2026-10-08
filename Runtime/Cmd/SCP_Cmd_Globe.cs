@@ -63,9 +63,12 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("note", "寫進事件的一句話"),
             new SCP_CmdArgSpec("center", "render：畫面中心 lat,lon（預設 23.7,121）"),
             new SCP_CmdArgSpec("zoom", "render：放大倍率（1＝整個半球）"),
-            new SCP_CmdArgSpec("size", "render：邊長 px（預設 720）"),
+            new SCP_CmdArgSpec("projection", "render：ortho（預設，看一個半球）｜equirect（整顆球攤成世界地圖，寬：高＝2：1；不吃 center／zoom）",
+                               iChoices: new[] { "ortho", "equirect" }),
+            new SCP_CmdArgSpec("size", "render：ortho＝邊長 px（16–4096，預設 720）；equirect＝寬 px（16–8192，預設 4096，高＝寬／2）"),
             new SCP_CmdArgSpec("graticule", "render：經緯線間隔（度，0＝不畫；預設 10）"),
             new SCP_CmdArgSpec("seams", "render：1＝疊面接縫"),
+            new SCP_CmdArgSpec("export", "render：1＝存進 <球面根>/exports/，檔名帶時間戳（不入版控；跟 out 擇一）"),
             new SCP_CmdArgSpec("out", "render：輸出 PNG 絕對路徑（預設：有 persona ⇒ <letters>/<persona>/cmd/globe_view.png；沒有 ⇒ <球面根>/_cache/view.png）"),
             new SCP_CmdArgSpec("last", "history：列最後幾筆（預設 10）"),
         };
@@ -427,6 +430,9 @@ namespace SCP.Core.Cmd
         static SCP_CmdResult Render(SCP_GlobeStore iStore, SCP_CmdArgs iArgs)
         {
             var v = new SCP_GlobeView();
+            string aProj = iArgs.Get("projection").Trim();
+            if (aProj.Length > 0) v.Projection = aProj;
+            bool aMap = v.Projection == SCP_GlobeView.ProjEquirect;
             string aCenter = iArgs.Get("center").Trim();
             if (aCenter.Length > 0)
             {
@@ -434,13 +440,19 @@ namespace SCP.Core.Cmd
                 v.CenterLat = c.Lat; v.CenterLon = c.Lon;
             }
             if (!NumArg(iArgs, "zoom", 1, 0.01, 1000, out v.Zoom, out string w2)) return SCP_CmdResult.Fail(2, "✗ " + w2);
-            if (!NumArg(iArgs, "size", 720, 16, 4096, out double sz, out w2)) return SCP_CmdResult.Fail(2, "✗ " + w2);
+            if (!NumArg(iArgs, "size", aMap ? 4096 : 720, 16, aMap ? SCP_GlobeRender.MaxEquirectWidth : SCP_GlobeRender.MaxOrthoSize, out double sz, out w2))
+                return SCP_CmdResult.Fail(2, "✗ " + w2);
             v.Size = (int)sz;
             if (!NumArg(iArgs, "graticule", 10, 0, 90, out v.Graticule, out w2)) return SCP_CmdResult.Fail(2, "✗ " + w2);
             v.Seams = iArgs.Get("seams").Trim() == "1";
             if (iArgs.Get("zones").Trim() == "1") v.Zones = new SCP_GlobeZones(iStore.Paths).List();
             string aOut = iArgs.Get("out").Trim();
             string aPersona = iArgs.Get("persona").Trim(), aLetters = iArgs.Get("letters_root").Trim();
+            if (iArgs.Get("export").Trim() == "1")
+            {
+                if (aOut.Length > 0) return SCP_CmdResult.Fail(2, "✗ export=1 與 out 擇一（export 的檔名由球面根決定）");
+                aOut = iStore.Paths.ExportFile(aMap ? "map" : "view", DateTime.UtcNow);
+            }
             if (aOut.Length > 0 && !Path.IsPathRooted(aOut)) return SCP_CmdResult.Fail(2, "✗ out 要絕對路徑：" + aOut);
             if (aOut.Length == 0 && aPersona.Length > 0)
             {
@@ -458,8 +470,10 @@ namespace SCP.Core.Cmd
             if (!string.IsNullOrEmpty(aDir)) Directory.CreateDirectory(aDir);
             File.WriteAllBytes(aOut, aPng);
             string aPath = aOut.Replace('\\', '/');
-            return SCP_CmdResult.Success($"🖼 {aPath}　中心 ({F(v.CenterLat)},{F(v.CenterLon)})　zoom {F(v.Zoom)}　{v.Size}px")
-                .AddValue("path", aPath).AddOutput(aPath);
+            string aWhat = aMap ? "世界地圖（等距圓柱）" : $"中心 ({F(v.CenterLat)},{F(v.CenterLon)})　zoom {F(v.Zoom)}";
+            return SCP_CmdResult.Success($"🖼 {aPath}　{aWhat}　{v.Width}×{v.Height}px")
+                .AddValue("path", aPath).AddValue("width", v.Width.ToString(CultureInfo.InvariantCulture))
+                .AddValue("height", v.Height.ToString(CultureInfo.InvariantCulture)).AddOutput(aPath);
         }
 
         static SCP_CmdResult History(SCP_GlobeStore iStore, SCP_CmdArgs iArgs)
