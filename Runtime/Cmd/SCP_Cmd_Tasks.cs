@@ -65,7 +65,7 @@ namespace SCP.Core.Cmd
             string aTasksDir = SCP_TaskIO.TasksDir(aRoot);
             // 區塊職責：把「呼叫端打的字」換成「實際讀的那個目錄」
             // 物理意義：`--arg data_root=<相對值>` 是照 **process cwd** 解析的（實測：同一個
-            //          `data_root=AgentCommands` 在 `D:/Unity/Bar` 讀得到 193 張、在 `D:/Unity` 找不到），
+            //          `data_root=AgentCommands` 在專案根讀得到 193 張、在 `D:/Unity` 找不到），
             //          而設定檔那條路走 `SCP_ProjectPaths.ResolveDataRoot`，基準是 **Unity 專案根** ——
             //          同一個參數名、兩條路、兩個基準。
             // 🩸 逐字回音會讓兩棵樹上的成功輸出**一模一樣**：`· 資料源：AgentCommands/Tasks/tasks`

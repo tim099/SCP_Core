@@ -29,7 +29,7 @@ namespace SCP.Core.Paths
     }
 
     /// <summary>
-    /// 專案 repo 根（例：<c>D:/Unity/Bar</c>）。
+    /// 專案 repo 根（Unity 專案的 git repo 根）。
     /// <para>⚠ 誰決定它：**宿主**。Senate 是 <c>senate.local.json</c> 的 <c>projects[].root</c>，
     /// Unity 那側是既有的 repo 解析器。本層不找它。</para>
     /// </summary>
@@ -41,7 +41,7 @@ namespace SCP.Core.Paths
     }
 
     /// <summary>
-    /// AgentCommands 資料根（例：<c>D:/Unity/Bar/AgentCommands</c>）。
+    /// AgentCommands 資料根（後台設定的那一格）。
     /// <para>⚠ 它**不一定**是 <c>&lt;Unity 專案根&gt;/AgentCommands</c> —— 可以被 pointer 檔搬走
     /// （見 <see cref="SCP_ProjectPaths.ResolveDataRoot"/>）。所以它是獨立的一種根，不是 Unity 專案根的衍生。</para>
     /// </summary>

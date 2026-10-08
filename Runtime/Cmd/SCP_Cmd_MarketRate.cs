@@ -667,6 +667,6 @@ namespace SCP.Core.Cmd
             return aR;
         }
 
-        // ⛔ 2026-10-07（TASK-0390）拿掉了「沒給就猜 D:/Unity/Bar/AgentCommands 再退 cwd」：根由宿主照後台設定補。
+        // ⛔ 2026-10-07（TASK-0390）拿掉了「沒給就猜寫死的路徑再退 cwd」：根由宿主照後台設定補。
     }
 }

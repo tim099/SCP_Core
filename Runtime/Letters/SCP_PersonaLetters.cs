@@ -18,7 +18,7 @@
 //   ⇒ SCP_PersonaOnline.Unknown 存在的唯一理由就是這個。
 //
 // 📌 「誰是 persona」用資料判、不用名字猜：**letters 底下有 `profile/` 子目錄的那些**。
-//   實測基準（2026-08-29，D:/Unity/Bar）：letters 底下 35 個目錄，其中 21 個有 `profile/`，
+//   實測基準（2026-08-29）：letters 底下 35 個目錄，其中 21 個有 `profile/`，
 //   而那 21 個跟 `AwakenInit/_persona_profile_snapshot.json` 的 `pool` 陣列**逐字相同**。
 //   用名字猜（跳過底線開頭、跳過 Template…）會在下一個命名慣例出現時安靜地漏人。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。

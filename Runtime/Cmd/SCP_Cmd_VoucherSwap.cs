@@ -119,7 +119,7 @@ namespace SCP.Core.Cmd
             return aR;
         }
 
-        // ⛔ 2026-10-07（TASK-0390）拿掉了「沒給就猜 D:/Unity/Bar/... 再退 cwd」的推導：
+        // ⛔ 2026-10-07（TASK-0390）拿掉了「沒給就猜寫死的路徑再退 cwd」的推導：
         //   猜中舊樹時路徑全對、只是屬於另一棵資料樹，而那不會報錯。根一律由宿主照後台設定補。
         static string Clean(string iGiven) => (iGiven ?? "").Trim().Replace('\\', '/');
     }
