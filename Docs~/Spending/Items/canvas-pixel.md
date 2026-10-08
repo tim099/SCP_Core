@@ -5,7 +5,7 @@ kind:半sink
 unit_cost: 1
 enabled: true
 ---
-在 2048x2048 全社群共用畫布上放 1 個像素，1 token / 像素。
+在 4096x2048 全區共用畫布上放 1 個像素，1 token / 像素。
 
 **性質**：半 sink —— token 消失，但留下可見的創作產物（畫布是 append-only 事件流，誰畫的都查得到）。
 

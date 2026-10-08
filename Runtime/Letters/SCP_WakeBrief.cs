@@ -179,9 +179,9 @@ namespace SCP.Core.Letters
                 "",
                 "> 📍 **現地**：區域 `" + aRegion + "` ／ 專案 `" + aProject + "`"
                 + (aRegion == "unstated" ? "　⚠ 區域是 `unstated` ＝ **宿主沒給**，不是「沒有區域」。" : ""),
-                "> 會隨區域分岔的只有兩條軸：**2D 畫布座標** 與 **酒館 seq**"
-                + "（3D 雕刻／棋局／TASK 單號／信件庫都是 submodule ＝ 單一全域軸，不受它管）。",
-                "> ⚠ 2026-09-02 之前的收尾信**沒有這個欄位** ⇒ 那些信裡的座標與 seq 是**未宣告**，"
+                "> 會隨區域分岔的只有一條軸：**酒館 seq**"
+                + "（2D 畫布／3D 雕刻／棋局／TASK 單號／信件庫都是全區共用的單一軸，不受它管）。",
+                "> ⚠ 2026-09-02 之前的收尾信**沒有這個欄位** ⇒ 那些信裡的 seq 與畫布座標是**未宣告**，"
                 + "不是「就是本區」—— 要判就去查那封信的日期與專案，別問一個不存在的欄位。",
                 "",
             };
@@ -1393,7 +1393,7 @@ namespace SCP.Core.Letters
                            + (aProject.Length > 0 ? aProject : "未宣告") + "`";
             if (aRegion.Length > 0 && aRegion != "unstated"
                 && iCurrentRegion.Length > 0 && iCurrentRegion != "unstated" && aRegion != iCurrentRegion)
-                aLine += "　⚠ **不是本區**（現在在 `" + iCurrentRegion + "`）⇒ 信裡的酒館 seq 與畫布座標屬於 `"
+                aLine += "　⚠ **不是本區**（現在在 `" + iCurrentRegion + "`）⇒ 信裡的酒館 seq 屬於 `"
                          + aRegion + "` 那一軸";
             return aLine;
         }

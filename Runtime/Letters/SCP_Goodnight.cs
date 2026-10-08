@@ -347,7 +347,7 @@ namespace SCP.Core.Letters
                 aR.AppendLine("## ⚠ 現地不一致（以機器值為準）");
                 foreach (string aC in aConflicts) aR.AppendLine("- " + aC);
                 aR.AppendLine("- 信已落檔、內容沒有被改；明天的 brief 會以機器值為準，並把妳寫的那行標成「跟機器值不同」。");
-                aR.AppendLine("  ⚠ 信裡引的酒館 seq／畫布座標屬於**機器值**那一區 —— 若妳是照著寫錯的那個現地在想，明天的信裡更正。");
+                aR.AppendLine("  ⚠ 信裡引的酒館 seq 屬於**機器值**那一區 —— 若妳是照著寫錯的那個現地在想，明天的信裡更正。");
             }
             aR.AppendLine("## next");
             aR.AppendLine("1. **required** — 下線：" + SCP_CmdRegistry.InvokeOf<SCP_Cmd_GoodnightSleep>($"--arg persona={iPersona} [--arg-file summary=<檔>]"));
