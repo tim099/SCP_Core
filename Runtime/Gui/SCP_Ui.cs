@@ -243,6 +243,17 @@ namespace SCP.Core.Gui
         public void ImageFit(string iPath, float iMaxSide, string iAlt)
             => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Image, Value = iPath ?? "", ImageSize = iMaxSide, Text = iAlt ?? "", ImageFit = true });
 
+        /// <summary>
+        /// 整張縮進框的圖片，**可以拖曳與滾輪**。回傳上一輪累積的指標事件（沒有 ⇒ null）。
+        /// <para>⚠ 只有會互動的 renderer（視窗）會回填；文字模式永遠是 null —— 頁面要另外留按鈕路徑。</para>
+        /// </summary>
+        public SCP_GuiPointer? ImageInteractive(string iPath, float iMaxSide, string iAlt, string iKey)
+        {
+            string aId = m_Ids.MakeExplicit(iKey);
+            Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Image, Id = aId, Value = iPath ?? "", ImageSize = iMaxSide, Text = iAlt ?? "", ImageFit = true, Interactive = true });
+            return m_Input.Pointers.TryGetValue(aId, out SCP_GuiPointer? p) ? p : null;
+        }
+
         // ── 互動 ──────────────────────────────────────────────────
         /// <summary>按鈕。**這一輪被按下就回 true**（GUILayout 語意）。</summary>
         public bool Button(string iLabel, string? iKey = null)

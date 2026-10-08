@@ -118,6 +118,12 @@ namespace SCP.Core.Gui
         public bool ImageFit { get; init; }
 
         /// <summary>
+        /// Image 可以被拖曳／滾輪（<see cref="SCP_Ui.ImageInteractive"/>）：renderer 把指標事件回填到
+        /// <see cref="SCP_GuiInput.Pointers"/>（以 <see cref="Id"/> 為鍵）。不支援的 renderer 照一般圖片畫。
+        /// </summary>
+        public bool Interactive { get; init; }
+
+        /// <summary>
         /// Label 要不要**在視窗寬度換行**（<see cref="SCP_Ui.Paragraph"/>）。
         /// <para>🩸 ImGui 的 Text 預設不換行，超出去的字直接被裁掉而**不會有任何一層喊** —— 訊息本文這種長文一定要開。</para>
         /// <para>⚠ 一般 Label 維持不換行：它常跟按鈕排在同一列，換行會讓一列長成好幾行。</para>
@@ -215,6 +221,29 @@ namespace SCP.Core.Gui
         /// </summary>
         public HashSet<string> Committed { get; } = new();
 
+        /// <summary>
+        /// 可互動圖片的指標事件：id → 上一次送出之後**累積**的拖曳與滾輪（一次性，同 <see cref="ClickedId"/>）。
+        /// <para>物理意義：拖曳量以「顯示中的圖片邊長」為 1 —— 頁面不必知道 scale 或 DPI。</para>
+        /// </summary>
+        public Dictionary<string, SCP_GuiPointer> Pointers { get; } = new();
+
         public static SCP_GuiInput None => new();
+    }
+
+    /// <summary>一張可互動圖片在一輪裡收到的指標事件。</summary>
+    public sealed class SCP_GuiPointer
+    {
+        /// <summary>拖曳位移（往右／往下為正），單位＝顯示中的圖片寬／高。</summary>
+        public float DragX, DragY;
+        /// <summary>滾輪格數（往上捲為正）。</summary>
+        public float Wheel;
+        /// <summary>這一輪還按著（拖曳中）。</summary>
+        public bool Dragging;
+        /// <summary>這一輪放開了（一次性）—— 要做貴的事（全解析度重渲）就看這一格。</summary>
+        public bool Released;
+        /// <summary>這一輪指標停在圖上。</summary>
+        public bool Hovered;
+
+        public bool Any => DragX != 0 || DragY != 0 || Wheel != 0 || Released;
     }
 }
