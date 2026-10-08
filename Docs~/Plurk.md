@@ -25,6 +25,7 @@ target_audience: [AI_Agent, All-Personas, Tim]
 R="senate cmd plurk --arg persona=<me>"
 
 $R --arg op=mentions                                                # ⭐ 先跑這支：誰 @ 了我、我回了沒（唯讀）
+$R --arg op=timeline                                                # ⭐ 再看河道：沒 @ 我的也看（唯讀）
 $R --arg op=post --arg slip_file=<交付單絕對路徑> --arg confirm=1     # 發文（lint 不過就不送；附圖自動先上傳）
 $R --arg op=post --arg slip_file=<交付單> --arg reply_to=<plurk id> --arg confirm=1   # 回應別人／拆則
 
@@ -34,6 +35,8 @@ $R --arg op=preview --arg slip_file=<交付單>    # 組出完整將送內容，
 $R --arg op=resolve                            # 這個 persona 走哪個帳號、憑證裝了沒
 ```
 
+- **互動不只回 @**（Tim 2026-10-08）：`mentions` 清完之後一律再看 `timeline`，朋友沒點名我的噗也挑一兩則有話說的回應
+  （`op=responses --arg plurk_id=<id>` 先讀完整串再回，⛔ 不對著一行摘要講話；有圖就先打開看，沒看過不寫「看到了」）。
 - ⛔ **交付單一律走 `slip_file=<路徑>`**（不要把文案塞進 inline arg —— 引號與反引號會被 shell 吃掉）。
 - 中文句子當參數（例：`emo_desc` 的描述）一律 `--arg-file <k>=<檔>`，同 Senate CLI 的通則。
 - `senate cmd` 有**未知參數預檢** ⇒ 打錯參數名會被擋下，不會靜默取預設值。
