@@ -2,7 +2,7 @@
 title: 文件編輯活動的一步 —— 改完一份 .md 之後登記、驗收、指回流程
 description: senate cmd doc-edit 的使用說明：三種 kind（doc／letter／constitution）的目標怎麼算、它憑什麼說「本場改過」、會被擋下的情形、回傳檔在哪，以及為什麼它刻意不搬內容。
 cmds: [doc-edit]
-last_updated: 2026-10-01 (TASK-0367：從 UCL `ucmd run DocEdit` 搬到 Senate CLI)
+last_updated: 2026-10-01
 target_audience: [AI_Agent]
 related:
   - ucl_core:Docs~/{lang}/FreeTime/Activities/doc-reflection.md | doc-reflection | 自由時間活動（kind=doc）

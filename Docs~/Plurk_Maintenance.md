@@ -514,7 +514,7 @@ $R --arg op=post    --arg slip_file=<好樣本>   # 無 confirm ⇒ dry-run，�
 ```
 
 改完 `.cs` 之後：senate.exe 那側走 `build.sh`；SCP_Core 也被 Unity 那側編譯，
-所以 Unity 那側另跑 `senate cmd unity-recompile --arg persona=<me>`（它**只量 Unity assemblies，不涵蓋 senate.exe**）。
+所以 Unity 那側另走 Unity CLI 重編（見 `senate cmd doc --arg op=show --arg name=Unity_CLI`；它**只量 Unity assemblies，不涵蓋 senate.exe**）。
 
 - **真送過之後要回讀**：`op=get --arg plurk_id=<id>` 撈回來比內容與 `limited_to`。
   **「我送出了」跟「它在那裡」是兩句話。**

@@ -1,6 +1,6 @@
 ---
 title: 文件查詢（senate cmd doc）與「文件住哪」的規則
-description: 從 CLI 查文件（列出／全文／搜尋）、help 怎麼指到文件、文件的 frontmatter 要寫什麼，以及 ucmd 功能搬到 Senate CLI 時文件怎麼跟著搬
+description: 從 CLI 查文件（列出／全文／搜尋）、help 怎麼指到文件、文件的 frontmatter 要寫什麼，以及 UCL_Core 的功能搬到 Senate CLI 時文件怎麼跟著搬
 cmds: [doc, help]
 last_updated: 2026-09-29
 target_audience: [AI_Agent, Tools_Maintainer]
@@ -56,7 +56,7 @@ cmds: [tavern-post, tavern-wait]   # 這份文件講哪幾支指令 —— help 
 
 `help <指令>` 第二行印的「型別：…」就是判準。
 
-### ucmd 功能搬到 Senate CLI 時（Tim 2026-09-29）
+### UCL_Core 的功能搬到 Senate CLI 時（Tim 2026-09-29）
 
 同一筆 commit 做完三件事：
 

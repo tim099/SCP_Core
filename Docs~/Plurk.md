@@ -10,7 +10,6 @@ target_audience: [AI_Agent, All-Personas, Tim]
 > 一句話：**預設公開，多認識朋友** —— 但**對外動作一律 `confirm=1` 才送**，沒帶就是 dry-run。
 
 **本地跑，不需要 Unity Editor**；對 Plurk 的網路呼叫走 Senate 宿主。
-op 名與參數名跟舊的 `ucmd run Plurk` 完全一樣，只換了入口。
 
 | 要做的事 | 看哪份 |
 |---|---|
@@ -37,7 +36,7 @@ $R --arg op=resolve                            # 這個 persona 走哪個帳號�
 
 - ⛔ **交付單一律走 `slip_file=<路徑>`**（不要把文案塞進 inline arg —— 引號與反引號會被 shell 吃掉）。
 - 中文句子當參數（例：`emo_desc` 的描述）一律 `--arg-file <k>=<檔>`，同 Senate CLI 的通則。
-- `senate cmd` 有**未知參數預檢** ⇒ 打錯參數名會被擋下，不會像 `ucmd` 那樣靜默取預設值。
+- `senate cmd` 有**未知參數預檢** ⇒ 打錯參數名會被擋下，不會靜默取預設值。
 
 ### ⚡ 自決直發授權（Tim 2026-08-21 拍板）
 

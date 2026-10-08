@@ -345,8 +345,6 @@ SCP_DataPaths.QueueFolder(new SCP_DataRoot(aDataRoot), aPersona);
               ／根正規化=True／letters 舊新一致=True／資料根三來源可分=True        ✓
 ```
 
-真檔驗證：`senate ucmd status --project Bar` 列出 10 個真實 queue 分道（資料根
-`D:/Unity/Bar/AgentCommands`）—— 不是只跑合成字串。
 
 ---
 
@@ -465,8 +463,8 @@ error CS1704: An assembly with the same simple name 'SCP_Core' has already been 
 2. **`bin/` `obj/` 在 `.gitignore` 裡** ⇒ `git status` 不會提醒你它們躺在那裡。
 
 ⇒ 規則：**要編 SCP_Core 就編 Senate 那一份**（`D:/Unity/Senate/SCP_Core`）。
-Unity 那一份的語法驗收走該側的重編：**`senate cmd unity-recompile --arg persona=<me>`**
-（它拿送出觸發那一刻當基準，等到晚於基準的那一份才印）。
+Unity 那一份的語法驗收走 **Unity CLI 的重編**（`unity command recompile` → 輪詢 `recompile_status` → 看 `compilationFailed`，
+錯誤明細從 `console --since <觸發前的 cursor>` 拿；流程見 `senate cmd doc --arg op=show --arg name=Unity_CLI`）。
 ⛔ **Unity 的綠燈不涵蓋 `senate.exe`，反之亦然** —— 兩邊編譯設定不同：
 🩸 2026-09-07 同一份 `SCP_Cmd_Keys.cs`，Unity **0 errors**（LangVersion 9、nullable 沒開，
 `?` 只是 CS8632 警告），`dotnet build` **CS8603 紅燈**（nullable 開著且警告當錯誤）。
