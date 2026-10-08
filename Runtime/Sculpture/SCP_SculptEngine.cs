@@ -3,7 +3,7 @@
 // 物理意義：⭐ 本檔**不畫圖**：等角／GPU 渲染是宿主的事（<see cref="ISCP_SculptRenderer"/>，Senate.Desktop 註冊）。
 //          view 只交出「過濾後的可見 voxel ＋ 渲染參數」；展品照也是同一條路 —— 沒有渲染器 ⇒ 大聲回報，⛔ 不出空白圖。
 //          既有的事件／快取／展品檔是 python 時代寫下的、而且進 git ⇒ 本檔寫出的版面與它們逐字相同（見 SCP_SculptPy）。
-// 數值影響：單次 box／stamp 上限 1,000,000 voxels；共用空間256³、作品64³，幾何、框景與使用率使用同一個Size。
+// 數值影響：單次box／stamp上限1,000,000 voxels；共用空間256³，作品各軸1–256、預設64³。
 //          每個 op 進來都先 <see cref="SCP_SculptStore.Load"/>（會重寫快取）—— 呼叫端要握雕刻鎖（Cmd_Sculpture 的 `_engine.lock`）。
 // 失敗處置：參數不合 ⇒ 回 exit 2 的結果；python 會丟 traceback 的那幾格（重播遇到未知 op、canvas view 失敗…）⇒ exit 1 ＋ 一句人話。
 //          ⛔ 不丟例外給呼叫端吞 —— 只有 <see cref="SCP_SculptReplayException"/> 會被各 op 轉成 exit 1。
@@ -56,13 +56,16 @@ namespace SCP.Core.Sculpture
         }
     }
 
-    public sealed class SCP_SculptEngine
+    public sealed partial class SCP_SculptEngine
     {
         public const long MaxVolume = 1000000;
 
         public SCP_SculptPaths Paths { get; }
-        /// <summary>共用展區 256；個人作品 64。調色盤仍是 RGB332（256 色）。</summary>
-        public int Size { get; } = 256;
+        /// <summary>最長邊供框景與地板使用；幾何邊界與使用率依SizeX/Y/Z。調色盤仍為RGB332。</summary>
+        public int Size => Math.Max(SizeX, Math.Max(SizeY, SizeZ));
+        public int SizeX { get; } = 256;
+        public int SizeY { get; } = 256;
+        public int SizeZ { get; } = 256;
 
         /// <summary>AgentCommands 資料根（stamp2d 叫 canvas view 時要傳的 data_root）。</summary>
         public string DataRoot { get; }
@@ -84,12 +87,15 @@ namespace SCP.Core.Sculpture
         }
 
         /// <summary>測試隔離：雕刻根與畫布資料根分開給。</summary>
-        public SCP_SculptEngine(SCP_SculptPaths iPaths, string iCanvasDataRoot, int iSize = 256)
+        public SCP_SculptEngine(SCP_SculptPaths iPaths, string iCanvasDataRoot, int iSize = 256, int iSizeY = 0, int iSizeZ = 0)
         {
             if (iSize < 1 || iSize > 256) throw new ArgumentOutOfRangeException(nameof(iSize));
+            if (iSizeY == 0) iSizeY = iSize;
+            if (iSizeZ == 0) iSizeZ = iSize;
+            if (!SCP_SculptWorks.ValidSize(iSizeY) || !SCP_SculptWorks.ValidSize(iSizeZ)) throw new ArgumentOutOfRangeException(nameof(iSizeY));
             Paths = iPaths;
             DataRoot = iCanvasDataRoot;
-            Size = iSize;
+            SizeX = iSize; SizeY = iSizeY; SizeZ = iSizeZ;
         }
 
         /// <summary>讀現況（＝ python <c>load_space_state()</c>；會重寫快取）。</summary>
@@ -103,7 +109,7 @@ namespace SCP.Core.Sculpture
             foreach (var v in iSource.Voxels.Entries())
             {
                 long x = (long)v.X + iAt[0], y = (long)v.Y + iAt[1], z = (long)v.Z + iAt[2];
-                if (x < 0 || x >= Size || y < 0 || y >= Size || z < 0 || z >= Size) { plan.OutOfBounds++; continue; }
+                if (x < 0 || x >= SizeX || y < 0 || y >= SizeY || z < 0 || z >= SizeZ) { plan.OutOfBounds++; continue; }
                 if (target.Voxels.Get((int)x, (int)y, (int)z) != 0) { plan.Occupied++; continue; }
                 plan.Placed.Add(new[] { (int)x, (int)y, (int)z, v.Color });
             }
@@ -115,7 +121,8 @@ namespace SCP.Core.Sculpture
         {
             if (iPlan.OutOfBounds != 0 || iPlan.Placed.Count == 0) throw new InvalidOperationException("不可提交越界或空的匯入");
             var space = LoadSpace();
-            var source = new SCP_SculptPyObj().Put("work_id", iPlan.WorkId).Put("owner", iPlan.Owner).Put("revision", iPlan.Revision);
+            var source = new SCP_SculptPyObj().Put("work_id", iPlan.WorkId).Put("owner", iPlan.Owner).Put("revision", iPlan.Revision)
+                .Put("credits", SCP_JsonMapper.ToJson(iPlan.Credits));
             var ev = new SCP_SculptPyObj().Put("op", "importwork").Put("persona", iPersona).Put("source", source)
                 .Put("at", iPlan.At).Put("placed_count", iPlan.Placed.Count).Put("skipped_occupied", iPlan.Occupied)
                 .Put("placed_colored", iPlan.Placed).Put("timestamp", SCP_SculptPy.IsoFormat(Clock()));
@@ -123,7 +130,9 @@ namespace SCP.Core.Sculpture
             foreach (int[] v in iPlan.Placed) space.Voxels.Set(v[0], v[1], v[2], v[3]);
             space.LastEventFile = rel;
             SCP_SculptStore.SaveCache(Paths, space);
-            var exhibit = AutoExhibit(new SCP_SculptStampArgs { ExhibitId = iExhibitId, ExhibitTitle = iTitle, ExhibitDesc = "作品 " + iPlan.WorkId + " @ " + iPlan.Revision, Persona = iPlan.Owner }, iPlan.Placed, space);
+            var description = new StringBuilder("作品 " + iPlan.WorkId + " @ " + iPlan.Revision);
+            foreach (var credit in iPlan.Credits) description.Append("\nCredit: ").Append(credit.title).Append("（").Append(credit.work).Append("）｜by ").Append(credit.author).Append("｜").Append(credit.revision);
+            var exhibit = AutoExhibit(new SCP_SculptStampArgs { ExhibitId = iExhibitId, ExhibitTitle = iTitle, ExhibitDesc = description.ToString(), Persona = iPlan.Owner }, iPlan.Placed, space);
             return new SCP_SculptStampResult { Op = "importwork", Persona = iPersona, PlacedCount = iPlan.Placed.Count, SkippedOccupied = iPlan.Occupied, EventFile = file, Source = source, Exhibit = exhibit,
                 Json = new SCP_SculptPyObj().Put("status", "success").Put("op", "importwork").Put("placed_count", iPlan.Placed.Count).Put("event_file", file).Put("source", source) };
         }
@@ -136,9 +145,9 @@ namespace SCP.Core.Sculpture
             int x1 = Math.Min(iArgs.X1, iArgs.X2), x2 = Math.Max(iArgs.X1, iArgs.X2);
             int y1 = Math.Min(iArgs.Y1, iArgs.Y2), y2 = Math.Max(iArgs.Y1, iArgs.Y2);
             int z1 = Math.Min(iArgs.Z1, iArgs.Z2), z2 = Math.Max(iArgs.Z1, iArgs.Z2);
-            x1 = Math.Max(0, x1); x2 = Math.Min(Size - 1, x2);
-            y1 = Math.Max(0, y1); y2 = Math.Min(Size - 1, y2);
-            z1 = Math.Max(0, z1); z2 = Math.Min(Size - 1, z2);
+            x1 = Math.Max(0, x1); x2 = Math.Min(SizeX - 1, x2);
+            y1 = Math.Max(0, y1); y2 = Math.Min(SizeY - 1, y2);
+            z1 = Math.Max(0, z1); z2 = Math.Min(SizeZ - 1, z2);
             // ⚠ 照 python 算（不夾 0）：整段在界外時兩軸各為負、乘起來可以是正的 —— 事件裡的 total_volume 就是這個數
             long aTotal = (long)(x2 - x1 + 1) * (y2 - y1 + 1) * (z2 - z1 + 1);
             if (aTotal > MaxVolume)
@@ -285,7 +294,7 @@ namespace SCP.Core.Sculpture
                     p[iu] += px.U;
                     p[iv] += vv;
                     p[inn] += (long)aNDir * t;
-                    if (p[0] < 0 || p[0] >= Size || p[1] < 0 || p[1] >= Size || p[2] < 0 || p[2] >= Size) { oOob++; continue; }
+                    if (p[0] < 0 || p[0] >= SizeX || p[1] < 0 || p[1] >= SizeY || p[2] < 0 || p[2] >= SizeZ) { oOob++; continue; }
                     int x = (int)p[0], y = (int)p[1], z = (int)p[2];
                     if (!iOverwrite && iSpace.Voxels.Get(x, y, z) != 0) { oSkipped++; continue; }
                     aPlaced.Add(new[] { x, y, z, c });
@@ -354,7 +363,7 @@ namespace SCP.Core.Sculpture
             if (aOob > 0 && !iArgs.AllowClip)
             {
                 aRes.ExitCode = 5;
-                aRes.Reason = aOob + " 個 voxel 落在 " + Size + "³ 空間之外 —— 未貼、未扣費。圖 " + iRegionW + "x" + iRegionH
+                aRes.Reason = aOob + " 個 voxel 落在 " + SizeX + "x" + SizeY + "x" + SizeZ + " 空間之外 —— 未貼、未扣費。圖 " + iRegionW + "x" + iRegionH
                               + " @ at=" + SCP_SculptPy.ListRepr(aAt) + " facing=" + aFacing
                               + " 放不下；改小 --at、用 --resize 縮圖，或顯式 --allow-clip 接受裁切";
                 aRes.Json = new SCP_SculptPyObj()
@@ -551,9 +560,9 @@ namespace SCP.Core.Sculpture
                 }
             }
             string aBbox = x1 + ".." + x2 + "," + y1 + ".." + y2 + "," + z1 + ".." + z2;
-            string aRegion = Clamp255(x1 - aMargin) + ".." + Clamp255(x2 + aMargin) + ","
-                             + Clamp255(y1 - aMargin) + ".." + Clamp255(y2 + aMargin) + ","
-                             + Clamp255(z1 - aMargin) + ".." + Clamp255(z2 + aMargin);
+            string aRegion = ClampAxis(x1 - aMargin, SizeX) + ".." + ClampAxis(x2 + aMargin, SizeX) + ","
+                             + ClampAxis(y1 - aMargin, SizeY) + ".." + ClampAxis(y2 + aMargin, SizeY) + ","
+                             + ClampAxis(z1 - aMargin, SizeZ) + ".." + ClampAxis(z2 + aMargin, SizeZ);
 
             var aPreset = new SCP_SculptPyObj();
             if (aHasOld) foreach (string k in aOld!.Keys) aPreset.Put(k, aOld[k]);
@@ -595,7 +604,7 @@ namespace SCP.Core.Sculpture
             return aInfo;
         }
 
-        int Clamp255(int v) => Math.Max(0, Math.Min(Size - 1, v));
+        static int ClampAxis(int v, int iSize) => Math.Max(0, Math.Min(iSize - 1, v));
 
         static bool TruthyObj(object? a)
         {
@@ -724,7 +733,7 @@ namespace SCP.Core.Sculpture
             var aRes = new SCP_SculptStatsResult { TotalVoxels = n };
             aRes.Lines.Add("# 📊 3D Sculpture Stats:");
             aRes.Lines.Add("  總非空 Voxels 數 : " + n.ToString(CultureInfo.InvariantCulture));
-            aRes.Lines.Add("  空間使用率       : " + ((double)n / ((long)Size * Size * Size) * 100).ToString("F6", CultureInfo.InvariantCulture) + "%");
+            aRes.Lines.Add("  空間使用率       : " + ((double)n / ((long)SizeX * SizeY * SizeZ) * 100).ToString("F6", CultureInfo.InvariantCulture) + "%");
             return aRes;
         }
 
@@ -736,7 +745,7 @@ namespace SCP.Core.Sculpture
         /// </summary>
         void ParseViewRegion(string? iRegion, int[] ioR)
         {
-            ioR[0] = 0; ioR[1] = Size - 1; ioR[2] = 0; ioR[3] = Size - 1; ioR[4] = 0; ioR[5] = Size - 1;
+            ioR[0] = 0; ioR[1] = SizeX - 1; ioR[2] = 0; ioR[3] = SizeY - 1; ioR[4] = 0; ioR[5] = SizeZ - 1;
             if (string.IsNullOrEmpty(iRegion)) return;
             string[] parts = iRegion!.Replace(" ", "").Split(',');
             for (int axis = 0; axis < 3; axis++)

@@ -377,6 +377,17 @@ namespace SCP.Core.Sculpture
         /// <returns>完整路徑（平台分隔符）；<paramref name="oRel"/> ＝ 相對 events/ 的路徑（＝新水位）。</returns>
         public static string RecordEvent(SCP_SculptPaths iPaths, SCP_SculptPyObj iEvent, DateTime iNow, out string oRel)
         {
+            // 同毫秒或時鐘倒退仍保持追加順序，否則Undo與刪快取後的重播會交換兩刀。
+            var previous = ListEvents(iPaths);
+            if (previous.Count > 0)
+            {
+                string rel = previous[previous.Count - 1].Rel.Replace('\\', '/');
+                string[] parts = rel.Split('/');
+                string name = parts[parts.Length - 1];
+                if (parts.Length == 2 && name.Length >= 10 && DateTime.TryParseExact(parts[0] + " " + name.Substring(0, 10),
+                    "yyyy-MM-dd HHmmss_fff", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime last) && iNow.Ticks / TimeSpan.TicksPerMillisecond <= last.Ticks / TimeSpan.TicksPerMillisecond)
+                    iNow = last.AddMilliseconds(1);
+            }
             string aDay = iNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             string aDir = Path.Combine(iPaths.Events, aDay);
             Directory.CreateDirectory(aDir);
@@ -416,6 +427,19 @@ namespace SCP.Core.Sculpture
             {
                 iSpace.Voxels.Set(IntField(iEv, "x", 0, iFile), IntField(iEv, "y", 0, iFile),
                                   IntField(iEv, "z", 0, iFile), IntField(iEv, "color", 19, iFile));
+            }
+            else if (aOp == "workedit")
+            {
+                var options = new SCP_JsonMapOptions();
+                var edit = new SCP_SculptEdit();
+                SCP_JsonMapper.Populate(edit, iEv["edit"], options);
+                if (options.Diagnostics.Count > 0) throw Bad(iFile, string.Join("; ", options.Diagnostics));
+                foreach (var v in edit.after)
+                {
+                    if (v[0] < 0 || v[0] > 255 || v[1] < 0 || v[1] > 255 || v[2] < 0 || v[2] > 255 || v[3] < 0 || v[3] > 255)
+                        throw Bad(iFile, "workedit.after格式或座標不合法");
+                    iSpace.Voxels.Set(v[0], v[1], v[2], v[3]);
+                }
             }
             else if (IsStampOp(aOp))
             {
