@@ -1,6 +1,6 @@
 ---
 title: 文件查詢（senate cmd doc）與「文件住哪」的規則
-description: 從 CLI 查文件（列出／全文／搜尋）、help 怎麼指到文件、文件的 frontmatter 要寫什麼，以及 UCL_Core 的功能搬到 Senate CLI 時文件怎麼跟著搬
+description: 從 CLI 查文件（列出／全文／搜尋）、help 怎麼指到文件、文件的 frontmatter 要寫什麼
 cmds: [doc, help]
 last_updated: 2026-09-29
 target_audience: [AI_Agent, Tools_Maintainer]
@@ -55,16 +55,6 @@ cmds: [tavern-post, tavern-wait]   # 這份文件講哪幾支指令 —— help 
 | Senate（`Senate.*`） | `<Senate>/Docs/`（分類照 `DOC_INDEX.md`） |
 
 `help <指令>` 第二行印的「型別：…」就是判準。
-
-### UCL_Core 的功能搬到 Senate CLI 時（Tim 2026-09-29）
-
-同一筆 commit 做完三件事：
-
-1. 新指令的文件在上表那一邊**以 CLI 版本重寫**，frontmatter 帶 `cmds:`。
-2. UCL_Core 的舊文件**刪除**（不留墓碑、不保留舊版）；指向它的連結改指新文件的名字（`senate cmd doc --arg op=show --arg name=<名字>`）。
-3. 對應的 skill 改成只指向 CLI 與文件名，skill 內 ⛔ 不重抄操作。
-
-⚠ 只搬到一半（新文件寫了、舊的還在）比沒搬更糟：兩份都讀得出合法的說明，而沒有一層會喊誰過期了。
 
 ## 4. 宿主要做的事
 
