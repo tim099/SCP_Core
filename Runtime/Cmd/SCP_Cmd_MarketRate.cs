@@ -7,6 +7,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using SCP.Core.Market;
+using SCP.Core.Paths;
+using SCP.Core.Tavern;
 
 namespace SCP.Core.Cmd
 {
@@ -41,6 +43,9 @@ namespace SCP.Core.Cmd
             + "  ⭐ 有更新才寫**一個歷史版本**（`Market/history/rates_<抓取時間>.json`，一版一檔、先於快取落盤）；沒更新不寫。\n"
             + "· `op=history`：歷史匯率。`--arg symbol=<券>` 查走勢（中間價序列＋變動幅度＋波動度，`since`／`until` 限區間）；\n"
             + "  `--arg version=<版本代號>` 讀回單一版本的完整報價表；兩者都不給 ⇒ 列出全部版本。\n"
+            + "· `op=import`：從別區分支匯入歷史匯率（`--arg region=Florin` 或 `--arg from_ref=origin/LY`；`symbol` 可給逗號清單只匯那幾個；**預設試算**，`--arg confirm=1` 才寫）。\n"
+            + "  每個幣只取「比本地該幣**第一個**歷史點更早」且「比本地最新一版更早」的版本 ⇒ 兩邊都在抓的幣不會交錯、匯入的版本不會冒充最新版；\n"
+            + "  每版只留要匯入的幣，origin 標 `import:<ref>@<sha>`（每日同步只數 sync，不受影響）；本地已有同一版就跳過（重跑不重複）。只讀 git，不 fetch。\n"
             + "⚠ 無緩存資訊之券種一律視為無法兌換（並非所有券都能互相兌換，Tim 2026-09-22 拍板）。\n"
             + "⚠ 成本在**手續費**不在人造價差（Tim 2026-09-23）：真實盤口極薄（實測往返 2.42 ppm ≒ 免費），\n"
             + "  而現實的成本是每筆成交的手續費。⇒ **按腿計**：A→USD→B 兩筆成交收兩次；一端是 USD 只收一次。";
@@ -51,8 +56,8 @@ namespace SCP.Core.Cmd
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
             new SCP_CmdArgSpec("data_root", "資料根目錄（絕對路徑）。宿主照後台設定補；省略又沒有宿主 ⇒ 擋下", iDefault: ""),
-            new SCP_CmdArgSpec("op", "做什麼（list|get|set|toggle|fee|source|sync|history，預設 list）", iDefault: "list",
-                iChoices: new[] { "list", "get", "set", "toggle", "fee", "source", "sync", "history" }),
+            new SCP_CmdArgSpec("op", "做什麼（list|get|set|toggle|fee|source|sync|history|import，預設 list）", iDefault: "list",
+                iChoices: new[] { "list", "get", "set", "toggle", "fee", "source", "sync", "history", "import" }),
             new SCP_CmdArgSpec("symbol", "券種代號（如 BTC, GOLD, USD）", iDefault: ""),
             new SCP_CmdArgSpec("from", "來源券種代號（op=get 查匯率對時使用）", iDefault: ""),
             new SCP_CmdArgSpec("to", "目標券種代號（op=get 查匯率對時使用）", iDefault: ""),
@@ -69,6 +74,9 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("version", "op=history：讀回單一版本（版本代號＝檔名 `rates_<代號>.json` 的中段）", iDefault: ""),
             new SCP_CmdArgSpec("since", "op=history：區間起點（`yyyy-MM-dd` 當地整天起，或 ISO 8601）；留空＝不限", iDefault: ""),
             new SCP_CmdArgSpec("until", "op=history：區間終點（`yyyy-MM-dd` 當地整天止，或 ISO 8601）；留空＝不限", iDefault: ""),
+            new SCP_CmdArgSpec("region", "op=import：來源區名（`senate cmd regions` 列得出來的，例 Florin）—— 由分支自報對到 ref", iDefault: ""),
+            new SCP_CmdArgSpec("from_ref", "op=import：直接給來源 git ref（例 origin/LY）；與 region 擇一", iDefault: ""),
+            new SCP_CmdArgSpec("confirm", "op=import：1＝真的寫入（預設 0＝只試算、零寫入）", iDefault: "0"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
@@ -94,8 +102,68 @@ namespace SCP.Core.Cmd
                 "source" => OpSource(aDataRoot, aConfig, iArgs),
                 "sync" => OpSync(aDataRoot, aConfig, iArgs),
                 "history" => OpHistory(aDataRoot, iArgs),
-                _ => SCP_CmdResult.Fail(2, $"✗ 認不得的 op='{aOp}'（list|get|set|toggle|fee|source|sync|history）"),
+                "import" => OpImport(aDataRoot, iArgs),
+                _ => SCP_CmdResult.Fail(2, $"✗ 認不得的 op='{aOp}'（list|get|set|toggle|fee|source|sync|history|import）"),
             };
+        }
+
+        /// <summary>區名 → ref（由分支自報，同 `cmd regions`）。找不到就說掃到了哪些區。</summary>
+        public static bool TryResolveRegionRef(string iDataRoot, string iRegion, out string oRef, out string oError)
+        {
+            oRef = ""; oError = "";
+            var aProblems = new List<string>();
+            var aRegions = SCP_TavernRegion.ListRegions(new SCP_DataRoot(iDataRoot), aProblems);
+            foreach (var r in aRegions)
+                if (string.Equals(r.Region, iRegion, StringComparison.OrdinalIgnoreCase)) { oRef = r.Ref; return true; }
+            var aNames = new List<string>();
+            foreach (var r in aRegions) aNames.Add(r.Region + "→" + r.Ref);
+            oError = $"查無此區 `{iRegion}`（掃到：{(aNames.Count > 0 ? string.Join("、", aNames) : "無")}{(aProblems.Count > 0 ? "；掃描問題：" + string.Join("；", aProblems) : "")}）";
+            return false;
+        }
+
+        static SCP_CmdResult OpImport(string iDataRoot, SCP_CmdArgs iArgs)
+        {
+            string aRegion = iArgs.Get("region").Trim(), aRef = iArgs.Get("from_ref").Trim();
+            if ((aRegion.Length > 0) == (aRef.Length > 0))
+                return SCP_CmdResult.Fail(2, "✗ op=import 要給 `region`（例 Florin）或 `from_ref`（例 origin/LY），擇一");
+            if (aRegion.Length > 0 && !TryResolveRegionRef(iDataRoot, aRegion, out aRef, out string aRegionErr))
+                return SCP_CmdResult.Fail(2, "✗ " + aRegionErr);
+            var aSymbols = new List<string>();
+            foreach (string s in iArgs.Get("symbol").Split(',')) if (s.Trim().Length > 0) aSymbols.Add(s.Trim().ToUpperInvariant());
+            bool aConfirm = iArgs.Get("confirm").Trim() == "1";
+
+            var aPlan = SCP_RateHistoryImport.Plan(iDataRoot, aRef, aSymbols);
+            var aR = SCP_CmdResult.Success($"# 歷史匯率匯入 —— 來源 `{aRef}`{(aPlan.Sha.Length > 0 ? " @ " + aPlan.Sha : "")}（{(aConfirm ? "寫入" : "**試算，零寫入**")}）");
+            foreach (string e in aPlan.Errors) aR.Lines.Add("- ✗ " + e);
+            if (aPlan.Errors.Count > 0) { aR.ExitCode = 1; aR.AddValue("written", "0"); return aR; }
+            aR.Lines.Add($"- 本地最新一版：{(aPlan.LocalLatest.HasValue ? SCP_RateHistoryImport.Stamp(aPlan.LocalLatest.Value) : "（沒有歷史）")}");
+            var aFirst = new List<string>();
+            foreach (var kv in aPlan.LocalFirst) aFirst.Add($"{kv.Key} {SCP_RateHistoryImport.Stamp(kv.Value)}");
+            aFirst.Sort(StringComparer.Ordinal);
+            aR.Lines.Add($"- 本地各幣第一個點：{(aFirst.Count > 0 ? string.Join("、", aFirst) : "（沒有）")}");
+            if (aSymbols.Count > 0) aR.Lines.Add($"- 只匯入：{string.Join(",", aSymbols)}");
+            aR.Lines.Add("");
+            aR.Lines.Add("| 來源版本 | 抓取時間 | 匯入的幣 | 不匯入的原因 |");
+            aR.Lines.Add("|---|---|---|---|");
+            foreach (var i in aPlan.Items)
+                aR.Lines.Add($"| `{i.VersionId}` | {SCP_RateHistoryImport.Stamp(i.FetchedAtUtc)} | {(i.Symbols.Count > 0 && i.Skip.Length == 0 ? string.Join(",", i.Symbols) : "—")} | {i.Skip} |");
+            foreach (string u in aPlan.Unreadable) aR.Lines.Add("- ⚠ 來源讀不了（跳過）：" + u);
+            aR.AddValue("source_versions", aPlan.Items.Count.ToString(CultureInfo.InvariantCulture));
+            aR.AddValue("would_write", aPlan.ToWrite.ToString(CultureInfo.InvariantCulture));
+            if (!aConfirm)
+            {
+                aR.Lines.Add("");
+                aR.Lines.Add($"⇒ 會寫入 **{aPlan.ToWrite}** 版（origin=`{aPlan.Origin}`）。確認要寫：同一行加 `--arg confirm=1`。");
+                aR.AddValue("written", "0");
+                return aR;
+            }
+            int aWritten = SCP_RateHistoryImport.Apply(iDataRoot, aPlan, out var aErrors);
+            foreach (string e in aErrors) aR.Lines.Add("- ✗ 寫入失敗：" + e);
+            aR.Lines.Add("");
+            aR.Lines.Add($"⇒ 寫入 **{aWritten}**／{aPlan.ToWrite} 版（origin=`{aPlan.Origin}`）。看走勢：`rate --arg op=history --arg symbol=<幣>`。");
+            aR.AddValue("written", aWritten.ToString(CultureInfo.InvariantCulture));
+            if (aErrors.Count > 0) aR.ExitCode = 1;
+            return aR;
         }
 
         static SCP_CmdResult OpList(SCP_MarketRateConfig iConfig)

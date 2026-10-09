@@ -196,11 +196,28 @@ namespace SCP.Core.Market
 
         public static bool TryReadVersion(string iPath, out SCP_RateHistoryVersion oVersion, out string? oError)
         {
+            string aText;
+            try { aText = File.ReadAllText(iPath); }
+            catch (Exception e)
+            {
+                oVersion = new SCP_RateHistoryVersion { FilePath = iPath };
+                oError = $"{e.GetType().Name}: {e.Message}";
+                return false;
+            }
+            return TryParseVersion(aText, iPath, out oVersion, out oError);
+        }
+
+        /// <summary>
+        /// 從文字解析一個版本（本機檔與跨區 `git show` 讀出來的內容走**同一支**，TASK-0475）。
+        /// <paramref name="iPath"/> 只用來補版本代號與標示來源。
+        /// </summary>
+        public static bool TryParseVersion(string iText, string iPath, out SCP_RateHistoryVersion oVersion, out string? oError)
+        {
             oVersion = new SCP_RateHistoryVersion { FilePath = iPath };
             oError = null;
             try
             {
-                var aJd = SCP_JsonParser.Parse(File.ReadAllText(iPath));
+                var aJd = SCP_JsonParser.Parse(iText);
                 oVersion.VersionId = aJd.GetString("version_id", "");
                 if (oVersion.VersionId.Length == 0)
                 {
