@@ -37,23 +37,30 @@ namespace SCP.Core.Sculpture
             if (options.Diagnostics.Count > 0) throw new SCP_SculptReplayException("編輯事件不合法：" + string.Join("; ", options.Diagnostics));
             return result;
         }
+        /// <summary>這一趟實際解析了幾個事件檔（其餘取自歷史索引）。</summary>
+        public int Parsed;
+        readonly Dictionary<string, List<SCP_SculptCredit>> m_Credits = new Dictionary<string, List<SCP_SculptCredit>>(StringComparer.Ordinal);
+        /// <summary>Undo/Redo 堆疊與每刀 Credit 取自歷史索引（<see cref="SCP_SculptHistoryIndex"/>）：只解析索引之後新增或改過的事件。</summary>
         public static SCP_SculptHistory Read(SCP_SculptPaths iPaths)
         {
             var result = new SCP_SculptHistory();
-            foreach (var file in SCP_SculptStore.ListEvents(iPaths))
+            var files = SCP_SculptStore.ListEvents(iPaths);
+            var entries = SCP_SculptHistoryIndex.Refresh(iPaths, files, out result.Parsed);
+            for (int i = 0; i < files.Count; i++)
             {
-                var ev = SCP_SculptStore.ReadEvent(file.Full);
-                if (ev == null) throw new SCP_SculptReplayException("事件讀取失敗：" + file.Rel);
-                var edit = ev.GetString("op", "") == "workedit" ? ReadEdit(ev) : null;
-                if (edit != null && (edit.action == "undo" || edit.action == "redo"))
+                var file = files[i]; var entry = entries[i];
+                if (entry.kind == SCP_SculptHistoryEntry.KindUnreadable) throw new SCP_SculptReplayException("事件讀取失敗：" + file.Rel);
+                if (entry.kind == SCP_SculptHistoryEntry.KindUndo || entry.kind == SCP_SculptHistoryEntry.KindRedo)
                 {
-                    var from = edit.action == "undo" ? result.Active : result.Redo;
-                    var to = edit.action == "undo" ? result.Redo : result.Active;
-                    if (from.Count == 0 || from[from.Count - 1].Rel.Replace('\\', '/') != edit.target_event.Replace('\\', '/'))
+                    bool undo = entry.kind == SCP_SculptHistoryEntry.KindUndo;
+                    var from = undo ? result.Active : result.Redo;
+                    var to = undo ? result.Redo : result.Active;
+                    if (from.Count == 0 || from[from.Count - 1].Rel.Replace('\\', '/') != entry.target.Replace('\\', '/'))
                         throw new SCP_SculptReplayException("Undo/Redo事件順序不合法：" + file.Rel);
                     to.Add(from[from.Count - 1]); from.RemoveAt(from.Count - 1);
                 }
                 else { result.Active.Add(file); result.Redo.Clear(); }
+                result.m_Credits[file.Rel] = entry.credits;
             }
             return result;
         }
@@ -62,12 +69,9 @@ namespace SCP.Core.Sculpture
             var result = new List<SCP_SculptCredit>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var file in Active)
-            {
-                var ev = SCP_SculptStore.ReadEvent(file.Full)!;
-                if (ev.GetString("op", "") != "workedit") continue;
-                foreach (var credit in ReadEdit(ev).credits)
-                    if (seen.Add(credit.work + "|" + credit.author + "|" + credit.revision)) result.Add(credit);
-            }
+                if (m_Credits.TryGetValue(file.Rel, out var credits))
+                    foreach (var credit in credits)
+                        if (seen.Add(credit.work + "|" + credit.author + "|" + credit.revision)) result.Add(credit);
             return result;
         }
     }

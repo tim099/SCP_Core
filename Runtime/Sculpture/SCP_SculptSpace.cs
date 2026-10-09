@@ -42,6 +42,8 @@ namespace SCP.Core.Sculpture
 
         public string Events => Path.Combine(Root, "events");
         public string CacheFile => Path.Combine(Root, "sculpt_cache.json");
+        /// <summary>歷史索引（<see cref="SCP_SculptHistoryIndex"/>）：本機快取、不入 git。</summary>
+        public string HistoryCacheFile => Path.Combine(Root, "sculpt_history_cache.json");
         public string Exhibits => Path.Combine(Root, "exhibits");
         public string Exports => Path.Combine(Root, "exports");
         public string LastSlice => Path.Combine(Root, "_last_slice.png");
@@ -279,7 +281,9 @@ namespace SCP.Core.Sculpture
                 {
                     if (aAll[i].Rel != aWant) continue;
                     // python 只拿「解析成功的事件」比水位 ⇒ 水位那一檔壞了＝找不到
-                    if (ReadEvent(aAll[i].Full) != null) aFound = i;
+                    // 歷史索引記得它讀得出來（且檔沒改過）⇒ 不必為了確認而整份解析（TASK-0473：水位檔可能 35 MB）
+                    bool? aKnown = SCP_SculptHistoryIndex.KnownReadable(iPaths, aAll[i]);
+                    if (aKnown ?? ReadEvent(aAll[i].Full) != null) aFound = i;
                     break;
                 }
                 if (aFound < 0) { aSpace = new SCP_SculptSpace(); aStart = 0; }   // 快取壞了／過期 ⇒ 重建
