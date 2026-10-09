@@ -89,6 +89,17 @@ target_audience: [AI_Agent, Tools_Maintainer]
   預覽圖是渲染完**直接放進記憶體影像登記處**（`SCP_GuiImageStore`，key `globe/view`）再由視窗變貼圖，⛔ 不寫 `view.png`、不讀回 —— 檔案被別的程式鎖住時舊做法會停在舊圖而不報錯。只有 TopBar 的「輸出」與 `cmd globe op=render` 會產出 PNG。
   TopBar「輸出目前視角」「輸出世界地圖」＝ `op=render export=1`，用畫面上的視角與三個開關，尺寸在「視角」折疊裡設；「開啟輸出資料夾」開 `Globe/exports/`。
 
+### 5.1 GPU 透視預覽（視窗，TASK-0470）
+
+視窗模式下，宿主有 GL 3.3 ⇒ 預覽改走 **GPU 透視**（開關「GPU 透視（即時）」，預設開）：
+
+- **頁面只放場景**（狀態＋透視鏡頭＋疊圖開關，`SCP_GuiGpuViews` 的 `gpu:` key `globe/gpu-view`），像素由視窗自己的 GL context 畫進貼圖直接顯示，⛔ 不讀回 CPU。視角沒變就不重畫。
+- **格子快取在 GPU 上**：照 `SCP_GlobeCells` 的 256² 分塊上傳（分塊圖集＋索引貼圖），只上傳畫過的分塊；狀態重讀之後逐塊比內容，**只上傳內容變了的那幾塊**。N／面基底變了才整份重建。頁面下方印讀數（GL 型號、GPU 上幾塊、這次上傳幾塊）。
+- **鏡頭**：在中心經緯度方向看向球心，右＝東、上＝北；垂直視角 40°。zoom 1 ＝ 球剛好切到畫面上下緣；zoom 越大離地表越近（0.5–400）。數學只有一份：`SCP_GlobeCamera`（double），shader 是它的翻譯。
+- 球面寫入**深度**（之後的建築要跟球面正確遮擋）。
+- **退回 CPU**：文字模式、環境變數 `SENATE_GLOBE_GPU=off`、開關關掉，或 GPU 回報這一幀失敗（shader、顯卡上限、施工區超過 64 個…）⇒ 用上面那條 CPU 正交預覽，**原因印在頁面上**。
+- ⚠ GPU 是 float、CPU 是 double ⇒ 格子邊界上的像素偶爾差一格（selftest `GlobeGpuParityCleanRoom` 逐像素對拍格子索引，上限 0.5%；2026-10-09 在 RTX 4080 最差 0.148%）。所以 **`cmd globe op=render`／export 仍是 CPU**：畫完回讀「我的格子在不在那裡」用 CLI，⛔ 不拿 GPU 預覽當證據。
+
 ## 6. 自由時間
 
 活動 `globe-paint`（繪圖組，免費）：自由時間挑一塊陸地（或接一個施工區）畫一點，讓地球慢慢被填滿。
@@ -97,4 +108,4 @@ target_audience: [AI_Agent, Tools_Maintainer]
 ## 7. 限制（prototype）
 
 - 多邊形在經緯度平面判內外：⛔ 不能含極點、經度跨度要 < 180°（大區域拆成幾塊）。
-- 還沒有表面高度、沒有 mesh。
+- 還沒有表面高度；建築放置在 TASK-0471（GPU 預覽已留深度緩衝）。
