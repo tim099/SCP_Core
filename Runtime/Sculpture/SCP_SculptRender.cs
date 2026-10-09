@@ -90,6 +90,22 @@ namespace SCP.Core.Sculpture
         public double SkyboxTiltDeg = 0;
         /// <summary>地板（Tim 2026-10-02）。null ＝ 沒有地板（舊行為）。</summary>
         public SCP_SculptFloor? Floor;
+
+        /// <summary>
+        /// 網格合併同色面（TASK-0472）：同色、同朝向、共面、**四角 AO 都相同**的相鄰面併成一塊大矩形（面數大減）。
+        /// <para>預設 false ＝ 逐 voxel 面（CLI `op=view` 與分享圖維持逐位元相同）；觀測頁的即時預覽開它。
+        /// ⚠ 四角 AO 不同的面不併：併了 AO 漸層會被拉成一大片、角落陰影被抹平（selftest 有反向對照）。</para>
+        /// </summary>
+        public bool MergeFaces = false;
+
+        /// <summary>
+        /// 檢視倍率（TASK-0472，觀測頁滾輪）：乘在最後的框景上 —— 正交 ⇒ 每像素刻度 ×ViewScale；透視 ⇒ 鏡頭距離 ÷ViewScale。
+        /// 1 ＝ 不動（CLI 沒有這個參數 ⇒ 永遠 1）。
+        /// </summary>
+        public double ViewScale = 1;
+
+        /// <summary>淺複製（燈與地板物件共用 —— 呼叫端只改純量欄位時用；要改燈或地板就自己再複製那一格）。</summary>
+        public SCP_SculptRenderParams Clone() => (SCP_SculptRenderParams)MemberwiseClone();
     }
 
     /// <summary>一盞平行光。</summary>
