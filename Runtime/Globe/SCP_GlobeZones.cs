@@ -134,10 +134,9 @@ namespace SCP.Core.Globe
 
         static void Write(string iFile, SCP_GlobeZone iZone)
         {
-            string aTmp = iFile + ".tmp";
+            string aTmp = iFile + ".tmp" + Guid.NewGuid().ToString("N").Substring(0, 8);
             File.WriteAllText(aTmp, SCP_JsonWriter.Write(SCP_JsonMapper.ToJson(iZone), true) + "\n");
-            if (File.Exists(iFile)) File.Replace(aTmp, iFile, null);
-            else File.Move(aTmp, iFile);
+            SCP.Core.Io.SCP_TextFile.ReplaceOrMove(aTmp, iFile);
         }
     }
 }
