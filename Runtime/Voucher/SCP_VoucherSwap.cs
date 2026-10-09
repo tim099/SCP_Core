@@ -6,8 +6,9 @@
 //   ① **無快取或無有效報價時一律拒絕**（並非所有券都能互相兌換）。
 //   ② **餘額不足整筆不扣**（TryConsume 守衛，嚴禁扣出負數）。
 //   ③ **小數點無縫進位**（套用 TASK-0271 零頭進位模型，滿 1e8 自動進位可用永久券）。
-//   ④ **目標券簿永久券不得超過 int 上限**（TASK-0371）：法幣一張＝一單位，單位極小
-//      （1 KRW ≈ 0.0007 USD），173 BTC 換 KRW 就是兩百多億張 —— `AddE8` 的 int 轉型會**靜默繞成負數**。
+//   ④ **目標券簿永久券不得超過 long 上限**（TASK-0371；TASK-0476 由 int 放寬）：法幣一張＝一單位，單位極小
+//      （1 KRW ≈ 0.0007 USD），173 BTC 換 KRW 就是兩百多億張 —— int 時代 `AddE8` 的轉型會**靜默繞成負數**（現在是 long）。
+//      ⚠ 單次兌換的產出走 1e-8 單位（long）⇒ 一次最多約 922 億張（9.2e18／1e8）；超過時 Convert 的 decimal→long 會丟例外、不會繞回。
 //      ⇒ 試算階段就擋下並說明，⛔ 不讓它走到落盤。
 //   ⑤ **成交後寫一筆交易事件**（TASK-0371，給報酬率用）：兩個券檔都落盤之後才寫；
 //      事件沒寫成**不推翻已成立的兌換**（券已經動了），而是放進 `PortfolioWarning` 讓呼叫端印出來。
@@ -25,12 +26,12 @@ namespace SCP.Core.Voucher
         public string Persona = "";
         public string FromVoucher = "";
         public string ToVoucher = "";
-        public int FromConsumed;
-        public int FromRemainingPermanent;
-        public int FromRemainingSpendable;
+        public long FromConsumed;
+        public long FromRemainingPermanent;
+        public long FromRemainingSpendable;
         public long ToAddedUnitsE8;
-        public int ToPermanentAdded;
-        public int ToNewPermanent;
+        public long ToPermanentAdded;
+        public long ToNewPermanent;
         public long ToNewFractionalE8;
         public decimal ToNewFractionalValue => (decimal)ToNewFractionalE8 / SCP_VoucherBook.FractionScale;
         public decimal EffectiveRate;
@@ -47,7 +48,7 @@ namespace SCP.Core.Voucher
         /// </summary>
         public static SCP_VoucherSwapResult PreviewSwap(SCP_LettersRoot iLettersRoot, string iDataRoot,
                                                        string iPersona, string iFromVoucher, string iToVoucher,
-                                                       int iAmount, DateTime iNow)
+                                                       long iAmount, DateTime iNow)
         {
             return ExecuteInternal(iLettersRoot, iDataRoot, iPersona, iFromVoucher, iToVoucher, iAmount, iNow,
                                    iRegion: "swap", iCommitWrite: false);
@@ -58,7 +59,7 @@ namespace SCP.Core.Voucher
         /// </summary>
         public static SCP_VoucherSwapResult ExecuteSwap(SCP_LettersRoot iLettersRoot, string iDataRoot,
                                                        string iPersona, string iFromVoucher, string iToVoucher,
-                                                       int iAmount, DateTime iNow, string iRegion = "swap")
+                                                       long iAmount, DateTime iNow, string iRegion = "swap")
         {
             return ExecuteInternal(iLettersRoot, iDataRoot, iPersona, iFromVoucher, iToVoucher, iAmount, iNow,
                                    iRegion, iCommitWrite: true);
@@ -66,7 +67,7 @@ namespace SCP.Core.Voucher
 
         static SCP_VoucherSwapResult ExecuteInternal(SCP_LettersRoot iLettersRoot, string iDataRoot,
                                                      string iPersona, string iFromVoucher, string iToVoucher,
-                                                     int iAmount, DateTime iNow, string iRegion, bool iCommitWrite)
+                                                     long iAmount, DateTime iNow, string iRegion, bool iCommitWrite)
         {
             var aResult = new SCP_VoucherSwapResult
             {
@@ -108,7 +109,7 @@ namespace SCP.Core.Voucher
                 return aResult;
             }
 
-            int aSpendableBefore = aFromBook.Spendable(iNow);
+            long aSpendableBefore = aFromBook.Spendable(iNow);
             if (aSpendableBefore < iAmount)
             {
                 aResult.Success = false;
@@ -125,15 +126,15 @@ namespace SCP.Core.Voucher
                 return aResult;
             }
 
-            int aToPermanentBefore = aToBook.Permanent;
+            long aToPermanentBefore = aToBook.Permanent;
 
-            // 守衛④：進位後的永久券會不會超過 int 上限（AddE8 內部是 (int) 轉型，超過會靜默繞成負數）
+            // 守衛④：進位後的永久券會不會超過 long 上限（用 decimal 比，比較本身不溢位）
             long aToTotalE8 = aToBook.FractionalE8 + aToUnitsE8;
-            if ((long)aToPermanentBefore + aToTotalE8 / SCP_VoucherBook.FractionScale > int.MaxValue)
+            if ((decimal)aToPermanentBefore + aToTotalE8 / SCP_VoucherBook.FractionScale > long.MaxValue)
             {
                 aResult.Success = false;
-                aResult.Error = $"兌換後 `{aResult.ToVoucher}` 會有 {(long)aToPermanentBefore + aToTotalE8 / SCP_VoucherBook.FractionScale} 張，"
-                                + $"超過券簿上限 {int.MaxValue} 張 ⇒ 拒絕（請分批、或少換一點）";
+                aResult.Error = $"兌換後 `{aResult.ToVoucher}` 會有 {(decimal)aToPermanentBefore + aToTotalE8 / SCP_VoucherBook.FractionScale} 張，"
+                                + $"超過券簿上限 {long.MaxValue} 張 ⇒ 拒絕（請分批、或少換一點）";
                 return aResult;
             }
 

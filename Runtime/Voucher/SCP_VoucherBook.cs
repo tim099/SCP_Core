@@ -95,7 +95,7 @@ namespace SCP.Core.Voucher
         public string Voucher = "";
 
         /// <summary>永久券（不會過期）。**可用的就是這個**。</summary>
-        public int Permanent;
+        public long Permanent;
 
         // ===========================================================
         // 區塊職責：**不足一張的零頭**（TASK-0271）。
@@ -137,7 +137,7 @@ namespace SCP.Core.Voucher
         {
             if (iUnitsE8 <= 0) return;
             long aTotal = FractionalE8 + iUnitsE8;
-            Permanent += (int)(aTotal / FractionScale);
+            Permanent += aTotal / FractionScale;
             FractionalE8 = aTotal % FractionScale;
         }
 
@@ -178,10 +178,10 @@ namespace SCP.Core.Voucher
             {
                 Persona = iData.GetString("persona", ""),
                 Voucher = iData.GetString("voucher", ""),
-                Permanent = iData.GetInt("permanent", 0),
+                Permanent = iData.GetLong("permanent", 0),
                 // 舊檔沒有這一欄 ⇒ 0（＝沒有零頭）。這一格「缺席」與「0」**本來就同義**，
                 // ⛔ 不需要分辨（與 `granted` 那格不同：那一格的 0 會憑空生出用量）。
-                FractionalE8 = (long)iData.GetInt("fractional_e8", 0),
+                FractionalE8 = iData.GetLong("fractional_e8", 0),
                 UpdatedAtUtc = iData.GetString("updated_at_utc", ""),
                 UpdatedRegion = iData.GetString("updated_region", ""),
             };
@@ -210,7 +210,7 @@ namespace SCP.Core.Voucher
         /// <para>⛔ **零頭不算在內**（TASK-0271 ③）—— 不足一張的東西不能花，
         /// 而把它加進來會讓「可花 3」實際上只花得出 2 張。</para>
         /// </summary>
-        public int Spendable(DateTime iNow) => Permanent + ExpiringAlive(iNow);
+        public long Spendable(DateTime iNow) => Permanent + ExpiringAlive(iNow);
 
         /// <summary>
         /// 這一批還活著嗎。
@@ -359,11 +359,11 @@ namespace SCP.Core.Voucher
         // 數值影響：不足就**整筆不扣**（⛔ 不部分扣：部分扣之後呼叫端拿到的是
         //   「失敗」，而錢已經少了一半，那是最難查的一種）。
         // ===========================================================
-        public static bool TryConsume(SCP_VoucherBook ioBook, int iAmount, DateTime iNow, out string? oWhy)
+        public static bool TryConsume(SCP_VoucherBook ioBook, long iAmount, DateTime iNow, out string? oWhy)
         {
             oWhy = null;
             if (iAmount <= 0) { oWhy = $"張數必須 > 0（收到 {iAmount}）"; return false; }
-            int aSpendable = ioBook.Spendable(iNow);
+            long aSpendable = ioBook.Spendable(iNow);
             if (aSpendable < iAmount)
             {
                 oWhy = $"券不足：可花 {aSpendable}（永久 {ioBook.Permanent} ＋ 未過期限時 "
@@ -384,11 +384,11 @@ namespace SCP.Core.Voucher
                 return aA.Value.CompareTo(aB.Value);
             });
 
-            int aLeft = iAmount;
+            long aLeft = iAmount;
             foreach (SCP_VoucherBatch aBatch in aAlive)
             {
                 if (aLeft <= 0) break;
-                int aTake = Math.Min(aBatch.Amount, aLeft);
+                int aTake = (int)Math.Min(aBatch.Amount, aLeft);   // ≤ 批次張數（int）⇒ 收窄安全
                 aBatch.Amount -= aTake;
                 aLeft -= aTake;
             }
@@ -414,7 +414,7 @@ namespace SCP.Core.Voucher
         }
 
         public static void ApplyMigration(SCP_VoucherBook ioBook, string iRegion,
-                                          int iPermanent, List<SCP_VoucherBatch> iExpiring)
+                                          long iPermanent, List<SCP_VoucherBatch> iExpiring)
         {
             if (iPermanent > 0) ioBook.Permanent += iPermanent;
             foreach (SCP_VoucherBatch aBatch in iExpiring)

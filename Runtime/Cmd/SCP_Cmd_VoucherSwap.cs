@@ -58,7 +58,7 @@ namespace SCP.Core.Cmd
             if (string.IsNullOrEmpty(aTo)) return SCP_CmdResult.Fail(2, "✗ 缺 `to`（目標券）");
 
             string aAmountStr = iArgs.Get("amount").Trim();
-            if (!int.TryParse(aAmountStr, out int aAmount) || aAmount <= 0)
+            if (!long.TryParse(aAmountStr, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long aAmount) || aAmount <= 0)
                 return SCP_CmdResult.Fail(2, $"✗ amount 必須為大於 0 之整數（收到 '{aAmountStr}'）");
 
             string aDataRoot = Clean(iArgs.Get("data_root"));

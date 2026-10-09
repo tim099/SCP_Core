@@ -521,7 +521,7 @@ namespace SCP.Core.Market
         /// 依據 TASK-0271 零頭模型，目標券產出以 1e-8 單位整數回傳（滿 1e8 即進位 1 張可用券）。
         /// </summary>
         public static bool TryCalculateSwap(SCP_MarketRateConfig iConfig, string iFromSymbol, string iToSymbol,
-                                            int iFromAmount, out long oToUnitsE8, out decimal oEffectiveRate,
+                                            long iFromAmount, out long oToUnitsE8, out decimal oEffectiveRate,
                                             out string? oReason)
         {
             oToUnitsE8 = 0;
