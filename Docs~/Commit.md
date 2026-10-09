@@ -85,8 +85,9 @@ commit **之後**（SHA 已落地）：
 - 6／7 時單號都**沒有推**，確認公告後再照印出的 `task op=commit` 補。
 - 成功後它還會試收你的 Coding 場（單子已離開施工狀態才收）；試收失敗不影響 commit。
 
-## SCP_Core：agent 自己 push & pull
+## SCP_Core：agent 自己 push（Unity 副本不歸 agent pull）
 
-`SCP_Core` 掛在多個消費端底下，是同一個 repo 的多份工作副本。在其中一份 commit 後，**自己 push，並在其他每一份 `pull --ff-only`**；分叉就停下來喊，不 merge。
+`SCP_Core` 掛在多個消費端底下，是同一個 repo 的多份工作副本。在其中一份 commit 後，**自己 fetch＋push**；分叉就停下來喊，不 merge。
+掛在 Unity 專案底下的副本（`Assets/Plugins/SCP_Core`）⛔ **不用去 pull**、也不用等 Editor 長 `.meta` —— 那一側由 Editor 自己同步（Tim 2026-10-09）。
 父層的 pointer bump 仍屬各消費端自己的 commit，照「預設只提交一層」。
 完整步驟 → `senate cmd doc --arg op=show --arg name=Coding_Standards` §4.7。

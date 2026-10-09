@@ -409,7 +409,7 @@ senate cmd            → 執行位置：本地 75 ／ ⤷Server 6 ／ ⛔未實
 
 ---
 
-## §4.7 ⛔ SCP_Core 有多份工作副本：同步走 **push & pull**，**agent 自己來**（Tim 2026-09-04 拍板）
+## §4.7 ⛔ SCP_Core 有多份工作副本：改完**自己 push**；Unity 那側的副本**不用 agent 去 pull**（Tim 2026-10-09 改）
 
 SCP_Core 同時掛在好幾個消費端底下（`Senate/SCP_Core`、`LY/Assets/Plugins/SCP_Core`、`Bar/...`）——
 那**不是複本，是同一個 repo 的多份工作副本**。在其中一份改完，其他份**不會自己知道**。
@@ -417,26 +417,25 @@ SCP_Core 同時掛在好幾個消費端底下（`Senate/SCP_Core`、`LY/Assets/P
 ```bash
 # ① 在改動的那一份：commit（走 senate cmd commit）
 # ② 推上去 —— senate cmd commit 只提交，**不 push**
-git -C <改動那份> push origin master
-# ③ 在其他每一份：拉下來
-git -C <另一份> pull --ff-only origin master
+git -C <改動那份> fetch origin && git -C <改動那份> push origin master
 ```
 
-- ⚠ **`--ff-only` 不是潔癖**：兩份工作副本各自 commit 過就會分叉，而 `pull` 預設會**幫你 merge** ——
-  那會在一個「只是要同步」的動作裡長出一顆合併 commit，且不會有人發現。⇒ 分叉時要**當場喊**。
-- ⚠ **父層的 submodule pointer bump 不在這一步**：pull 完，消費端 repo 會顯示 `m <mount path>`。
+- ⭐ **到 push 為止**（Tim 2026-10-09）：掛在 Unity 專案（`Assets/Plugins/SCP_Core`）底下的工作副本 ⛔ **不用 agent 去 pull**，
+  也不用開 Editor 等 `.meta` 長出來 —— 那一側由 Editor 自己同步、`.meta` 也由那一側入版控。
+  ⇒ 回報時**不要寫「Bar／LY 已同步」**，也不要把「等 Editor 長 `.meta`」列成待辦。**在 Senate 這側手工造 `.meta` 仍是偽造**。
+- ⚠ **push 前先 fetch**：遠端比你新 ⇒ 兩份各自 commit 過、已經分叉 ⇒ **當場喊**，⛔ 不 merge、不 rebase 別人的 commit。
+- ⚠ **push 會連帶推出你底下別人還沒推的 commit**（同一條分支，沒辦法只推自己那筆）⇒ 推之前看 `git log origin/master..HEAD`，回報時點名是誰的哪幾筆。
+- ⚠ **父層的 submodule pointer bump 不在這一步**：消費端 repo 會顯示 `M <mount path>`。
   那是**各消費端自己的 commit**（本專案由 Tim 收尾），不要順手一起提。
-- ⚠ **Unity 那側的 `.meta` 是 pull 之後才長出來的** —— Editor 第一次 import 才生成。
-  ⇒ pull 完要開一次 Editor，metas 出現後由那一側入版控。**在 Senate 這側手工造 `.meta` 是偽造**。
-- ⚠ 有本地未提交改動的那一份不要 pull（先 commit 或 stash）。
 
 🩸 **為什麼這一節值得存在**（2026-09-03／09-04 各一次）：Editor 那側的 SCP_Core 停在舊 commit，
 於是從 Unity 看 canvas 會看到「**沒有 place 的版本**」—— 而那個「找不到」長得像**功能沒做**，
-不像「你的工作副本落後兩筆」。同一天我在交棒清單裡把它寫成「明天第一件（有時效）」，
-隔天量才發現早就被同步掉了。
+不像「你的工作副本落後兩筆」。
 ⇒ **落後的工作副本不會報錯，它會給你一個看起來完整的舊世界。**
+⇒ 2026-09-04 起曾規定 agent 自己到每一份 pull；2026-10-09 Tim 改成 Unity 那側由 Editor 自己同步 ——
+   所以從 Unity 看到「功能沒做」時，**先查那份副本落後幾筆**，再懷疑程式。
 
-📌 同步由 **agent 自己 push & pull**（Tim 2026-09-04 拍板），不等人做。
+📌 push 由 **agent 自己來**（Tim 2026-09-04 拍板），不等人做；Unity 副本的 pull 不歸 agent（Tim 2026-10-09）。
 
 ### ⛔ 掛在 `Assets/` 底下的那一份**不要 `dotnet build`**（2026-09-04）
 
