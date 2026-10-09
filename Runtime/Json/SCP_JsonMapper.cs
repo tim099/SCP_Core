@@ -10,6 +10,8 @@
 //      靜默略過的欄位連查都無從查起。
 //   ③ **型別不合就不寫**（記一筆），不做「盡力而為」的轉換 ——
 //      把 "abc" 塞進 int 變成 0，比整筆失敗難查十倍。
+//   ④ **整數不經過 double**（TASK-0474，2026-10-09）：整數欄位從原文精確解析；小數讀進整數欄位、超出範圍 ⇒ 記一筆、保留原值
+//      （不四捨五入、不截斷）。⚠ float／double／decimal 欄位仍走 double（decimal 的精度問題不在 0474 射程）。
 // ⚠ 不做多型：宣告成 interface／abstract 的成員在 Classify 就是 Unsupported。
 //   要多型得寫型別標記，而那是另一個決定（猜錯的症狀是「存進去的是另一個型別的資料」）。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
@@ -58,6 +60,8 @@ namespace SCP.Core.Json
                 case SCP_ValueKind.Text: return SCP_JsonData.NewString((string)iValue);
                 case SCP_ValueKind.Choice: return SCP_JsonData.NewString(iValue.ToString() ?? "");
                 case SCP_ValueKind.Integer:
+                    // ulong 超過 long.MaxValue 時 ToInt64 會丟例外 ⇒ 直接寫原文（TASK-0474）
+                    if (iValue is ulong aU) return SCP_JsonData.NewNumber(aU.ToString(CultureInfo.InvariantCulture));
                     return SCP_JsonData.NewNumber(Convert.ToInt64(iValue, CultureInfo.InvariantCulture));
                 case SCP_ValueKind.Decimal:
                     return SCP_JsonData.NewNumber(Convert.ToDouble(iValue, CultureInfo.InvariantCulture));
@@ -439,6 +443,19 @@ namespace SCP.Core.Json
                     return SCP_Reflect.TryParse(iType, iNode.AsString(), false, out oValue, out oError);
                 }
                 if (iNode.Type != SCP_JsonType.Number) { oError = $"JSON 是 {iNode.Type} 不是數字"; return false; }
+                if (TryIntegralRange(iType, out decimal aMin, out decimal aMax))
+                {
+                    // ⭐ 整數一律從**原文**精確解析（TASK-0474）：以前經過 double，long／ulong 超過 2^53 會被磨掉尾數而沒有任何一層叫
+                    //   （實測 639271089190795485 → …795520）。decimal 有 96 位元尾數 ⇒ long／ulong 全範圍逐位正確。
+                    string aRaw = iNode.AsString();
+                    if (!decimal.TryParse(aRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal aNum))
+                    { oError = $"{aRaw} 超出可表示範圍 ⇒ 讀不進 {iType.Name}"; return false; }
+                    // 小數 ⇒ 不讀（⛔ 不四捨五入：19.6 變成 20 或 19，比整筆不讀難查十倍）；`3.0`／`1e3` 這種剛好是整數的照收。
+                    if (aNum != decimal.Truncate(aNum)) { oError = $"{aRaw} 不是整數 ⇒ 不讀進 {iType.Name}（不四捨五入）"; return false; }
+                    if (aNum < aMin || aNum > aMax) { oError = $"{aRaw} 超出 {iType.Name} 範圍 [{aMin}, {aMax}]（不截斷）"; return false; }
+                    oValue = Convert.ChangeType(aNum, iType, CultureInfo.InvariantCulture);
+                    return true;
+                }
                 oValue = Convert.ChangeType(iNode.AsDouble(), iType, CultureInfo.InvariantCulture);
                 return true;
             }
@@ -447,6 +464,21 @@ namespace SCP.Core.Json
                 oError = $"讀成 {iType.Name} 失敗：{e.GetType().Name}";
                 return false;
             }
+        }
+
+        /// <summary>整數型別與它的範圍（decimal 表示，long／ulong 兩端都精確）。不是整數型別 ⇒ false。</summary>
+        static bool TryIntegralRange(Type iType, out decimal oMin, out decimal oMax)
+        {
+            if (iType == typeof(sbyte)) { oMin = sbyte.MinValue; oMax = sbyte.MaxValue; return true; }
+            if (iType == typeof(byte)) { oMin = byte.MinValue; oMax = byte.MaxValue; return true; }
+            if (iType == typeof(short)) { oMin = short.MinValue; oMax = short.MaxValue; return true; }
+            if (iType == typeof(ushort)) { oMin = ushort.MinValue; oMax = ushort.MaxValue; return true; }
+            if (iType == typeof(int)) { oMin = int.MinValue; oMax = int.MaxValue; return true; }
+            if (iType == typeof(uint)) { oMin = uint.MinValue; oMax = uint.MaxValue; return true; }
+            if (iType == typeof(long)) { oMin = long.MinValue; oMax = long.MaxValue; return true; }
+            if (iType == typeof(ulong)) { oMin = ulong.MinValue; oMax = ulong.MaxValue; return true; }
+            oMin = oMax = 0m;
+            return false;
         }
 
         /// <summary>建一份新的並填進去（做不到回 null 並在 Diagnostics 說原因）。</summary>
