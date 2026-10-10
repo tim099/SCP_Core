@@ -3,7 +3,7 @@
 // 物理意義：⭐ 本檔**不畫圖**：等角／GPU 渲染是宿主的事（<see cref="ISCP_SculptRenderer"/>，Senate.Desktop 註冊）。
 //          view 只交出「過濾後的可見 voxel ＋ 渲染參數」；展品照也是同一條路 —— 沒有渲染器 ⇒ 大聲回報，⛔ 不出空白圖。
 //          既有的事件／快取／展品檔是 python 時代寫下的、而且進 git ⇒ 本檔寫出的版面與它們逐字相同（見 SCP_SculptPy）。
-// 數值影響：單次box／stamp上限1,000,000 voxels；共用空間256³，作品各軸1–256、預設64³。
+// 數值影響：單次box／stamp上限1,000,000 voxels；共用空間256³，作品各軸 1–結構上限（SCP_SculptWorks.MaxAxisHard；政策上限由宿主給）、預設64³。
 //          每個 op 進來都先 <see cref="SCP_SculptStore.Load"/>（會重寫快取）—— 呼叫端要握雕刻鎖（Cmd_Sculpture 的 `_engine.lock`）。
 // 失敗處置：參數不合 ⇒ 回 exit 2 的結果；python 會丟 traceback 的那幾格（重播遇到未知 op、canvas view 失敗…）⇒ exit 1 ＋ 一句人話。
 //          ⛔ 不丟例外給呼叫端吞 —— 只有 <see cref="SCP_SculptReplayException"/> 會被各 op 轉成 exit 1。
@@ -89,7 +89,7 @@ namespace SCP.Core.Sculpture
         /// <summary>測試隔離：雕刻根與畫布資料根分開給。</summary>
         public SCP_SculptEngine(SCP_SculptPaths iPaths, string iCanvasDataRoot, int iSize = 256, int iSizeY = 0, int iSizeZ = 0)
         {
-            if (iSize < 1 || iSize > 256) throw new ArgumentOutOfRangeException(nameof(iSize));
+            if (!SCP_SculptWorks.ValidSize(iSize)) throw new ArgumentOutOfRangeException(nameof(iSize));   // 結構上限；政策上限只管建立／調尺寸
             if (iSizeY == 0) iSizeY = iSize;
             if (iSizeZ == 0) iSizeZ = iSize;
             if (!SCP_SculptWorks.ValidSize(iSizeY) || !SCP_SculptWorks.ValidSize(iSizeZ)) throw new ArgumentOutOfRangeException(nameof(iSizeY));

@@ -440,7 +440,9 @@ namespace SCP.Core.Sculpture
                 if (options.Diagnostics.Count > 0) throw Bad(iFile, string.Join("; ", options.Diagnostics));
                 foreach (var v in edit.after)
                 {
-                    if (v[0] < 0 || v[0] > 255 || v[1] < 0 || v[1] > 255 || v[2] < 0 || v[2] > 255 || v[3] < 0 || v[3] > 255)
+                    // 座標只認結構上限（TASK-0479：作品每軸可超過 256；寫入端 CommitEdit 已照作品尺寸擋過）；顏色仍是 0..255
+                    if (v[0] < 0 || v[0] >= SCP_SculptWorks.MaxAxisHard || v[1] < 0 || v[1] >= SCP_SculptWorks.MaxAxisHard
+                        || v[2] < 0 || v[2] >= SCP_SculptWorks.MaxAxisHard || v[3] < 0 || v[3] > 255)
                         throw Bad(iFile, "workedit.after格式或座標不合法");
                     iSpace.Voxels.Set(v[0], v[1], v[2], v[3]);
                 }
