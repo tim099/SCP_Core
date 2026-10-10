@@ -1,4 +1,4 @@
-// 區塊職責：雕刻引擎的**資料層** —— box／carve／stamp2d／stampimg／slice／stats／export／exhibit 與 view 的「場景＋參數」準備。
+// 區塊職責：雕刻引擎的**資料層** —— box／carve／stamp2d／stampimg／stampvox／slice／stats／export／exhibit 與 view 的「場景＋參數」準備。
 //          語意（檢查順序、status、JSON 欄位與順序、exit code）沿用 python 時代的引擎（gura 2026-08-13 起），TASK-0377 搬成 C#。
 // 物理意義：⭐ 本檔**不畫圖**：等角／GPU 渲染是宿主的事（<see cref="ISCP_SculptRenderer"/>，Senate.Desktop 註冊）。
 //          view 只交出「過濾後的可見 voxel ＋ 渲染參數」；展品照也是同一條路 —— 沒有渲染器 ⇒ 大聲回報，⛔ 不出空白圖。
@@ -522,6 +522,168 @@ namespace SCP.Core.Sculpture
                 .Put("resized", aRw > 0 ? aRw + "," + aRh : null)
                 .Put("alpha_threshold", iArgs.AlphaThreshold);
             return RunStamp(iArgs, "stampimg", aPainted, aW, aH, aSrc);
+        }
+
+        // ═════════════════════════════ stampvox ═════════════════════════════
+        /// <summary>
+        /// 3D 格子清單一刀落地（TASK-0487）：斜放、彎曲的木料不必拆成逐欄的貼片。
+        /// <para>閘門順序與 <see cref="RunStamp"/> 同：讀狀態 → at → ①expect_pixels → 空 → ②體積上限 → 投影 → ③越界 → 全被佔用 → 落事件 → 展品。
+        /// 事件 shape 與貼片同（<c>placed_colored</c>）⇒ 重播與 undo 走貼片那個分支。</para>
+        /// </summary>
+        public SCP_SculptResult StampVox(SCP_SculptStampVoxArgs iArgs)
+        {
+            string aShown = SCP_SculptPy.PathStr(iArgs.Voxels);
+            if (!File.Exists(iArgs.Voxels)) return SCP_SculptResult.Error(2, "格子清單不存在: " + aShown);
+            byte[] aBytes;
+            try { aBytes = File.ReadAllBytes(iArgs.Voxels); }
+            catch (Exception e) { return SCP_SculptResult.Error(2, "讀清單失敗 " + aShown + ": " + e.Message); }
+            if (!TryParseVoxelList(aBytes, out List<int[]> aVox, out string aErr))
+                return SCP_SculptResult.Error(2, "格子清單 " + aShown + "：" + aErr + " —— 未貼、未扣費");
+
+            int[] aLo = { int.MaxValue, int.MaxValue, int.MaxValue }, aHi = { int.MinValue, int.MinValue, int.MinValue };
+            foreach (int[] v in aVox)
+                for (int k = 0; k < 3; k++) { aLo[k] = Math.Min(aLo[k], v[k]); aHi[k] = Math.Max(aHi[k], v[k]); }
+            string? aBbox = aVox.Count == 0 ? null : aLo[0] + ".." + aHi[0] + "," + aLo[1] + ".." + aHi[1] + "," + aLo[2] + ".." + aHi[2];
+            var aSrc = new SCP_SculptPyObj()
+                .Put("kind", "voxel_file")
+                .Put("file", SCP_SculptPy.FullPathStr(iArgs.Voxels))
+                .Put("sha256", SCP_SculptPy.Sha256Hex(aBytes))
+                .Put("voxel_count", aVox.Count)
+                .Put("bbox", aBbox);
+
+            SCP_SculptSpace aSpace;
+            try { aSpace = LoadSpace(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); }
+            string[] p = (iArgs.At ?? "None").Split(',');
+            var aAt = new int[3];
+            if (p.Length != 3 || !SCP_SculptPy.TryInt(p[0], out aAt[0]) || !SCP_SculptPy.TryInt(p[1], out aAt[1]) || !SCP_SculptPy.TryInt(p[2], out aAt[2]))
+                return SCP_SculptResult.Error(2, "--at 需為 'x,y,z': " + (iArgs.At ?? "None"));
+
+            const string Op = "stampvox";
+            var aRes = new SCP_SculptStampResult
+            {
+                Op = Op, Persona = iArgs.Persona, ExpectPixels = iArgs.ExpectPixels, PaintedSourcePixels = aVox.Count, At = aAt, Source = aSrc,
+            };
+            if (iArgs.ExpectPixels.HasValue && iArgs.ExpectPixels.Value != aVox.Count)
+            {
+                aRes.ExitCode = 4;
+                aRes.Reason = "--expect-pixels " + iArgs.ExpectPixels.Value + " 與清單格數 " + aVox.Count + " 不符 —— 清單已變動或不是寫的那份；未貼、未扣費";
+                aRes.Json = new SCP_SculptPyObj()
+                    .Put("status", "mismatch").Put("op", Op).Put("reason", aRes.Reason)
+                    .Put("expect_pixels", iArgs.ExpectPixels.Value).Put("actual_voxels", aVox.Count).Put("source", aSrc);
+                return aRes;
+            }
+            if (aVox.Count == 0)
+            {
+                aRes.ExitCode = 3;
+                aRes.Reason = "清單沒有任何格子（空行與 # 註解不算）—— 無可貼內容";
+                aRes.Json = new SCP_SculptPyObj().Put("status", "empty").Put("op", Op).Put("reason", aRes.Reason).Put("source", aSrc);
+                return aRes;
+            }
+            // 體積上限由 TryParseVoxelList 擋（超過就是清單錯，exit 2）
+
+            var aPlaced = new List<int[]>();
+            int aSkipped = 0, aOob = 0;
+            foreach (int[] v in aVox)
+            {
+                long x = (long)aAt[0] + v[0], y = (long)aAt[1] + v[1], z = (long)aAt[2] + v[2];
+                if (x < 0 || x >= SizeX || y < 0 || y >= SizeY || z < 0 || z >= SizeZ) { aOob++; continue; }
+                if (!iArgs.Overwrite && aSpace.Voxels.Get((int)x, (int)y, (int)z) != 0) { aSkipped++; continue; }
+                aPlaced.Add(new[] { (int)x, (int)y, (int)z, v[3] });
+            }
+            aRes.SkippedOccupied = aSkipped;
+            aRes.OutOfBounds = aOob;
+            aRes.WouldPlace = aPlaced.Count;
+
+            if (aOob > 0 && !iArgs.AllowClip)
+            {
+                aRes.ExitCode = 5;
+                aRes.Reason = aOob + " 個 voxel 落在 " + SizeX + "x" + SizeY + "x" + SizeZ + " 空間之外 —— 未貼、未扣費。清單 bbox " + aBbox
+                              + " @ at=" + SCP_SculptPy.ListRepr(aAt) + " 放不下；改 --at，或顯式 --allow-clip 接受裁切";
+                aRes.Json = new SCP_SculptPyObj()
+                    .Put("status", "out_of_bounds").Put("op", Op).Put("reason", aRes.Reason)
+                    .Put("out_of_bounds", aOob).Put("would_place", aPlaced.Count).Put("at", aAt).Put("source", aSrc);
+                return aRes;
+            }
+            if (aPlaced.Count == 0)
+            {
+                aRes.ExitCode = 3;
+                aRes.Reason = "所有目標格都越界或已被佔用（--overwrite 可覆蓋）";
+                aRes.Json = new SCP_SculptPyObj()
+                    .Put("status", "empty").Put("op", Op).Put("reason", aRes.Reason)
+                    .Put("out_of_bounds", aOob).Put("skipped_occupied", aSkipped).Put("source", aSrc);
+                return aRes;
+            }
+
+            var aEv = new SCP_SculptPyObj()
+                .Put("op", Op).Put("persona", iArgs.Persona).Put("source", aSrc)
+                .Put("at", aAt)
+                .Put("painted_source_pixels", aVox.Count)
+                .Put("placed_count", aPlaced.Count)
+                .Put("skipped_occupied", aSkipped)
+                .Put("out_of_bounds", aOob)
+                .Put("placed_colored", aPlaced)
+                .Put("timestamp", SCP_SculptPy.IsoFormat(Clock()));
+            string aFile = SCP_SculptStore.RecordEvent(Paths, aEv, Clock(), out string aRel);
+            foreach (int[] v in aPlaced) aSpace.Voxels.Set(v[0], v[1], v[2], v[3]);
+            aSpace.LastEventFile = aRel;
+            SCP_SculptStore.SaveCache(Paths, aSpace);
+
+            SCP_SculptPyObj? aExhibit = AutoExhibit(iArgs, aPlaced, aSpace);
+            aRes.PlacedCount = aPlaced.Count;
+            aRes.Exhibit = aExhibit;
+            aRes.EventFile = aFile;
+            aRes.Json = new SCP_SculptPyObj()
+                .Put("status", "success").Put("op", Op).Put("persona", iArgs.Persona)
+                .Put("exhibit", aExhibit)
+                .Put("voxel_count", aVox.Count)
+                .Put("placed_count", aPlaced.Count)
+                .Put("skipped_occupied", aSkipped)
+                .Put("out_of_bounds", aOob)
+                .Put("at", aAt)
+                .Put("source", aSrc)
+                .Put("event_file", aFile);
+            return aRes;
+        }
+
+        /// <summary>
+        /// stampvox 清單：每行 <c>x,y,z,color</c>（相對 at 的整數；color 1..255），空行與 <c>#</c> 起頭的行略過；容忍 UTF-8 BOM 與 CRLF。
+        /// <para>⛔ 壞行、重複座標、顏色 0（3D 的 0 ＝ 空）或超過 255 ⇒ false，<paramref name="oError"/> 指出第幾行 —— 不猜、不跳過：
+        /// 清單是設計的產物，跳過一行就是靜默少一格。</para>
+        /// <para>宿主量最壞費用也呼叫這一支（同一份判準，⛔ 不各寫一份）。</para>
+        /// </summary>
+        public static bool TryParseVoxelList(byte[] iBytes, out List<int[]> oVoxels, out string oError)
+        {
+            oVoxels = new List<int[]>();
+            oError = "";
+            string aText;
+            try { aText = new UTF8Encoding(false, true).GetString(iBytes); }
+            catch (Exception) { oError = "不是合法的 UTF-8"; return false; }
+            if (aText.Length > 0 && aText[0] == '﻿') aText = aText.Substring(1);
+            const long Bias = SCP_SculptWorks.MaxAxisHard;            // 位移落在 ±結構上限內才組得出不撞的鍵
+            var aSeen = new Dictionary<long, int>();
+            string[] aLines = aText.Split('\n');
+            for (int i = 0; i < aLines.Length; i++)
+            {
+                string s = aLines[i].Trim();
+                if (s.Length == 0 || s[0] == '#') continue;
+                int aLine = i + 1;
+                string[] f = s.Split(',');
+                var v = new int[4];
+                bool aOk = f.Length == 4;
+                for (int k = 0; aOk && k < 4; k++)
+                    aOk = int.TryParse(f[k].Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out v[k]);
+                if (!aOk) { oError = "第 " + aLine + " 行要是 x,y,z,color 四個整數：'" + (s.Length > 60 ? s.Substring(0, 60) + "…" : s) + "'"; return false; }
+                if (v[3] < 1 || v[3] > 255) { oError = "第 " + aLine + " 行 color " + v[3] + " 要在 1..255（0 在 3D 代表空）"; return false; }
+                for (int k = 0; k < 3; k++)
+                    if (v[k] <= -Bias || v[k] >= Bias) { oError = "第 " + aLine + " 行座標 " + v[k] + " 超出 ±" + Bias; return false; }
+                long aKey = ((v[0] + Bias) << 42) | ((v[1] + Bias) << 21) | (v[2] + Bias);
+                if (aSeen.TryGetValue(aKey, out int aFirst))
+                { oError = "第 " + aLine + " 行與第 " + aFirst + " 行是同一格 (" + v[0] + "," + v[1] + "," + v[2] + ")"; return false; }
+                aSeen[aKey] = aLine;
+                if (oVoxels.Count >= MaxVolume) { oError = "超過單刀上限 " + MaxVolume.ToString("N0", CultureInfo.InvariantCulture) + " 格 —— 拆成多份清單"; return false; }
+                oVoxels.Add(v);
+            }
+            return true;
         }
 
         // ═════════════════════════════ auto exhibit ═════════════════════════════

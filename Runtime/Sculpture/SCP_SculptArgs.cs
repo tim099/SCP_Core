@@ -53,6 +53,15 @@ namespace SCP.Core.Sculpture
         public string Resize = "";
     }
 
+    /// <summary>
+    /// stampvox（TASK-0487）：3D 格子清單，每行 <c>x,y,z,color</c>（相對 <see cref="SCP_SculptStampArgs.At"/>）。
+    /// 清單本身就是 3D ⇒ Facing／Thickness／AlphaThreshold 不吃；ExpectPixels ＝ 清單格數。
+    /// </summary>
+    public sealed class SCP_SculptStampVoxArgs : SCP_SculptStampArgs
+    {
+        public string Voxels = "";
+    }
+
     public sealed class SCP_SculptSliceArgs
     {
         public string Region = "";

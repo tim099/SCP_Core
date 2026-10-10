@@ -189,10 +189,10 @@ namespace SCP.Core.Sculpture
 
     public static class SCP_SculptStore
     {
-        /// <summary>貼圖類 op —— 事件 shape 相同（placed_colored 逐 voxel 帶色），重播共用一個分支。</summary>
-        public static readonly string[] StampOps = { "stamp2d", "stampimg", "importwork" };
+        /// <summary>貼圖類 op —— 事件 shape 相同（placed_colored 逐 voxel 帶色），重播共用一個分支。stampvox：TASK-0487。</summary>
+        public static readonly string[] StampOps = { "stamp2d", "stampimg", "importwork", "stampvox" };
 
-        static bool IsStampOp(string? iOp) => iOp == "stamp2d" || iOp == "stampimg" || iOp == "importwork";
+        static bool IsStampOp(string? iOp) => iOp == "stamp2d" || iOp == "stampimg" || iOp == "importwork" || iOp == "stampvox";
 
         static bool IsWindows => Path.DirectorySeparatorChar == '\\';
 
