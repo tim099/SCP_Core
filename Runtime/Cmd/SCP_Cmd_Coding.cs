@@ -39,7 +39,7 @@ namespace SCP.Core.Cmd
 
         public override string Details =>
             "⛔ **射程**：改 C# 的施工場**只有這一個入口**。\n"
-            + "退場閘：`dotnet build`（宿主注入）。\n"
+            + "退場閘由宿主注入；Senate 依 scope 每條施工路徑找工程、各自驗編譯（.NET／Unity CLI）。\n"
             + "⭐ 全域互斥由 `SCP_ActivitySessionStore.TryStart` 那一層保證，本 Cmd 不自己判 ——\n"
             + "   自己判就是第三份判準，而它會跟前兩份不一致且**不報錯**。\n"
             + "📐 **施工範圍**（TASK-0201）：`op=start --arg scope=<絕對路徑>` 宣告這一場要動哪一塊，\n"
@@ -65,7 +65,7 @@ namespace SCP.Core.Cmd
             + "   · 五種「不收」各自說得出理由：`no-session`／`unbound`／\n"
             + "     `task-missing`（**查無 ≠ 做完**）／`still-working`／\n"
             + "     **`compile-red`（⛔ 紅燈不收，場還是你的）**。\n"
-            + "⛔ Senate 這一側的閘量的是**編譯**（`dotnet build`）；`build.sh` 出廠驗收**不在射程內**\n"
+            + "⛔ Senate 這一側的閘量的是**施工工程的編譯**；未宣告／找不到工程／未驗都擋下。`build.sh` 出廠驗收**不在射程內**\n"
             + "   （它會覆寫正在執行的 `senate.exe`，從 CLI 裡面跑不了）—— 那一格是人要另外跑的。";
 
         public override string Example =>
@@ -533,7 +533,7 @@ namespace SCP.Core.Cmd
             var aS = Mine(iRoot, iPersona, out SCP_CmdResult? aErr);
             if (aS == null) return aErr!;
 
-            // ⚠ TASK-0201：多場並行之後，**編譯閘量的是整棵樹，不是我那一塊** ——
+            // ⚠ 多場並行之後，**編譯閘量的是施工路徑所屬工程，不是個別檔案** ——
             //   它讀不出「這個紅字是誰造的」。⇒ 這裡把「同時還有誰在場」印出來，讓讀的人自己判。
             //   ⛔ **不拿它去放寬紅燈**（那會讓我自己弄壞的也一起被放過）；也⛔ 不擋 ——
             //     只是把一個沒有定語的讀數補上定語。
@@ -546,7 +546,7 @@ namespace SCP.Core.Cmd
             string aConcurrentNote = aOtherNames.Count == 0
                 ? ""
                 : "  ⚠ **同時在場的還有 " + string.Join("、", aOtherNames.ToArray())
-                  + "** ⇒ 這個編譯讀數涵蓋整棵樹，**它分不出紅字是誰造的**。";
+                  + "** ⇒ 各條讀數涵蓋所屬工程，**它分不出紅字是誰造的**。";
 
             SCP_CodingExitVerdict? aVerdict = SCP_CodingExitGateHost.Run(new SCP_CodingExitRequest(iRoot.Value, aS.scope, aS.start_ts));
             var aLines = new List<string>();
@@ -586,8 +586,7 @@ namespace SCP.Core.Cmd
                 aLines.Add("- 🔒 編譯閘：**綠燈** —— " + aVerdict.Value.Summary);
                 aLines.Add("  · 射程：" + aVerdict.Value.Scope);
             }
-            // ⚠ 綠燈也要這句：綠的射程同樣是整棵樹 ⇒ 它**不是**「我那一塊是對的」的證據，
-            //   而是「此刻整棵樹編得過」。兩者在同一個字上，差別只有定語。
+            // ⚠ 綠燈也要這句：綠的射程是所屬工程，不代表施工檔案的行為正確。
             if (aConcurrentNote.Length > 0) aLines.Add(aConcurrentNote);
 
             // Coding 沒有金流 ⇒ base close（翻三欄）。⚠ 這是**顯式的**，不是「還沒接結算」。
@@ -629,6 +628,6 @@ namespace SCP.Core.Cmd
 
         /// <summary>射程定語 —— 只有一份。</summary>
         internal const string ScopeCaveat =
-            "⚠ 射程：退場閘量 `dotnet build`。";
+            "⚠ 射程：退場閘由宿主依施工路徑驗所屬工程，不含出廠驗收。";
     }
 }

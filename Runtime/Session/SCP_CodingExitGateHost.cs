@@ -1,5 +1,5 @@
 // 區塊職責：`Coding` 退場時那道**編譯閘**由宿主提供 —— 本層只知道「去問那一端」。
-// 物理意義：介面在共用層，實作在宿主（Senate 是 `dotnet build`；`build.sh` 出廠驗收另外跑）。
+// 物理意義：介面在共用層，實作在宿主（Senate 依施工路徑驗所屬工程；出廠驗收另外跑）。
 // 數值影響：本檔零 IO。閘的實作可能**跑一次編譯**（秒級）—— 那是它的重點，不是副作用。
 //
 // ⚠ **沒有登記閘 ≠ 編譯是綠的**：那兩件事必須不同形。沒登記時退場路徑要印
@@ -9,7 +9,7 @@
 // 🩸 而 Senate 側有一格物理限制要寫下來：**`build.sh` 不能從 `senate.exe` 裡面跑** ——
 //   它會停 Server、殺掉開著的 senate 視窗、然後覆寫 `publish/senate.exe`，
 //   而那正是**當下正在執行的那個檔**（Access denied）。
-//   ⇒ Senate 側的閘只能是**編譯**這一格（`dotnet build`），
+//   ⇒ Senate 側的閘只能是**編譯**這一格（.NET／Unity CLI，依施工路徑判），
 //   **出廠驗收（`build.sh`）是人要另外跑的那一格** —— 閘要把這句話印出來，不要讓人以為它驗過了。
 #nullable enable
 using System;
@@ -37,7 +37,7 @@ namespace SCP.Core.Session
     }
 
     /// <summary>
-    /// 閘要量哪一場：資料根（＝哪個專案）、施工範圍、開場時刻。
+    /// 閘要量哪一場：存 session 的資料根、施工範圍、開場時刻；資料根不是施工工程。
     /// <para>宿主靠它判斷讀數夠不夠新（晚於開場才算本場的）。</para>
     /// </summary>
     public sealed class SCP_CodingExitRequest
@@ -49,7 +49,7 @@ namespace SCP.Core.Session
             StartTs = iStartTs ?? "";
         }
 
-        /// <summary>這一場的資料根（`<專案>/AgentCommands`）。</summary>
+        /// <summary>這一場存 session 的資料根；不拿來推施工工程。</summary>
         public string DataRoot { get; }
 
         /// <summary>施工範圍（`|` 分段；空字串 ＝ 未宣告 ＝ 全域）。</summary>
