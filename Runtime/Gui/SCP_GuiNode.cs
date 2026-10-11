@@ -11,6 +11,9 @@ using System;
 using System.Collections.Generic;
 namespace SCP.Core.Gui
 {
+    /// <summary>折疊三角形的狀態（見 <see cref="SCP_GuiNode.Arrow"/>）。</summary>
+    public enum SCP_GuiArrow { None, Right, Down, Spacer }
+
     public enum SCP_GuiNodeKind
     {
         Root,
@@ -76,6 +79,12 @@ namespace SCP.Core.Gui
         /// 而那會弄髒 diff（而「輸出可以 diff」正是文字 renderer 存在的理由）。</para>
         /// </summary>
         public bool UniformWidth { get; init; }
+
+        /// <summary>
+        /// 樹的折疊三角形（TASK-0500，<see cref="SCP_Ui.FoldArrow"/>）：Button 帶 Right／Down ⇒ 畫成方形三角鈕（邊長＝框高＝勾選框）；
+        /// Label 帶 Spacer ⇒ 同大小的空白佔位（葉子那一列對齊用，不可點）。None ＝ 一般節點。
+        /// </summary>
+        public SCP_GuiArrow Arrow { get; init; }
 
         /// <summary>
         /// **釘在最上面、不跟內容一起捲**（⭐ 掉在樹的**第幾層都算數**）。

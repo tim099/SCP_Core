@@ -263,6 +263,21 @@ namespace SCP.Core.Gui
             return m_Input.ClickedId == aId;
         }
 
+        /// <summary>
+        /// 樹的折疊三角形（像 Unity Hierarchy 那顆）：iOpen ⇒ ▼，否則 ▶；這一輪被按下就回 true（同 <see cref="Button"/>）。
+        /// 🩸 為什麼不是 Button("▶")（TASK-0500，Tim 截圖）：一般按鈕有最小寬度，一個字的 ▶ 被撐成一整條，比勾選框寬好幾倍。
+        /// ⇒ 方形、邊長＝框高 ＝ 勾選框的大小（ImGui 用原生 ArrowButton）；文字 renderer 照一般按鈕印 [ ▶ ]。
+        /// </summary>
+        public bool FoldArrow(bool iOpen, string iKey)
+        {
+            string aId = m_Ids.MakeExplicit(iKey);
+            Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Button, Id = aId, Text = iOpen ? "▼" : "▶", Arrow = iOpen ? SCP_GuiArrow.Down : SCP_GuiArrow.Right });
+            return m_Input.ClickedId == aId;
+        }
+
+        /// <summary>跟 <see cref="FoldArrow"/> 一樣大的空白（沒有子項的那一列用）—— 少了它，有三角形與沒三角形的列勾選框會錯開。不可點。</summary>
+        public void FoldArrowSpacer() => Current.Add(new SCP_GuiNode { Kind = SCP_GuiNodeKind.Label, Text = "", Arrow = SCP_GuiArrow.Spacer });
+
         /// <summary>勾選。回傳**這一輪之後**的狀態（沒有輸入覆寫時 ＝ 傳進來的值）。</summary>
         public bool Toggle(string iLabel, bool iValue, string? iKey = null)
         {
