@@ -11,9 +11,10 @@
 //   ⚠ 同一天我自己用 `find` 去數那些檔案，工具**逾時 >120 秒** —— 那不是論證，是被擋了一次。
 //
 // 一致性怎麼保證（TASK-0162）：
-//   索引記每個日期目錄的 (起始 seq, 檔數, 目錄 mtime)。載入時**只 stat 目錄**：
-//     · mtime 相符 → 該日內容沒動過 ⇒ 直接算出路徑，不列舉
-//     · mtime 不符 / 不在索引 → **只列舉那一天**
+//   索引記每個日期目錄的 (起始 seq, 檔數, 目錄 mtime)。載入時**只 stat**（一天兩次）：
+//     · mtime 相符、且「下一號」那個檔不在 → 該日內容沒動過 ⇒ 直接算出路徑，不列舉
+//       （⚠ 光看 mtime 不夠：刻度約 1ms，同一刻度內追加的檔 mtime 不動 —— TASK-0477）
+//     · mtime 不符 / 下一號在 / 不在索引 → **只列舉那一天**
 //   最後再驗一次全域 seq 連續性；有斷點就整份丟掉走全量列舉。
 //   > **把快取失效降級成「變慢」，而不是「算錯」** —— 算錯的後果很具體：
 //   > 清單少一筆 → seq 全體位移 → 所有游標指到錯的訊息，而外觀完全正常。
@@ -282,11 +283,14 @@ namespace SCP.Core.Tavern
                 {
                     int aOff = aSeq - FirstSeq;
                     if (Files != null) { ioTo.Add(Files[aOff]); continue; }
-                    string aName = aSeq.ToString(SeqFormat, CultureInfo.InvariantCulture) + ".json";
-                    ioTo.Add(Path.Combine(Dir, aName).Replace('\\', '/'));
+                    ioTo.Add(SeqPath(Dir, aSeq));
                 }
             }
         }
+
+        /// <summary>某日目錄裡第 <paramref name="iSeq"/> 號的檔路徑（新格式檔名，已 normalize 成 /）。</summary>
+        static string SeqPath(string iDayDir, int iSeq)
+            => Path.Combine(iDayDir, iSeq.ToString(SeqFormat, CultureInfo.InvariantCulture) + ".json").Replace('\\', '/');
 
         static List<DaySpan>? TryGetValidatedSpans(string iDataRoot, string iRoom,
             out bool oUsedIndex, out int oEnumeratedDays, out int oTotal)
@@ -315,7 +319,12 @@ namespace SCP.Core.Tavern
                 try { aMtime = Directory.GetLastWriteTimeUtc(aDir).Ticks; }
                 catch { return null; }
 
-                if (aIdx.TryGetValue(aDate, out var e) && e.MtimeTicks == aMtime)
+                // ⚠ mtime 相符**不足以**證明沒動過（TASK-0477）：目錄 mtime 的刻度約 1ms，
+                //   2026-10-11 量 300 次連續建檔，有 209 次目錄 mtime 一格不動 ⇒ 同一刻度內追加的檔看不見，
+                //   而失效樣子是**少一則、外觀完全正常**（檔頭說的那種「算錯」）。
+                //   ⇒ 再探測「這天下一號」那個檔：訊息只會在尾端追加，追加了它就在。一天多一次 stat。
+                if (aIdx.TryGetValue(aDate, out var e) && e.MtimeTicks == aMtime
+                    && !File.Exists(SeqPath(aDir, aExpectedNextSeq + e.Count)))
                 {
                     // 目錄沒動過 ⇒ 內容不變 ⇒ 只記區段，**不列舉也不建路徑**（本設計的收益就在這裡）
                     if (e.Count == 0) continue;                        // 空目錄
