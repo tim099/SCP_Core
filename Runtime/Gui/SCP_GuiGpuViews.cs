@@ -28,10 +28,15 @@ namespace SCP.Core.Gui
     /// <summary>宿主對某個 key 最近一次的回報。</summary>
     public sealed class SCP_GuiGpuStatus
     {
-        public SCP_GuiGpuStatus(long iVersion, string? iError, string iInfo)
+        public SCP_GuiGpuStatus(long iVersion, string? iError, string iInfo, object? iResult = null)
         {
-            Version = iVersion; Error = iError; Info = iInfo;
+            Version = iVersion; Error = iError; Info = iInfo; Result = iResult;
         }
+        /// <summary>
+        /// 畫的那一側算出來、頁面要拿回去用的東西（型別由場景那一對自己約定；例：雕刻預覽回填它實際用的鏡頭，TASK-0501）。
+        /// null ＝ 沒有。⚠ 跟 <see cref="Version"/> 一起看：舊版本的結果不是這一幀的。
+        /// </summary>
+        public object? Result { get; }
         /// <summary>畫的是哪一版（<see cref="SCP_GuiGpuFrame.Version"/>）。</summary>
         public long Version { get; }
         /// <summary>null ＝ 畫成功；否則是失敗原因。</summary>
@@ -61,9 +66,9 @@ namespace SCP.Core.Gui
         public static bool CanPaint(Type iSceneType) { lock (s_Lock) return s_Painters.Contains(iSceneType); }
 
         /// <summary>宿主畫完（或失敗）之後回報。</summary>
-        public static void Report(string iKey, long iVersion, string? iError, string iInfo)
+        public static void Report(string iKey, long iVersion, string? iError, string iInfo, object? iResult = null)
         {
-            lock (s_Lock) s_Status[iKey] = new SCP_GuiGpuStatus(iVersion, iError, iInfo ?? "");
+            lock (s_Lock) s_Status[iKey] = new SCP_GuiGpuStatus(iVersion, iError, iInfo ?? "", iResult);
         }
 
         public static bool TryGetStatus(string iKey, out SCP_GuiGpuStatus oStatus)

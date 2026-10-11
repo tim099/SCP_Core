@@ -242,8 +242,13 @@ namespace SCP.Core.Gui
     /// <summary>一張可互動圖片在一輪裡收到的指標事件。</summary>
     public sealed class SCP_GuiPointer
     {
-        /// <summary>拖曳位移（往右／往下為正），單位＝顯示中的圖片寬／高。</summary>
+        /// <summary>**左鍵**拖曳位移（往右／往下為正），單位＝顯示中的圖片寬／高。</summary>
         public float DragX, DragY;
+        /// <summary>
+        /// 右鍵／中鍵拖曳位移（同單位；TASK-0501 雕刻預覽：右鍵／中鍵轉、左鍵平移，像 Blender）。
+        /// ⚠ 分開累積、⛔ 不併進 DragX —— 只吃左鍵的頁面（球面）才不會被右鍵拖著跑。
+        /// </summary>
+        public float RightDragX, RightDragY, MiddleDragX, MiddleDragY;
         /// <summary>滾輪格數（往上捲為正）。</summary>
         public float Wheel;
         /// <summary>這一輪還按著（拖曳中）。</summary>
@@ -253,6 +258,6 @@ namespace SCP.Core.Gui
         /// <summary>這一輪指標停在圖上。</summary>
         public bool Hovered;
 
-        public bool Any => DragX != 0 || DragY != 0 || Wheel != 0 || Released;
+        public bool Any => DragX != 0 || DragY != 0 || RightDragX != 0 || RightDragY != 0 || MiddleDragX != 0 || MiddleDragY != 0 || Wheel != 0 || Released;
     }
 }
