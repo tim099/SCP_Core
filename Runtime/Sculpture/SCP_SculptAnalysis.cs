@@ -99,52 +99,89 @@ namespace SCP.Core.Sculpture
             foreach (var kv in aPrior)
             {
                 int x = KeyX(kv.Key), y = KeyY(kv.Key), z = KeyZ(kv.Key);
-                int before = kv.Value, after = aSpace.Voxels.Get(x, y, z);
-                if (before == after) continue;
-                aRows.Add(new[] { x, y, z, before, after });
-                if (before == 0) { aRes.Placed++; Bump(aRes.PlacedByColor, after); }
-                else if (after == 0) { aRes.Carved++; Bump(aRes.CarvedByColor, before); }
-                else
-                {
-                    aRes.Recolored++;
-                    var p = (before, after);
-                    aRes.RecoloredByPair[p] = (aRes.RecoloredByPair.TryGetValue(p, out int n) ? n : 0) + 1;
-                }
+                int after = aSpace.Voxels.Get(x, y, z);
+                if (kv.Value != after) aRows.Add(new[] { x, y, z, kv.Value, after });
             }
-            aRows.Sort(CompareXyz);
-
-            aRes.Lines.Add("# 🔀 Sculpture Diff:");
-            aRes.Lines.Add("  from      : " + iArgs.From.Trim() + " → " + aRes.FromEvent + (a >= 0 ? "（第 " + (a + 1) + " 個事件）" : "（第一個事件之前）"));
-            aRes.Lines.Add("  to        : " + (iArgs.To.Trim().Length == 0 ? SCP_SculptMarks.Now : iArgs.To.Trim()) + " → " + aRes.ToEvent
-                           + (b >= 0 ? "（第 " + (b + 1) + " 個事件）" : "（第一個事件之前）"));
-            if (aRegion != null) aRes.Lines.Add("  region    : " + iArgs.Region.Trim());
+            string aFromLine = iArgs.From.Trim() + " → " + aRes.FromEvent + (a >= 0 ? "（第 " + (a + 1) + " 個事件）" : "（第一個事件之前）");
+            string aToLine = (iArgs.To.Trim().Length == 0 ? SCP_SculptMarks.Now : iArgs.To.Trim()) + " → " + aRes.ToEvent
+                             + (b >= 0 ? "（第 " + (b + 1) + " 個事件）" : "（第一個事件之前）");
             var aOps = new StringBuilder();
             foreach (var kv in aRes.EventOps) aOps.Append(aOps.Length > 0 ? " " : "").Append(kv.Key).Append('×').Append(kv.Value);
-            aRes.Lines.Add("  events    : " + aRes.EventCount + (aOps.Length > 0 ? "（" + aOps + "）" : ""));
-            aRes.Lines.Add("  placed    : " + aRes.Placed + ByColor(aRes.PlacedByColor));
-            aRes.Lines.Add("  carved    : " + aRes.Carved + ByColor(aRes.CarvedByColor));
-            var aPairs = new StringBuilder();
-            foreach (var kv in aRes.RecoloredByPair) aPairs.Append(aPairs.Length > 0 ? " " : "").Append(kv.Key.From).Append('→').Append(kv.Key.To).Append('×').Append(kv.Value);
-            aRes.Lines.Add("  recolored : " + aRes.Recolored + (aPairs.Length > 0 ? "（" + aPairs + "）" : ""));
-
-            if (iArgs.Out.Trim().Length > 0)
-            {
-                string aOut = SCP_SculptPy.PathStr(iArgs.Out.Trim());
-                string? aDir = Path.GetDirectoryName(Path.GetFullPath(aOut));
-                if (!string.IsNullOrEmpty(aDir)) Directory.CreateDirectory(aDir);
-                var aSb = new StringBuilder();
-                aSb.Append("# sculpture diff —— x,y,z,before,after（0 ＝ 空；照 x→y→z 排）\n");
-                aSb.Append("# from ").Append(aRes.FromEvent).Append("  to ").Append(aRes.ToEvent).Append(aRegion != null ? "  region " + iArgs.Region.Trim() : "").Append('\n');
-                aSb.Append("# placed ").Append(aRes.Placed).Append("  carved ").Append(aRes.Carved).Append("  recolored ").Append(aRes.Recolored).Append('\n');
-                foreach (int[] r in aRows)
-                    aSb.Append(r[0]).Append(',').Append(r[1]).Append(',').Append(r[2]).Append(',').Append(r[3]).Append(',').Append(r[4]).Append('\n');
-                byte[] aBytes = new UTF8Encoding(false).GetBytes(aSb.ToString());
-                File.WriteAllBytes(aOut, aBytes);
-                aRes.OutputPath = aOut;
-                aRes.Sha256 = SCP_SculptPy.Sha256Hex(aBytes);
-                aRes.Lines.Add("  list      : " + aOut + "（" + aRows.Count + " 行，sha256 " + aRes.Sha256 + "）");
-            }
+            RenderDiff(aRes, aRows, aFromLine, aToLine, aRes.EventCount + (aOps.Length > 0 ? "（" + aOps + "）" : ""), iArgs, aRegion);
             return aRes;
+        }
+
+        /// <summary>
+        /// 兩份空間直接比（TASK-0493：作品現在 → 草稿）：哪幾格不一樣、怎麼不一樣。分類、列印、差異清單與 <see cref="Diff"/> 同一份。
+        /// <para>不重播、不碰任何檔（只有給了 Out 才寫那一份清單）。</para>
+        /// </summary>
+        public static SCP_SculptDiffResult DiffSpaces(SCP_SculptSpace iFrom, SCP_SculptSpace iTo, string iFromLabel, string iToLabel, SCP_SculptDiffArgs iArgs)
+        {
+            var aRes = new SCP_SculptDiffResult { FromIndex = -1, ToIndex = -1, FromEvent = iFromLabel, ToEvent = iToLabel };
+            int[]? aRegion = null;
+            if (iArgs.Region.Trim().Length > 0)
+            {
+                if (!TryParseRegion(iArgs.Region.Trim(), out int[] r)) { aRes.ExitCode = 2; aRes.Lines.Add("❌ --region 需為 'x1..x2,y1..y2,z1..z2': " + iArgs.Region); return aRes; }
+                aRegion = r;
+            }
+            var aRows = new List<int[]>();
+            var aSeen = new HashSet<long>();
+            void Visit(int x, int y, int z)
+            {
+                if (aRegion != null && (x < aRegion[0] || x > aRegion[1] || y < aRegion[2] || y > aRegion[3] || z < aRegion[4] || z > aRegion[5])) return;
+                if (x < 0 || y < 0 || z < 0 || !aSeen.Add(PackKey(x, y, z))) return;
+                int before = iFrom.Voxels.Get(x, y, z), after = iTo.Voxels.Get(x, y, z);
+                if (before != after) aRows.Add(new[] { x, y, z, before, after });
+            }
+            foreach (var e in iFrom.Voxels.Entries()) Visit(e.X, e.Y, e.Z);
+            foreach (var e in iTo.Voxels.Entries()) Visit(e.X, e.Y, e.Z);
+            RenderDiff(aRes, aRows, iFromLabel, iToLabel, "", iArgs, aRegion);
+            return aRes;
+        }
+
+        /// <summary>分類（放／刻／換色、分顏色）、印、寫差異清單（給了 Out）。</summary>
+        static void RenderDiff(SCP_SculptDiffResult ioRes, List<int[]> iRows, string iFromLine, string iToLine, string iEventsLine, SCP_SculptDiffArgs iArgs, int[]? iRegion)
+        {
+            foreach (int[] r in iRows)
+            {
+                int before = r[3], after = r[4];
+                if (before == 0) { ioRes.Placed++; Bump(ioRes.PlacedByColor, after); }
+                else if (after == 0) { ioRes.Carved++; Bump(ioRes.CarvedByColor, before); }
+                else
+                {
+                    ioRes.Recolored++;
+                    var p = (before, after);
+                    ioRes.RecoloredByPair[p] = (ioRes.RecoloredByPair.TryGetValue(p, out int n) ? n : 0) + 1;
+                }
+            }
+            iRows.Sort(CompareXyz);
+
+            ioRes.Lines.Add("# 🔀 Sculpture Diff:");
+            ioRes.Lines.Add("  from      : " + iFromLine);
+            ioRes.Lines.Add("  to        : " + iToLine);
+            if (iRegion != null) ioRes.Lines.Add("  region    : " + iArgs.Region.Trim());
+            if (iEventsLine.Length > 0) ioRes.Lines.Add("  events    : " + iEventsLine);
+            ioRes.Lines.Add("  placed    : " + ioRes.Placed + ByColor(ioRes.PlacedByColor));
+            ioRes.Lines.Add("  carved    : " + ioRes.Carved + ByColor(ioRes.CarvedByColor));
+            var aPairs = new StringBuilder();
+            foreach (var kv in ioRes.RecoloredByPair) aPairs.Append(aPairs.Length > 0 ? " " : "").Append(kv.Key.From).Append('→').Append(kv.Key.To).Append('×').Append(kv.Value);
+            ioRes.Lines.Add("  recolored : " + ioRes.Recolored + (aPairs.Length > 0 ? "（" + aPairs + "）" : ""));
+
+            if (iArgs.Out.Trim().Length == 0) return;
+            string aOut = SCP_SculptPy.PathStr(iArgs.Out.Trim());
+            string? aDir = Path.GetDirectoryName(Path.GetFullPath(aOut));
+            if (!string.IsNullOrEmpty(aDir)) Directory.CreateDirectory(aDir);
+            var aSb = new StringBuilder();
+            aSb.Append("# sculpture diff —— x,y,z,before,after（0 ＝ 空；照 x→y→z 排）\n");
+            aSb.Append("# from ").Append(ioRes.FromEvent).Append("  to ").Append(ioRes.ToEvent).Append(iRegion != null ? "  region " + iArgs.Region.Trim() : "").Append('\n');
+            aSb.Append("# placed ").Append(ioRes.Placed).Append("  carved ").Append(ioRes.Carved).Append("  recolored ").Append(ioRes.Recolored).Append('\n');
+            foreach (int[] r in iRows)
+                aSb.Append(r[0]).Append(',').Append(r[1]).Append(',').Append(r[2]).Append(',').Append(r[3]).Append(',').Append(r[4]).Append('\n');
+            byte[] aBytes = new UTF8Encoding(false).GetBytes(aSb.ToString());
+            File.WriteAllBytes(aOut, aBytes);
+            ioRes.OutputPath = aOut;
+            ioRes.Sha256 = SCP_SculptPy.Sha256Hex(aBytes);
+            ioRes.Lines.Add("  list      : " + aOut + "（" + iRows.Count + " 行，sha256 " + ioRes.Sha256 + "）");
         }
 
         static void Bump(SortedDictionary<int, int> iMap, int iKey) => iMap[iKey] = (iMap.TryGetValue(iKey, out int n) ? n : 0) + 1;

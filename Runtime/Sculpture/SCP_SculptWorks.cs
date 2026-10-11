@@ -172,6 +172,19 @@ namespace SCP.Core.Sculpture
         public string ReadText(string iId, bool iTodo) => File.Exists(TextPath(iId, iTodo)) ? File.ReadAllText(TextPath(iId, iTodo), Encoding.UTF8) : "";
         public void WriteText(string iId, bool iTodo, string iText) => SCP_CmdPayload.WriteAtomic(TextPath(iId, iTodo), iText);
         string TextPath(string iId, bool iTodo) => Path.Combine(Folder(iId), iTodo ? "todo.md" : "notes.md");
+        /// <summary>
+        /// 只看**內容**的雜湊（TASK-0493，草稿判「底過期」用）：尺寸＋每一格（照 x→y→z 排），不含事件水位、不看表的插入序 ——
+        /// 漏帶 draft=1 落了一刀再 undo 回來，內容一樣 ⇒ 雜湊一樣 ⇒ 不算過期。
+        /// </summary>
+        public static string ContentHash(SCP_SculptSpace iSpace, string iDimensions)
+        {
+            var aCells = iSpace.Voxels.ToList();
+            aCells.Sort((a, b) => a.X != b.X ? a.X.CompareTo(b.X) : a.Y != b.Y ? a.Y.CompareTo(b.Y) : a.Z.CompareTo(b.Z));
+            var text = new StringBuilder(iDimensions).Append('\n');
+            foreach (var v in aCells) text.Append(SCP_SculptVoxelMap.KeyText(v.X, v.Y, v.Z)).Append(':').Append(v.Color).Append('\n');
+            using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(text.ToString()))).Replace("-", "").ToLowerInvariant();
+        }
+
         /// <summary>事件水位與完整 voxel 內容共同定義版本；匯入預覽後的任何一刀都會使版本失效。</summary>
         public static string Revision(SCP_SculptSpace iSpace, string iDimensions = "")
         {

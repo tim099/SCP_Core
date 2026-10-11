@@ -40,16 +40,25 @@ namespace SCP.Core.Sculpture
             Root = SCP_SculptPy.FullPathStr(iSculptRoot);
         }
 
+        /// <summary>
+        /// 「作品本身」那一層的根（TASK-0493）：標記、關聯、展品、匯出、slice 暫存都落在這裡。一般空間 ＝ <see cref="Root"/>；
+        /// 草稿的 Root 是 draft/，AuxRoot 仍指作品資料夾 ⇒ 草稿裡 export 的檔、登錄的展品不會在 apply／discard 時跟著 draft/ 被刪。
+        /// </summary>
+        public string AuxRoot { get; set; } = "";
+        string Aux => AuxRoot.Length > 0 ? AuxRoot : Root;
+
         public string Events => Path.Combine(Root, "events");
         public string CacheFile => Path.Combine(Root, "sculpt_cache.json");
         /// <summary>歷史索引（<see cref="SCP_SculptHistoryIndex"/>）：本機快取、不入 git。</summary>
         public string HistoryCacheFile => Path.Combine(Root, "sculpt_history_cache.json");
         /// <summary>時間標記（<see cref="SCP_SculptMarks"/>，TASK-0491）：作者寫的、入 git；⛔ 不在 events/ 裡。</summary>
-        public string MarksFile => Path.Combine(Root, "marks.json");
-        public string Exhibits => Path.Combine(Root, "exhibits");
-        public string Exports => Path.Combine(Root, "exports");
-        public string LastSlice => Path.Combine(Root, "_last_slice.png");
-        public string StampSrc => Path.Combine(Root, "_stamp_src.png");
+        public string MarksFile => Path.Combine(Aux, "marks.json");
+        /// <summary>關聯匯入（<see cref="SCP_SculptLinks"/>，TASK-0494）：作者寫的、入 git；⛔ 不在 events/ 裡。</summary>
+        public string LinksFile => Path.Combine(Aux, "links.json");
+        public string Exhibits => Path.Combine(Aux, "exhibits");
+        public string Exports => Path.Combine(Aux, "exports");
+        public string LastSlice => Path.Combine(Aux, "_last_slice.png");
+        public string StampSrc => Path.Combine(Aux, "_stamp_src.png");
         public string ExhibitJson(string iId) => Path.Combine(Exhibits, iId + ".json");
         public string ExhibitPng(string iId) => Path.Combine(Exhibits, iId + ".png");
 
@@ -58,6 +67,22 @@ namespace SCP.Core.Sculpture
         {
             Directory.CreateDirectory(Root);
             Directory.CreateDirectory(Events);
+        }
+
+        /// <summary>
+        /// 這個空間的「底」（TASK-0493 草稿）：null ＝ 從空的開始（一般作品、共用展區）。
+        /// 給了 ⇒ 重建（沒快取、水位對不上）與 Undo 的重播都從它起，再疊這個空間自己的事件。
+        /// <para>⚠ 每次呼叫都要回一份**新的**空間（呼叫端會就地改它）。</para>
+        /// </summary>
+        public Func<SCP_SculptSpace>? Base;
+
+        /// <summary>重播的起點：有底 ⇒ 底（水位清成空字串 —— 之後只疊自己的事件）；沒有 ⇒ 空的。</summary>
+        public SCP_SculptSpace NewStart()
+        {
+            if (Base == null) return new SCP_SculptSpace();
+            SCP_SculptSpace aStart = Base();
+            aStart.LastEventFile = "";
+            return aStart;
         }
     }
 
@@ -276,10 +301,16 @@ namespace SCP.Core.Sculpture
         /// <para>⚠ 會**寫**快取（python 每次都寫，即使沒有新事件）。呼叫端要握雕刻鎖。</para>
         /// </summary>
         /// <exception cref="SCP_SculptReplayException">事件的 op 不認得或欄位壞掉（不存快取）。</exception>
-        public static SCP_SculptSpace Load(SCP_SculptPaths iPaths)
+        public static SCP_SculptSpace Load(SCP_SculptPaths iPaths) => Load(iPaths, true);
+
+        /// <summary>
+        /// 同 <see cref="Load(SCP_SculptPaths)"/>；<paramref name="iSave"/> ＝ false ⇒ **一個位元組都不寫**（不建資料夾、不存快取）——
+        /// 草稿讀它的底、關聯讀被關聯的作品時用（TASK-0493／0494：無痕；那件作品的快取讓它自己的 op 去更新）。
+        /// </summary>
+        public static SCP_SculptSpace Load(SCP_SculptPaths iPaths, bool iSave)
         {
-            iPaths.EnsureBase();
-            SCP_SculptSpace aSpace = TryReadCache(iPaths.CacheFile) ?? new SCP_SculptSpace();
+            if (iSave) iPaths.EnsureBase();
+            SCP_SculptSpace aSpace = TryReadCache(iPaths.CacheFile) ?? iPaths.NewStart();
 
             List<EventFile> aAll = ListEvents(iPaths);
             int aStart = 0;
@@ -296,7 +327,7 @@ namespace SCP.Core.Sculpture
                     if (aKnown ?? ReadEvent(aAll[i].Full) != null) aFound = i;
                     break;
                 }
-                if (aFound < 0) { aSpace = new SCP_SculptSpace(); aStart = 0; }   // 快取壞了／過期 ⇒ 重建
+                if (aFound < 0) { aSpace = iPaths.NewStart(); aStart = 0; }   // 快取壞了／過期 ⇒ 重建（有底 ⇒ 從底起，TASK-0493）
                 else aStart = aFound + 1;
             }
 
@@ -308,7 +339,7 @@ namespace SCP.Core.Sculpture
                 aSpace.LastEventFile = aAll[i].Rel;
             }
 
-            SaveCache(iPaths, aSpace);
+            if (iSave) SaveCache(iPaths, aSpace);
             return aSpace;
         }
 

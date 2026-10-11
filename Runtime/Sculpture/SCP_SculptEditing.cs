@@ -128,7 +128,7 @@ namespace SCP.Core.Sculpture
             if (candidates.Count == 0) throw new ArgumentException(iRedo ? "沒有可Redo的編輯" : "沒有可Undo的編輯");
             var target = candidates[candidates.Count - 1];
             var current = LoadSpace();
-            var desired = iRedo ? CopySpace(current) : new SCP_SculptSpace();
+            var desired = iRedo ? CopySpace(current) : Paths.NewStart();   // 草稿 ⇒ 從底起重播（TASK-0493）
             if (iRedo) SCP_SculptStore.ApplyEvent(desired, SCP_SculptStore.ReadEvent(target.Full)!, target.Rel);
             else foreach (var file in SCP_SculptStore.ListEvents(Paths))
             {
@@ -150,8 +150,11 @@ namespace SCP.Core.Sculpture
                 if (!seen.Add(SCP_SculptVoxelMap.KeyText(x, y, z))) return;
                 int before = iCurrent.Voxels.Get(x, y, z), after = iDesired.Voxels.Get(x, y, z);
                 if (before == after) return;
-                if (!Inside(x, y, z)) throw new ArgumentException("還原內容超出目前作品尺寸；請先擴大作品再Undo/Redo");
-                if (edit.after.Count >= MaxVolume) throw new ArgumentException("單次變動超過1,000,000格；請縮小選區或拆分零件");
+                if (!Inside(x, y, z))
+                    throw new ArgumentException(iAction == SCP_SculptDraft.ApplyAction ? "草稿有格子在作品現在的尺寸之外（作品被縮小過？）；未套用"
+                                                                                       : "還原內容超出目前作品尺寸；請先擴大作品再Undo/Redo");
+                // 草稿 apply 不設上限（TASK-0493）：草稿是很多刀累積的，拆不開；重播 workedit 本來就沒有上限
+                if (edit.after.Count >= MaxVolume && iAction != SCP_SculptDraft.ApplyAction) throw new ArgumentException("單次變動超過1,000,000格；請縮小選區或拆分零件");
                 edit.before.Add(new SCP_SculptChange(x, y, z, before)); edit.after.Add(new SCP_SculptChange(x, y, z, after));
             }
             foreach (var v in iCurrent.Voxels.Entries()) Visit(v.X, v.Y, v.Z);

@@ -108,8 +108,18 @@ namespace SCP.Core.Sculpture
         /// </summary>
         public SCP_SculptViewFilter? ViewFilter;
 
-        /// <summary>觀測用：沒有時間條件 ⇒ ＝ <see cref="LoadSpace"/>；有 ⇒ 重播到那一刻（不碰快取）。</summary>
-        public SCP_SculptSpace LoadView() => ViewFilter == null || !ViewFilter.Active ? LoadSpace() : SCP_SculptStore.LoadView(Paths, ViewFilter);
+        /// <summary>
+        /// 關聯匯入（TASK-0494）：給了 ⇒ 觀測類 op 看的是「本作品＋選到的關聯」（<see cref="LoadView"/> 最後一步組進來）。
+        /// ⛔ 寫入類 op 一律 <see cref="LoadSpace"/>：父作品的刀碰不到被關聯的作品。鎖由呼叫端拿齊（見 <see cref="SCP_SculptLinkComposer"/>）。
+        /// </summary>
+        public SCP_SculptLinkComposer? Links;
+
+        /// <summary>觀測用：沒有時間條件 ⇒ ＝ <see cref="LoadSpace"/>；有 ⇒ 重播到那一刻（不碰快取）；有關聯 ⇒ 再組進來。</summary>
+        public SCP_SculptSpace LoadView()
+        {
+            SCP_SculptSpace aSpace = ViewFilter == null || !ViewFilter.Active ? LoadSpace() : SCP_SculptStore.LoadView(Paths, ViewFilter);
+            return Links == null ? aSpace : Links.Compose(aSpace, SizeX, SizeY, SizeZ);
+        }
 
         /// <summary>原點 (0,0,0) 平移到 at；預設跳過既有 voxel，越界由呼叫端在扣款前拒絕。</summary>
         public SCP_SculptWorkImport PreviewWorkImport(SCP_SculptSpace iSource, string iId, string iOwner, int[] iAt)
@@ -1136,7 +1146,8 @@ namespace SCP.Core.Sculpture
             SCP_SculptSpace aSpace;
             try { aSpace = LoadView(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); } catch (ArgumentException e) { return SCP_SculptResult.Error(2, e.Message); }
             List<(int X, int Y, int Z, int Color)> aVox = Filter(aSpace, iArgs.Region, iArgs.ExcludeColor);
-            if (aVox.Count == 0) return SCP_SculptResult.Text(1, "⚠ 觀測區域內沒有任何 voxel — 沒東西可匯出");
+            // 純清單：空也是一個答案（例：重播到第一個事件之前）⇒ 寫出只有檔頭的清單；obj／vox 照舊擋
+            if (aVox.Count == 0 && iArgs.Format != FormatList) return SCP_SculptResult.Text(1, "⚠ 觀測區域內沒有任何 voxel — 沒東西可匯出");
 
             string aOutDir = iArgs.OutDir.Length > 0 ? SCP_SculptPy.PathStr(iArgs.OutDir) : Paths.Exports;
             Directory.CreateDirectory(aOutDir);
@@ -1157,6 +1168,7 @@ namespace SCP.Core.Sculpture
                 aSb.Append("# sculpture voxel list —— x,y,z,color（絕對座標；照 x→y→z 排；stampvox at=0,0,0 可原樣貼回）\n");
                 aSb.Append("# voxels ").Append(aSorted.Count).Append(iArgs.Region.Length > 0 ? "  region " + iArgs.Region : "")
                    .Append(iArgs.ExcludeColor.Length > 0 ? "  exclude_color " + iArgs.ExcludeColor : "").Append('\n');
+                aSb.Append(LinkHeader());
                 foreach (var e in aSorted)
                 {
                     if (e.Color < 1 || e.Color > 255) return SCP_SculptResult.Error(1, "list 匯出：(" + e.X + "," + e.Y + "," + e.Z + ") 的顏色 " + e.Color + " 不在 1..255 —— 清單寫不出來（快取壞了？刪快取重播再匯）");
@@ -1187,6 +1199,7 @@ namespace SCP.Core.Sculpture
                 SCP_SculptPy.WriteTextFile(aMtl, aM.ToString());
 
                 var aO = new StringBuilder();
+                aO.Append(LinkHeader());   // 有關聯 ⇒ 每件用了哪個版本（obj 的 # 是註解；沒有關聯 ⇒ 空字串，bytes 與以前相同）
                 aO.Append("mtllib ").Append(Path.GetFileName(aMtl)).Append('\n');
                 int aFaces, aVerts;
                 if (iArgs.Merge == MergeNone) aFaces = WriteObjPerVoxel(aO, aVox, aSet, aColors, out aVerts);
@@ -1241,6 +1254,19 @@ namespace SCP.Core.Sculpture
             aRes.Lines.Add("  voxels    : " + aVox.Count + "  size: " + sx + "x" + sy + "x" + sz);
             aRes.Lines.Add("  vox       : " + aOutPath);
             return aRes;
+        }
+
+        /// <summary>匯出檔頭的關聯紀錄（TASK-0494）：每條組進來的關聯一行 <c># link 路徑 作品@版本</c>（草稿另註）；沒有關聯 ⇒ 空字串。</summary>
+        string LinkHeader()
+        {
+            SCP_SculptComposeReport? aLast = Links?.Last;
+            if (aLast == null) return "";
+            var aSb = new StringBuilder();
+            if (aLast.HideSelf) aSb.Append("# link-self hidden（本作品自己的格沒畫）\n");
+            foreach (var r in aLast.Rows)
+                aSb.Append("# link ").Append(r.Path).Append(' ').Append(r.Work).Append('@').Append(r.Revision).Append(r.Draft ? " (draft)" : "")
+                   .Append("  placed ").Append(r.Placed).Append(r.Overlap > 0 ? "  overlap " + r.Overlap : "").Append(r.Clipped > 0 ? "  clipped " + r.Clipped : "").Append('\n');
+            return aSb.ToString();
         }
 
         static string F4(double v) => v.ToString("F4", CultureInfo.InvariantCulture);
@@ -1318,7 +1344,8 @@ namespace SCP.Core.Sculpture
             var aRes = new SCP_SculptExhibitResult { Id = iArgs.Id };
             aRes.ExhibitFile = SaveExhibit(iArgs.Id, aPreset);
             SCP_SculptSpace aSpace;
-            try { aSpace = LoadSpace(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); }
+            // 展品照照「看得到的樣子」出（有關聯 ⇒ 組進來，TASK-0494）
+            try { aSpace = LoadView(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); } catch (ArgumentException e) { return SCP_SculptResult.Error(2, e.Message); }
             try { aRes.PhotoPath = RenderExhibitPhoto(aSpace, aPreset); }
             catch (Exception e) { aRes.Warning = e.Message; }
             if (aRes.PhotoPath.Length > 0)

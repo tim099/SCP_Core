@@ -129,6 +129,8 @@ namespace SCP.Core.Sculpture
             string aName = iName.Trim();
             if (aName.Length == 0) throw new ArgumentException("標記要有名字（name=）");
             if (aName.IndexOfAny(new[] { ':', ',', '|', '\n', '\r' }) >= 0) throw new ArgumentException("標記名字不可含 `:` `,` `|` 或換行（`:` 留給 name:begin 這種寫法）");
+            if (aName == Start || aName == Now) throw new ArgumentException("`" + aName + "` 是保留字（mark=start、diff 的 to=now），不能當標記名");
+            if (aName.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("標記名不可以 .json 結尾（mark=／from=／to= 以 .json 結尾的是事件檔）");
             string aPhase = iPhase.Trim().Length == 0 ? PhasePoint : iPhase.Trim();
             if (aPhase != PhasePoint && aPhase != PhaseBegin && aPhase != PhaseEnd) throw new ArgumentException("phase 要是 point|begin|end（got '" + aPhase + "'）");
 
