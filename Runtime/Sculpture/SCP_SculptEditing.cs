@@ -161,7 +161,11 @@ namespace SCP.Core.Sculpture
             foreach (var v in iDesired.Voxels.Entries()) Visit(v.X, v.Y, v.Z);
             return edit;
         }
-        public string CommitEdit(SCP_SculptEdit iEdit, string iPersona)
+        /// <summary>
+        /// 落一筆 workedit。<paramref name="iSource"/>（選填）寫在事件**最上層**、不進 edit ——
+        /// 重播與歷史索引只讀 edit（舊版對 edit 裡不認得的鍵會報錯），所以多帶的說明不會讓沒更新的 senate.exe 重播失敗（TASK-0495 噴漆）。
+        /// </summary>
+        public string CommitEdit(SCP_SculptEdit iEdit, string iPersona, SCP_SculptPyObj? iSource = null)
         {
             if (iEdit.after.Count == 0 && iEdit.action != "undo" && iEdit.action != "redo") throw new ArgumentException("沒有voxel變動；未新增事件");
             iEdit.persona = iPersona;
@@ -171,7 +175,9 @@ namespace SCP.Core.Sculpture
             var options = new SCP_JsonMapOptions();
             var data = SCP_JsonMapper.ToJson(iEdit, options);
             if (options.Diagnostics.Count > 0) throw new InvalidOperationException("編輯事件無法完整寫入：" + string.Join("; ", options.Diagnostics));
-            var ev = new SCP_SculptPyObj().Put("op", "workedit").Put("edit", data);
+            var ev = new SCP_SculptPyObj().Put("op", "workedit");
+            if (iSource != null) ev.Put("source", iSource);
+            ev.Put("edit", data);
             string file = SCP_SculptStore.RecordEvent(Paths, ev, Clock(), out string rel);
             foreach (var v in iEdit.after) space.Voxels.Set(v[0], v[1], v[2], v[3]);
             space.LastEventFile = rel; SCP_SculptStore.SaveCache(Paths, space);

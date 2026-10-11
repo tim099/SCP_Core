@@ -85,6 +85,8 @@ namespace SCP.Core.Sculpture
                     {
                         aRes.EventCount++;
                         string aOp = aEv == null ? "(讀不出來)" : aEv["op"].IsString ? aEv["op"].AsString() : "(沒有 op)";
+                        // workedit 底下有好幾種刀（move／assemble／undo／apply／spray…）⇒ 帶上 action 才分得出來
+                        if (aOp == "workedit" && aEv != null && aEv["edit"]["action"].IsString) aOp += ":" + aEv["edit"]["action"].AsString();
                         aRes.EventOps[aOp] = (aRes.EventOps.TryGetValue(aOp, out int n) ? n : 0) + 1;
                     }
                     if (aEv == null) continue;
