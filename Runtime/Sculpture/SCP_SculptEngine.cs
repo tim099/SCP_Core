@@ -1000,9 +1000,20 @@ namespace SCP.Core.Sculpture
             return pts;
         }
 
-        // merge=none：逐 voxel 面、每面 4 個獨立 v ＋ 1 個 vn —— bytes 與 python cmd_export 相同（⛔ 不要順手共用頂點）。
+        /// <summary>
+        /// 這一面要不要出：鄰格是實心 ⇒ 被遮住；鄰格是封閉空腔的空氣（<paramref name="iSealed"/> 給了才判）⇒ 省略並計數（TASK-0498）。
+        /// </summary>
+        static bool FaceHidden(HashSet<(int, int, int)> iSet, AirMap? iSealed, int x, int y, int z, ref int ioSealedFaces)
+        {
+            if (iSet.Contains((x, y, z))) return true;
+            if (iSealed == null || !iSealed.IsSealedAir(x, y, z)) return false;
+            ioSealedFaces++;
+            return true;
+        }
+
+        // merge=none：逐 voxel 面、每面 4 個獨立 v ＋ 1 個 vn —— 沒有封閉空腔（或 sealed=keep）時 bytes 與 python cmd_export 相同（⛔ 不要順手共用頂點）。
         static int WriteObjPerVoxel(StringBuilder iO, List<(int X, int Y, int Z, int Color)> iVox,
-                                    HashSet<(int, int, int)> iSet, SortedSet<int> iColors, out int oVerts)
+                                    HashSet<(int, int, int)> iSet, AirMap? iSealed, ref int ioSealedFaces, SortedSet<int> iColors, out int oVerts)
         {
             int vi = 1, ni = 1, aFaces = 0;
             var aWorld = new int[4][];
@@ -1015,7 +1026,7 @@ namespace SCP.Core.Sculpture
                     for (int f = 0; f < 6; f++)
                     {
                         int[] d = s_FaceDir[f];
-                        if (iSet.Contains((e.X + d[0], e.Y + d[1], e.Z + d[2]))) continue;   // 被鄰居遮住的面不出
+                        if (FaceHidden(iSet, iSealed, e.X + d[0], e.Y + d[1], e.Z + d[2], ref ioSealedFaces)) continue;   // 被鄰居遮住／朝向封閉空腔的面不出
                         for (int k = 0; k < 4; k++)
                         {
                             int[] o = s_FaceCorners[f][k];
@@ -1040,9 +1051,10 @@ namespace SCP.Core.Sculpture
         //   不保證最少矩形，但線性、決定性（同輸入同 bytes）。整顆同色立方體 ⇒ 6 面。
         // ⚠ 大矩形的邊可能貼著另一側的小矩形 ⇒ T 型接點：一般算繪沒事，要 watertight（3D 列印）的用 merge=none。
         static int WriteObjGreedy(StringBuilder iO, List<(int X, int Y, int Z, int Color)> iVox,
-                                  HashSet<(int, int, int)> iSet, out int oVerts)
+                                  HashSet<(int, int, int)> iSet, AirMap? iSealed, ref int ioSealedFaces, out int oVerts)
         {
             // (color, face, layer) → 露出面的 (u, v)；u／v ＝ 法線軸以外的兩軸，照 x→y→z 順序
+            // 封閉面在這裡就不進遮罩 ⇒ 合併看到的是省略之後的面（實心立方體挖一個封住的洞仍是 6 面）
             var aMasks = new SortedDictionary<(int Color, int Face, int Layer), HashSet<(int U, int V)>>();
             foreach (var e in iVox)
             {
@@ -1050,7 +1062,7 @@ namespace SCP.Core.Sculpture
                 for (int f = 0; f < 6; f++)
                 {
                     int[] d = s_FaceDir[f];
-                    if (iSet.Contains((e.X + d[0], e.Y + d[1], e.Z + d[2]))) continue;
+                    if (FaceHidden(iSet, iSealed, e.X + d[0], e.Y + d[1], e.Z + d[2], ref ioSealedFaces)) continue;
                     int a = f / 2, au = a == 0 ? 1 : 0, av = a == 2 ? 1 : 2;
                     var aKey = (e.Color, f, aP[a]);
                     if (!aMasks.TryGetValue(aKey, out var aCells)) aMasks[aKey] = aCells = new HashSet<(int, int)>();
@@ -1135,7 +1147,10 @@ namespace SCP.Core.Sculpture
         /// <summary>
         /// python <c>cmd_export</c>：.obj(+.mtl)／MagicaVoxel .vox。六方向鄰居存在即不出面；obj 是 Y-up（世界 z 寫到 obj y），
         /// 每面用叉積驗外向、不合就反轉頂點序。
-        /// obj 的 merge：greedy（預設）＝同色共面合成矩形、頂點共用；none ＝逐 voxel 面，bytes 與 python 相同。
+        /// obj 的 merge：greedy（預設）＝同色共面合成矩形、頂點共用；none ＝逐 voxel 面，沒有封閉空腔（或 keep）時 bytes 與 python 相同。
+        /// <para>obj 預設省略**封閉面**（TASK-0498）：朝向封閉空腔（外面的空氣灌不到的空格，與 stats structure 同一個定義）的面不出；
+        /// 判的是這次匯出的那批格（region／exclude_color 濾過之後），作品資料一格都不動。
+        /// <see cref="SCP_SculptExportArgs.KeepSealed"/> ⇒ 照常輸出；外框太大算不動 ⇒ 照常輸出並明說（⛔ 不靜默當成沒有空腔）。</para>
         /// </summary>
         public SCP_SculptResult Export(SCP_SculptExportArgs iArgs)
         {
@@ -1201,18 +1216,39 @@ namespace SCP.Core.Sculpture
                 var aO = new StringBuilder();
                 aO.Append(LinkHeader());   // 有關聯 ⇒ 每件用了哪個版本（obj 的 # 是註解；沒有關聯 ⇒ 空字串，bytes 與以前相同）
                 aO.Append("mtllib ").Append(Path.GetFileName(aMtl)).Append('\n');
-                int aFaces, aVerts;
-                if (iArgs.Merge == MergeNone) aFaces = WriteObjPerVoxel(aO, aVox, aSet, aColors, out aVerts);
-                else aFaces = WriteObjGreedy(aO, aVox, aSet, out aVerts);
+
+                AirMap? aSealed = null;
+                if (iArgs.KeepSealed) aRes.SealedMode = "keep";
+                else
+                {
+                    var aKeys = new List<long>(aVox.Count);
+                    foreach (var e in aVox) aKeys.Add(PackKey(e.X, e.Y, e.Z));
+                    aSealed = AirMap.TryBuild(aKeys, out string aSkipped);
+                    if (aSealed == null) { aRes.SealedMode = "skipped"; aRes.SealedSkipped = aSkipped; }
+                    else
+                    {
+                        aRes.SealedMode = "omit";
+                        aRes.SealedCavities = aSealed.SealedBlobs(out int aCells).Count;
+                        aRes.SealedCells = aCells;
+                    }
+                }
+                int aFaces, aVerts, aSealedFaces = 0;
+                if (iArgs.Merge == MergeNone) aFaces = WriteObjPerVoxel(aO, aVox, aSet, aSealed, ref aSealedFaces, aColors, out aVerts);
+                else aFaces = WriteObjGreedy(aO, aVox, aSet, aSealed, ref aSealedFaces, out aVerts);
                 SCP_SculptPy.WriteTextFile(aOutPath, aO.ToString());
                 aRes.FaceCount = aFaces;
                 aRes.VertexCount = aVerts;
                 aRes.Merge = iArgs.Merge;
                 aRes.MtlPath = aMtl;
+                aRes.SealedFaces = aSealedFaces;
                 aRes.Lines.Add("# 📦 OBJ 匯出完成");
                 aRes.Lines.Add("  voxels    : " + aVox.Count);
                 aRes.Lines.Add("  merge     : " + iArgs.Merge);
                 aRes.Lines.Add("  faces     : " + aFaces + (iArgs.Merge == MergeNone ? " (culled)" : " (culled + greedy)"));
+                aRes.Lines.Add("  sealed    : " + (aRes.SealedMode == "omit"
+                    ? "省略 " + aSealedFaces + " 個 voxel 面（合併前；朝向 " + aRes.SealedCavities + " 個封閉空腔、共 " + aRes.SealedCells + " 格）—— sealed=keep 照常輸出"
+                    : aRes.SealedMode == "keep" ? "keep —— 封閉空腔的面照常輸出"
+                    : "沒算 —— " + aRes.SealedSkipped + "；封閉空腔的面照常輸出（給 region 縮小再匯）"));
                 aRes.Lines.Add("  vertices  : " + aVerts);
                 aRes.Lines.Add("  obj       : " + aOutPath);
                 aRes.Lines.Add("  mtl       : " + aMtl);

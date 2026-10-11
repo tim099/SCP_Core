@@ -169,6 +169,14 @@ namespace SCP.Core.Sculpture
         /// <summary>list 才有（寫出的位元組的 sha256）。</summary>
         public string Sha256 = "";
         public int SizeX, SizeY, SizeZ;
+        /// <summary>obj 的封閉面處置（TASK-0498）：omit ＝ 省略了／keep ＝ 照常輸出（指定的）／skipped ＝ 外框太大沒算、照常輸出；vox／list 為空。</summary>
+        public string SealedMode = "";
+        /// <summary>省略的 voxel 面數（合併**之前**的單位面；SealedMode＝omit 才有意義）。</summary>
+        public int SealedFaces;
+        /// <summary>這次匯出範圍內的封閉空腔塊數與總格數（與 stats structure 同一個定義）；沒算 ⇒ -1。</summary>
+        public int SealedCavities = -1, SealedCells = -1;
+        /// <summary>SealedMode＝skipped 的原因。</summary>
+        public string SealedSkipped = "";
     }
 
     public sealed class SCP_SculptExhibitResult : SCP_SculptResult

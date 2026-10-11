@@ -120,6 +120,11 @@ namespace SCP.Core.Sculpture
         public string OutDir = "";
         /// <summary>obj 的面合併：greedy（同色共面合成矩形＋頂點共用，預設）／none（逐 voxel 面，舊輸出）。vox 不吃。</summary>
         public string Merge = SCP_SculptEngine.MergeGreedy;
+        /// <summary>
+        /// obj：完全封在模型裡的面（朝向封閉空腔、外面的空氣灌不到的那一格）照常輸出（TASK-0498）。
+        /// 預設 false ＝ 省略（作品資料一格都不動）；true 給除錯、或 3D 列印要印出中空時用。vox／list 不吃。
+        /// </summary>
+        public bool KeepSealed;
     }
 
     public sealed class SCP_SculptExhibitRegisterArgs

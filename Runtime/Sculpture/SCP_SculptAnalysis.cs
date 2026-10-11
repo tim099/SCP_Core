@@ -319,90 +319,144 @@ namespace SCP.Core.Sculpture
             for (int i = 0; i < aBlobs.Count - 1 && i < StructureSamples; i++) ioRes.SmallestComponents.Add(aBlobs[i]);
         }
 
-        /// <summary>
-        /// 封閉空腔：外框外擴一格攤成格子圖，從角落（一定是空的）6 連通灌外面的空氣；灌不到的空格 ＝ 空腔，再逐塊數。
-        /// ＝ python 的 <c>ndimage.label(~A)</c> 取角落那一塊以外的空格（check_ports.py 的 cavities()）。
-        /// </summary>
+        /// <summary>封閉空腔：灌不到外面空氣的空格逐塊數（格子圖與灌法在 <see cref="AirMap"/>，export 省略封閉面用同一份）。</summary>
         static void Cavities(Dictionary<long, int> iCells, SCP_SculptStatsResult ioRes)
         {
             if (iCells.Count == 0) { ioRes.Cavities = 0; return; }
-            int[] lo = { int.MaxValue, int.MaxValue, int.MaxValue }, hi = { int.MinValue, int.MinValue, int.MinValue };
-            foreach (long k in iCells.Keys)
-            {
-                int x = KeyX(k), y = KeyY(k), z = KeyZ(k);
-                if (x < lo[0]) lo[0] = x; if (x > hi[0]) hi[0] = x;
-                if (y < lo[1]) lo[1] = y; if (y > hi[1]) hi[1] = y;
-                if (z < lo[2]) lo[2] = z; if (z > hi[2]) hi[2] = z;
-            }
-            // 外擴一格（座標可以是 −1：格子圖用相對 lo 的索引，不碰雜湊鍵）
-            long nx = hi[0] - lo[0] + 3, ny = hi[1] - lo[1] + 3, nz = hi[2] - lo[2] + 3;
-            long aTotal = nx * ny * nz;
-            if (aTotal > MaxStructureCells)
-            {
-                ioRes.CavitySkipped = "外框（含外擴一格）" + nx + "×" + ny + "×" + nz + " ＝ " + aTotal.ToString("N0", CultureInfo.InvariantCulture)
-                                      + " 格，超過上限 " + MaxStructureCells.ToString("N0", CultureInfo.InvariantCulture) + " —— 給 region 縮小再量";
-                return;
-            }
-            var aOcc = new ulong[(aTotal + 63) / 64];
-            var aSeen = new ulong[(aTotal + 63) / 64];
-            long Idx(long x, long y, long z) => (x * ny + y) * nz + z;
-            bool Get(ulong[] b, long i) => (b[i >> 6] & (1UL << (int)(i & 63))) != 0;
-            void Set(ulong[] b, long i) => b[i >> 6] |= 1UL << (int)(i & 63);
-            foreach (long k in iCells.Keys) Set(aOcc, Idx(KeyX(k) - lo[0] + 1, KeyY(k) - lo[1] + 1, KeyZ(k) - lo[2] + 1));
-
-            var aQueue = new Queue<long>();
-            SCP_SculptBlob? Flood(long iStart, bool iTrack)
-            {
-                SCP_SculptBlob? aBlob = null;
-                Set(aSeen, iStart);
-                aQueue.Enqueue(iStart);
-                while (aQueue.Count > 0)
-                {
-                    long i = aQueue.Dequeue();
-                    long z = i % nz, y = (i / nz) % ny, x = i / (nz * ny);
-                    if (iTrack)
-                    {
-                        int wx = (int)x + lo[0] - 1, wy = (int)y + lo[1] - 1, wz = (int)z + lo[2] - 1;
-                        if (aBlob == null) { aBlob = NewBlob(wx, wy, wz); }
-                        Grow(aBlob, wx, wy, wz);
-                    }
-                    if (x + 1 < nx) Visit(i + nz * ny);
-                    if (x > 0) Visit(i - nz * ny);
-                    if (y + 1 < ny) Visit(i + nz);
-                    if (y > 0) Visit(i - nz);
-                    if (z + 1 < nz) Visit(i + 1);
-                    if (z > 0) Visit(i - 1);
-                }
-                return aBlob;
-            }
-            void Visit(long j)
-            {
-                if (Get(aOcc, j) || Get(aSeen, j)) return;
-                Set(aSeen, j);
-                aQueue.Enqueue(j);
-            }
-
-            Flood(0, false);   // 外擴那一圈全是空的、彼此相連 ⇒ 從角落灌就是「外面」
-            var aBlobs = new List<SCP_SculptBlob>();
-            int aCells = 0;
-            for (long w = 0; w < aOcc.Length; w++)
-            {
-                ulong aFree = ~(aOcc[w] | aSeen[w]);
-                if (aFree == 0) continue;
-                for (int bit = 0; bit < 64; bit++)
-                {
-                    long i = (w << 6) + bit;
-                    if (i >= aTotal) break;
-                    if ((aFree & (1UL << bit)) == 0 || Get(aSeen, i)) continue;
-                    SCP_SculptBlob aBlob = Flood(i, true)!;
-                    aBlobs.Add(aBlob);
-                    aCells += aBlob.Size;
-                }
-            }
-            aBlobs.Sort((p, q) => p.Size != q.Size ? q.Size.CompareTo(p.Size) : CompareXyz(p.Cell, q.Cell));
+            AirMap? aMap = AirMap.TryBuild(iCells.Keys, out string aSkipped);
+            if (aMap == null) { ioRes.CavitySkipped = aSkipped + " —— 給 region 縮小再量"; return; }
+            List<SCP_SculptBlob> aBlobs = aMap.SealedBlobs(out int aCells);
             ioRes.Cavities = aBlobs.Count;
             ioRes.CavityCells = aCells;
             for (int i = 0; i < aBlobs.Count && i < StructureSamples; i++) ioRes.LargestCavities.Add(aBlobs[i]);
+        }
+
+        /// <summary>
+        /// 外面的空氣：外框外擴一格攤成格子圖（兩張 bitset），從角落（一定是空的）6 連通灌外面的空氣；
+        /// 灌不到的空格 ＝ 封閉空腔。stats 的封閉空腔與 export 省略封閉面（TASK-0498）共用這一份 —— 兩邊的「空腔」是同一個定義。
+        /// ＝ python 的 <c>ndimage.label(~A)</c> 取角落那一塊以外的空格（check_ports.py 的 cavities()）。
+        /// </summary>
+        sealed class AirMap
+        {
+            readonly int[] m_Lo;
+            readonly long m_Nx, m_Ny, m_Nz, m_Total;
+            readonly ulong[] m_Occ, m_Out;
+
+            AirMap(int[] iLo, long iNx, long iNy, long iNz)
+            {
+                m_Lo = iLo; m_Nx = iNx; m_Ny = iNy; m_Nz = iNz; m_Total = iNx * iNy * iNz;
+                m_Occ = new ulong[(m_Total + 63) / 64];
+                m_Out = new ulong[(m_Total + 63) / 64];
+            }
+
+            /// <summary>
+            /// 攤開 <paramref name="iKeys"/>（<see cref="PackKey"/>）並灌好外面的空氣。
+            /// 外框（含外擴一格）超過 <see cref="MaxStructureCells"/> ⇒ null，原因在 <paramref name="oSkipped"/>（⛔ 不當成「沒有空腔」）。
+            /// </summary>
+            public static AirMap? TryBuild(ICollection<long> iKeys, out string oSkipped)
+            {
+                oSkipped = "";
+                int[] lo = { int.MaxValue, int.MaxValue, int.MaxValue }, hi = { int.MinValue, int.MinValue, int.MinValue };
+                foreach (long k in iKeys)
+                {
+                    int x = KeyX(k), y = KeyY(k), z = KeyZ(k);
+                    if (x < lo[0]) lo[0] = x; if (x > hi[0]) hi[0] = x;
+                    if (y < lo[1]) lo[1] = y; if (y > hi[1]) hi[1] = y;
+                    if (z < lo[2]) lo[2] = z; if (z > hi[2]) hi[2] = z;
+                }
+                if (iKeys.Count == 0) { lo = new[] { 0, 0, 0 }; hi = new[] { -1, -1, -1 }; }
+                // 外擴一格（座標可以是 −1：格子圖用相對 lo 的索引，不碰雜湊鍵）
+                long nx = hi[0] - lo[0] + 3L, ny = hi[1] - lo[1] + 3L, nz = hi[2] - lo[2] + 3L;
+                long aTotal = nx * ny * nz;
+                if (aTotal > MaxStructureCells)
+                {
+                    oSkipped = "外框（含外擴一格）" + nx + "×" + ny + "×" + nz + " ＝ " + aTotal.ToString("N0", CultureInfo.InvariantCulture)
+                               + " 格，超過上限 " + MaxStructureCells.ToString("N0", CultureInfo.InvariantCulture);
+                    return null;
+                }
+                var aMap = new AirMap(lo, nx, ny, nz);
+                foreach (long k in iKeys) Set(aMap.m_Occ, aMap.Idx(KeyX(k) - lo[0] + 1, KeyY(k) - lo[1] + 1, KeyZ(k) - lo[2] + 1));
+                aMap.Flood(aMap.m_Out, 0, null);   // 外擴那一圈全是空的、彼此相連 ⇒ 從角落灌就是「外面」
+                return aMap;
+            }
+
+            long Idx(long x, long y, long z) => (x * m_Ny + y) * m_Nz + z;
+            static bool Get(ulong[] b, long i) => (b[i >> 6] & (1UL << (int)(i & 63))) != 0;
+            static void Set(ulong[] b, long i) => b[i >> 6] |= 1UL << (int)(i & 63);
+
+            /// <summary>
+            /// 這一格是封閉空腔裡的空氣嗎：在格子圖內、不是實心、外面的空氣灌不到。
+            /// 格子圖外（外框外擴一格之外）一律是外面 ⇒ false。
+            /// </summary>
+            public bool IsSealedAir(int x, int y, int z)
+            {
+                long gx = (long)x - m_Lo[0] + 1, gy = (long)y - m_Lo[1] + 1, gz = (long)z - m_Lo[2] + 1;
+                if (gx < 0 || gy < 0 || gz < 0 || gx >= m_Nx || gy >= m_Ny || gz >= m_Nz) return false;
+                long i = Idx(gx, gy, gz);
+                return !Get(m_Occ, i) && !Get(m_Out, i);
+            }
+
+            /// <summary>
+            /// 封閉空腔逐塊（6 連通），大到小、同大照字典序最小的那格；<paramref name="oCells"/> ＝ 總格數。
+            /// 在外面空氣圖的副本上灌 ⇒ 之後 <see cref="IsSealedAir"/> 照舊可用。
+            /// </summary>
+            public List<SCP_SculptBlob> SealedBlobs(out int oCells)
+            {
+                var aSeen = (ulong[])m_Out.Clone();
+                var aBlobs = new List<SCP_SculptBlob>();
+                oCells = 0;
+                for (long w = 0; w < m_Occ.Length; w++)
+                {
+                    ulong aFree = ~(m_Occ[w] | aSeen[w]);
+                    if (aFree == 0) continue;
+                    for (int bit = 0; bit < 64; bit++)
+                    {
+                        long i = (w << 6) + bit;
+                        if (i >= m_Total) break;
+                        if ((aFree & (1UL << bit)) == 0 || Get(aSeen, i)) continue;
+                        var aBlob = new List<SCP_SculptBlob>(1);
+                        Flood(aSeen, i, aBlob);
+                        aBlobs.Add(aBlob[0]);
+                        oCells += aBlob[0].Size;
+                    }
+                }
+                aBlobs.Sort((p, q) => p.Size != q.Size ? q.Size.CompareTo(p.Size) : CompareXyz(p.Cell, q.Cell));
+                return aBlobs;
+            }
+
+            /// <summary>從 <paramref name="iStart"/> 6 連通灌空格、記進 <paramref name="ioSeen"/>；給了 <paramref name="oBlob"/> ⇒ 順手量這一塊（放一個進去）。</summary>
+            void Flood(ulong[] ioSeen, long iStart, List<SCP_SculptBlob>? oBlob)
+            {
+                SCP_SculptBlob? aBlob = null;
+                var aQueue = new Queue<long>();
+                Set(ioSeen, iStart);
+                aQueue.Enqueue(iStart);
+                long aPlane = m_Nz * m_Ny;
+                void Visit(long j)
+                {
+                    if (Get(m_Occ, j) || Get(ioSeen, j)) return;
+                    Set(ioSeen, j);
+                    aQueue.Enqueue(j);
+                }
+                while (aQueue.Count > 0)
+                {
+                    long i = aQueue.Dequeue();
+                    long z = i % m_Nz, y = (i / m_Nz) % m_Ny, x = i / aPlane;
+                    if (oBlob != null)
+                    {
+                        int wx = (int)x + m_Lo[0] - 1, wy = (int)y + m_Lo[1] - 1, wz = (int)z + m_Lo[2] - 1;
+                        if (aBlob == null) aBlob = NewBlob(wx, wy, wz);
+                        Grow(aBlob, wx, wy, wz);
+                    }
+                    if (x + 1 < m_Nx) Visit(i + aPlane);
+                    if (x > 0) Visit(i - aPlane);
+                    if (y + 1 < m_Ny) Visit(i + m_Nz);
+                    if (y > 0) Visit(i - m_Nz);
+                    if (z + 1 < m_Nz) Visit(i + 1);
+                    if (z > 0) Visit(i - 1);
+                }
+                if (oBlob != null && aBlob != null) oBlob.Add(aBlob);
+            }
         }
 
         /// <summary>
