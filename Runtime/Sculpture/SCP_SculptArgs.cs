@@ -62,6 +62,46 @@ namespace SCP.Core.Sculpture
         public string Voxels = "";
     }
 
+    /// <summary>
+    /// carvevox（TASK-0492）：照清單刻 —— stampvox 的反向。清單每行 <c>x,y,z</c> 或 <c>x,y,z,color</c>（相對 <see cref="At"/>）；
+    /// 帶了 color 的行是守門：那一格現在不是這個顏色 ⇒ 整刀拒絕（清單跟作品對不上，⛔ 不猜哪一邊對）。
+    /// </summary>
+    public sealed class SCP_SculptCarveVoxArgs
+    {
+        public string Voxels = "";
+        public string At = "";
+        public string Persona = "";
+        /// <summary>清單格數；null ＝ 放棄這道閘門。</summary>
+        public int? ExpectPixels;
+        public bool AllowClip;
+    }
+
+    /// <summary>差異（TASK-0492）：兩個時間點之間改了哪幾格。時間點寫法見 <see cref="SCP_SculptMarks.ResolveIndex"/>。</summary>
+    public sealed class SCP_SculptDiffArgs
+    {
+        public string From = "";
+        /// <summary>空 ＝ 現在。</summary>
+        public string To = "";
+        /// <summary>只算這個框裡的格（x1..x2,y1..y2,z1..z2）；空 ＝ 整件。</summary>
+        public string Region = "";
+        /// <summary>差異清單輸出路徑（每行 x,y,z,before,after）；空 ＝ 不寫檔。</summary>
+        public string Out = "";
+    }
+
+    /// <summary>stats（TASK-0492 起可選多報結構讀數）。什麼都沒給 ⇒ 與 python 時代的輸出逐字相同。</summary>
+    public sealed class SCP_SculptStatsArgs
+    {
+        /// <summary>元件數（6 連通）＋封閉空腔。</summary>
+        public bool Structure;
+        /// <summary>鏡像差：<c>軸:中心</c>，例 <c>y:160</c>（以第 160 格的中心為鏡面）、<c>y:159.5</c>（159 與 160 兩格之間）。</summary>
+        public string Mirror = "";
+        /// <summary>結構讀數只算這個框（嚴格 x1..x2,y1..y2,z1..z2）；空 ＝ 整件。</summary>
+        public string Region = "";
+        /// <summary>結構讀數不算哪些顏色（c,c,…；嚴格解析）。</summary>
+        public string ExcludeColor = "";
+        public bool Scoped => Structure || Mirror.Length > 0 || Region.Length > 0 || ExcludeColor.Length > 0;
+    }
+
     public sealed class SCP_SculptSliceArgs
     {
         public string Region = "";

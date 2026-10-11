@@ -67,6 +67,35 @@ namespace SCP.Core.Sculpture
         public string Persona = "";
         public int CarvedCount;
         public string EventFile = "";
+        /// <summary>carvevox 才有（TASK-0492）：清單格數、清單裡現在就是空的、越界、顏色對不上、拒絕的原因、清單來源。</summary>
+        public int ListCount, AlreadyEmpty, OutOfBounds, ColorMismatch;
+        public string Reason = "";
+        public SCP_SculptPyObj? Source;
+    }
+
+    /// <summary>兩個時間點之間的差異（TASK-0492）。</summary>
+    public sealed class SCP_SculptDiffResult : SCP_SculptResult
+    {
+        /// <summary>events 清單裡的序號（−1 ＝ 第一個事件之前）。</summary>
+        public int FromIndex, ToIndex;
+        public string FromEvent = "", ToEvent = "";
+        public int Placed, Carved, Recolored;
+        public SortedDictionary<int, int> PlacedByColor = new SortedDictionary<int, int>();
+        public SortedDictionary<int, int> CarvedByColor = new SortedDictionary<int, int>();
+        public SortedDictionary<(int From, int To), int> RecoloredByPair = new SortedDictionary<(int, int), int>();
+        /// <summary>區間 (from, to] 裡的事件：各 op 幾個（讀不出來的記成 <c>(讀不出來)</c>）。</summary>
+        public SortedDictionary<string, int> EventOps = new SortedDictionary<string, int>(System.StringComparer.Ordinal);
+        public int EventCount;
+        public string OutputPath = "", Sha256 = "";
+    }
+
+    /// <summary>結構讀數的一塊（元件或空腔）：格數、外框、其中一格（字典序最小）。</summary>
+    public sealed class SCP_SculptBlob
+    {
+        public int Size;
+        public int[] Min = new int[3], Max = new int[3], Cell = new int[3];
+        public override string ToString()
+            => Size + " 格 @(" + Cell[0] + "," + Cell[1] + "," + Cell[2] + ") 框 " + Min[0] + ".." + Max[0] + "," + Min[1] + ".." + Max[1] + "," + Min[2] + ".." + Max[2];
     }
 
     /// <summary>stamp2d／stampimg（success／mismatch／empty／out_of_bounds 四種 status 共用；沒用到的欄位留預設）。</summary>
@@ -108,6 +137,20 @@ namespace SCP.Core.Sculpture
     public sealed class SCP_SculptStatsResult : SCP_SculptResult
     {
         public int TotalVoxels;
+        /// <summary>以下 TASK-0492（<see cref="SCP_SculptStatsArgs.Scoped"/> 才算）：範圍內（region／exclude_color 之後）的格數。</summary>
+        public int ScopedVoxels = -1;
+        /// <summary>元件（6 連通）：塊數、最大一塊、最小幾塊（由小到大）。-1 ＝ 沒算。</summary>
+        public int Components = -1, LargestComponent;
+        public List<SCP_SculptBlob> SmallestComponents = new List<SCP_SculptBlob>();
+        /// <summary>封閉空腔（6 連通、跟外框外面不通的空格）：塊數、總格數、最大幾塊。-1 ＝ 沒算（原因在 <see cref="CavitySkipped"/>）。</summary>
+        public int Cavities = -1, CavityCells;
+        public List<SCP_SculptBlob> LargestCavities = new List<SCP_SculptBlob>();
+        public string CavitySkipped = "";
+        /// <summary>鏡像差：有格而鏡像那格空（兩側分開數）、兩邊都有但顏色不同（每對算一次）、鏡像落在 region 外而沒比的。</summary>
+        public string MirrorAxis = "";
+        public double MirrorPivot;
+        public int MirrorMissingLow = -1, MirrorMissingHigh, MirrorColorDiff, MirrorSkipped;
+        public List<string> MirrorSamples = new List<string>();
     }
 
     public sealed class SCP_SculptExportResult : SCP_SculptResult
@@ -123,6 +166,8 @@ namespace SCP.Core.Sculpture
         public string OutputPath = "";
         /// <summary>obj 才有。</summary>
         public string MtlPath = "";
+        /// <summary>list 才有（寫出的位元組的 sha256）。</summary>
+        public string Sha256 = "";
         public int SizeX, SizeY, SizeZ;
     }
 

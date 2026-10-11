@@ -44,7 +44,7 @@ namespace SCP.Core.Sculpture
     public static class SCP_SculptMarks
     {
         public const string PhasePoint = "point", PhaseBegin = "begin", PhaseEnd = "end";
-        public const string Start = "start";
+        public const string Start = "start", Now = "now";
 
         static string Norm(string iRel) => iRel.Replace('\\', '/');
 
@@ -90,6 +90,35 @@ namespace SCP.Core.Sculpture
             throw new ArgumentException(iWho + " 指的事件 `" + aWant + "` 不在 events/ 裡（被刪、改名，或打錯了？）");
         }
 
+        /// <summary>事件：相對 events/ 的路徑，或唯一的檔名（不含資料夾）⇒ 序號；對不到或檔名不唯一 ⇒ ArgumentException。</summary>
+        public static int FindEvent(List<SCP_SculptStore.EventFile> iEvents, string iSpec, string iWho)
+        {
+            if (iSpec.IndexOf('/') >= 0 || iSpec.IndexOf('\\') >= 0) return IndexOf(iEvents, iSpec, iWho);
+            int aIdx = -1;
+            for (int i = 0; i < iEvents.Count; i++)
+                if (Path.GetFileName(iEvents[i].Rel) == iSpec)
+                {
+                    if (aIdx >= 0) throw new ArgumentException("檔名 `" + iSpec + "` 對到不只一個事件 —— 請給相對 events/ 的完整路徑");
+                    aIdx = i;
+                }
+            if (aIdx < 0) throw new ArgumentException(iWho + " 指的事件 `" + iSpec + "` 不在 events/ 裡");
+            return aIdx;
+        }
+
+        /// <summary>
+        /// 一個「時間點」的寫法 ⇒ events 清單裡的序號（−1 ＝ 第一個事件之前）（TASK-0492，差異的兩端用）：
+        /// 空字串／<c>now</c> ＝ 最新；<c>start</c> ＝ 開始之前；以 <c>.json</c> 結尾 ＝ 事件（相對 events/ 的路徑或唯一檔名）；
+        /// 其餘 ＝ 標記（<c>name</c>、<c>name:begin</c>、<c>name:end</c>）。解不出來 ⇒ ArgumentException（marks.json 壞了 ⇒ InvalidOperationException）。
+        /// </summary>
+        public static int ResolveIndex(SCP_SculptPaths iPaths, List<SCP_SculptStore.EventFile> iEvents, string iSpec, string iWho)
+        {
+            string aSpec = iSpec.Trim();
+            if (aSpec.Length == 0 || aSpec == Now) return iEvents.Count - 1;
+            if (aSpec == Start) return -1;
+            if (aSpec.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) return FindEvent(iEvents, aSpec, iWho);
+            return IndexOf(iEvents, ResolvePoint(Read(iPaths), aSpec), iWho + " `" + aSpec + "`");
+        }
+
         /// <summary>
         /// 加一個標記。<paramref name="iUpto"/> 空 ⇒ 標在現在（最後一個事件）；<c>start</c> ⇒ 第一個事件之前；
         /// 其餘 ⇒ 那個事件（相對 events/ 的路徑，或唯一的檔名）。同名同類已存在 ⇒ 擋下，除非 <paramref name="iOverwrite"/>。
@@ -116,18 +145,7 @@ namespace SCP.Core.Sculpture
             else if (aUpto == Start) { aIdx = -1; aRel = ""; }
             else
             {
-                aIdx = -2;
-                if (aUpto.IndexOf('/') < 0 && aUpto.IndexOf('\\') < 0)
-                {
-                    for (int i = 0; i < aEvents.Count; i++)
-                        if (Path.GetFileName(aEvents[i].Rel) == aUpto)
-                        {
-                            if (aIdx >= 0) throw new ArgumentException("檔名 `" + aUpto + "` 對到不只一個事件 —— 請給相對 events/ 的完整路徑");
-                            aIdx = i;
-                        }
-                    if (aIdx < 0) throw new ArgumentException("upto 指的事件 `" + aUpto + "` 不在 events/ 裡");
-                }
-                else aIdx = IndexOf(aEvents, aUpto, "upto");
+                aIdx = FindEvent(aEvents, aUpto, "upto");
                 aRel = Norm(aEvents[aIdx].Rel);
             }
 

@@ -1,4 +1,5 @@
 // 區塊職責：雕刻引擎的**資料層** —— box／carve／stamp2d／stampimg／stampvox／slice／stats／export／exhibit 與 view 的「場景＋參數」準備。
+//          （diff／carvevox／stats 的結構讀數在 SCP_SculptAnalysis.cs，TASK-0492。）
 //          語意（檢查順序、status、JSON 欄位與順序、exit code）沿用 python 時代的引擎（gura 2026-08-13 起），TASK-0377 搬成 C#。
 // 物理意義：⭐ 本檔**不畫圖**：等角／GPU 渲染是宿主的事（<see cref="ISCP_SculptRenderer"/>，Senate.Desktop 註冊）。
 //          view 只交出「過濾後的可見 voxel ＋ 渲染參數」；展品照也是同一條路 —— 沒有渲染器 ⇒ 大聲回報，⛔ 不出空白圖。
@@ -661,6 +662,16 @@ namespace SCP.Core.Sculpture
         /// <para>宿主量最壞費用也呼叫這一支（同一份判準，⛔ 不各寫一份）。</para>
         /// </summary>
         public static bool TryParseVoxelList(byte[] iBytes, out List<int[]> oVoxels, out string oError)
+            => TryParseList(iBytes, false, out oVoxels, out oError);
+
+        /// <summary>
+        /// carvevox 的清單（TASK-0492）：每行 <c>x,y,z</c> 或 <c>x,y,z,color</c>；沒寫顏色的那一行回 color 0（＝不守門）。
+        /// 其餘判準與 <see cref="TryParseVoxelList"/> 同一份（壞行、重複座標、顏色 0／超過 255 ⇒ false 並指出第幾行）。
+        /// </summary>
+        public static bool TryParseCarveList(byte[] iBytes, out List<int[]> oVoxels, out string oError)
+            => TryParseList(iBytes, true, out oVoxels, out oError);
+
+        static bool TryParseList(byte[] iBytes, bool iColorOptional, out List<int[]> oVoxels, out string oError)
         {
             oVoxels = new List<int[]>();
             oError = "";
@@ -678,11 +689,11 @@ namespace SCP.Core.Sculpture
                 int aLine = i + 1;
                 string[] f = s.Split(',');
                 var v = new int[4];
-                bool aOk = f.Length == 4;
-                for (int k = 0; aOk && k < 4; k++)
+                bool aOk = f.Length == 4 || (iColorOptional && f.Length == 3);
+                for (int k = 0; aOk && k < f.Length; k++)
                     aOk = int.TryParse(f[k].Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out v[k]);
-                if (!aOk) { oError = "第 " + aLine + " 行要是 x,y,z,color 四個整數：'" + (s.Length > 60 ? s.Substring(0, 60) + "…" : s) + "'"; return false; }
-                if (v[3] < 1 || v[3] > 255) { oError = "第 " + aLine + " 行 color " + v[3] + " 要在 1..255（0 在 3D 代表空）"; return false; }
+                if (!aOk) { oError = "第 " + aLine + " 行要是 " + (iColorOptional ? "x,y,z 或 x,y,z,color 三或四" : "x,y,z,color 四") + "個整數：'" + (s.Length > 60 ? s.Substring(0, 60) + "…" : s) + "'"; return false; }
+                if (f.Length == 4 && (v[3] < 1 || v[3] > 255)) { oError = "第 " + aLine + " 行 color " + v[3] + " 要在 1..255（0 在 3D 代表空）"; return false; }
                 for (int k = 0; k < 3; k++)
                     if (v[k] <= -Bias || v[k] >= Bias) { oError = "第 " + aLine + " 行座標 " + v[k] + " 超出 ±" + Bias; return false; }
                 long aKey = ((v[0] + Bias) << 42) | ((v[1] + Bias) << 21) | (v[2] + Bias);
@@ -896,17 +907,7 @@ namespace SCP.Core.Sculpture
         }
 
         // ═════════════════════════════ stats ═════════════════════════════
-        public SCP_SculptResult Stats()
-        {
-            SCP_SculptSpace aSpace;
-            try { aSpace = LoadView(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); } catch (ArgumentException e) { return SCP_SculptResult.Error(2, e.Message); }
-            int n = aSpace.Voxels.Count;
-            var aRes = new SCP_SculptStatsResult { TotalVoxels = n };
-            aRes.Lines.Add("# 📊 3D Sculpture Stats:");
-            aRes.Lines.Add("  總非空 Voxels 數 : " + n.ToString(CultureInfo.InvariantCulture));
-            aRes.Lines.Add("  空間使用率       : " + ((double)n / ((long)SizeX * SizeY * SizeZ) * 100).ToString("F6", CultureInfo.InvariantCulture) + "%");
-            return aRes;
-        }
+        // 在 SCP_SculptAnalysis.cs（TASK-0492 起多了可選的結構讀數；不給參數 ⇒ 與 python 時代逐字相同）。
 
         // ═════════════════════════════ 過濾（view／export 共用） ═════════════════════════════
         /// <summary>
@@ -974,6 +975,8 @@ namespace SCP.Core.Sculpture
 
         public const string MergeGreedy = "greedy";
         public const string MergeNone = "none";
+        /// <summary>export 的純格子清單（TASK-0492）。</summary>
+        public const string FormatList = "list";
 
         /// <summary>四個角（世界座標）轉 OBJ y-up（wx, wz, wy），叉積跟法線反向就反轉頂點序。</summary>
         static int[][] ObjQuad(int[][] iWorld, int[] iObjNormal)
@@ -1126,8 +1129,8 @@ namespace SCP.Core.Sculpture
         /// </summary>
         public SCP_SculptResult Export(SCP_SculptExportArgs iArgs)
         {
-            if (iArgs.Format != "obj" && iArgs.Format != "vox")
-                return SCP_SculptResult.Error(2, "--format 只能是 obj 或 vox：" + iArgs.Format);
+            if (iArgs.Format != "obj" && iArgs.Format != "vox" && iArgs.Format != FormatList)
+                return SCP_SculptResult.Error(2, "--format 只能是 obj、vox 或 list：" + iArgs.Format);
             if (iArgs.Merge != MergeGreedy && iArgs.Merge != MergeNone)
                 return SCP_SculptResult.Error(2, "--merge 只能是 greedy 或 none：" + iArgs.Merge);
             SCP_SculptSpace aSpace;
@@ -1140,11 +1143,34 @@ namespace SCP.Core.Sculpture
             string aStamp = Clock().ToString("yyyyMMdd'T'HHmmss", CultureInfo.InvariantCulture);
             string aOutPath = iArgs.Out.Length > 0
                 ? SCP_SculptPy.PathStr(iArgs.Out)
-                : SCP_SculptPy.PathStr(Path.Combine(aOutDir, "sculpt_" + aStamp + "." + iArgs.Format));
+                : SCP_SculptPy.PathStr(Path.Combine(aOutDir, "sculpt_" + aStamp + "." + (iArgs.Format == FormatList ? "txt" : iArgs.Format)));
             string? aParent = Path.GetDirectoryName(Path.GetFullPath(aOutPath));
             if (!string.IsNullOrEmpty(aParent)) Directory.CreateDirectory(aParent);
 
             var aRes = new SCP_SculptExportResult { Format = iArgs.Format, VoxelCount = aVox.Count, OutputPath = aOutPath };
+            if (iArgs.Format == FormatList)
+            {
+                // 純格子清單（TASK-0492）：x,y,z,color 絕對座標、照 x→y→z 排 ⇒ 設計程式直接讀、stampvox at=0,0,0 原樣貼得回去
+                var aSorted = new List<(int X, int Y, int Z, int Color)>(aVox);
+                aSorted.Sort((p, q) => p.X != q.X ? p.X.CompareTo(q.X) : p.Y != q.Y ? p.Y.CompareTo(q.Y) : p.Z.CompareTo(q.Z));
+                var aSb = new StringBuilder(aSorted.Count * 16);
+                aSb.Append("# sculpture voxel list —— x,y,z,color（絕對座標；照 x→y→z 排；stampvox at=0,0,0 可原樣貼回）\n");
+                aSb.Append("# voxels ").Append(aSorted.Count).Append(iArgs.Region.Length > 0 ? "  region " + iArgs.Region : "")
+                   .Append(iArgs.ExcludeColor.Length > 0 ? "  exclude_color " + iArgs.ExcludeColor : "").Append('\n');
+                foreach (var e in aSorted)
+                {
+                    if (e.Color < 1 || e.Color > 255) return SCP_SculptResult.Error(1, "list 匯出：(" + e.X + "," + e.Y + "," + e.Z + ") 的顏色 " + e.Color + " 不在 1..255 —— 清單寫不出來（快取壞了？刪快取重播再匯）");
+                    aSb.Append(e.X).Append(',').Append(e.Y).Append(',').Append(e.Z).Append(',').Append(e.Color).Append('\n');
+                }
+                byte[] aBytes = new UTF8Encoding(false).GetBytes(aSb.ToString());
+                File.WriteAllBytes(aOutPath, aBytes);
+                aRes.Sha256 = SCP_SculptPy.Sha256Hex(aBytes);
+                aRes.Lines.Add("# 📦 LIST 匯出完成（x,y,z,color）");
+                aRes.Lines.Add("  voxels    : " + aVox.Count);
+                aRes.Lines.Add("  list      : " + aOutPath);
+                aRes.Lines.Add("  sha256    : " + aRes.Sha256);
+                return aRes;
+            }
             if (iArgs.Format == "obj")
             {
                 var aSet = new HashSet<(int, int, int)>();
