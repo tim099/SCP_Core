@@ -110,6 +110,19 @@ namespace SCP.Core.Sculpture
         /// </summary>
         public List<SCP_SculptRopeGeom> Ropes = new List<SCP_SculptRopeGeom>();
 
+        /// <summary>
+        /// 帆（TASK-0503，已模擬、已在世界座標）與綁在帆角上的繩 —— 會跟著帆動 ⇒ 渲染器另外一趟畫（每次重傳，⛔ 不併進 voxel 網格、不讓 voxel 網格重建）；
+        /// 同一組燈、會投影子也接影子；雙面。⛔ 不是 voxel。空 ＝ 沒有帆（舊行為，逐位元不變）。
+        /// </summary>
+        public List<SCP_SculptSailGeom> Sails = new List<SCP_SculptSailGeom>();
+        public List<SCP_SculptRopeGeom> SailRopes = new List<SCP_SculptRopeGeom>();
+
+        /// <summary>
+        /// 帆的模擬狀態（TASK-0503）：觀測頁拿它每幀往前推（帆會動），推完把 <see cref="Sails"/>／<see cref="SailRopes"/> 換成新的一份。
+        /// CLI 不推（已經跑到 sail_seconds 那一刻）。null ＝ 沒有帆。⚠ <see cref="Clone"/> 是淺複製 ⇒ 複本跟原本共用同一個 rig。
+        /// </summary>
+        public SCP_SculptSailRig? SailRig;
+
         /// <summary>淺複製（燈與地板物件共用 —— 呼叫端只改純量欄位時用；要改燈或地板就自己再複製那一格）。</summary>
         public SCP_SculptRenderParams Clone() => (SCP_SculptRenderParams)MemberwiseClone();
     }

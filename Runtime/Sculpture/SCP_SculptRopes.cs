@@ -9,8 +9,9 @@
 // 數值影響：觀測時每條繩一個 <see cref="SCP_SculptRopeReading"/>：state ＝ ok（畫）／hidden（綁的關聯這次沒畫 ⇒ 跟著不畫）／
 //          disabled（自己關著）／broken（綁定壞了：固定點或關聯路徑不存在）—— ⛔ 壞掉的不靜默消失，每次觀測都列出來。
 // 失敗處置：anchors.json／ropes.json 讀不了 ⇒ InvalidOperationException（⛔ 不當成沒有 —— 寫回去會清光）。
-// 之後的帆（TASK-0503）：端點型別留了位置 —— 固定點名與關聯名都不准含 `:`，所以 `kind:...` 形狀的端點不會跟固定點撞名；
-//          本單只認「固定點路徑」與「x,y,z」，其他 `kind:` ⇒ 明說不認得（⛔ 不猜）。
+// 帆（TASK-0503）：端點可以是帆角 `sail:[關聯/…/]帆名/角`（固定點名與關聯名都不准含 `:`，所以不會跟固定點撞名）；
+//          帆角在哪由呼叫端注入（<see cref="SCP_SculptSailEndResolver"/>，帆的觀測 <see cref="SCP_SculptSails.Rig"/> 給）——
+//          ⛔ 繩這一側不自己讀帆（端點邏輯只有一份）。沒注入 ⇒ broken 並說原因。其他 `kind:` ⇒ 明說不認得（⛔ 不猜）。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -68,6 +69,13 @@ namespace SCP.Core.Sculpture
         public int PointCount => Points.Length / 3;
     }
 
+    /// <summary>
+    /// 帆角端點（TASK-0503）的解法，由帆的觀測注入：<paramref name="iFrame"/> ＝ 繩所在那一層的關聯路徑、<paramref name="iRef"/> ＝ `sail:` 後面那一段。
+    /// 回 null ＝ 解得到：<paramref name="oPoint"/> ＝ 帆角的**設計位置**（組裝件座標）、<paramref name="oKey"/> ＝ 帆角的全路徑（帆路徑＋`#`＋角序號）、
+    /// <paramref name="oHiddenWhy"/> 非空 ＝ 那面帆這次沒畫（繩跟著 hidden）；否則回壞掉的原因。
+    /// </summary>
+    public delegate string? SCP_SculptSailEndResolver(string iFrame, string iRef, out double[]? oPoint, out string oKey, out string oHiddenWhy);
+
     /// <summary>一條繩這次觀測的讀數。</summary>
     public sealed class SCP_SculptRopeReading
     {
@@ -81,6 +89,10 @@ namespace SCP.Core.Sculpture
         /// <summary>兩端（組裝件座標）；broken 時可能只有一端有值。</summary>
         public double[]? From, To;
         public double Chord, Length, MaxSag;
+        /// <summary>帆角端點（TASK-0503）：帆角全路徑（`帆路徑#角序號`）；不是帆角 ⇒ 空。帆模擬完，這一端換成帆角那一刻的位置、形狀重算。</summary>
+        public string FromSail = "", ToSail = "";
+        /// <summary>繩所在、或兩端綁的那一層（關聯／帆）這次沒組進來 ⇒ 這條繩在這次的場景裡**不存在**（帆的模擬不拿它拉帆角）；只被顯示開關關掉（ropes=0、hide_ropes、enabled=0）⇒ false。</summary>
+        public bool LinkHidden;
         /// <summary>兩端幾乎在同一條鉛直線上（水平距離 ≈ 0）⇒ 畫直線（鬆度沒有往旁邊垂的方向）。</summary>
         public bool Vertical;
         public SCP_SculptRopeGeom? Geom;
@@ -103,9 +115,13 @@ namespace SCP.Core.Sculpture
     public static class SCP_SculptRopes
     {
         public const string DefaultColor = "#8b6a3e";   // 麻繩色
+        /// <summary>帆角端點的前綴（TASK-0503）。</summary>
+        public const string SailPrefix = "sail:";
         public const double DefaultThickness = 0.5;
         public const double MaxThickness = 64;
         public const double MaxSlack = 10;
+        /// <summary>綁帆角的繩的 slack 下限（TASK-0503；見 <see cref="CheckSlack"/>）。</summary>
+        public const double MinSailSlack = 0.3;
         /// <summary>懸鏈線參數 u ＝ h/(2a) 的上限：sinh(u)/u 超過這裡（鬆到幾乎對折垂下）⇒ 照上限畫並明說。</summary>
         const double MaxU = 20;
 
@@ -141,7 +157,7 @@ namespace SCP.Core.Sculpture
                 string? aBad = ValidName(r.name, "繩") ?? (aNames.Add(r.name) ? null : "名字重複")
                                ?? CheckEndpoint(r.from, "from") ?? CheckEndpoint(r.to, "to")
                                ?? (TryParseColor(r.color, out _, out _, out _, out string aNorm) is string aColorBad ? aColorBad : aNorm != r.color ? "color 不是正規化的寫法（`" + r.color + "`）" : null)
-                               ?? CheckThickness(r.thickness) ?? CheckSlack(r.slack);
+                               ?? CheckThickness(r.thickness) ?? CheckSlack(r.slack, OnSail(r));
                 if (aBad != null) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：繩 `" + r.name + "` " + aBad + "）");
             }
             return aOut;
@@ -185,21 +201,46 @@ namespace SCP.Core.Sculpture
         public static string? CheckThickness(double iT)
             => double.IsNaN(iT) || iT <= 0 || iT > MaxThickness ? "thickness（直徑，格）要在 (0, " + MaxThickness + "]：" + iT.ToString(CultureInfo.InvariantCulture) : null;
 
-        public static string? CheckSlack(double iS)
-            => double.IsNaN(iS) || iS < 1 || iS > MaxSlack ? "slack（繩長 ÷ 兩端直線距離）要在 1.." + MaxSlack + "（1 ＝ 拉直）：" + iS.ToString(CultureInfo.InvariantCulture) : null;
+        /// <summary>
+        /// 鬆緊的範圍：一般的繩 1..MaxSlack（比兩端距離短的繩不存在）。
+        /// <paramref name="iOnSail"/>（TASK-0503：有一端是帆角）⇒ 可以小到 <see cref="MinSailSlack"/>：繩長 ＝ slack × **設計時**兩端的距離，
+        /// 小於 1 ＝ 繩比設計時短 ⇒ 把 free 的帆角拉過去（收帆腳索）；帆角拉不到那麼近時繩畫成拉直。
+        /// </summary>
+        public static string? CheckSlack(double iS, bool iOnSail = false)
+        {
+            double aMin = iOnSail ? MinSailSlack : 1;
+            return double.IsNaN(iS) || iS < aMin || iS > MaxSlack
+                ? "slack（繩長 ÷ 兩端直線距離）要在 " + aMin.ToString(CultureInfo.InvariantCulture) + ".." + MaxSlack + "（1 ＝ 拉直" + (iOnSail ? "；綁帆角的繩可以小於 1 ＝ 把帆角拉過去" : "；只有綁帆角的繩可以小於 1") + "）：" + iS.ToString(CultureInfo.InvariantCulture)
+                : null;
+        }
+
+        /// <summary>這條繩有沒有一端是帆角（`sail:`）。</summary>
+        public static bool OnSail(SCP_SculptRope r)
+            => (r.from ?? "").Trim().StartsWith(SailPrefix, StringComparison.Ordinal) || (r.to ?? "").Trim().StartsWith(SailPrefix, StringComparison.Ordinal);
 
         static string? CheckEndpoint(string iText, string iWhich) => TryParseEndpoint(iText, out _, out _, out string aBad) ? null : iWhich + "：" + aBad;
 
         /// <summary>
         /// 端點：`x,y,z`（三個數，可帶小數；整數 ⇒ 格心）⇒ <paramref name="oPoint"/>；否則是固定點路徑（`名字` 或 `關聯/…/名字`）⇒ <paramref name="oAnchorPath"/>。
-        /// `kind:…`（例：之後的帆角）⇒ 本版不認得、回 false（⛔ 不猜）。
+        /// 帆角 `sail:…`（TASK-0503）⇒ 回 true、<paramref name="oAnchorPath"/> 帶著 `sail:` 前綴原樣（解法見 <see cref="SCP_SculptSailEndResolver"/>）；其他 `kind:` ⇒ 不認得、回 false（⛔ 不猜）。
         /// </summary>
         public static bool TryParseEndpoint(string iText, out double[]? oPoint, out string oAnchorPath, out string oBad)
         {
             oPoint = null; oAnchorPath = ""; oBad = "";
             string a = (iText ?? "").Trim();
             if (a.Length == 0) { oBad = "端點是空的（要 固定點名、關聯/…/固定點名，或 x,y,z）"; return false; }
-            if (a.IndexOf(':') >= 0) { oBad = "端點 `" + a + "`：`種類:` 形狀的端點本版不認得（只認 固定點路徑 或 x,y,z；綁帆等 TASK-0503）"; return false; }
+            if (a.StartsWith(SailPrefix, StringComparison.Ordinal))
+            {
+                // 帆角：sail:[關聯/…/]帆名/角（角 ＝ 角的名字或序號 0..）—— 每一段都照名字的規矩；至少「帆名/角」兩段
+                string aRest = a.Substring(SailPrefix.Length);
+                string[] aSegs = aRest.Split('/');
+                if (aSegs.Length < 2) { oBad = "帆角端點 `" + a + "` 要寫成 sail:帆名/角（角 ＝ 名字或序號；跨關聯 sail:關聯/…/帆名/角）"; return false; }
+                foreach (string seg in aSegs)
+                    if (SCP_SculptLinks.ValidName(seg) is string aSegBad) { oBad = "帆角端點 `" + a + "` 的 `" + seg + "`：" + aSegBad; return false; }
+                oAnchorPath = a;
+                return true;
+            }
+            if (a.IndexOf(':') >= 0) { oBad = "端點 `" + a + "`：`種類:` 形狀的端點只認 `" + SailPrefix + "`（帆角）；其他本版不認得（只認 固定點路徑、x,y,z、sail:帆名/角）"; return false; }
             string[] aParts = a.Split(',');
             if (aParts.Length == 3)
             {
@@ -393,12 +434,13 @@ namespace SCP.Core.Sculpture
         /// <summary>
         /// 一次觀測的所有繩：組裝件自己的＋關聯樹上每一層的（照那一層換座標）。<paramref name="iTree"/> null ＝ 沒有關聯。
         /// 每條都有一筆讀數（ok／hidden／disabled／broken）；ok 的帶 <see cref="SCP_SculptRopeReading.Geom"/>。
+        /// <paramref name="iSails"/>：帆角端點的解法（TASK-0503，帆的觀測注入）；null ⇒ 綁帆角的繩一律 broken 並說原因。
         /// 繩子所在那一層這次沒畫 ⇒ hidden（原因寫哪一層）；壞掉的綁定 ⇒ broken —— ⛔ 兩種都照列、不靜默消失。
         /// ropes.json 讀不了 ⇒ InvalidOperationException 照丟（呼叫端擋下）。
         /// </summary>
         public static List<SCP_SculptRopeReading> Resolve(SCP_SculptWorks iWorks, string iRootId, List<SCP_SculptLinkNode>? iTree,
                                                           SCP_SculptLinkSelection iLinkSel, SCP_SculptRopeSelection iRopeSel,
-                                                          SCP_SculptRopeFile? iRootOverride = null)
+                                                          SCP_SculptRopeFile? iRootOverride = null, SCP_SculptSailEndResolver? iSails = null)
         {
             var aIndex = IndexTree(iTree);
             var aAnchorCache = new Dictionary<string, SCP_SculptAnchorFile>(StringComparer.Ordinal);
@@ -427,6 +469,16 @@ namespace SCP.Core.Sculpture
                         string aText = e == 0 ? r.from : r.to;
                         if (!TryParseEndpoint(aText, out double[]? aPt, out string aAnchorPath, out string aBad)) { aR.State = SCP_SculptRopeReading.Broken; aWhy.Add((e == 0 ? "from：" : "to：") + aBad); continue; }
                         if (aPt != null) { aPt = ToRoot(aFrame, aPt, aIndex); }
+                        else if (aAnchorPath.StartsWith(SailPrefix, StringComparison.Ordinal))
+                        {
+                            // 帆角（TASK-0503）：位置由帆的觀測給（設計位置；模擬完由它換成那一刻的位置）
+                            string aKey = "", aSailHidden = "";
+                            string? aSailBad = iSails == null ? "帆角端點要在帆的觀測裡解（這次沒有帆的資料）"
+                                             : iSails(aFrame, aAnchorPath.Substring(SailPrefix.Length), out aPt, out aKey, out aSailHidden);
+                            if (aSailBad != null) { aR.State = SCP_SculptRopeReading.Broken; aWhy.Add((e == 0 ? "from：" : "to：") + aSailBad); aPt = null; continue; }
+                            if (e == 0) aR.FromSail = aKey; else aR.ToSail = aKey;
+                            if (aSailHidden.Length > 0) { aHidden = true; aWhy.Add((e == 0 ? "from" : "to") + " 綁的帆" + aSailHidden); }
+                        }
                         else
                         {
                             string? aMiss = ResolveAnchor(iWorks, iRootId, aFrame, aAnchorPath, aIndex, aAnchorCache, out aPt, out string aAnchorFrame);
@@ -436,6 +488,7 @@ namespace SCP.Core.Sculpture
                         if (e == 0) aEnds0 = aPt; else aEnds1 = aPt;
                     }
                     aR.From = aEnds0; aR.To = aEnds1;
+                    aR.LinkHidden = aHidden;
                     if (aR.State != SCP_SculptRopeReading.Broken)
                     {
                         // 繩子所在那件作品這次沒畫 ⇒ 照列、標 hidden（⛔ 不略過：hide_ropes 點名它、頁面的開關都要找得到它）

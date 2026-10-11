@@ -1038,6 +1038,40 @@ namespace SCP.Core.Sculpture
             return aQuadsOut;
         }
 
+        /// <summary>
+        /// 帆的雙面三角網格（TASK-0503）接在繩後面：網格形狀與渲染器同一支（<see cref="SCP_SculptSails.TwoSided"/>）；
+        /// 世界 → OBJ y-up（wx, wz, wy）是鏡像 ⇒ 三角形繞序反過來寫（同 <see cref="WriteObjRopes"/>）。回傳三角形數。
+        /// </summary>
+        static int WriteObjSails(StringBuilder iO, List<SCP_SculptSailGeom> iSails, ref int ioVerts)
+        {
+            if (iSails.Count == 0) return 0;
+            int aNormals = 0;
+            string aSoFar = iO.ToString();
+            for (int k = aSoFar.IndexOf("\nvn ", StringComparison.Ordinal); k >= 0; k = aSoFar.IndexOf("\nvn ", k + 1, StringComparison.Ordinal)) aNormals++;
+            if (aSoFar.StartsWith("vn ", StringComparison.Ordinal)) aNormals++;
+            int aTrisOut = 0;
+            for (int i = 0; i < iSails.Count; i++)
+            {
+                SCP_SculptSails.TwoSided(iSails[i], out List<double[]> aPos, out List<double[]> aNrm, out List<int[]> aTris);
+                if (aTris.Count == 0) continue;
+                iO.Append("o sail_").Append(i.ToString(CultureInfo.InvariantCulture)).Append(" # ").Append(iSails[i].Path).Append('\n');
+                iO.Append("usemtl sail_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('\n');
+                int vBase = ioVerts + 1, nBase = aNormals + 1;
+                foreach (double[] p in aPos) iO.Append("v ").Append(F4(p[0])).Append(' ').Append(F4(p[2])).Append(' ').Append(F4(p[1])).Append('\n');
+                foreach (double[] n in aNrm) iO.Append("vn ").Append(F4(n[0])).Append(' ').Append(F4(n[2])).Append(' ').Append(F4(n[1])).Append('\n');
+                foreach (int[] t in aTris)
+                {
+                    // 世界裡從法線那側看逆時針；換到 OBJ 那一步是鏡像 ⇒ 反過來寫才是 OBJ 裡的逆時針
+                    iO.Append("f");
+                    foreach (int idx in new[] { t[2], t[1], t[0] })
+                        iO.Append(' ').Append(vBase + idx).Append("//").Append(nBase + idx);
+                    iO.Append('\n');
+                }
+                ioVerts += aPos.Count; aNormals += aNrm.Count; aTrisOut += aTris.Count;
+            }
+            return aTrisOut;
+        }
+
         static bool FaceHidden(HashSet<(int, int, int)> iSet, AirMap? iSealed, int x, int y, int z, ref int ioSealedFaces)
         {
             if (iSet.Contains((x, y, z))) return true;
@@ -1252,6 +1286,12 @@ namespace SCP.Core.Sculpture
                     aM.Append("newmtl rope_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('\n')
                       .Append("Kd ").Append(F4(r.R / 255.0)).Append(' ').Append(F4(r.G / 255.0)).Append(' ').Append(F4(r.B / 255.0)).Append('\n');
                 }
+                for (int i = 0; i < iArgs.Sails.Count; i++)
+                {
+                    SCP_SculptSailGeom sl = iArgs.Sails[i];
+                    aM.Append("newmtl sail_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('\n')
+                      .Append("Kd ").Append(F4(sl.R / 255.0)).Append(' ').Append(F4(sl.G / 255.0)).Append(' ').Append(F4(sl.B / 255.0)).Append('\n');
+                }
                 SCP_SculptPy.WriteTextFile(aMtl, aM.ToString());
 
                 var aO = new StringBuilder();
@@ -1278,6 +1318,8 @@ namespace SCP.Core.Sculpture
                 else aFaces = WriteObjGreedy(aO, aVox, aSet, aSealed, ref aSealedFaces, out aVerts);
                 int aRopeFaces = WriteObjRopes(aO, iArgs.Ropes, ref aVerts);
                 aRes.RopesExported = iArgs.Ropes.Count;
+                int aSailTris = WriteObjSails(aO, iArgs.Sails, ref aVerts);
+                aRes.SailsExported = iArgs.Sails.Count;
                 SCP_SculptPy.WriteTextFile(aOutPath, aO.ToString());
                 aRes.FaceCount = aFaces;
                 aRes.VertexCount = aVerts;
@@ -1294,6 +1336,7 @@ namespace SCP.Core.Sculpture
                     : "沒算 —— " + aRes.SealedSkipped + "；封閉空腔的面照常輸出（給 region 縮小再匯）"));
                 aRes.Lines.Add("  vertices  : " + aVerts);
                 if (iArgs.Ropes.Count > 0) aRes.Lines.Add("  ropes     : " + iArgs.Ropes.Count + " 條管狀網格（" + aRopeFaces + " 個四邊形；材質 rope_0..，不是 voxel）");
+                if (iArgs.Sails.Count > 0) aRes.Lines.Add("  sails     : " + iArgs.Sails.Count + " 面雙面三角網格（" + aSailTris + " 個三角形；材質 sail_0..，不是 voxel）");
                 aRes.Lines.Add("  obj       : " + aOutPath);
                 aRes.Lines.Add("  mtl       : " + aMtl);
                 return aRes;

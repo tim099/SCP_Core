@@ -59,6 +59,8 @@ namespace SCP.Core.Sculpture
         public string AnchorsFile => Path.Combine(Aux, "anchors.json");
         /// <summary>繩索（TASK-0502）：兩端、顏色、粗細、鬆緊；同上，⛔ 不是 voxel。</summary>
         public string RopesFile => Path.Combine(Aux, "ropes.json");
+        /// <summary>帆（<see cref="SCP_SculptSails"/>，TASK-0503）：角綁在哪、哪條邊整條釘住、顏色、預設風；同上，⛔ 不是 voxel。</summary>
+        public string SailsFile => Path.Combine(Aux, "sails.json");
         public string Exhibits => Path.Combine(Aux, "exhibits");
         public string Exports => Path.Combine(Aux, "exports");
         public string LastSlice => Path.Combine(Aux, "_last_slice.png");

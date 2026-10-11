@@ -179,6 +179,8 @@ namespace SCP.Core.Sculpture
         public string SealedSkipped = "";
         /// <summary>輸出成管狀網格的繩數（TASK-0502；obj 才有，vox／list 一律 0 —— 繩不是格子）。</summary>
         public int RopesExported;
+        /// <summary>輸出成網格的帆數（TASK-0503；obj 才有，vox／list 一律 0）。</summary>
+        public int SailsExported;
     }
 
     public sealed class SCP_SculptExhibitResult : SCP_SculptResult

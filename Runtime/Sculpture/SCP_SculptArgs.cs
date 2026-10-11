@@ -131,6 +131,11 @@ namespace SCP.Core.Sculpture
         /// vox／list 只有格子 ⇒ 不輸出、結果裡明說。空 ＝ 沒有繩（輸出逐位元不變）。
         /// </summary>
         public List<SCP_SculptRopeGeom> Ropes = new List<SCP_SculptRopeGeom>();
+        /// <summary>
+        /// 帆（TASK-0503，已模擬到那一刻、世界座標）：obj 接在繩後面輸出成雙面三角網格（一面一個材質 sail_&lt;n&gt;）；vox／list 只有格子 ⇒ 不輸出、結果裡明說。
+        /// 空 ＝ 沒有帆（輸出逐位元不變）。
+        /// </summary>
+        public List<SCP_SculptSailGeom> Sails = new List<SCP_SculptSailGeom>();
     }
 
     public sealed class SCP_SculptExhibitRegisterArgs
