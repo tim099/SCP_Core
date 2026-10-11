@@ -156,6 +156,16 @@ namespace SCP.Core.Tasks
             return false;
         }
 
+        /// <summary>
+        /// 「我涉及」＝ 我開的 **或** 我是參與者（Ordinal，同 <see cref="HasParticipant"/>）。
+        /// <para>🩸 為什麼要一支：早安 brief §2.5／§6 數的是這個，而 `senate cmd tasks` 只數參與者 ——
+        /// 同一個 persona 讀到「未結 2 張」與「開著 0 張」，兩個都真，量的是不同宇宙，
+        /// 而 brief 叫人去 `tasks` 看清單，那邊永遠對不出它的數（2026-10-11 kaguya wake 24 實測：
+        /// TASK-0393／0395 是她開的、她不在參與者裡）。⇒ 兩邊都問這一支。</para>
+        /// </summary>
+        public bool Involves(string iPersona)
+            => string.Equals(reporter, iPersona, StringComparison.Ordinal) || HasParticipant(iPersona);
+
         // ── 寫入端（SCP_TaskOps，TASK-0349）用的三支 ──────────────────
         // ⚠ 寫入端的判準：persona 比對**不分大小寫**（刻意的，⛔ 別順手統一）。
         //   上面兩支 `RolesOf`／`HasParticipant` 是讀取層既有的 Ordinal 版（早安／晚安在用），

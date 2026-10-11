@@ -38,7 +38,12 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("index", "只看某一張單（給了就印那張的細節）"),
-            new SCP_CmdArgSpec("persona", "以誰的視角統計「跟我有關的未關單」（選填）"),
+            new SCP_CmdArgSpec("persona",
+                "以誰的視角統計（選填）。印兩把尺：**參與**（我在 participants 裡）與"
+                + "**涉及**（我開的 ＋ 參與 —— 早安 brief §2.5／§6 用的是這把）"),
+            new SCP_CmdArgSpec("mine",
+                "`1` ＝ 清單只列**我涉及**的單（我開的 ＋ 參與），需要 persona；"
+                + "與 status／type 是 AND。早安 brief §2.5 指路的就是這一格"),
             new SCP_CmdArgSpec("status",
                 "只列這個狀態。合法值＝`SCP_TaskStatus` 全體："
                 + "backlog / todo / in_progress / in_review / done / cancelled，"
@@ -145,9 +150,25 @@ namespace SCP.Core.Cmd
                     "  · 其中 `all`（全部）是**篩選成員**，不會是任何單子的種類",
                     "  ⛔ 不回「0 張」—— 那跟「真的沒有符合的單」長得一樣");
 
+            // ===========================================================
+            // mine 篩選：跟上面 type 那一格**同一個理由** —— 讓 brief 的指路指令變成真的。
+            // 🩸 2026-10-11（kaguya wake 24）：brief §2.5 印「todo／backlog 2 張　清單 → `cmd tasks
+            //   --arg persona=kaguya`」，照著跑列出全庫 496 張，而摘要行說「參與 23 張（其中開著 0）」。
+            //   兩個數都真：brief 數「我開的 ＋ 參與」，這裡只數參與；TASK-0393／0395 是她開的、
+            //   她不在參與者裡。⇒ 判準收成一支 `SCP_TaskEntry.Involves`，兩邊都問它。
+            // ⛔ 沒動「參與」那一行與 mine_total／mine_open 的語意 —— 既有讀取端在讀它們。
+            // ===========================================================
+            string aMineArg = iArgs.Get("mine").Trim();
+            bool aMineOnly = aMineArg == "1";
+            if (aMineArg.Length > 0 && aMineArg != "0" && aMineArg != "1")
+                return SCP_CmdResult.Fail(2, "✗ mine 只收 `0`／`1`：`" + aMineArg + "`");
+            if (aMineOnly && aPersona0.Length == 0)
+                return SCP_CmdResult.Fail(2, "✗ mine=1 需要 --arg persona=<誰>",
+                    "  「我涉及的單」沒有 persona 這個問題沒有答案 —— ⛔ 不回全庫");
+
             string aPersona = aPersona0;
             var aRows = new List<SCP_TaskEntry>();
-            int aOpen = 0, aMine = 0, aMineOpen = 0;
+            int aOpen = 0, aMine = 0, aMineOpen = 0, aInvolved = 0, aInvolvedOpen = 0;
             var aByStatus = new Dictionary<string, int>();
             var aByType = new Dictionary<string, int>();
             foreach (SCP_TaskEntry e in aAll)
@@ -160,8 +181,15 @@ namespace SCP.Core.Cmd
                     aMine++;
                     if (!e.IsClosed()) aMineOpen++;
                 }
+                bool aIsInvolved = aPersona.Length > 0 && e.Involves(aPersona);
+                if (aIsInvolved)
+                {
+                    aInvolved++;
+                    if (!e.IsClosed()) aInvolvedOpen++;
+                }
                 if (KeepByStatus(e, aStatusFilter, aStatusWanted)
-                    && KeepByType(e, aTypeFilter, aTypeWanted)) aRows.Add(e);
+                    && KeepByType(e, aTypeFilter, aTypeWanted)
+                    && (!aMineOnly || aIsInvolved)) aRows.Add(e);
             }
 
             aResult.Lines.Add("# 📋 任務單 —— 共 " + aAll.Count + " 張（開著 " + aOpen + "）");
@@ -169,15 +197,20 @@ namespace SCP.Core.Cmd
             aResult.Lines.Add("· 狀態分布：" + Describe(aByStatus));
             aResult.Lines.Add("· 種類分布：" + Describe(aByType));
             if (aPersona.Length > 0)
+            {
                 aResult.Lines.Add("· " + aPersona + " 參與 " + aMine + " 張（其中開著 " + aMineOpen + "）");
+                aResult.Lines.Add("· " + aPersona + " 涉及（我開的 ＋ 參與）" + aInvolved + " 張（其中開著 "
+                                  + aInvolvedOpen + "）—— 早安 brief §2.5／§6 數的是這一行");
+            }
             // ⚠ 兩個篩選是 AND，所以那個張數**屬於兩者的交集** —— 要把兩個條件一起印出來。
             //   只印其中一個的話，「status=open ⇒ 1 張」看起來會像「open 只有 1 張」，
             //   而真相是「open 且 type=bug 有 1 張」：同一個數字，兩種讀法。
-            if (aStatusFilter.Length > 0 || aTypeFilter.Length > 0)
+            if (aStatusFilter.Length > 0 || aTypeFilter.Length > 0 || aMineOnly)
             {
                 var aCond = new List<string>();
                 if (aStatusFilter.Length > 0) aCond.Add("status=" + aStatusFilter);
                 if (aTypeFilter.Length > 0) aCond.Add("type=" + aTypeFilter);
+                if (aMineOnly) aCond.Add(aPersona + " 涉及");
                 aResult.Lines.Add("· 篩選 " + string.Join(" 且 ", aCond.ToArray())
                                   + " ⇒ " + aRows.Count + " 張");
             }
@@ -196,6 +229,8 @@ namespace SCP.Core.Cmd
             {
                 aResult.AddValue("mine_total", aMine.ToString(CultureInfo.InvariantCulture));
                 aResult.AddValue("mine_open", aMineOpen.ToString(CultureInfo.InvariantCulture));
+                aResult.AddValue("involved_total", aInvolved.ToString(CultureInfo.InvariantCulture));
+                aResult.AddValue("involved_open", aInvolvedOpen.ToString(CultureInfo.InvariantCulture));
             }
             EmitJson(aResult, iArgs, aRows);
             return aResult;

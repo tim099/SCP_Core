@@ -425,15 +425,15 @@ namespace SCP.Core.Letters
 
             try
             {
-                // 我涉及 ＝ 我開的 或 我是參與者。⚠ 走 HasParticipant 不自己解字串 ——
-                //   participants 是結構化清單，用 substring 找名字會把 `summit` 命中 `summit-2`。
+                // 我涉及 ＝ 我開的 或 我是參與者。⚠ 走 Involves 不自己解字串 ——
+                //   participants 是結構化清單，用 substring 找名字會把 `summit` 命中 `summit-2`；
+                //   而判準只住一處：`cmd tasks --arg mine=1`（下面指路的那條）問的是同一支。
                 var aActive = new List<SCP_TaskEntry>();
                 var aWaiting = new List<SCP_TaskEntry>();
                 foreach (SCP_TaskEntry aEntry in SCP_TaskIO.LoadAll(new SCP_DataRoot(iDataRoot!)))
                 {
                     if (aEntry.IsClosed()) continue;
-                    if (!string.Equals(aEntry.reporter, iPersona, StringComparison.Ordinal)
-                        && !aEntry.HasParticipant(iPersona)) continue;
+                    if (!aEntry.Involves(iPersona)) continue;
                     if (aEntry.status == SCP_TaskStatus.in_progress || aEntry.status == SCP_TaskStatus.in_review)
                         aActive.Add(aEntry);
                     else aWaiting.Add(aEntry);
@@ -450,9 +450,14 @@ namespace SCP.Core.Letters
                 }
 
                 aLines.Add("");
+                // ⚠ 指路那條列的是**全部未結**（在動＋待動）—— `status` 一次只收一個值，表達不了 todo∪backlog。
+                //   ⇒ 把它對得出的數（兩者相加）寫在旁邊，讓照著跑的人拿得到同一個數，不是碰巧在動 0 張才對上。
                 aLines.Add("- 🕘 `todo` / `backlog`：**" + aWaiting.Count.ToString(CultureInfo.InvariantCulture)
-                           + " 張**（刻意不逐張列 —— 在動的才佔版面）"
-                           + "　清單 → `cmd tasks --arg persona=" + iPersona + "`");
+                           + " 張**（刻意不逐張列 —— 在動的才佔版面）");
+                aLines.Add("- 📋 全部未結清單（在動 " + aActive.Count.ToString(CultureInfo.InvariantCulture)
+                           + " ＋ 待動 " + aWaiting.Count.ToString(CultureInfo.InvariantCulture) + " ＝ "
+                           + (aActive.Count + aWaiting.Count).ToString(CultureInfo.InvariantCulture)
+                           + " 張）→ `cmd tasks --arg persona=" + iPersona + " --arg mine=1 --arg status=open`");
                 aLines.Add("- ⛔ 這些**不要抄進見叢** —— 見叢只放個人代辦，單子這一側每天由本節重算。");
             }
             catch (Exception e)
@@ -661,8 +666,7 @@ namespace SCP.Core.Letters
                 foreach (SCP_TaskEntry aEntry in SCP_TaskIO.LoadAll(new SCP_DataRoot(iDataRoot!)))
                 {
                     if (aEntry.IsClosed()) continue;
-                    if (string.Equals(aEntry.reporter, iPersona, StringComparison.Ordinal)
-                        || aEntry.HasParticipant(iPersona)) aMine++;
+                    if (aEntry.Involves(iPersona)) aMine++;
                 }
                 return "- 📋 我涉及的未結單：**" + aMine.ToString(CultureInfo.InvariantCulture)
                        + "** 張（我開的 ＋ 我是參與者）—— 在動的那幾張逐張列在 **§2.5 見單**";
