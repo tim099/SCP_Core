@@ -104,6 +104,12 @@ namespace SCP.Core.Sculpture
         /// </summary>
         public double ViewScale = 1;
 
+        /// <summary>
+        /// 繩索（TASK-0502）：已算好形狀、已換到世界座標的折線＋半徑＋顏色 —— 渲染器畫成管子，跟 voxel 同一個網格（吃同一組燈、投影子）。
+        /// ⛔ 不是 voxel（不進 voxel 清單、不影響 voxel 數讀數）。空 ＝ 沒有繩（舊行為，逐位元不變）。
+        /// </summary>
+        public List<SCP_SculptRopeGeom> Ropes = new List<SCP_SculptRopeGeom>();
+
         /// <summary>淺複製（燈與地板物件共用 —— 呼叫端只改純量欄位時用；要改燈或地板就自己再複製那一格）。</summary>
         public SCP_SculptRenderParams Clone() => (SCP_SculptRenderParams)MemberwiseClone();
     }

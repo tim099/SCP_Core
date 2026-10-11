@@ -177,6 +177,8 @@ namespace SCP.Core.Sculpture
         public int SealedCavities = -1, SealedCells = -1;
         /// <summary>SealedMode＝skipped 的原因。</summary>
         public string SealedSkipped = "";
+        /// <summary>輸出成管狀網格的繩數（TASK-0502；obj 才有，vox／list 一律 0 —— 繩不是格子）。</summary>
+        public int RopesExported;
     }
 
     public sealed class SCP_SculptExhibitResult : SCP_SculptResult

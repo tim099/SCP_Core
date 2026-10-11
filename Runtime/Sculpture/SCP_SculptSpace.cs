@@ -55,6 +55,10 @@ namespace SCP.Core.Sculpture
         public string MarksFile => Path.Combine(Aux, "marks.json");
         /// <summary>關聯匯入（<see cref="SCP_SculptLinks"/>，TASK-0494）：作者寫的、入 git；⛔ 不在 events/ 裡。</summary>
         public string LinksFile => Path.Combine(Aux, "links.json");
+        /// <summary>固定點（<see cref="SCP_SculptRopes"/>，TASK-0502）：名字 → 格座標；作者寫的、入 git；⛔ 不是 voxel、不在 events/ 裡。</summary>
+        public string AnchorsFile => Path.Combine(Aux, "anchors.json");
+        /// <summary>繩索（TASK-0502）：兩端、顏色、粗細、鬆緊；同上，⛔ 不是 voxel。</summary>
+        public string RopesFile => Path.Combine(Aux, "ropes.json");
         public string Exhibits => Path.Combine(Aux, "exhibits");
         public string Exports => Path.Combine(Aux, "exports");
         public string LastSlice => Path.Combine(Aux, "_last_slice.png");

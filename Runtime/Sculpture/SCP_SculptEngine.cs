@@ -1003,6 +1003,41 @@ namespace SCP.Core.Sculpture
         /// <summary>
         /// 這一面要不要出：鄰格是實心 ⇒ 被遮住；鄰格是封閉空腔的空氣（<paramref name="iSealed"/> 給了才判）⇒ 省略並計數（TASK-0498）。
         /// </summary>
+        /// <summary>
+        /// 繩索的管狀網格（TASK-0502）接在 voxel 面後面：管子形狀與渲染器同一支（<see cref="SCP_SculptRopes.Tube"/>）；
+        /// 世界 → OBJ y-up（wx, wz, wy）—— 這一換是鏡像，四邊形的繞序跟著反過來（同 <see cref="ObjQuad"/> 用法線判的理由）。
+        /// 頂點與法線編號接在前面已寫的後面（v 用 <paramref name="ioVerts"/>，vn 數一次已寫的 `vn ` 行）。回傳四邊形數。
+        /// </summary>
+        static int WriteObjRopes(StringBuilder iO, List<SCP_SculptRopeGeom> iRopes, ref int ioVerts)
+        {
+            if (iRopes.Count == 0) return 0;
+            int aNormals = 0;
+            string aSoFar = iO.ToString();
+            for (int k = aSoFar.IndexOf("\nvn ", StringComparison.Ordinal); k >= 0; k = aSoFar.IndexOf("\nvn ", k + 1, StringComparison.Ordinal)) aNormals++;
+            if (aSoFar.StartsWith("vn ", StringComparison.Ordinal)) aNormals++;
+            int aQuadsOut = 0;
+            for (int i = 0; i < iRopes.Count; i++)
+            {
+                SCP_SculptRopes.Tube(iRopes[i], iRopes[i].Radius >= 2 ? 16 : 8, out List<double[]> aPos, out List<double[]> aNrm, out List<int[]> aQuads);
+                if (aQuads.Count == 0) continue;
+                iO.Append("o rope_").Append(i.ToString(CultureInfo.InvariantCulture)).Append(" # ").Append(iRopes[i].Path).Append('\n');
+                iO.Append("usemtl rope_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('\n');
+                int vBase = ioVerts + 1, nBase = aNormals + 1;
+                foreach (double[] p in aPos) iO.Append("v ").Append(F4(p[0])).Append(' ').Append(F4(p[2])).Append(' ').Append(F4(p[1])).Append('\n');
+                foreach (double[] n in aNrm) iO.Append("vn ").Append(F4(n[0])).Append(' ').Append(F4(n[2])).Append(' ').Append(F4(n[1])).Append('\n');
+                foreach (int[] q in aQuads)
+                {
+                    // 世界裡從外面看逆時針；換到 OBJ 那一步是鏡像 ⇒ 反過來寫才是 OBJ 裡的逆時針
+                    iO.Append("f");
+                    foreach (int idx in new[] { q[3], q[2], q[1], q[0] })
+                        iO.Append(' ').Append(vBase + idx).Append("//").Append(nBase + idx);
+                    iO.Append('\n');
+                }
+                ioVerts += aPos.Count; aNormals += aNrm.Count; aQuadsOut += aQuads.Count;
+            }
+            return aQuadsOut;
+        }
+
         static bool FaceHidden(HashSet<(int, int, int)> iSet, AirMap? iSealed, int x, int y, int z, ref int ioSealedFaces)
         {
             if (iSet.Contains((x, y, z))) return true;
@@ -1211,6 +1246,12 @@ namespace SCP.Core.Sculpture
                     aM.Append("newmtl c").Append(c.ToString(CultureInfo.InvariantCulture)).Append('\n')
                       .Append("Kd ").Append(F4(r / 255.0)).Append(' ').Append(F4(g / 255.0)).Append(' ').Append(F4(b / 255.0)).Append('\n');
                 }
+                for (int i = 0; i < iArgs.Ropes.Count; i++)
+                {
+                    SCP_SculptRopeGeom r = iArgs.Ropes[i];
+                    aM.Append("newmtl rope_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('\n')
+                      .Append("Kd ").Append(F4(r.R / 255.0)).Append(' ').Append(F4(r.G / 255.0)).Append(' ').Append(F4(r.B / 255.0)).Append('\n');
+                }
                 SCP_SculptPy.WriteTextFile(aMtl, aM.ToString());
 
                 var aO = new StringBuilder();
@@ -1235,6 +1276,8 @@ namespace SCP.Core.Sculpture
                 int aFaces, aVerts, aSealedFaces = 0;
                 if (iArgs.Merge == MergeNone) aFaces = WriteObjPerVoxel(aO, aVox, aSet, aSealed, ref aSealedFaces, aColors, out aVerts);
                 else aFaces = WriteObjGreedy(aO, aVox, aSet, aSealed, ref aSealedFaces, out aVerts);
+                int aRopeFaces = WriteObjRopes(aO, iArgs.Ropes, ref aVerts);
+                aRes.RopesExported = iArgs.Ropes.Count;
                 SCP_SculptPy.WriteTextFile(aOutPath, aO.ToString());
                 aRes.FaceCount = aFaces;
                 aRes.VertexCount = aVerts;
@@ -1250,6 +1293,7 @@ namespace SCP.Core.Sculpture
                     : aRes.SealedMode == "keep" ? "keep —— 封閉空腔的面照常輸出"
                     : "沒算 —— " + aRes.SealedSkipped + "；封閉空腔的面照常輸出（給 region 縮小再匯）"));
                 aRes.Lines.Add("  vertices  : " + aVerts);
+                if (iArgs.Ropes.Count > 0) aRes.Lines.Add("  ropes     : " + iArgs.Ropes.Count + " 條管狀網格（" + aRopeFaces + " 個四邊形；材質 rope_0..，不是 voxel）");
                 aRes.Lines.Add("  obj       : " + aOutPath);
                 aRes.Lines.Add("  mtl       : " + aMtl);
                 return aRes;

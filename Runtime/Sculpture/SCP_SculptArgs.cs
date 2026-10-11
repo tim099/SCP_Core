@@ -4,6 +4,7 @@
 //          好讓錯誤訊息與 python 逐字相同（「--at 需為 'x,y,z': 1,2」那種）。
 // 數值影響：預設值與 argparse 的 default 同（color 19、facing z+、thickness 1、alpha_threshold 128、exhibit_margin 2…）。
 #nullable enable
+using System.Collections.Generic;
 
 namespace SCP.Core.Sculpture
 {
@@ -125,6 +126,11 @@ namespace SCP.Core.Sculpture
         /// 預設 false ＝ 省略（作品資料一格都不動）；true 給除錯、或 3D 列印要印出中空時用。vox／list 不吃。
         /// </summary>
         public bool KeepSealed;
+        /// <summary>
+        /// 繩索（TASK-0502，已算好形狀、已換到世界座標）：obj 接在 voxel 面後面輸出成管狀網格（一條一個材質 rope_&lt;n&gt;）；
+        /// vox／list 只有格子 ⇒ 不輸出、結果裡明說。空 ＝ 沒有繩（輸出逐位元不變）。
+        /// </summary>
+        public List<SCP_SculptRopeGeom> Ropes = new List<SCP_SculptRopeGeom>();
     }
 
     public sealed class SCP_SculptExhibitRegisterArgs
