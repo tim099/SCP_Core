@@ -84,17 +84,20 @@ namespace SCP.Core.Sculpture
             foreach (var v in iSpace.Voxels.Entries()) copy.Voxels.Set(v.X, v.Y, v.Z, v.Color);
             return copy;
         }
-        public SCP_SculptEdit Assemble(SCP_SculptSpace iSource, int iWidth, int iHeight, int[] iAt, int iTurn, bool iOverwrite)
+        /// <summary>
+        /// 放入零件副本。<paramref name="iMirror"/>（TASK-0497）：正規化過的鏡像軸（""／x／y／z 組合），在零件自己的框（W×H×D）裡先翻再轉 ——
+        /// 公式與關聯共用 <see cref="SCP_SculptLinks.Transform"/>。
+        /// ⚠ 事件記的是完整前後差異，重播不重算這裡 ⇒ 改公式不會動到舊事件的重播結果。
+        /// </summary>
+        public SCP_SculptEdit Assemble(SCP_SculptSpace iSource, int iWidth, int iHeight, int iDepth, int[] iAt, int iTurn, string iMirror, bool iOverwrite)
         {
             if (iTurn != 0 && iTurn != 90 && iTurn != 180 && iTurn != 270) throw new ArgumentException("turn需為0/90/180/270，繞Z軸旋轉");
+            if (SCP_SculptLinks.NormalizeMirror(iMirror, out string mirror) != null || mirror != iMirror) throw new ArgumentException("mirror需為x/y/z或組合（已正規化）：" + iMirror);
             var current = LoadSpace(); var desired = CopySpace(current);
             foreach (var v in iSource.Voxels.Entries())
             {
-                int x = v.X, y = v.Y;
-                if (iTurn == 90) { x = iHeight - 1 - v.Y; y = v.X; }
-                if (iTurn == 180) { x = iWidth - 1 - v.X; y = iHeight - 1 - v.Y; }
-                if (iTurn == 270) { x = v.Y; y = iWidth - 1 - v.X; }
-                long tx = (long)x + iAt[0], ty = (long)y + iAt[1], tz = (long)v.Z + iAt[2];
+                SCP_SculptLinks.Transform(mirror, iTurn, iWidth, iHeight, iDepth, v.X, v.Y, v.Z, out int x, out int y, out int z0);
+                long tx = (long)x + iAt[0], ty = (long)y + iAt[1], tz = (long)z0 + iAt[2];
                 if (tx < 0 || tx >= SizeX || ty < 0 || ty >= SizeY || tz < 0 || tz >= SizeZ) throw new ArgumentException("零件越界；未放入任何voxel");
                 x = (int)tx; y = (int)ty; int z = (int)tz;
                 if (!iOverwrite && current.Voxels.Get(x, y, z) != 0) throw new ArgumentException("零件碰到既有voxel；未修改。需要覆蓋時顯式overwrite=1");

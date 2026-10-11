@@ -1,4 +1,4 @@
-// 區塊職責：作品的關聯匯入（TASK-0494）—— 作品只記「哪一件作品放在我的哪裡、轉幾度、開不開」，觀測時才把它們組進來。
+// 區塊職責：作品的關聯匯入（TASK-0494）—— 作品只記「哪一件作品放在我的哪裡、轉幾度、翻不翻面（TASK-0497）、開不開」，觀測時才把它們組進來。
 // 物理意義：關聯存在作品資料夾的 links.json（作者寫的、入版控），⛔ 不寫進 events/ —— 一格 voxel 都不複製，
 //          被關聯的作品改了，下一次觀測就是新樣子；沒更新的 senate.exe 看到的是沒有子件的作品（不會讀壞）。
 //          「子作品其實跟獨立作品一樣，只是創作時切分出來的作品」（Tim 2026-10-11）⇒ 任何作品都能被關聯，別人的也行（Credit 照 assemble）。
@@ -26,6 +26,12 @@ namespace SCP.Core.Sculpture
         public List<int> at = new List<int> { 0, 0, 0 };
         /// <summary>繞 Z 轉幾度（0／90／180／270），轉法與 assemble 相同（轉完原點放在 at）。</summary>
         public int turn;
+        /// <summary>
+        /// 鏡像（TASK-0497）：沿哪幾軸翻面 ——「」＝不翻、"x"／"y"／"z" 或組合（"xz"，正規化成 xyz 順序）。
+        /// 先在零件**自己的框**（pivot）裡翻面、再 turn、再放到 at ⇒ 外框不變，放不放得進跟沒翻一樣。
+        /// ⚠ 有任何一條用到鏡像，links.json 就寫 schema 2（見 <see cref="SCP_SculptLinks.Save"/>）。
+        /// </summary>
+        public string mirror = "";
         /// <summary>加關聯當下被關聯作品的尺寸（x,y,z）—— 轉向的軸心固定用它（⛔ 不用那件作品現在的尺寸：它長大了整件會平移）。</summary>
         public List<int> pivot = new List<int> { 1, 1, 1 };
         public bool enabled = true;
@@ -139,20 +145,51 @@ namespace SCP.Core.Sculpture
                 if (aOpt.Diagnostics.Count > 0) throw new InvalidOperationException(string.Join("; ", aOpt.Diagnostics));
             }
             catch (Exception e) { throw new InvalidOperationException("links.json 讀不了（" + aFile + "：" + e.Message + "）—— ⛔ 不當成沒有關聯，修好再用"); }
-            if (aOut.schema != 1) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema != 1 && aOut.schema != SchemaWithMirror) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
             var aNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var l in aOut.links)
             {
                 string? aBad = ValidName(l.name) ?? (aNames.Add(l.name) ? null : "名字重複");
                 if (aBad == null && (l.at == null || l.at.Count != 3 || l.pivot == null || l.pivot.Count != 3 || l.pivot[0] < 1 || l.pivot[1] < 1 || l.pivot[2] < 1
                                      || (l.turn != 0 && l.turn != 90 && l.turn != 180 && l.turn != 270))) aBad = "at／pivot／turn 不合法";
+                // ⛔ 檔上寫的就要是正規化的樣子（xyz 順序、不重複）—— 寫入端只會寫這種；別的樣子是手改的，猜它的意思等於猜幾何
+                if (aBad == null && (NormalizeMirror(l.mirror ?? "", out string aNorm) != null || aNorm != l.mirror)) aBad = "mirror 不合法（`" + l.mirror + "`；要是 x／y／z 或組合，依 xyz 順序）";
                 if (aBad != null) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：關聯 `" + l.name + "` " + aBad + "）");
             }
             return aOut;
         }
 
+        /// <summary>
+        /// 有鏡像的 links.json 寫這個 schema（TASK-0497）。
+        /// 🩸 為什麼要升號：<see cref="SCP_SculptLink"/> 沒有收容所 ⇒ 沒更新的 senate.exe 讀到 `mirror` 會**默默丟掉**，
+        /// 組出來的是沒翻面的零件，而畫面看起來完全正常（同一件畫兩次在同一邊）。
+        /// 舊版只認 schema 1 ⇒ 升號讓它**大聲讀不了**；沒用鏡像的檔維持 1，舊版照樣讀。
+        /// </summary>
+        public const int SchemaWithMirror = 2;
+
+        /// <summary>
+        /// 鏡像參數正規化：""／"none"／"0" ＝ 不翻；否則由 x／y／z 組成（可用逗號隔開、大小寫不拘），每軸至多一次 ⇒ 依 xyz 順序。
+        /// 回 null ＝ 合法；否則是一句人話。
+        /// </summary>
+        public static string? NormalizeMirror(string iText, out string oNorm)
+        {
+            oNorm = "";
+            string a = iText.Trim().ToLowerInvariant();
+            if (a.Length == 0 || a == "none" || a == "0") return null;
+            var aSeen = new HashSet<char>();
+            foreach (char ch in a)
+            {
+                if (ch == ',' || ch == ' ') continue;
+                if (ch != 'x' && ch != 'y' && ch != 'z') return "mirror 只能是 x／y／z 或它們的組合（例 x、xz）；got '" + iText + "'";
+                if (!aSeen.Add(ch)) return "mirror 同一軸寫了兩次（'" + iText + "'）—— 翻兩次等於沒翻，⛔ 不猜你要哪個";
+            }
+            oNorm = (aSeen.Contains('x') ? "x" : "") + (aSeen.Contains('y') ? "y" : "") + (aSeen.Contains('z') ? "z" : "");
+            return null;
+        }
+
         public static void Save(SCP_SculptPaths iPaths, SCP_SculptLinkFile iFile)
         {
+            iFile.schema = iFile.links.Exists(l => !string.IsNullOrEmpty(l.mirror)) ? SchemaWithMirror : 1;
             string aFile = iPaths.LinksFile;
             string aTmp = aFile + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
             try
@@ -242,6 +279,24 @@ namespace SCP.Core.Sculpture
             else if (iTurn == 270) { oX = y; oY = iW - 1 - x; }
         }
 
+        /// <summary>
+        /// 零件一格的落點（關聯與 assemble 共用這一支 —— ⛔ 別在別處再寫一份公式）：
+        /// ① 鏡像：在零件自己的框（W×H×D）裡翻面 —— x ⇒ W−1−x、y ⇒ H−1−y、z ⇒ D−1−z
+        /// ② 繞 Z 轉（<see cref="Turn"/>，用同一個 W／H）③ 呼叫端再加 at。
+        /// 先翻再轉：外框不變 ⇒ 放不放得進（<see cref="Fits"/>）跟沒翻一樣。
+        /// </summary>
+        public static void Transform(string iMirror, int iTurn, int iW, int iH, int iD, int x, int y, int z, out int oX, out int oY, out int oZ)
+        {
+            if (iMirror.Length > 0)
+            {
+                if (iMirror.IndexOf('x') >= 0) x = iW - 1 - x;
+                if (iMirror.IndexOf('y') >= 0) y = iH - 1 - y;
+                if (iMirror.IndexOf('z') >= 0) z = iD - 1 - z;
+            }
+            Turn(iTurn, iW, iH, x, y, out oX, out oY);
+            oZ = z;
+        }
+
         /// <summary>尺寸 <paramref name="iDims"/>（x,y,z）的作品轉向之後放在 at，放不放得進 <paramref name="iSizeX"/>…；放不下 ⇒ 一句人話，放得下 ⇒ null。</summary>
         public static string? Fits(string iWork, int[] iDims, int[] iAt, int iTurn, int iSizeX, int iSizeY, int iSizeZ)
         {
@@ -302,8 +357,8 @@ namespace SCP.Core.Sculpture
                 var aRow = new SCP_SculptComposeReport.Row { Path = n.Path, Work = n.Card.id, Revision = aWorkInfo.Revision, Draft = aWorkInfo.Draft, PivotDrift = n.PivotDrift };
                 foreach (var v in aChild.Voxels.Entries())
                 {
-                    SCP_SculptLinks.Turn(n.Link.turn, n.Link.pivot[0], n.Link.pivot[1], v.X, v.Y, out int tx, out int ty);
-                    long x = (long)tx + n.Link.at[0], y = (long)ty + n.Link.at[1], z = (long)v.Z + n.Link.at[2];
+                    SCP_SculptLinks.Transform(n.Link.mirror ?? "", n.Link.turn, n.Link.pivot[0], n.Link.pivot[1], n.Link.pivot[2], v.X, v.Y, v.Z, out int tx, out int ty, out int tz);
+                    long x = (long)tx + n.Link.at[0], y = (long)ty + n.Link.at[1], z = (long)tz + n.Link.at[2];
                     if (x < 0 || y < 0 || z < 0 || x >= iSizeX || y >= iSizeY || z >= iSizeZ)
                     {
                         aRow.Clipped++;   // ⛔ 不放進組好的空間（負座標／超出父作品 ⇒ 下游的 revision、assemble、export 都會出事）
