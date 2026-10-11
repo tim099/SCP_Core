@@ -44,6 +44,8 @@ namespace SCP.Core.Sculpture
         public string CacheFile => Path.Combine(Root, "sculpt_cache.json");
         /// <summary>歷史索引（<see cref="SCP_SculptHistoryIndex"/>）：本機快取、不入 git。</summary>
         public string HistoryCacheFile => Path.Combine(Root, "sculpt_history_cache.json");
+        /// <summary>時間標記（<see cref="SCP_SculptMarks"/>，TASK-0491）：作者寫的、入 git；⛔ 不在 events/ 裡。</summary>
+        public string MarksFile => Path.Combine(Root, "marks.json");
         public string Exhibits => Path.Combine(Root, "exhibits");
         public string Exports => Path.Combine(Root, "exports");
         public string LastSlice => Path.Combine(Root, "_last_slice.png");
@@ -84,6 +86,12 @@ namespace SCP.Core.Sculpture
         /// <summary>key 數（＝ python <c>len(space.voxels)</c>，含快取裡值為 0 的怪 key）。</summary>
         public int Count => m_Live;
 
+        /// <summary>
+        /// 一格**要被改之前**呼叫（此時 <see cref="Get"/> 還是舊值）。給觀測時「撤掉某一段／只看某一段」記帳用（TASK-0491）；
+        /// 平常是 null，零成本。⚠ 不保證真的有變（同值覆寫、刪不存在的格也會叫）。
+        /// </summary>
+        public Action<int, int, int>? BeforeChange;
+
         public int Get(int iX, int iY, int iZ)
             => m_Index.TryGetValue(new Key(iX, iY, iZ), out int i) ? m_Colors[i] : 0;
 
@@ -99,6 +107,7 @@ namespace SCP.Core.Sculpture
         /// <summary>python <c>voxels[key] = v</c>（不看值是不是 0）。</summary>
         public void PutRaw(int iX, int iY, int iZ, int iColor)
         {
+            BeforeChange?.Invoke(iX, iY, iZ);
             var k = new Key(iX, iY, iZ);
             if (m_Index.TryGetValue(k, out int i)) { m_Colors[i] = iColor; return; }
             if (m_Used == m_Keys.Length) Grow();
@@ -109,6 +118,7 @@ namespace SCP.Core.Sculpture
 
         public void Remove(int iX, int iY, int iZ)
         {
+            BeforeChange?.Invoke(iX, iY, iZ);
             var k = new Key(iX, iY, iZ);
             if (!m_Index.TryGetValue(k, out int i)) return;
             m_Index.Remove(k);
@@ -300,6 +310,64 @@ namespace SCP.Core.Sculpture
 
             SaveCache(iPaths, aSpace);
             return aSpace;
+        }
+
+        /// <summary>
+        /// 觀測用的「某一刻」（TASK-0491）：從頭重播到 <see cref="SCP_SculptViewFilter.UptoEvent"/>（含；空 ＝ 到最新），
+        /// 再把 Hide 的區間撤掉（那一段改過、之後沒再改的格 ⇒ 回到區間開始時的值）、或只留 Only 那一段改過的格。
+        /// <para>⛔ 不讀也不寫主快取 —— 快取是「現在」，拿它當起點會把未來帶進過去；寫回去則會讓下一刀以為作品回到了過去。</para>
+        /// <para>區間 (開始, 結束]：開始那一刻本身不算；結束空字串 ＝ 還沒收尾，到重播的終點為止。</para>
+        /// </summary>
+        /// <exception cref="ArgumentException">指到的事件不在 events/。</exception>
+        /// <exception cref="SCP_SculptReplayException">事件的 op 不認得或欄位壞掉。</exception>
+        public static SCP_SculptSpace LoadView(SCP_SculptPaths iPaths, SCP_SculptViewFilter iFilter)
+        {
+            List<EventFile> aAll = ListEvents(iPaths);
+            int aUpto = iFilter.UptoStart ? -1
+                      : iFilter.UptoEvent.Length == 0 ? aAll.Count - 1
+                      : SCP_SculptMarks.IndexOf(aAll, iFilter.UptoEvent, "觀測的時間點");
+            (int B, int E) Span((string Begin, string End, string Name) iIv)
+                => (SCP_SculptMarks.IndexOf(aAll, iIv.Begin, "區間 `" + iIv.Name + "` 的開始"),
+                    iIv.End.Length == 0 ? int.MaxValue : SCP_SculptMarks.IndexOf(aAll, iIv.End, "區間 `" + iIv.Name + "` 的結束"));
+
+            var aHides = new List<(int B, int E, Dictionary<long, int> Prior, HashSet<long> After)>();
+            foreach (var h in iFilter.Hide) { var s = Span(h); aHides.Add((s.B, s.E, new Dictionary<long, int>(), new HashSet<long>())); }
+            (int B, int E)? aOnly = iFilter.Only == null ? ((int, int)?)null : Span(iFilter.Only.Value);
+            var aTouched = new HashSet<long>();
+
+            var aSpace = new SCP_SculptSpace();
+            int aCur = -1;
+            static long Pack(int x, int y, int z) => ((long)x << 42) | ((long)y << 21) | (uint)z;
+            if (aHides.Count > 0 || aOnly != null)
+                aSpace.Voxels.BeforeChange = (x, y, z) =>
+                {
+                    long k = Pack(x, y, z);
+                    foreach (var h in aHides)
+                    {
+                        if (aCur > h.B && aCur <= h.E) { if (!h.Prior.ContainsKey(k)) h.Prior[k] = aSpace.Voxels.Get(x, y, z); }
+                        else if (aCur > h.E) h.After.Add(k);
+                    }
+                    if (aOnly != null && aCur > aOnly.Value.B && aCur <= aOnly.Value.E) aTouched.Add(k);
+                };
+            for (int i = 0; i <= aUpto && i < aAll.Count; i++)
+            {
+                SCP_JsonData? aEv = ReadEvent(aAll[i].Full);
+                if (aEv == null) continue;
+                aCur = i;
+                ApplyEvent(aSpace, aEv, aAll[i].Rel);
+                aSpace.LastEventFile = aAll[i].Rel;
+            }
+            aSpace.Voxels.BeforeChange = null;
+
+            foreach (var h in aHides)
+                foreach (var kv in h.Prior)
+                    if (!h.After.Contains(kv.Key))
+                        aSpace.Voxels.Set((int)(kv.Key >> 42), (int)((kv.Key >> 21) & 0x1FFFFF), (int)(kv.Key & 0x1FFFFF), kv.Value);
+            if (aOnly == null) return aSpace;
+            var aOut = new SCP_SculptSpace { LastEventFile = aSpace.LastEventFile };
+            foreach (var v in aSpace.Voxels.Entries())
+                if (aTouched.Contains(Pack(v.X, v.Y, v.Z))) aOut.Voxels.Set(v.X, v.Y, v.Z, v.Color);
+            return aOut;
         }
 
         /// <summary>水位比對時接受兩種分隔符（python 在 Windows 寫反斜線；誰寫了正斜線也認得）。</summary>

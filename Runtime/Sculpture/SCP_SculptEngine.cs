@@ -101,6 +101,15 @@ namespace SCP.Core.Sculpture
         /// <summary>讀現況（＝ python <c>load_space_state()</c>；會重寫快取）。</summary>
         public SCP_SculptSpace LoadSpace() => SCP_SculptStore.Load(Paths);
 
+        /// <summary>
+        /// 觀測的時間條件（TASK-0491）：給了 ⇒ 觀測類 op（view／slice／stats／export，CLI 的 section）看的是那一刻（<see cref="SCP_SculptStore.LoadView"/>）。
+        /// ⛔ 寫入類 op 一律 <see cref="LoadSpace"/>：落子永遠落在現在的作品上，不會拿過去的樣子當底。
+        /// </summary>
+        public SCP_SculptViewFilter? ViewFilter;
+
+        /// <summary>觀測用：沒有時間條件 ⇒ ＝ <see cref="LoadSpace"/>；有 ⇒ 重播到那一刻（不碰快取）。</summary>
+        public SCP_SculptSpace LoadView() => ViewFilter == null || !ViewFilter.Active ? LoadSpace() : SCP_SculptStore.LoadView(Paths, ViewFilter);
+
         /// <summary>原點 (0,0,0) 平移到 at；預設跳過既有 voxel，越界由呼叫端在扣款前拒絕。</summary>
         public SCP_SculptWorkImport PreviewWorkImport(SCP_SculptSpace iSource, string iId, string iOwner, int[] iAt)
         {
@@ -808,7 +817,7 @@ namespace SCP.Core.Sculpture
         public SCP_SculptResult Slice(SCP_SculptSliceArgs iArgs)
         {
             SCP_SculptSpace aSpace;
-            try { aSpace = LoadSpace(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); }
+            try { aSpace = LoadView(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); } catch (ArgumentException e) { return SCP_SculptResult.Error(2, e.Message); }
 
             string aAxis = NormFacing(iArgs.Axis);
             if (!TryAxis(aAxis, out string u, out string v, out string n, out bool aFlip))
@@ -890,7 +899,7 @@ namespace SCP.Core.Sculpture
         public SCP_SculptResult Stats()
         {
             SCP_SculptSpace aSpace;
-            try { aSpace = LoadSpace(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); }
+            try { aSpace = LoadView(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); } catch (ArgumentException e) { return SCP_SculptResult.Error(2, e.Message); }
             int n = aSpace.Voxels.Count;
             var aRes = new SCP_SculptStatsResult { TotalVoxels = n };
             aRes.Lines.Add("# 📊 3D Sculpture Stats:");
@@ -1122,7 +1131,7 @@ namespace SCP.Core.Sculpture
             if (iArgs.Merge != MergeGreedy && iArgs.Merge != MergeNone)
                 return SCP_SculptResult.Error(2, "--merge 只能是 greedy 或 none：" + iArgs.Merge);
             SCP_SculptSpace aSpace;
-            try { aSpace = LoadSpace(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); }
+            try { aSpace = LoadView(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); } catch (ArgumentException e) { return SCP_SculptResult.Error(2, e.Message); }
             List<(int X, int Y, int Z, int Color)> aVox = Filter(aSpace, iArgs.Region, iArgs.ExcludeColor);
             if (aVox.Count == 0) return SCP_SculptResult.Text(1, "⚠ 觀測區域內沒有任何 voxel — 沒東西可匯出");
 
@@ -1435,8 +1444,9 @@ namespace SCP.Core.Sculpture
         {
             var aFail = new SCP_SculptViewPlan();
             SCP_SculptSpace aSpace;
-            try { aSpace = LoadSpace(); }
+            try { aSpace = LoadView(); }
             catch (SCP_SculptReplayException e) { aFail.ExitCode = 1; aFail.Error = e.Message; return aFail; }
+            catch (ArgumentException e) { aFail.ExitCode = 2; aFail.Error = e.Message; return aFail; }
 
             bool aNoBase = iBase == null;
             var aIn = new ViewInputs
