@@ -14,6 +14,12 @@
 //          ⛔ 繩這一側不自己讀帆（端點邏輯只有一份）。沒注入 ⇒ broken 並說原因。其他 `kind:` ⇒ 明說不認得（⛔ 不猜）。
 // 外部模型（TASK-0507）：端點可以是模型上的點 `model:[關聯/…/]模型名/點`（點 ＝ x,y,z 或來源作品的固定點名；解法在 <see cref="SCP_SculptModelSet.ResolvePoint"/>）。
 //          繩的端點與帆的角**同一支**解：<see cref="SCP_SculptPointResolver"/>（x,y,z｜固定點路徑｜sail:｜model:）。
+// 子繩（TASK-0511）：端點可以是另一條繩上的點 `rope:[關聯/…/]繩名/比例`（比例 0..1 ＝ 沿母繩**實際的曲線**量的長度比）—— 母繩動，子繩跟著動。
+//          子繩本身不算物理：兩端之間拉直（slack 只能是 1）、另一端不能綁帆角；畫成 <see cref="ChildSides"/> 邊的細管（比一般繩省）。
+//          母繩沒畫（hidden／disabled）⇒ 子繩跟著不畫；母繩壞了、繞成環 ⇒ 子繩 broken 並說是哪一條。帆角與模型不能綁在繩上。
+// 分組（TASK-0512）：每條繩可以歸到一個組（`group`，`/` 分層）；ropes.json 的 `groups` 記每組平常開不開（關著 ⇒ 組裡的繩 disabled）。
+//          觀測時用「全路徑」指組：繩所在那一層的關聯路徑＋`/`＋組路徑（組裝件自己的就是組路徑）；指一個組 ＝ 連同底下的子組。
+//          有用到組或子繩的 ropes.json 寫 schema 2（同 links.json 的鏡像：沒更新的 senate.exe 讀到會大聲讀不了，⛔ 不會默默丟掉組再寫回去）。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -51,13 +57,25 @@ namespace SCP.Core.Sculpture
         /// <summary>鬆緊 ＝ 繩長 ÷ 兩端直線距離；1 ＝ 拉直，越大垂得越多。</summary>
         public double slack = 1.0;
         public bool enabled = true;
+        /// <summary>組路徑（TASK-0512；`/` 分層，例 `standing/shrouds`）；空 ＝ 未分組。</summary>
+        public string group = "";
         public string note = "", persona = "", created_at = "";
+    }
+
+    /// <summary>一個組平常開不開（TASK-0512）：關著 ⇒ 組裡（連同子組）的繩平常不畫（state disabled）。沒記的組 ＝ 開著。</summary>
+    public sealed class SCP_SculptRopeGroup
+    {
+        /// <summary>組路徑（這件作品自己的，不含關聯路徑）。</summary>
+        public string name = "";
+        public bool enabled = true;
+        public string note = "";
     }
 
     public sealed class SCP_SculptRopeFile
     {
         public int schema = 1;
         public List<SCP_SculptRope> ropes = new List<SCP_SculptRope>();
+        public List<SCP_SculptRopeGroup> groups = new List<SCP_SculptRopeGroup>();
     }
 
     /// <summary>給渲染器／匯出的一條繩（已算好形狀、已換到組裝件座標）：折線點（世界座標，格）、半徑、顏色。</summary>
@@ -68,6 +86,8 @@ namespace SCP.Core.Sculpture
         public double[] Points = new double[0];
         public double Radius;
         public byte R, G, B;
+        /// <summary>管子一圈幾個頂點：0 ＝ 照粗細由呼叫端決定；≥ 3 ＝ 照這個（子繩 ＝ <see cref="SCP_SculptRopes.ChildSides"/>，TASK-0511）。</summary>
+        public int Sides;
         public int PointCount => Points.Length / 3;
     }
 
@@ -98,19 +118,52 @@ namespace SCP.Core.Sculpture
         /// <summary>兩端幾乎在同一條鉛直線上（水平距離 ≈ 0）⇒ 畫直線（鬆度沒有往旁邊垂的方向）。</summary>
         public bool Vertical;
         public SCP_SculptRopeGeom? Geom;
+        /// <summary>組的全路徑（TASK-0512）：繩所在那一層的關聯路徑＋`/`＋組路徑；沒分組 ⇒ 空。</summary>
+        public string Group = "";
+        /// <summary>折線（組裝件座標，xyz 攤平）—— 不管這次畫不畫，兩端都解得到就有（子繩的位置從這裡量，TASK-0511）。</summary>
+        public double[]? Line;
+        /// <summary>子繩（TASK-0511）：至少一端是 `rope:` 母繩上的點 ⇒ 兩端拉直、不算物理。</summary>
+        public bool Child;
+        /// <summary>位置會跟著帆動：自己綁帆角，或它掛的母繩（一路往上）綁帆角 ⇒ 帆模擬完（觀測頁每幀）要重算。</summary>
+        public bool FollowsSail;
+        /// <summary>子繩兩端掛的母繩與比例（不是 `rope:` 的那一端、或母繩不存在 ⇒ null；母繩壞了或繞成環也照記）。</summary>
+        public SCP_SculptRopeReading? FromParent, ToParent;
+        public double FromT, ToT;
+        /// <summary>往上掛了幾層母繩（一般繩 0、掛在一般繩上 1…）—— 重算時由淺到深。</summary>
+        public int Depth;
+        /// <summary>這次沒畫的原因只是 rope_groups 沒點到它（TASK-0512）⇒ 掛在它上面的子繩**不跟著**藏（子繩照自己的組判；點名只畫 ratlines 就看得到 ratlines）。</summary>
+        public bool OnlyFiltered;
     }
 
-    /// <summary>觀測時選哪些繩：All ＝ 照每條 enabled；None ＝ 都不畫（ropes=0）；Hide ＝ 這幾條（繩路徑）不畫。</summary>
+    /// <summary>
+    /// 觀測時選哪些繩：All ＝ 照每條 enabled；None ＝ 都不畫（ropes=0）；Hide ＝ 這幾條（繩路徑）不畫；
+    /// OnlyGroups ＝ 只畫這幾組（組全路徑，連同子組；空 ＝ 不限）；HideGroups ＝ 這幾組不畫（TASK-0512）。
+    /// </summary>
     public sealed class SCP_SculptRopeSelection
     {
         public bool None;
         public HashSet<string> Hide = new HashSet<string>(StringComparer.Ordinal);
+        public HashSet<string> OnlyGroups = new HashSet<string>(StringComparer.Ordinal);
+        public HashSet<string> HideGroups = new HashSet<string>(StringComparer.Ordinal);
 
-        public static SCP_SculptRopeSelection Parse(string iRopes, string iHide)
+        public static SCP_SculptRopeSelection Parse(string iRopes, string iHide) => Parse(iRopes, iHide, "", "");
+
+        public static SCP_SculptRopeSelection Parse(string iRopes, string iHide, string iOnlyGroups, string iHideGroups)
         {
             var aSel = new SCP_SculptRopeSelection { None = iRopes.Trim() == "0" };
             foreach (string p in iHide.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)) aSel.Hide.Add(p.Trim().Trim('/'));
+            foreach (string p in iOnlyGroups.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)) aSel.OnlyGroups.Add(p.Trim().Trim('/'));
+            foreach (string p in iHideGroups.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)) aSel.HideGroups.Add(p.Trim().Trim('/'));
             return aSel;
+        }
+
+        /// <summary>組全路徑 <paramref name="iGroup"/> 在不在 <paramref name="iSet"/> 某一組底下（相等也算）；未分組（空）⇒ 不在任何組底下。</summary>
+        public static bool Under(string iGroup, IEnumerable<string> iSet)
+        {
+            if (iGroup.Length == 0) return false;
+            foreach (string g in iSet)
+                if (iGroup == g || iGroup.StartsWith(g + "/", StringComparison.Ordinal)) return true;
+            return false;
         }
     }
 
@@ -119,6 +172,7 @@ namespace SCP.Core.Sculpture
     /// `x,y,z`（照所在那一層換座標）｜固定點路徑（`名字`、`關聯/…/名字`）｜`sail:…`（帆角，由帆的觀測注入）｜`model:…`（模型上的點，由模型的觀測給）。
     /// <para>回 null ＝ 解得到：<c>oSailKey</c> 非空 ＝ 帆角（全路徑＋`#`＋角序號）；<c>oHiddenWhy</c> 非空 ＝ 綁的那一層／那面帆／那個模型這次沒組進來
     /// （前面帶一個空白，接在「from／to／角 k」後面讀）。</para>
+    /// <para>`rope:`（繩上的點，TASK-0511）不在這裡解：它要等母繩的形狀 ⇒ 由 <see cref="SCP_SculptRopes.Resolve"/> 第二趟解；帆角拿到它 ⇒ 擋。</para>
     /// </summary>
     public sealed class SCP_SculptPointResolver
     {
@@ -143,6 +197,8 @@ namespace SCP.Core.Sculpture
             oPoint = null; oSailKey = ""; oHiddenWhy = "";
             if (!SCP_SculptRopes.TryParseEndpoint(iText, out double[]? aPt, out string aRef, out string aBad)) return aBad;
             if (aPt != null) { oPoint = SCP_SculptRopes.ToRoot(iFrame, aPt, m_Index); return null; }
+            if (aRef.StartsWith(SCP_SculptRopes.RopePrefix, StringComparison.Ordinal))
+                return "`" + aRef + "`：繩上的點只能當繩的端點（帆角不能綁在繩上 —— 綁固定點、模型上的點或 x,y,z）";
             if (aRef.StartsWith(SCP_SculptRopes.SailPrefix, StringComparison.Ordinal))
             {
                 // 帆角（TASK-0503）：位置由帆的觀測給（設計位置；模擬完由它換成那一刻的位置）
@@ -173,6 +229,12 @@ namespace SCP.Core.Sculpture
         public const string DefaultColor = "#8b6a3e";   // 麻繩色
         /// <summary>帆角端點的前綴（TASK-0503）。</summary>
         public const string SailPrefix = "sail:";
+        /// <summary>繩上的點的前綴（子繩，TASK-0511）：`rope:[關聯/…/]繩名/比例`。</summary>
+        public const string RopePrefix = "rope:";
+        /// <summary>子繩的管子一圈幾個頂點（TASK-0511「子繩渲染盡量精簡」）：3 ⇒ 一段 3 個四邊形（一般細繩 8 個）。</summary>
+        public const int ChildSides = 3;
+        /// <summary>有用到組或子繩的 ropes.json 寫這個 schema（理由同 <see cref="SCP_SculptLinks.SchemaWithMirror"/>：舊版讀到要大聲讀不了，⛔ 不默默丟掉）。</summary>
+        public const int SchemaWithGroups = 2;
         public const double DefaultThickness = 0.5;
         public const double MaxThickness = 64;
         public const double MaxSlack = 10;
@@ -206,15 +268,23 @@ namespace SCP.Core.Sculpture
             if (!File.Exists(aFile)) return new SCP_SculptRopeFile();
             var aOut = new SCP_SculptRopeFile { schema = 0 };
             Populate(aFile, aOut);
-            if (aOut.schema != 1) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema != 1 && aOut.schema != SchemaWithGroups) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.groups == null) aOut.groups = new List<SCP_SculptRopeGroup>();
             var aNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var r in aOut.ropes)
             {
+                if (r.group == null) r.group = "";
                 string? aBad = ValidName(r.name, "繩") ?? (aNames.Add(r.name) ? null : "名字重複")
                                ?? CheckEndpoint(r.from, "from") ?? CheckEndpoint(r.to, "to")
                                ?? (TryParseColor(r.color, out _, out _, out _, out string aNorm) is string aColorBad ? aColorBad : aNorm != r.color ? "color 不是正規化的寫法（`" + r.color + "`）" : null)
-                               ?? CheckThickness(r.thickness) ?? CheckSlack(r.slack, OnSail(r));
+                               ?? CheckThickness(r.thickness) ?? CheckSlack(r.slack, OnSail(r)) ?? CheckChild(r) ?? CheckGroup(r.group);
                 if (aBad != null) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：繩 `" + r.name + "` " + aBad + "）");
+            }
+            var aGroups = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var g in aOut.groups)
+            {
+                string? aBad = (g.name ?? "").Length == 0 ? "組要有名字" : CheckGroup(g.name!) ?? (aGroups.Add(g.name!) ? null : "組重複");
+                if (aBad != null) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：組 `" + g.name + "` " + aBad + "）");
             }
             return aOut;
         }
@@ -231,7 +301,12 @@ namespace SCP.Core.Sculpture
         }
 
         public static void SaveAnchors(SCP_SculptPaths iPaths, SCP_SculptAnchorFile iFile) { iFile.schema = 1; WriteAtomic(iPaths.AnchorsFile, SCP_JsonMapper.ToJson(iFile)); }
-        public static void SaveRopes(SCP_SculptPaths iPaths, SCP_SculptRopeFile iFile) { iFile.schema = 1; WriteAtomic(iPaths.RopesFile, SCP_JsonMapper.ToJson(iFile)); }
+
+        public static void SaveRopes(SCP_SculptPaths iPaths, SCP_SculptRopeFile iFile)
+        {
+            iFile.schema = iFile.groups.Count > 0 || iFile.ropes.Exists(r => r.group.Length > 0 || IsChild(r)) ? SchemaWithGroups : 1;
+            WriteAtomic(iPaths.RopesFile, SCP_JsonMapper.ToJson(iFile));
+        }
 
         static void WriteAtomic(string iFile, SCP_JsonData iJson)
         {
@@ -254,6 +329,26 @@ namespace SCP.Core.Sculpture
             return aBad == null ? null : aBad.Replace("關聯", iWhat);
         }
 
+        /// <summary>組路徑（TASK-0512）：空 ＝ 未分組；否則每一段照名字的規矩（`/` 分層）。null ＝ 合法。</summary>
+        public static string? CheckGroup(string iGroup)
+        {
+            if (iGroup.Length == 0) return null;
+            foreach (string seg in iGroup.Split('/'))
+                if (ValidName(seg, "組") is string aBad) return "組 `" + iGroup + "`：" + aBad;
+            return null;
+        }
+
+        /// <summary>
+        /// 組 <paramref name="iGroup"/>（這件作品自己的組路徑）平常是不是關著：它自己或任何一層上層組記成 enabled=false ⇒ 回那個組名；否則 null。
+        /// </summary>
+        public static string? GroupDisabled(SCP_SculptRopeFile iFile, string iGroup)
+        {
+            if (iGroup.Length == 0) return null;
+            foreach (SCP_SculptRopeGroup g in iFile.groups)
+                if (!g.enabled && (iGroup == g.name || iGroup.StartsWith(g.name + "/", StringComparison.Ordinal))) return g.name;
+            return null;
+        }
+
         public static string? CheckThickness(double iT)
             => double.IsNaN(iT) || iT <= 0 || iT > MaxThickness ? "thickness（直徑，格）要在 (0, " + MaxThickness + "]：" + iT.ToString(CultureInfo.InvariantCulture) : null;
 
@@ -274,11 +369,26 @@ namespace SCP.Core.Sculpture
         public static bool OnSail(SCP_SculptRope r)
             => (r.from ?? "").Trim().StartsWith(SailPrefix, StringComparison.Ordinal) || (r.to ?? "").Trim().StartsWith(SailPrefix, StringComparison.Ordinal);
 
+        /// <summary>這條繩是不是子繩（TASK-0511：有一端是 `rope:` 母繩上的點）。</summary>
+        public static bool IsChild(SCP_SculptRope r) => IsRopePoint(r.from) || IsRopePoint(r.to);
+
+        static bool IsRopePoint(string? iText) => (iText ?? "").Trim().StartsWith(RopePrefix, StringComparison.Ordinal);
+
+        /// <summary>子繩的規矩（TASK-0511「子繩本身不用算物理」）：另一端不能是帆角、slack 只能是 1（兩端拉直）。null ＝ 合法（或不是子繩）。</summary>
+        public static string? CheckChild(SCP_SculptRope r)
+        {
+            if (!IsChild(r)) return null;
+            if (OnSail(r)) return "子繩（有一端是 rope:）不算物理 ⇒ 另一端不能綁帆角（綁母繩、固定點、模型上的點或 x,y,z）";
+            if (r.slack != 1) return "子繩（有一端是 rope:）不算物理、兩端拉直 ⇒ slack 只能是 1：" + r.slack.ToString(CultureInfo.InvariantCulture);
+            return null;
+        }
+
         static string? CheckEndpoint(string iText, string iWhich) => TryParseEndpoint(iText, out _, out _, out string aBad) ? null : iWhich + "：" + aBad;
 
         /// <summary>
         /// 端點：`x,y,z`（三個數，可帶小數；整數 ⇒ 格心）⇒ <paramref name="oPoint"/>；否則是固定點路徑（`名字` 或 `關聯/…/名字`）⇒ <paramref name="oAnchorPath"/>。
-        /// 帆角 `sail:…`（TASK-0503）⇒ 回 true、<paramref name="oAnchorPath"/> 帶著 `sail:` 前綴原樣（解法見 <see cref="SCP_SculptSailEndResolver"/>）；其他 `kind:` ⇒ 不認得、回 false（⛔ 不猜）。
+        /// 帆角 `sail:…`（TASK-0503）、模型上的點 `model:…`（TASK-0507）、繩上的點 `rope:…`（TASK-0511）⇒ 回 true、<paramref name="oAnchorPath"/> 帶著前綴原樣；
+        /// 其他 `kind:` ⇒ 不認得、回 false（⛔ 不猜）。
         /// </summary>
         public static bool TryParseEndpoint(string iText, out double[]? oPoint, out string oAnchorPath, out string oBad)
         {
@@ -293,6 +403,12 @@ namespace SCP.Core.Sculpture
                 if (aSegs.Length < 2) { oBad = "帆角端點 `" + a + "` 要寫成 sail:帆名/角（角 ＝ 名字或序號；跨關聯 sail:關聯/…/帆名/角）"; return false; }
                 foreach (string seg in aSegs)
                     if (SCP_SculptLinks.ValidName(seg) is string aSegBad) { oBad = "帆角端點 `" + a + "` 的 `" + seg + "`：" + aSegBad; return false; }
+                oAnchorPath = a;
+                return true;
+            }
+            if (a.StartsWith(RopePrefix, StringComparison.Ordinal))
+            {
+                if (!TryParseRopePoint(a, out _, out _, out oBad)) return false;
                 oAnchorPath = a;
                 return true;
             }
@@ -314,7 +430,7 @@ namespace SCP.Core.Sculpture
                 oAnchorPath = a;
                 return true;
             }
-            if (a.IndexOf(':') >= 0) { oBad = "端點 `" + a + "`：`種類:` 形狀的端點只認 `" + SailPrefix + "`（帆角）與 `" + SCP_SculptModels.Prefix + "`（模型上的點）；其他本版不認得"; return false; }
+            if (a.IndexOf(':') >= 0) { oBad = "端點 `" + a + "`：`種類:` 形狀的端點只認 `" + SailPrefix + "`（帆角）、`" + SCP_SculptModels.Prefix + "`（模型上的點）與 `" + RopePrefix + "`（繩上的點）；其他本版不認得"; return false; }
             string[] aParts = a.Split(',');
             if (aParts.Length == 3)
             {
@@ -334,6 +450,25 @@ namespace SCP.Core.Sculpture
             foreach (string seg in a.Split('/'))
                 if (SCP_SculptLinks.ValidName(seg) is string aSegBad) { oBad = "端點 `" + a + "` 的 `" + seg + "`：" + aSegBad; return false; }
             oAnchorPath = a;
+            return true;
+        }
+
+        /// <summary>
+        /// 繩上的點 `rope:[關聯/…/]繩名/比例`（TASK-0511）：<paramref name="oRopePath"/> ＝ 母繩路徑（相對於子繩所在那件作品）、<paramref name="oT"/> ＝ 比例 0..1。
+        /// </summary>
+        public static bool TryParseRopePoint(string iText, out string oRopePath, out double oT, out string oBad)
+        {
+            oRopePath = ""; oT = 0; oBad = "";
+            string a = (iText ?? "").Trim();
+            string[] aSegs = a.Substring(RopePrefix.Length).Split('/');
+            if (aSegs.Length < 2) { oBad = "繩上的點 `" + a + "` 要寫成 rope:繩名/比例（比例 0..1 ＝ 沿母繩的長度比；跨關聯 rope:關聯/…/繩名/比例）"; return false; }
+            string aNum = aSegs[aSegs.Length - 1].Trim();
+            if (!double.TryParse(aNum, NumberStyles.Float, CultureInfo.InvariantCulture, out double t) || double.IsNaN(t) || t < 0 || t > 1)
+            { oBad = "繩上的點 `" + a + "`：比例要是 0..1 的數（0 ＝ 母繩的 from、1 ＝ to；got '" + aNum + "'）"; return false; }
+            for (int i = 0; i < aSegs.Length - 1; i++)
+                if (SCP_SculptLinks.ValidName(aSegs[i]) is string aSegBad) { oBad = "繩上的點 `" + a + "` 的 `" + aSegs[i] + "`：" + aSegBad; return false; }
+            oRopePath = string.Join("/", aSegs, 0, aSegs.Length - 1);
+            oT = t;
             return true;
         }
 
@@ -414,6 +549,38 @@ namespace SCP.Core.Sculpture
         }
 
         static double Atanh(double x) => 0.5 * Math.Log((1 + x) / (1 - x));
+
+        /// <summary>
+        /// 折線上沿長度比 <paramref name="iT"/>（0..1）的那一點（TASK-0511 子繩的端點）：0 ＝ 第一點、1 ＝ 最後一點（逐位元，⛔ 不經過浮點累加）；
+        /// 中間照每一段的長度累加、段內線性內插。長度 0 的折線 ⇒ 第一點。
+        /// </summary>
+        public static double[] PointAt(double[] iLine, double iT)
+        {
+            int n = iLine.Length / 3;
+            if (n == 0) return new double[3];
+            if (n == 1 || iT <= 0) return new[] { iLine[0], iLine[1], iLine[2] };
+            if (iT >= 1) return new[] { iLine[(n - 1) * 3], iLine[(n - 1) * 3 + 1], iLine[(n - 1) * 3 + 2] };
+            var aSeg = new double[n - 1];
+            double aTotal = 0;
+            for (int i = 0; i + 1 < n; i++)
+            {
+                double ex = iLine[i * 3 + 3] - iLine[i * 3], ey = iLine[i * 3 + 4] - iLine[i * 3 + 1], ez = iLine[i * 3 + 5] - iLine[i * 3 + 2];
+                aSeg[i] = Math.Sqrt(ex * ex + ey * ey + ez * ez);
+                aTotal += aSeg[i];
+            }
+            if (aTotal < 1e-12) return new[] { iLine[0], iLine[1], iLine[2] };
+            double aWant = iT * aTotal, aAcc = 0;
+            for (int i = 0; i + 1 < n; i++)
+            {
+                if (aAcc + aSeg[i] >= aWant || i == n - 2)
+                {
+                    double f = aSeg[i] < 1e-12 ? 0 : Math.Max(0, Math.Min(1, (aWant - aAcc) / aSeg[i]));
+                    return new[] { iLine[i * 3] + (iLine[i * 3 + 3] - iLine[i * 3]) * f, iLine[i * 3 + 1] + (iLine[i * 3 + 4] - iLine[i * 3 + 1]) * f, iLine[i * 3 + 2] + (iLine[i * 3 + 5] - iLine[i * 3 + 2]) * f };
+                }
+                aAcc += aSeg[i];
+            }
+            return new[] { iLine[(n - 1) * 3], iLine[(n - 1) * 3 + 1], iLine[(n - 1) * 3 + 2] };
+        }
 
         // ───────────────────────── 座標：關聯路徑 → 組裝件 ─────────────────────────
 
@@ -505,11 +672,23 @@ namespace SCP.Core.Sculpture
             return null;
         }
 
+        /// <summary>一條繩在第一趟解完、還沒定狀態時要帶到第二趟的東西（子繩要等母繩）。</summary>
+        sealed class Pending
+        {
+            public string Frame = "";
+            public List<string> Why = new List<string>();
+            /// <summary>平常關著的組（null ＝ 沒有）。</summary>
+            public string? GroupOff;
+            /// <summary>掛的母繩這次沒畫（子繩跟著不畫）的原因。</summary>
+            public List<string> ParentOff = new List<string>();
+        }
+
         /// <summary>
         /// 一次觀測的所有繩：組裝件自己的＋關聯樹上每一層的（照那一層換座標）。<paramref name="iTree"/> null ＝ 沒有關聯。
         /// 每條都有一筆讀數（ok／hidden／disabled／broken）；ok 的帶 <see cref="SCP_SculptRopeReading.Geom"/>。
         /// <paramref name="iSails"/>：帆角端點的解法（TASK-0503，帆的觀測注入）；null ⇒ 綁帆角的繩一律 broken 並說原因。
         /// 繩子所在那一層這次沒畫 ⇒ hidden（原因寫哪一層）；壞掉的綁定 ⇒ broken —— ⛔ 兩種都照列、不靜默消失。
+        /// 子繩（TASK-0511）第二趟解：母繩先解（巢狀照深度）、位置 ＝ 母繩折線上的那一點；繞成環 ⇒ 環上每一條都 broken 並印出環。
         /// ropes.json 讀不了 ⇒ InvalidOperationException 照丟（呼叫端擋下）。
         /// </summary>
         public static List<SCP_SculptRopeReading> Resolve(SCP_SculptWorks iWorks, string iRootId, List<SCP_SculptLinkNode>? iTree,
@@ -523,10 +702,12 @@ namespace SCP.Core.Sculpture
             // 寫入前的驗證：組裝件自己那份改用「還沒存的那一份」（同 SCP_SculptLinks.Tree 的 override）—— ⛔ 不另寫一份端點邏輯
             if (iRootOverride != null) aRopeCache[iRootId] = iRootOverride;
             var aOut = new List<SCP_SculptRopeReading>();
+            var aPend = new Dictionary<SCP_SculptRopeReading, Pending>();
             var aFrames = new List<string> { "" };
             var aPaths = new List<string>();
             SCP_SculptLinks.Paths(iTree ?? new List<SCP_SculptLinkNode>(), aPaths);
             aFrames.AddRange(aPaths);
+            // ① 第一趟：一般的端點（固定點、座標、帆角、模型）；子繩的 rope: 端點留到第二趟
             foreach (string aFrame in aFrames)
             {
                 string aWork = aFrame.Length == 0 ? iRootId : aIndex[aFrame].Card.id;
@@ -534,49 +715,170 @@ namespace SCP.Core.Sculpture
                 bool aFrameDrawn = PathDrawn(aFrame, aIndex, iLinkSel);
                 foreach (SCP_SculptRope r in aFile.ropes)
                 {
-                    var aR = new SCP_SculptRopeReading { Path = aFrame.Length == 0 ? r.name : aFrame + "/" + r.name, Owner = aWork, Rope = r };
-                    var aWhy = new List<string>();
+                    var aR = new SCP_SculptRopeReading
+                    {
+                        Path = aFrame.Length == 0 ? r.name : aFrame + "/" + r.name, Owner = aWork, Rope = r,
+                        Group = r.group.Length == 0 ? "" : aFrame.Length == 0 ? r.group : aFrame + "/" + r.group,
+                        Child = IsChild(r),
+                    };
+                    var aP = new Pending { Frame = aFrame, GroupOff = GroupDisabled(aFile, r.group) };
                     bool aHidden = !aFrameDrawn;
-                    if (aHidden) aWhy.Add("繩子所在的 `" + aFrame + "` 這次沒畫");
+                    if (aHidden) aP.Why.Add("繩子所在的 `" + aFrame + "` 這次沒畫");
                     double[]? aEnds0 = null, aEnds1 = null;
                     for (int e = 0; e < 2; e++)
                     {
                         string aText = e == 0 ? r.from : r.to;
+                        if (IsRopePoint(aText)) continue;   // 第二趟
                         string? aBad = aPoints.Resolve(aFrame, aText, true, out double[]? aPt, out string aSailKey, out string aHiddenWhy);
-                        if (aBad != null) { aR.State = SCP_SculptRopeReading.Broken; aWhy.Add((e == 0 ? "from：" : "to：") + aBad); continue; }
+                        if (aBad != null) { aR.State = SCP_SculptRopeReading.Broken; aP.Why.Add((e == 0 ? "from：" : "to：") + aBad); continue; }
                         if (aSailKey.Length > 0) { if (e == 0) aR.FromSail = aSailKey; else aR.ToSail = aSailKey; }
-                        if (aHiddenWhy.Length > 0) { aHidden = true; aWhy.Add((e == 0 ? "from" : "to") + aHiddenWhy); }
+                        if (aHiddenWhy.Length > 0) { aHidden = true; aP.Why.Add((e == 0 ? "from" : "to") + aHiddenWhy); }
                         if (e == 0) aEnds0 = aPt; else aEnds1 = aPt;
                     }
                     aR.From = aEnds0; aR.To = aEnds1;
                     aR.LinkHidden = aHidden;
-                    if (aR.State != SCP_SculptRopeReading.Broken)
-                    {
-                        // 繩子所在那件作品這次沒畫 ⇒ 照列、標 hidden（⛔ 不略過：hide_ropes 點名它、頁面的開關都要找得到它）
-                        if (!r.enabled) { aR.State = SCP_SculptRopeReading.Disabled; aWhy.Add("這條繩關著（enabled=0）"); }
-                        else if (iRopeSel.None) { aR.State = SCP_SculptRopeReading.Hidden; aWhy.Add("這次不畫繩（ropes=0）"); }
-                        else if (iRopeSel.Hide.Contains(aR.Path)) { aR.State = SCP_SculptRopeReading.Hidden; aWhy.Add("這次拿掉（hide_ropes）"); }
-                        else if (aHidden) aR.State = SCP_SculptRopeReading.Hidden;
-                    }
-                    if (aR.From != null && aR.To != null)
-                    {
-                        double[] aPts = Solve(aR.From, aR.To, r.slack, out double aLen, out double aSag, out bool aVert, out bool aClamped);
-                        double dx = aR.To[0] - aR.From[0], dy = aR.To[1] - aR.From[1], dz = aR.To[2] - aR.From[2];
-                        aR.Chord = Math.Sqrt(dx * dx + dy * dy + dz * dz);
-                        aR.Length = aLen; aR.MaxSag = aSag; aR.Vertical = aVert;
-                        if (aVert) aWhy.Add("兩端在同一條鉛直線上 ⇒ 畫直線（鬆度沒有往旁邊垂的方向）");
-                        if (aClamped) aWhy.Add("鬆到幾乎對折 ⇒ 照上限的弧度畫（slack 調小）");
-                        if (aR.State == SCP_SculptRopeReading.Ok)
-                        {
-                            TryParseColor(r.color, out byte cr, out byte cg, out byte cb, out _);
-                            aR.Geom = new SCP_SculptRopeGeom { Path = aR.Path, Points = aPts, Radius = r.thickness / 2, R = cr, G = cg, B = cb };
-                        }
-                    }
-                    aR.Reason = string.Join("；", aWhy);
+                    aPend[aR] = aP;
+                    if (!aR.Child) Settle(aR, aP, iRopeSel);
                     aOut.Add(aR);
                 }
             }
+            // ② 第二趟：子繩（TASK-0511）—— 母繩先解（母繩也是子繩 ⇒ 遞迴）；正在解的又被指到 ⇒ 繞成環
+            var aByPath = new Dictionary<string, SCP_SculptRopeReading>(StringComparer.Ordinal);
+            foreach (var x in aOut) aByPath[x.Path] = x;
+            var aMark = new Dictionary<SCP_SculptRopeReading, int>();   // 1 ＝ 解到一半、2 ＝ 解完
+            var aStack = new List<SCP_SculptRopeReading>();
+            var aCycle = new Dictionary<SCP_SculptRopeReading, string>();
+            void Bind(SCP_SculptRopeReading c)
+            {
+                if (aMark.TryGetValue(c, out int aDone) && aDone == 2) return;
+                aMark[c] = 1;
+                aStack.Add(c);
+                Pending aP = aPend[c];
+                for (int e = 0; e < 2; e++)
+                {
+                    string aText = e == 0 ? c.Rope.from : c.Rope.to;
+                    if (!IsRopePoint(aText)) continue;
+                    string aLabel = e == 0 ? "from" : "to";
+                    TryParseRopePoint(aText, out string aRel, out double t, out _);
+                    string aParentPath = aP.Frame.Length == 0 ? aRel : aP.Frame + "/" + aRel;
+                    if (!aByPath.TryGetValue(aParentPath, out SCP_SculptRopeReading? p))
+                    {
+                        c.State = SCP_SculptRopeReading.Broken;
+                        int k = aParentPath.LastIndexOf('/');
+                        string aLayer = k < 0 ? "" : aParentPath.Substring(0, k);
+                        var aHere = aOut.FindAll(x => aPend[x].Frame == aLayer).ConvertAll(x => x.Rope.name);
+                        aP.Why.Add(aLabel + "：沒有繩 `" + aParentPath + "`（那一層現有：" + (aHere.Count == 0 ? "（沒有）" : string.Join("、", aHere)) + "）");
+                        continue;
+                    }
+                    // 先記下掛在誰上面（壞掉、繞成環也記 —— 拿掉母繩之前要找得到掛在它上面的子繩）
+                    if (e == 0) { c.FromParent = p; c.FromT = t; } else { c.ToParent = p; c.ToT = t; }
+                    if (aMark.TryGetValue(p, out int aState) && aState == 1)
+                    {
+                        // 繞成環：從 p 到 c 那一段（含兩端）再回到 p
+                        int k = aStack.IndexOf(p);
+                        var aRing = aStack.GetRange(k, aStack.Count - k);
+                        string aText2 = "繞成環：" + string.Join(" → ", aRing.ConvertAll(x => x.Path)) + " → " + p.Path;
+                        foreach (var x in aRing) aCycle[x] = aText2;
+                        continue;
+                    }
+                    if (p.Child) Bind(p);
+                    if (p.State == SCP_SculptRopeReading.Broken)
+                    {
+                        c.State = SCP_SculptRopeReading.Broken;
+                        aP.Why.Add(aLabel + "：掛的母繩 `" + p.Path + "` 壞了");
+                        continue;
+                    }
+                    if (p.Line == null)
+                    {
+                        c.State = SCP_SculptRopeReading.Broken;
+                        aP.Why.Add(aLabel + "：掛的母繩 `" + p.Path + "` 沒有形狀（兩端沒解出來）");
+                        continue;
+                    }
+                    double[] q = PointAt(p.Line, t);
+                    if (e == 0) c.From = q; else c.To = q;
+                    c.Depth = Math.Max(c.Depth, p.Depth + 1);
+                    if (p.FromSail.Length > 0 || p.ToSail.Length > 0 || p.FollowsSail) c.FollowsSail = true;
+                    if (p.LinkHidden) { c.LinkHidden = true; aP.Why.Add(aLabel + " 掛的母繩 `" + p.Path + "` 這次沒組進來"); }
+                    else if (p.State != SCP_SculptRopeReading.Ok && !p.OnlyFiltered) aP.ParentOff.Add(aLabel + " 掛的母繩 `" + p.Path + "` 這次沒畫（" + p.State + "）");
+                }
+                aStack.RemoveAt(aStack.Count - 1);
+                aMark[c] = 2;
+                if (aCycle.TryGetValue(c, out string? aRingWhy)) { c.State = SCP_SculptRopeReading.Broken; aP.Why.Add(aRingWhy); }
+                Settle(c, aP, iRopeSel);
+            }
+            foreach (var x in aOut) if (x.Child) Bind(x);
             return aOut;
+        }
+
+        /// <summary>
+        /// 定一條繩這次的狀態（優先序：broken ＞ 自己關著 ＞ 組關著 ＞ ropes=0 ＞ hide_ropes ＞ hide_rope_groups ＞ rope_groups 沒點到 ＞ 綁的那一層沒組進來 ＞ 母繩沒畫），
+        /// 再算形狀：一般繩 ⇒ 懸鏈線；子繩 ⇒ 兩端拉直。ok 的帶 <see cref="SCP_SculptRopeReading.Geom"/>（子繩 <see cref="ChildSides"/> 邊）。
+        /// </summary>
+        static void Settle(SCP_SculptRopeReading aR, Pending aP, SCP_SculptRopeSelection iRopeSel)
+        {
+            SCP_SculptRope r = aR.Rope;
+            var aWhy = aP.Why;
+            if (aR.State != SCP_SculptRopeReading.Broken)
+            {
+                // 繩子所在那件作品這次沒畫 ⇒ 照列、標 hidden（⛔ 不略過：hide_ropes 點名它、頁面的開關都要找得到它）
+                if (!r.enabled) { aR.State = SCP_SculptRopeReading.Disabled; aWhy.Add("這條繩關著（enabled=0）"); }
+                else if (aP.GroupOff != null) { aR.State = SCP_SculptRopeReading.Disabled; aWhy.Add("組 `" + aP.GroupOff + "` 關著（work sub=ropegroup enabled=0）"); }
+                else if (iRopeSel.None) { aR.State = SCP_SculptRopeReading.Hidden; aWhy.Add("這次不畫繩（ropes=0）"); }
+                else if (iRopeSel.Hide.Contains(aR.Path)) { aR.State = SCP_SculptRopeReading.Hidden; aWhy.Add("這次拿掉（hide_ropes）"); }
+                else if (iRopeSel.HideGroups.Count > 0 && SCP_SculptRopeSelection.Under(aR.Group, iRopeSel.HideGroups)) { aR.State = SCP_SculptRopeReading.Hidden; aWhy.Add("這次拿掉這一組（hide_rope_groups）"); }
+                else if (iRopeSel.OnlyGroups.Count > 0 && !SCP_SculptRopeSelection.Under(aR.Group, iRopeSel.OnlyGroups)) { aR.State = SCP_SculptRopeReading.Hidden; aR.OnlyFiltered = true; aWhy.Add("這次只畫 rope_groups 點到的組"); }
+                else if (aR.LinkHidden) aR.State = SCP_SculptRopeReading.Hidden;
+                else if (aP.ParentOff.Count > 0) { aR.State = SCP_SculptRopeReading.Hidden; aWhy.AddRange(aP.ParentOff); }
+            }
+            if (aR.From != null && aR.To != null)
+            {
+                double dx = aR.To[0] - aR.From[0], dy = aR.To[1] - aR.From[1], dz = aR.To[2] - aR.From[2];
+                aR.Chord = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                double[] aPts;
+                if (aR.Child)
+                {
+                    // 子繩不算物理：兩端拉直
+                    aPts = new[] { aR.From[0], aR.From[1], aR.From[2], aR.To[0], aR.To[1], aR.To[2] };
+                    aR.Length = aR.Chord; aR.MaxSag = 0; aR.Vertical = false;
+                }
+                else
+                {
+                    aPts = Solve(aR.From, aR.To, r.slack, out double aLen, out double aSag, out bool aVert, out bool aClamped);
+                    aR.Length = aLen; aR.MaxSag = aSag; aR.Vertical = aVert;
+                    if (aVert) aWhy.Add("兩端在同一條鉛直線上 ⇒ 畫直線（鬆度沒有往旁邊垂的方向）");
+                    if (aClamped) aWhy.Add("鬆到幾乎對折 ⇒ 照上限的弧度畫（slack 調小）");
+                }
+                aR.Line = aPts;
+                if (aR.State == SCP_SculptRopeReading.Ok)
+                {
+                    TryParseColor(r.color, out byte cr, out byte cg, out byte cb, out _);
+                    aR.Geom = new SCP_SculptRopeGeom { Path = aR.Path, Points = aPts, Radius = r.thickness / 2, R = cr, G = cg, B = cb, Sides = aR.Child ? ChildSides : 0 };
+                }
+            }
+            aR.Reason = string.Join("；", aWhy);
+        }
+
+        /// <summary>
+        /// 母繩的形狀變了之後重放子繩的兩端（TASK-0511）：帆模擬完（<see cref="SCP_SculptSailRig.Refresh"/>）綁帆角的繩換了形狀 ⇒ 掛在它們上面的子繩跟著走。
+        /// <paramref name="iOnlyFollowsSail"/> ＝ 只重算會跟著帆動的那幾條（觀測頁每幀）。由淺到深（母繩先、子繩後）；broken 的不動。
+        /// </summary>
+        public static void Rebind(List<SCP_SculptRopeReading> iReadings, bool iOnlyFollowsSail)
+        {
+            int aMax = 0;
+            foreach (var r in iReadings) if (r.Child && r.Depth > aMax) aMax = r.Depth;
+            for (int d = 1; d <= aMax; d++)
+                foreach (SCP_SculptRopeReading c in iReadings)
+                {
+                    if (!c.Child || c.Depth != d || c.State == SCP_SculptRopeReading.Broken || (iOnlyFollowsSail && !c.FollowsSail)) continue;
+                    if (c.FromParent?.Line != null) c.From = PointAt(c.FromParent.Line, c.FromT);
+                    if (c.ToParent?.Line != null) c.To = PointAt(c.ToParent.Line, c.ToT);
+                    if (c.From == null || c.To == null) continue;
+                    double dx = c.To[0] - c.From[0], dy = c.To[1] - c.From[1], dz = c.To[2] - c.From[2];
+                    c.Chord = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                    c.Length = c.Chord;
+                    c.Line = new[] { c.From[0], c.From[1], c.From[2], c.To[0], c.To[1], c.To[2] };
+                    if (c.Geom != null) c.Geom = new SCP_SculptRopeGeom { Path = c.Geom.Path, Points = c.Line, Radius = c.Geom.Radius, R = c.Geom.R, G = c.Geom.G, B = c.Geom.B, Sides = c.Geom.Sides };
+                }
         }
 
         /// <summary>讀數裡畫得出來的那幾條（給渲染器／匯出）。</summary>
@@ -595,12 +897,14 @@ namespace SCP.Core.Sculpture
 
         /// <summary>
         /// 一條繩的管子：沿折線每個點一圈 <paramref name="iSides"/> 個頂點（世界座標＋外法線），相鄰兩圈之間接成四邊形。
+        /// 繩自己指定了邊數（<see cref="SCP_SculptRopeGeom.Sides"/> ≥ 3，子繩 ＝ <see cref="ChildSides"/>）⇒ 照它，呼叫端照粗細給的不算 —— 每個畫繩的地方都走這一支，⛔ 不各自判。
         /// 圈的方向：切線 × 參考軸（切線接近鉛直時改用 x 軸），⇒ 決定性。兩端不封口（端點通常埋在固定點的格子裡）。
         /// <paramref name="oQuads"/>：每個四邊形 4 個頂點索引，照「從外面看逆時針（世界右手系）」的順序。
         /// </summary>
         public static void Tube(SCP_SculptRopeGeom iRope, int iSides, out List<double[]> oPos, out List<double[]> oNormal, out List<int[]> oQuads)
         {
             oPos = new List<double[]>(); oNormal = new List<double[]>(); oQuads = new List<int[]>();
+            if (iRope.Sides >= 3) iSides = iRope.Sides;
             int n = iRope.PointCount;
             if (n < 2 || iRope.Radius <= 0) return;
             double[] P(int i) => new[] { iRope.Points[i * 3], iRope.Points[i * 3 + 1], iRope.Points[i * 3 + 2] };

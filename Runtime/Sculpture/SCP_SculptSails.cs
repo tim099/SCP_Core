@@ -198,12 +198,12 @@ namespace SCP.Core.Sculpture
             return aOut;
         }
 
-        /// <summary>畫得出來的繩：<paramref name="iOnSails"/> true ＝ 有一端綁帆角的（會跟著帆動）；false ＝ 其他（靜態）。</summary>
+        /// <summary>畫得出來的繩：<paramref name="iOnSails"/> true ＝ 會跟著帆動的（有一端綁帆角，或掛在這種繩上的子繩，TASK-0511）；false ＝ 其他（靜態）。</summary>
         public List<SCP_SculptRopeGeom> RopeGeoms(bool iOnSails)
         {
             var aOut = new List<SCP_SculptRopeGeom>();
             foreach (var r in Ropes)
-                if (r.Geom != null && (r.FromSail.Length > 0 || r.ToSail.Length > 0) == iOnSails) aOut.Add(r.Geom);
+                if (r.Geom != null && (r.FromSail.Length > 0 || r.ToSail.Length > 0 || r.FollowsSail) == iOnSails) aOut.Add(r.Geom);
             return aOut;
         }
 
@@ -300,7 +300,7 @@ namespace SCP.Core.Sculpture
 
         // ───────────────────────── 讀數與幾何 ─────────────────────────
 
-        /// <summary>照現在的布點重算：每面帆的幾何與讀數、綁帆角的繩（兩端換成帆角現在的位置，長度不變、形狀重算）。</summary>
+        /// <summary>照現在的布點重算：每面帆的幾何與讀數、綁帆角的繩（兩端換成帆角現在的位置，長度不變、形狀重算）、掛在它們上面的子繩（TASK-0511）。</summary>
         public void Refresh()
         {
             for (int s = 0; s < Sails.Count; s++)
@@ -343,8 +343,11 @@ namespace SCP.Core.Sculpture
                 double aSlack = aChord < 1e-9 ? 1 : Math.Max(1, Math.Min(SCP_SculptRopes.MaxSlack, aL / aChord));
                 double[] aPts = SCP_SculptRopes.Solve(aFrom, aTo, aSlack, out double aLen, out double aSag, out bool aVert, out _);
                 r.From = aFrom; r.To = aTo; r.Chord = aChord; r.Length = aLen; r.MaxSag = aSag; r.Vertical = aVert;
+                r.Line = aPts;
                 if (r.Geom != null) r.Geom = new SCP_SculptRopeGeom { Path = r.Geom.Path, Points = aPts, Radius = r.Geom.Radius, R = r.Geom.R, G = r.Geom.G, B = r.Geom.B };
             }
+            // 掛在綁帆角的繩上的子繩：母繩換了形狀 ⇒ 兩端跟著重放（只動會跟著帆動的那幾條）
+            SCP_SculptRopes.Rebind(Ropes, true);
         }
 
         /// <summary>繩的某一端的設計位置（帆角 ⇒ 角的設計位置；其他 ⇒ 解出來的那一點，它不會動）。</summary>
