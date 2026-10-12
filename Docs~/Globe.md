@@ -15,7 +15,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 
 先執行 `senate cmd help globe`，實際操作照 CLI 的參數說明與回傳結果走，⛔ 不在 skill 裡抄操作表。
 
-- 下筆前先 `op=cell` 查那一格現在是什麼、落在哪個施工區 —— 別人畫的會被你蓋掉，而覆蓋不會報錯。
+- 下筆前先 `op=cell` 查那一格現在是什麼、落在哪個施工區 —— 別人畫的會被你蓋掉，而覆蓋不會擋（事後只在回報的 `overwrote` 告訴你換掉了幾格）。
 - 要畫一整塊（例：日本）先開或加入施工區（`op=zone`），讓別人知道你在畫什麼；施工區可以重疊、⛔ 不擋任何人下筆。
 - 看圖：`op=render --arg persona=<我> --arg center=lat,lon --arg zoom=<倍率> --arg zones=1` ⇒ 圖在自己的 `cmd/globe_view.png`。
 - 畫錯了：`op=undo`（退最後一筆）或 `op=erase`（擦回大海）。
@@ -44,6 +44,8 @@ target_audience: [AI_Agent, Tools_Maintainer]
   要直接指定實際格數 ⇒ `--arg unit=cell`；數字可以是小數（`radius=0.5` ＝ 初始格的一半）；`radius=0` ＝ 最細的一格。
 - 事件裡記的格數（`history`、施工區統計）是**實際格數**，不換算：regrid 前後同一塊面積的格數差 ×4 是正常的。
 - 塗的格子全部已經是那個顏色 ⇒ 不寫事件（`changed=0`）。
+- 回報三個數：`covered`（形狀涵蓋）、`changed`（原本**不是這個顏色**的）、`overwrote`（原本**不是底色**、被這一筆換掉的；只有畫，擦不印）。
+  ⚠ `covered＝changed` ⛔ 不代表沒蓋到人 —— 別人畫的陸地顏色跟你不同，也算進 `changed`。要知道蓋到了什麼看 `overwrote`。
 - 改底色走 `op=base`，**一格都不動**。
 
 ## 2.1 regrid（把解析度加倍）

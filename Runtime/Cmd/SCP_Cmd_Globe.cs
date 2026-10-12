@@ -25,7 +25,7 @@ namespace SCP.Core.Cmd
             + "· 橡皮擦：op=erase --arg shape=point|line|polygon|fill（參數同那一種畫法）⇒ 擦回底色（大海）。\n"
             + "· 施工區：op=zone --arg sub=add|list|show|join|update —— 標記「誰在這塊畫什麼」，可重疊、⛔ 不擋任何人下筆。\n"
             + "  規劃進度：sub=plan（加計畫項）｜sub=check（勾項＝署名）｜sub=log（記做了什麼、下一步）；畫的時候帶 --arg zone=<id>，show 會自動統計這區畫了多少。\n"
-            + "· 下筆前先 op=cell 查那一格現在是什麼 —— 別人畫的會被你蓋掉，而覆蓋不會報錯。\n"
+            + "· 下筆前先 op=cell 查那一格現在是什麼 —— 別人畫的會被你蓋掉，而覆蓋不會擋（事後只在回報的 overwrote 告訴你換掉了幾格）。\n"
             + "· 經緯度一律 lat,lon（度；北緯／東經為正）。點列：points=\"lat,lon;lat,lon;…\"（長的走 --arg-file）。\n"
             + "· color：#RRGGBB 或 r,g,b（全彩）；color=empty ＝ 擦回底色。\n"
             + "· undo 一次退最後一筆仍有效的繪製；事件只追加不刪。\n"
@@ -426,7 +426,15 @@ namespace SCP.Core.Cmd
             }
             int aChanged = e.CountCells();
             r.Lines.Add($"✓ 事件 #{e.Seq} {aDesc}：涵蓋 {aCells.Count:N0} 格、實際改了 {aChanged:N0} 格 → {aColorText}");
+            // changed 數的是「原本不是這個顏色」—— 底色海跟別人畫的陸地都算在裡面，
+            // 所以 covered＝changed ⛔ 不代表沒蓋到人。另一邊（原本有顏色、被我換掉的）要單獨數。
+            // erase 的每一格本來就都不是底色 ⇒ 不印（印了也只是 changed 再說一次）。
+            int aOverwrote = 0;
+            if (!iErase) e.ForEachCell((idx, nv, ov) => { if (ov != SCP_GlobeCells.Empty) aOverwrote++; });
+            if (aOverwrote > 0)
+                r.Lines.Add($"  ⚠ 其中 {aOverwrote:N0} 格原本已經有別的顏色（不是底色）—— 被這一筆換掉了；可能是別人的，也可能是你自己先前畫的");
             r.Lines.Add("  ↶ 畫錯了：op=undo");
+            if (!iErase) r.AddValue("overwrote", aOverwrote.ToString(CultureInfo.InvariantCulture));
             return r.AddValue("seq", e.Seq.ToString(CultureInfo.InvariantCulture))
                     .AddValue("changed", aChanged.ToString(CultureInfo.InvariantCulture))
                     .AddValue("covered", aCells.Count.ToString(CultureInfo.InvariantCulture))
