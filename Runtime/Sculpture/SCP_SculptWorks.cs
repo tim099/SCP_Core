@@ -129,6 +129,8 @@ namespace SCP.Core.Sculpture
         public string Root { get; }
         public SCP_SculptWorks(SCP_DataRoot iData) { Root = Path.Combine(new SCP_SculptPaths(iData).Root, "works"); }
         public string RegistryLock => Path.Combine(Root, "_registry");
+        /// <summary>作品當模型（TASK-0507）的本機快取：`&lt;雕刻根&gt;/model_cache/&lt;作品&gt;/&lt;鍵&gt;.obj` —— ⛔ 不入版控、可隨時重生。</summary>
+        public string ModelCacheRoot => Path.Combine(Path.GetDirectoryName(Root) ?? Root, "model_cache");
         public static string NormalizeId(string iId)
         {
             string id = iId.Trim().ToLowerInvariant();

@@ -61,6 +61,10 @@ namespace SCP.Core.Sculpture
         public string RopesFile => Path.Combine(Aux, "ropes.json");
         /// <summary>帆（<see cref="SCP_SculptSails"/>，TASK-0503）：角綁在哪、哪條邊整條釘住、顏色、預設風；同上，⛔ 不是 voxel。</summary>
         public string SailsFile => Path.Combine(Aux, "sails.json");
+        /// <summary>外部模型（<see cref="SCP_SculptModels"/>，TASK-0507）：哪裡擺一個網格模型、怎麼轉、怎麼縮；同上，⛔ 不是 voxel。</summary>
+        public string ModelsFile => Path.Combine(Aux, "models.json");
+        /// <summary>匯入的 obj（file 來源的模型）收在作品裡的資料夾；入 git（作品自己帶著它）。</summary>
+        public string ModelsDir => Path.Combine(Aux, "models");
         public string Exhibits => Path.Combine(Aux, "exhibits");
         public string Exports => Path.Combine(Aux, "exports");
         public string LastSlice => Path.Combine(Aux, "_last_slice.png");

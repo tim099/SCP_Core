@@ -136,6 +136,11 @@ namespace SCP.Core.Sculpture
         /// 空 ＝ 沒有帆（輸出逐位元不變）。
         /// </summary>
         public List<SCP_SculptSailGeom> Sails = new List<SCP_SculptSailGeom>();
+        /// <summary>
+        /// 外部模型（TASK-0507，世界座標）：obj 接在帆後面輸出成三角網格（一個模型一色一個材質 model_&lt;n&gt;_&lt;k&gt;）；vox／list 只有格子 ⇒ 不輸出、結果裡明說。
+        /// 空 ＝ 沒有模型（輸出逐位元不變）。
+        /// </summary>
+        public List<SCP_SculptModelGeom> Models = new List<SCP_SculptModelGeom>();
     }
 
     public sealed class SCP_SculptExhibitRegisterArgs

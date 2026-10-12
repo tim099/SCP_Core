@@ -123,6 +123,12 @@ namespace SCP.Core.Sculpture
         /// </summary>
         public SCP_SculptSailRig? SailRig;
 
+        /// <summary>
+        /// 外部模型（TASK-0507，已換到世界座標、從外面看逆時針）：渲染器另外一趟畫（靜態 ⇒ 內容沒變不重傳，⛔ 不併進 voxel 網格）；
+        /// 同一組燈、會投影子也接影子。⛔ 不是 voxel。空 ＝ 沒有模型（舊行為，逐位元不變）。
+        /// </summary>
+        public List<SCP_SculptModelGeom> Models = new List<SCP_SculptModelGeom>();
+
         /// <summary>淺複製（燈與地板物件共用 —— 呼叫端只改純量欄位時用；要改燈或地板就自己再複製那一格）。</summary>
         public SCP_SculptRenderParams Clone() => (SCP_SculptRenderParams)MemberwiseClone();
     }

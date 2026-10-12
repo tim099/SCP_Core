@@ -181,6 +181,8 @@ namespace SCP.Core.Sculpture
         public int RopesExported;
         /// <summary>輸出成網格的帆數（TASK-0503；obj 才有，vox／list 一律 0）。</summary>
         public int SailsExported;
+        /// <summary>輸出成網格的外部模型數（TASK-0507；obj 才有，vox／list 一律 0）。</summary>
+        public int ModelsExported;
     }
 
     public sealed class SCP_SculptExhibitResult : SCP_SculptResult

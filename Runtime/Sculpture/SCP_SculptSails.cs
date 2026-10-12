@@ -1,7 +1,7 @@
 // 區塊職責：雕刻的帆（TASK-0503）—— 作品記「幾個角綁在哪、哪條邊整條釘住、什麼顏色」，觀測時才用布料模擬算形狀、才畫。
 // 物理意義：帆是作者寫的作品資料（sails.json，入版控），⛔ 不是 voxel、不寫 events/ —— 一格 voxel 都不動。
 //          角：3 個（三角帆）或 4 個（四邊形：方帆、梯形的縱帆），依序繞一圈；每個角的位置跟繩的端點同一種寫法
-//              （固定點名｜關聯/…/固定點名｜x,y,z，解法也是同一支 <see cref="SCP_SculptRopes.ResolveAnchor"/>）。
+//              （固定點名｜關聯/…/固定點名｜x,y,z｜model:模型上的點 —— 解法也是同一支 <see cref="SCP_SculptPointResolver"/>，TASK-0507）。
 //              角預設釘住（pin）；`free` 的角跟著布動 —— 繩綁在它上面（端點 `sail:帆/角`）⇒ 那條繩變成牽繩（最長 L ＝ slack × 設計時兩端的直線距離）。
 //          邊：bind 的邊（k ＝ 角 k → 角 k+1）**整條**釘在兩角之間的線段上（方帆上緣沿 yard），不是只釘兩個角。
 //          模擬：PBD 布料（距離約束：結構／剪切／彎曲）＋重力＋風（只算法線分量的壓力，含陣風）；固定 dt、固定迭代次數、單執行緒依序走
@@ -133,6 +133,8 @@ namespace SCP.Core.Sculpture
         public readonly List<SCP_SculptSailReading> Sails = new List<SCP_SculptSailReading>();
         public List<SCP_SculptRopeReading> Ropes = new List<SCP_SculptRopeReading>();
         public SCP_SculptSailEnv Env = new SCP_SculptSailEnv();
+        /// <summary>這次觀測的外部模型（TASK-0507；繩端點與帆角用過的那一份）—— null ＝ 沒算模型。</summary>
+        public SCP_SculptModelSet? Models;
         /// <summary>已經模擬了幾秒、幾步。</summary>
         public double Time => m_Steps * SCP_SculptSails.Dt;
         public int Steps => m_Steps;
@@ -512,15 +514,17 @@ namespace SCP.Core.Sculpture
         /// 一次觀測的帆與繩：組裝件＋關聯樹上每一層的帆（角照那一層換座標）、繩（綁帆角的端點由這裡注入位置），以及布料模擬的初始狀態（設計位置、速度 0）。
         /// ⛔ 還沒模擬 —— 呼叫端 <see cref="SCP_SculptSailRig.Simulate"/>（CLI）或 <see cref="SCP_SculptSailRig.Advance"/>（觀測頁）。只要讀數不要形狀（列清單、寫入前驗證）⇒ 照樣可以直接讀。
         /// <paramref name="iSailOverride"/>／<paramref name="iRopeOverride"/>：組裝件自己那份換成還沒存的那一份（寫入前驗證，同 SCP_SculptLinks.Tree 的 override）。
+        /// <paramref name="iModels"/>：這次觀測的外部模型（TASK-0507）—— 繩的端點與帆的角可以是 `model:` 上的點；null ⇒ 那些點 broken 並說原因。
         /// sails.json／ropes.json 讀不了 ⇒ InvalidOperationException 照丟。
         /// </summary>
         public static SCP_SculptSailRig Rig(SCP_SculptWorks iWorks, string iRootId, List<SCP_SculptLinkNode>? iTree,
                                             SCP_SculptLinkSelection iLinkSel, SCP_SculptRopeSelection iRopeSel, SCP_SculptSailSelection iSailSel,
-                                            SCP_SculptSailEnv iEnv, SCP_SculptSailFile? iSailOverride = null, SCP_SculptRopeFile? iRopeOverride = null)
+                                            SCP_SculptSailEnv iEnv, SCP_SculptSailFile? iSailOverride = null, SCP_SculptRopeFile? iRopeOverride = null,
+                                            SCP_SculptModelSet? iModels = null)
         {
-            var aRig = new SCP_SculptSailRig { Env = iEnv };
+            var aRig = new SCP_SculptSailRig { Env = iEnv, Models = iModels };
             var aIndex = SCP_SculptRopes.IndexTree(iTree);
-            var aAnchorCache = new Dictionary<string, SCP_SculptAnchorFile>(StringComparer.Ordinal);
+            var aPoints = new SCP_SculptPointResolver(iWorks, iRootId, aIndex, iLinkSel) { Models = iModels };
             var aSailCache = new Dictionary<string, SCP_SculptSailFile>(StringComparer.Ordinal);
             if (iSailOverride != null) aSailCache[iRootId] = iSailOverride;
             var aFrames = new List<string> { "" };
@@ -542,14 +546,9 @@ namespace SCP.Core.Sculpture
                     for (int k = 0; k < s.corners.Count; k++)
                     {
                         string aLabel = "角 " + k + (s.corners[k].name.Length > 0 ? "（" + s.corners[k].name + "）" : "");
-                        if (!SCP_SculptRopes.TryParseEndpoint(s.corners[k].at, out double[]? aPt, out string aAnchor, out string aBad)) { r.State = SCP_SculptSailReading.Broken; aWhy.Add(aLabel + "：" + aBad); continue; }
-                        if (aPt != null) aPt = SCP_SculptRopes.ToRoot(aFrame, aPt, aIndex);
-                        else
-                        {
-                            string? aMiss = SCP_SculptRopes.ResolveAnchor(iWorks, iRootId, aFrame, aAnchor, aIndex, aAnchorCache, out aPt, out string aAnchorFrame);
-                            if (aMiss != null) { r.State = SCP_SculptSailReading.Broken; aWhy.Add(aLabel + "：" + aMiss); continue; }
-                            if (!SCP_SculptRopes.PathDrawn(aAnchorFrame, aIndex, iLinkSel)) { aLinkHidden = true; aWhy.Add(aLabel + " 綁的 `" + aAnchorFrame + "` 這次沒畫"); }
-                        }
+                        string? aBad = aPoints.Resolve(aFrame, s.corners[k].at, false, out double[]? aPt, out _, out string aHiddenWhy);
+                        if (aBad != null) { r.State = SCP_SculptSailReading.Broken; aWhy.Add(aLabel + "：" + aBad); continue; }
+                        if (aHiddenWhy.Length > 0) { aLinkHidden = true; aWhy.Add(aLabel + aHiddenWhy); }
                         r.Corners[k] = aPt;
                     }
                     if (r.State != SCP_SculptSailReading.Broken)
@@ -598,7 +597,7 @@ namespace SCP.Core.Sculpture
                 if (!aSail.Simulated) oHiddenWhy = " `" + aSailPath + "` 這次沒組進來（" + aSail.State + "）";
                 return null;
             };
-            aRig.Ropes = SCP_SculptRopes.Resolve(iWorks, iRootId, iTree, iLinkSel, iRopeSel, iRopeOverride, aResolver);
+            aRig.Ropes = SCP_SculptRopes.Resolve(iWorks, iRootId, iTree, iLinkSel, iRopeSel, iRopeOverride, aResolver, iModels);
 
             // ③ 布點：模擬的帆依序排進同一個陣列
             BuildParticles(aRig);

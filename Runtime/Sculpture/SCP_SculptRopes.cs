@@ -12,6 +12,8 @@
 // 帆（TASK-0503）：端點可以是帆角 `sail:[關聯/…/]帆名/角`（固定點名與關聯名都不准含 `:`，所以不會跟固定點撞名）；
 //          帆角在哪由呼叫端注入（<see cref="SCP_SculptSailEndResolver"/>，帆的觀測 <see cref="SCP_SculptSails.Rig"/> 給）——
 //          ⛔ 繩這一側不自己讀帆（端點邏輯只有一份）。沒注入 ⇒ broken 並說原因。其他 `kind:` ⇒ 明說不認得（⛔ 不猜）。
+// 外部模型（TASK-0507）：端點可以是模型上的點 `model:[關聯/…/]模型名/點`（點 ＝ x,y,z 或來源作品的固定點名；解法在 <see cref="SCP_SculptModelSet.ResolvePoint"/>）。
+//          繩的端點與帆的角**同一支**解：<see cref="SCP_SculptPointResolver"/>（x,y,z｜固定點路徑｜sail:｜model:）。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -109,6 +111,60 @@ namespace SCP.Core.Sculpture
             var aSel = new SCP_SculptRopeSelection { None = iRopes.Trim() == "0" };
             foreach (string p in iHide.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)) aSel.Hide.Add(p.Trim().Trim('/'));
             return aSel;
+        }
+    }
+
+    /// <summary>
+    /// 一個點（繩的端點、帆的角）解到組裝件座標 —— TASK-0507 把原本繩與帆各寫一份的解法合成一支：
+    /// `x,y,z`（照所在那一層換座標）｜固定點路徑（`名字`、`關聯/…/名字`）｜`sail:…`（帆角，由帆的觀測注入）｜`model:…`（模型上的點，由模型的觀測給）。
+    /// <para>回 null ＝ 解得到：<c>oSailKey</c> 非空 ＝ 帆角（全路徑＋`#`＋角序號）；<c>oHiddenWhy</c> 非空 ＝ 綁的那一層／那面帆／那個模型這次沒組進來
+    /// （前面帶一個空白，接在「from／to／角 k」後面讀）。</para>
+    /// </summary>
+    public sealed class SCP_SculptPointResolver
+    {
+        readonly SCP_SculptWorks m_Works;
+        readonly string m_Root;
+        readonly Dictionary<string, SCP_SculptLinkNode> m_Index;
+        readonly SCP_SculptLinkSelection m_Sel;
+        readonly Dictionary<string, SCP_SculptAnchorFile> m_Anchors = new Dictionary<string, SCP_SculptAnchorFile>(StringComparer.Ordinal);
+        /// <summary>帆角的解法（null ⇒ `sail:` 一律壞掉並說原因）。</summary>
+        public SCP_SculptSailEndResolver? Sails;
+        /// <summary>模型（null ⇒ `model:` 一律壞掉並說原因）。</summary>
+        public SCP_SculptModelSet? Models;
+
+        public SCP_SculptPointResolver(SCP_SculptWorks iWorks, string iRootId, Dictionary<string, SCP_SculptLinkNode> iIndex, SCP_SculptLinkSelection iSel)
+        {
+            m_Works = iWorks; m_Root = iRootId; m_Index = iIndex; m_Sel = iSel;
+        }
+
+        /// <param name="iAllowSail">帆角可不可以當這個點（繩 ⇒ 可以；帆自己的角 ⇒ 不行：帆角不能綁在另一面帆的角上）。</param>
+        public string? Resolve(string iFrame, string iText, bool iAllowSail, out double[]? oPoint, out string oSailKey, out string oHiddenWhy)
+        {
+            oPoint = null; oSailKey = ""; oHiddenWhy = "";
+            if (!SCP_SculptRopes.TryParseEndpoint(iText, out double[]? aPt, out string aRef, out string aBad)) return aBad;
+            if (aPt != null) { oPoint = SCP_SculptRopes.ToRoot(iFrame, aPt, m_Index); return null; }
+            if (aRef.StartsWith(SCP_SculptRopes.SailPrefix, StringComparison.Ordinal))
+            {
+                // 帆角（TASK-0503）：位置由帆的觀測給（設計位置；模擬完由它換成那一刻的位置）
+                if (!iAllowSail) return "`" + aRef + "`：帆的角不能綁在另一面帆的角上（綁固定點、模型上的點或 x,y,z）";
+                if (Sails == null) return "帆角端點要在帆的觀測裡解（這次沒有帆的資料）";
+                string? aSailBad = Sails(iFrame, aRef.Substring(SCP_SculptRopes.SailPrefix.Length), out oPoint, out oSailKey, out string aSailHidden);
+                if (aSailBad != null) { oPoint = null; oSailKey = ""; return aSailBad; }
+                if (aSailHidden.Length > 0) oHiddenWhy = " 綁的帆" + aSailHidden;
+                return null;
+            }
+            if (aRef.StartsWith(SCP_SculptModels.Prefix, StringComparison.Ordinal))
+            {
+                if (Models == null) return "模型端點要在模型的觀測裡解（這次沒有模型的資料）";
+                string? aModelBad = Models.ResolvePoint(iFrame, aRef.Substring(SCP_SculptModels.Prefix.Length), out oPoint, out _, out string aModelHidden);
+                if (aModelBad != null) { oPoint = null; return aModelBad; }
+                if (aModelHidden.Length > 0) oHiddenWhy = " 綁的模型" + aModelHidden;
+                return null;
+            }
+            string? aMiss = SCP_SculptRopes.ResolveAnchor(m_Works, m_Root, iFrame, aRef, m_Index, m_Anchors, out oPoint, out string aAnchorFrame);
+            if (aMiss != null) { oPoint = null; return aMiss; }
+            if (!SCP_SculptRopes.PathDrawn(aAnchorFrame, m_Index, m_Sel)) oHiddenWhy = " 綁的 `" + aAnchorFrame + "` 這次沒畫";
+            return null;
         }
     }
 
@@ -240,7 +296,25 @@ namespace SCP.Core.Sculpture
                 oAnchorPath = a;
                 return true;
             }
-            if (a.IndexOf(':') >= 0) { oBad = "端點 `" + a + "`：`種類:` 形狀的端點只認 `" + SailPrefix + "`（帆角）；其他本版不認得（只認 固定點路徑、x,y,z、sail:帆名/角）"; return false; }
+            if (a.StartsWith(SCP_SculptModels.Prefix, StringComparison.Ordinal))
+            {
+                // 模型上的點（TASK-0507）：model:[關聯/…/]模型名/點（點 ＝ x,y,z 或來源作品的固定點名）
+                string[] aSegs = a.Substring(SCP_SculptModels.Prefix.Length).Split('/');
+                if (aSegs.Length < 2) { oBad = "模型端點 `" + a + "` 要寫成 model:模型名/點（點 ＝ x,y,z 或來源作品的固定點名；跨關聯 model:關聯/…/模型名/點）"; return false; }
+                for (int i = 0; i < aSegs.Length; i++)
+                {
+                    string seg = aSegs[i];
+                    if (i == aSegs.Length - 1 && seg.Split(',').Length == 3)
+                    {
+                        if (!TryParseEndpoint(seg, out _, out _, out string aXyzBad)) { oBad = "模型端點 `" + a + "`：" + aXyzBad; return false; }
+                        continue;
+                    }
+                    if (SCP_SculptLinks.ValidName(seg) is string aSegBad) { oBad = "模型端點 `" + a + "` 的 `" + seg + "`：" + aSegBad; return false; }
+                }
+                oAnchorPath = a;
+                return true;
+            }
+            if (a.IndexOf(':') >= 0) { oBad = "端點 `" + a + "`：`種類:` 形狀的端點只認 `" + SailPrefix + "`（帆角）與 `" + SCP_SculptModels.Prefix + "`（模型上的點）；其他本版不認得"; return false; }
             string[] aParts = a.Split(',');
             if (aParts.Length == 3)
             {
@@ -440,10 +514,11 @@ namespace SCP.Core.Sculpture
         /// </summary>
         public static List<SCP_SculptRopeReading> Resolve(SCP_SculptWorks iWorks, string iRootId, List<SCP_SculptLinkNode>? iTree,
                                                           SCP_SculptLinkSelection iLinkSel, SCP_SculptRopeSelection iRopeSel,
-                                                          SCP_SculptRopeFile? iRootOverride = null, SCP_SculptSailEndResolver? iSails = null)
+                                                          SCP_SculptRopeFile? iRootOverride = null, SCP_SculptSailEndResolver? iSails = null,
+                                                          SCP_SculptModelSet? iModels = null)
         {
             var aIndex = IndexTree(iTree);
-            var aAnchorCache = new Dictionary<string, SCP_SculptAnchorFile>(StringComparer.Ordinal);
+            var aPoints = new SCP_SculptPointResolver(iWorks, iRootId, aIndex, iLinkSel) { Sails = iSails, Models = iModels };
             var aRopeCache = new Dictionary<string, SCP_SculptRopeFile>(StringComparer.Ordinal);
             // 寫入前的驗證：組裝件自己那份改用「還沒存的那一份」（同 SCP_SculptLinks.Tree 的 override）—— ⛔ 不另寫一份端點邏輯
             if (iRootOverride != null) aRopeCache[iRootId] = iRootOverride;
@@ -467,24 +542,10 @@ namespace SCP.Core.Sculpture
                     for (int e = 0; e < 2; e++)
                     {
                         string aText = e == 0 ? r.from : r.to;
-                        if (!TryParseEndpoint(aText, out double[]? aPt, out string aAnchorPath, out string aBad)) { aR.State = SCP_SculptRopeReading.Broken; aWhy.Add((e == 0 ? "from：" : "to：") + aBad); continue; }
-                        if (aPt != null) { aPt = ToRoot(aFrame, aPt, aIndex); }
-                        else if (aAnchorPath.StartsWith(SailPrefix, StringComparison.Ordinal))
-                        {
-                            // 帆角（TASK-0503）：位置由帆的觀測給（設計位置；模擬完由它換成那一刻的位置）
-                            string aKey = "", aSailHidden = "";
-                            string? aSailBad = iSails == null ? "帆角端點要在帆的觀測裡解（這次沒有帆的資料）"
-                                             : iSails(aFrame, aAnchorPath.Substring(SailPrefix.Length), out aPt, out aKey, out aSailHidden);
-                            if (aSailBad != null) { aR.State = SCP_SculptRopeReading.Broken; aWhy.Add((e == 0 ? "from：" : "to：") + aSailBad); aPt = null; continue; }
-                            if (e == 0) aR.FromSail = aKey; else aR.ToSail = aKey;
-                            if (aSailHidden.Length > 0) { aHidden = true; aWhy.Add((e == 0 ? "from" : "to") + " 綁的帆" + aSailHidden); }
-                        }
-                        else
-                        {
-                            string? aMiss = ResolveAnchor(iWorks, iRootId, aFrame, aAnchorPath, aIndex, aAnchorCache, out aPt, out string aAnchorFrame);
-                            if (aMiss != null) { aR.State = SCP_SculptRopeReading.Broken; aWhy.Add((e == 0 ? "from：" : "to：") + aMiss); continue; }
-                            if (!PathDrawn(aAnchorFrame, aIndex, iLinkSel)) { aHidden = true; aWhy.Add((e == 0 ? "from" : "to") + " 綁的 `" + aAnchorFrame + "` 這次沒畫"); }
-                        }
+                        string? aBad = aPoints.Resolve(aFrame, aText, true, out double[]? aPt, out string aSailKey, out string aHiddenWhy);
+                        if (aBad != null) { aR.State = SCP_SculptRopeReading.Broken; aWhy.Add((e == 0 ? "from：" : "to：") + aBad); continue; }
+                        if (aSailKey.Length > 0) { if (e == 0) aR.FromSail = aSailKey; else aR.ToSail = aSailKey; }
+                        if (aHiddenWhy.Length > 0) { aHidden = true; aWhy.Add((e == 0 ? "from" : "to") + aHiddenWhy); }
                         if (e == 0) aEnds0 = aPt; else aEnds1 = aPt;
                     }
                     aR.From = aEnds0; aR.To = aEnds1;

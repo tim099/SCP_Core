@@ -1072,6 +1072,65 @@ namespace SCP.Core.Sculpture
             return aTrisOut;
         }
 
+        /// <summary>每個模型用到的顏色（依第一次出現的順序）—— 一色一個材質 model_&lt;n&gt;_&lt;k&gt;。</summary>
+        static List<List<(byte R, byte G, byte B)>> ModelColorGroups(List<SCP_SculptModelGeom> iModels)
+        {
+            var aOut = new List<List<(byte, byte, byte)>>();
+            foreach (SCP_SculptModelGeom g in iModels)
+            {
+                var aList = new List<(byte, byte, byte)>();
+                var aSeen = new HashSet<(byte, byte, byte)>();
+                for (int k = 0; k + 2 < g.Colors.Length; k += 3)
+                {
+                    var c = (g.Colors[k], g.Colors[k + 1], g.Colors[k + 2]);
+                    if (aSeen.Add(c)) aList.Add(c);
+                }
+                aOut.Add(aList);
+            }
+            return aOut;
+        }
+
+        /// <summary>
+        /// 外部模型（TASK-0507）接在帆後面：每個模型一個 `o model_n`，同色的三角形一組 `usemtl model_n_k`；
+        /// 世界 → OBJ y-up（wx, wz, wy）是鏡像 ⇒ 三角形繞序反過來寫（同 <see cref="WriteObjRopes"/>）。回傳三角形數。
+        /// </summary>
+        static int WriteObjModels(StringBuilder iO, List<SCP_SculptModelGeom> iModels, List<List<(byte R, byte G, byte B)>> iColors, ref int ioVerts)
+        {
+            if (iModels.Count == 0) return 0;
+            int aNormals = 0;
+            string aSoFar = iO.ToString();
+            for (int k = aSoFar.IndexOf("\nvn ", StringComparison.Ordinal); k >= 0; k = aSoFar.IndexOf("\nvn ", k + 1, StringComparison.Ordinal)) aNormals++;
+            if (aSoFar.StartsWith("vn ", StringComparison.Ordinal)) aNormals++;
+            int aTrisOut = 0;
+            for (int i = 0; i < iModels.Count; i++)
+            {
+                SCP_SculptModelGeom g = iModels[i];
+                if (g.Triangles.Length == 0) continue;
+                iO.Append("o model_").Append(i.ToString(CultureInfo.InvariantCulture)).Append(" # ").Append(g.Path).Append('\n');
+                int vBase = ioVerts + 1, nBase = aNormals + 1, n = g.PointCount;
+                for (int v = 0; v < n; v++) iO.Append("v ").Append(F4(g.Points[v * 3])).Append(' ').Append(F4(g.Points[v * 3 + 2])).Append(' ').Append(F4(g.Points[v * 3 + 1])).Append('\n');
+                for (int v = 0; v < n; v++) iO.Append("vn ").Append(F4(g.Normals[v * 3])).Append(' ').Append(F4(g.Normals[v * 3 + 2])).Append(' ').Append(F4(g.Normals[v * 3 + 1])).Append('\n');
+                List<(byte R, byte G, byte B)> aCols = iColors[i];
+                for (int k = 0; k < aCols.Count; k++)
+                {
+                    bool aAny = false;
+                    for (int t = 0; t < g.Triangles.Length; t += 3)
+                    {
+                        int a = g.Triangles[t];
+                        if (g.Colors[a * 3] != aCols[k].R || g.Colors[a * 3 + 1] != aCols[k].G || g.Colors[a * 3 + 2] != aCols[k].B) continue;
+                        if (!aAny) { iO.Append("usemtl model_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('_').Append(k.ToString(CultureInfo.InvariantCulture)).Append('\n'); aAny = true; }
+                        iO.Append('f');
+                        foreach (int idx in new[] { g.Triangles[t + 2], g.Triangles[t + 1], g.Triangles[t] })
+                            iO.Append(' ').Append(vBase + idx).Append("//").Append(nBase + idx);
+                        iO.Append('\n');
+                        aTrisOut++;
+                    }
+                }
+                ioVerts += n; aNormals += n;
+            }
+            return aTrisOut;
+        }
+
         static bool FaceHidden(HashSet<(int, int, int)> iSet, AirMap? iSealed, int x, int y, int z, ref int ioSealedFaces)
         {
             if (iSet.Contains((x, y, z))) return true;
@@ -1231,7 +1290,8 @@ namespace SCP.Core.Sculpture
             try { aSpace = LoadView(); } catch (SCP_SculptReplayException e) { return ReplayFail(e); } catch (ArgumentException e) { return SCP_SculptResult.Error(2, e.Message); }
             List<(int X, int Y, int Z, int Color)> aVox = Filter(aSpace, iArgs.Region, iArgs.ExcludeColor);
             // 純清單：空也是一個答案（例：重播到第一個事件之前）⇒ 寫出只有檔頭的清單；obj／vox 照舊擋
-            if (aVox.Count == 0 && iArgs.Format != FormatList) return SCP_SculptResult.Text(1, "⚠ 觀測區域內沒有任何 voxel — 沒東西可匯出");
+            bool aMeshOnly = iArgs.Format == "obj" && (iArgs.Ropes.Count > 0 || iArgs.Sails.Count > 0 || iArgs.Models.Count > 0);   // TASK-0507：只有繩／帆／模型也匯得出 obj
+            if (aVox.Count == 0 && iArgs.Format != FormatList && !aMeshOnly) return SCP_SculptResult.Text(1, "⚠ 觀測區域內沒有任何 voxel — 沒東西可匯出");
 
             string aOutDir = iArgs.OutDir.Length > 0 ? SCP_SculptPy.PathStr(iArgs.OutDir) : Paths.Exports;
             Directory.CreateDirectory(aOutDir);
@@ -1292,6 +1352,14 @@ namespace SCP.Core.Sculpture
                     aM.Append("newmtl sail_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('\n')
                       .Append("Kd ").Append(F4(sl.R / 255.0)).Append(' ').Append(F4(sl.G / 255.0)).Append(' ').Append(F4(sl.B / 255.0)).Append('\n');
                 }
+                List<List<(byte R, byte G, byte B)>> aModelColors = ModelColorGroups(iArgs.Models);
+                for (int i = 0; i < aModelColors.Count; i++)
+                    for (int k = 0; k < aModelColors[i].Count; k++)
+                    {
+                        var mc = aModelColors[i][k];
+                        aM.Append("newmtl model_").Append(i.ToString(CultureInfo.InvariantCulture)).Append('_').Append(k.ToString(CultureInfo.InvariantCulture)).Append('\n')
+                          .Append("Kd ").Append(F4(mc.R / 255.0)).Append(' ').Append(F4(mc.G / 255.0)).Append(' ').Append(F4(mc.B / 255.0)).Append('\n');
+                    }
                 SCP_SculptPy.WriteTextFile(aMtl, aM.ToString());
 
                 var aO = new StringBuilder();
@@ -1299,7 +1367,7 @@ namespace SCP.Core.Sculpture
                 aO.Append("mtllib ").Append(Path.GetFileName(aMtl)).Append('\n');
 
                 AirMap? aSealed = null;
-                if (iArgs.KeepSealed) aRes.SealedMode = "keep";
+                if (iArgs.KeepSealed || aVox.Count == 0) aRes.SealedMode = "keep";
                 else
                 {
                     var aKeys = new List<long>(aVox.Count);
@@ -1320,6 +1388,8 @@ namespace SCP.Core.Sculpture
                 aRes.RopesExported = iArgs.Ropes.Count;
                 int aSailTris = WriteObjSails(aO, iArgs.Sails, ref aVerts);
                 aRes.SailsExported = iArgs.Sails.Count;
+                int aModelTris = WriteObjModels(aO, iArgs.Models, aModelColors, ref aVerts);
+                aRes.ModelsExported = iArgs.Models.Count;
                 SCP_SculptPy.WriteTextFile(aOutPath, aO.ToString());
                 aRes.FaceCount = aFaces;
                 aRes.VertexCount = aVerts;
@@ -1337,6 +1407,7 @@ namespace SCP.Core.Sculpture
                 aRes.Lines.Add("  vertices  : " + aVerts);
                 if (iArgs.Ropes.Count > 0) aRes.Lines.Add("  ropes     : " + iArgs.Ropes.Count + " 條管狀網格（" + aRopeFaces + " 個四邊形；材質 rope_0..，不是 voxel）");
                 if (iArgs.Sails.Count > 0) aRes.Lines.Add("  sails     : " + iArgs.Sails.Count + " 面雙面三角網格（" + aSailTris + " 個三角形；材質 sail_0..，不是 voxel）");
+                if (iArgs.Models.Count > 0) aRes.Lines.Add("  models    : " + iArgs.Models.Count + " 個外部模型（" + aModelTris + " 個三角形；材質 model_<n>_<色>，不是 voxel）");
                 aRes.Lines.Add("  obj       : " + aOutPath);
                 aRes.Lines.Add("  mtl       : " + aMtl);
                 return aRes;
