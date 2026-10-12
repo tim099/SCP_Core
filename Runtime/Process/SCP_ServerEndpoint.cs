@@ -8,6 +8,13 @@
 //   資料根是一個 git repo，每半秒動一個檔會讓工作區永遠是髒的，
 //   而「永遠髒」等於沒有人看得出這一次多了什麼。
 //   ⇒ 活著與否**不看名片在不在**，看名片指向的那個心跳檔多久沒跳（心跳住 Senate 的 runtime 目錄，不進資料根）。
+//   （例外：名片被刪掉或變成遺物、而握著資料根單例鎖的就是自己 ⇒ Server 補寫一次，見 ServerHost。）
+//
+// 🔴 TASK-0468：**一棵資料根上，同一個 serverId 只能有一顆**（Tim 2026-10-12 拍板：同根同 id 一律擋；
+//   測試用 Server 換一個 id，或指向另一棵資料根）。三道：
+//   ① 資料根層級的單例鎖 `_server_singleton.<id>.lock`（<see cref="SCP_ServerEndpoint.TryAcquireLock"/>）；
+//   ② 名片**不蓋活的**、收工**只刪自己的**（防沒有 ① 的舊 exe）；
+//   ③ 名片記 `repo_root` ⇒ 擋下時說得出握著的是哪一份 Senate，管理頁也列得出別的工作副本。
 //
 // 🩸 為什麼要三態（<see cref="SCP_ServerLiveness"/>）而不是一個 bool：
 //   「沒有名片」＝ 這棵樹沒有 Server 服務過（或它正常收工了）⇒ 呼叫端該說「沒有 Server」；
@@ -58,6 +65,16 @@ namespace SCP.Core.Proc
         /// <summary>心跳超過幾秒算過期 —— 由寫名片的那一方決定，⛔ 讀的人不要自己另訂一個。</summary>
         public double StaleSeconds = 4.0;
 
+        /// <summary>
+        /// 名片主人是哪一份 Senate（repo 根）—— 同一棵資料根可以被不同的工作副本服務，
+        /// 擋下第二顆時要說得出「握著的是哪一份」（TASK-0468）。舊名片（schema 1）沒有這欄 ⇒ 讀的時候由 ServerRoot 推。
+        /// </summary>
+        public string RepoRoot = "";
+
+        /// <summary>「是同一顆 process」：pid ＋ 啟動時刻都對上。⚠ 只比 pid 的話，pid 被 OS 回收再發時會認錯人。</summary>
+        public bool IsSameServer(int iPid, string iStartedAtUtc)
+            => Pid == iPid && string.Equals(StartedAtUtc, iStartedAtUtc ?? "", StringComparison.Ordinal);
+
         public SCP_JsonData ToJson()
         {
             SCP_JsonData aData = SCP_JsonData.NewObject();
@@ -68,13 +85,14 @@ namespace SCP.Core.Proc
             aData.Set("server_root", SCP_JsonData.NewString(ServerRoot));
             aData.Set("heartbeat_path", SCP_JsonData.NewString(HeartbeatPath));
             aData.Set("stale_seconds", SCP_JsonData.NewNumber(StaleSeconds));
-            aData.Set("schema_version", SCP_JsonData.NewNumber(1));
+            aData.Set("repo_root", SCP_JsonData.NewString(RepoRoot));
+            aData.Set("schema_version", SCP_JsonData.NewNumber(2));
             return aData;
         }
 
         public static SCP_ServerEndpointInfo FromJson(SCP_JsonData iData)
         {
-            return new SCP_ServerEndpointInfo
+            var aInfo = new SCP_ServerEndpointInfo
             {
                 ServerId = iData.GetString("server_id", ""),
                 Pid = iData.GetInt("pid", 0),
@@ -83,8 +101,34 @@ namespace SCP.Core.Proc
                 ServerRoot = iData.GetString("server_root", ""),
                 HeartbeatPath = iData.GetString("heartbeat_path", ""),
                 StaleSeconds = iData.GetInt("stale_seconds", 4),
+                RepoRoot = iData.GetString("repo_root", ""),
             };
+            if (aInfo.RepoRoot.Length == 0) aInfo.RepoRoot = RepoRootFromServerRoot(aInfo.ServerRoot);
+            return aInfo;
         }
+
+        /// <summary>舊名片沒有 repo_root ⇒ 由 `&lt;repo&gt;/SenateData/runtime/server…` 往回切；切不出來回空字串（⛔ 不猜）。</summary>
+        static string RepoRootFromServerRoot(string iServerRoot)
+        {
+            string aNorm = (iServerRoot ?? "").Replace('\\', '/');
+            int aAt = aNorm.LastIndexOf("/SenateData/", StringComparison.OrdinalIgnoreCase);
+            return aAt > 0 ? aNorm.Substring(0, aAt) : "";
+        }
+    }
+
+    /// <summary>寫名片的結果 —— **三態**：「沒寫成」與「刻意不寫（活著的另一顆是主人）」的下一步相反。</summary>
+    public enum SCP_EndpointWrite
+    {
+        Written = 0,
+
+        /// <summary>名片上是**另一顆活著的** Server ⇒ 不蓋（TASK-0468：蓋掉的話兩顆都以為自己是那一顆）。</summary>
+        RefusedOtherAlive = 1,
+
+        /// <summary>名片讀不開 ⇒ 不知道主人是不是活著 ⇒ 不蓋（⛔ 認不出來不等於沒有）。</summary>
+        RefusedUnreadable = 2,
+
+        /// <summary>IO 失敗。</summary>
+        Failed = 3,
     }
 
     /// <summary>一次探測的結果。</summary>
@@ -123,30 +167,118 @@ namespace SCP.Core.Proc
             return aRoot + "/_server_endpoint." + (iServerId ?? "") + ".json";
         }
 
-        /// <summary>寫一張名片（整檔覆寫）。回 <c>(成功, 說明)</c> —— ⛔ 失敗不丟例外：Server 不該因為名片寫不出去而不啟動。</summary>
-        public static (bool Ok, string Message) Write(string iDataRoot, SCP_ServerEndpointInfo iInfo)
+        /// <summary>`<資料根>/_server_singleton.<serverId>.lock` —— 資料根層級的單例鎖（TASK-0468）。</summary>
+        public static string LockPathFor(string iDataRoot, string iServerId)
+        {
+            string aRoot = (iDataRoot ?? "").Replace('\\', '/').TrimEnd('/');
+            return aRoot + "/_server_singleton." + (iServerId ?? "") + ".lock";
+        }
+
+        /// <summary>
+        /// 拿資料根層級的單例鎖：獨佔開檔（<see cref="FileShare.None"/>），**握著 handle ＝ 持有鎖**，process 死掉由 OS 釋放。
+        /// <para>🩸 TASK-0468：原本的單例鎖住在**各自 repo 的 runtime**，看不到同一棵資料根上的另一份 Senate
+        /// ⇒ 副本起了第二顆 tavern，兩顆都送 Discord、搶 Inbound 游標。⇒ 鎖要住在**它們共用的那棵樹上**。</para>
+        /// <para>拿不到回 null，<paramref name="oWhy"/> 說出握著的是誰（讀名片：pid／repo 根／心跳）。</para>
+        /// </summary>
+        public static FileStream? TryAcquireLock(string iDataRoot, string iServerId, int iWaitMs, out string oWhy)
+        {
+            oWhy = "";
+            string aPath = LockPathFor(iDataRoot, iServerId);
+            var aSw = System.Diagnostics.Stopwatch.StartNew();
+            while (true)
+            {
+                try
+                {
+                    var aFs = new FileStream(aPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                    // 寫 pid 純粹給人看（握著的時候別人讀不到；process 死後留下來指認最後一任）—— ⛔ 互斥不靠它。
+                    try
+                    {
+                        byte[] aBytes = Encoding.UTF8.GetBytes(
+                            System.Diagnostics.Process.GetCurrentProcess().Id.ToString(CultureInfo.InvariantCulture) + "\n");
+                        aFs.SetLength(0);
+                        aFs.Write(aBytes, 0, aBytes.Length);
+                        aFs.Flush();
+                    }
+                    catch (Exception) { /* 寫不進去不影響互斥 */ }
+                    return aFs;
+                }
+                catch (IOException e)
+                {
+                    if (aSw.ElapsedMilliseconds >= iWaitMs)
+                    {
+                        SCP_ServerProbe aHolder = Probe(iDataRoot, iServerId);
+                        oWhy = "這棵資料根上的 `" + iServerId + "` 已經有一顆握著單例鎖（" + aPath + "，"
+                               + e.GetType().Name + "）⇒ 握著的那顆：" + Describe(aHolder);
+                        return null;
+                    }
+                    System.Threading.Thread.Sleep(50);
+                }
+                catch (UnauthorizedAccessException e)
+                {
+                    oWhy = "沒有權限開 " + aPath + "：" + e.Message;
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>人讀的「名片上那顆是誰」：pid／repo 根／狀態。名片不在或讀不開就照實說。</summary>
+        public static string Describe(SCP_ServerProbe iProbe)
+        {
+            if (iProbe.Info == null) return iProbe.Detail;
+            return "pid=" + iProbe.Info.Pid
+                   + "　repo 根=" + (iProbe.Info.RepoRoot.Length > 0 ? iProbe.Info.RepoRoot : "（名片上沒有、也推不出來）")
+                   + "　build=" + iProbe.Info.BuildId
+                   + "　狀態=" + iProbe.State;
+        }
+
+        /// <summary>
+        /// 寫一張名片（tmp → 換名，讀的人不會讀到半張）。⛔ 失敗不丟例外：Server 不該因為名片寫不出去而不啟動。
+        /// <para>🔴 **名片上是另一顆活著的 ⇒ 不蓋**（TASK-0468）：心跳新鮮、而且不是同一顆 process（pid＋啟動時刻）。
+        /// 讀不開也不蓋 —— 不知道主人是不是活著。遺體（心跳過期／心跳檔不在）與沒有名片照常寫。</para>
+        /// </summary>
+        public static (SCP_EndpointWrite Result, string Message) Write(string iDataRoot, SCP_ServerEndpointInfo iInfo)
         {
             string aPath = PathFor(iDataRoot, iInfo.ServerId);
+            SCP_ServerProbe aNow = Probe(iDataRoot, iInfo.ServerId);
+            if (aNow.State == SCP_ServerLiveness.Alive && aNow.Info != null && !aNow.Info.IsSameServer(iInfo.Pid, iInfo.StartedAtUtc))
+                return (SCP_EndpointWrite.RefusedOtherAlive,
+                        "名片上是另一顆活著的 `" + iInfo.ServerId + "`（" + Describe(aNow) + "）⇒ **不蓋**（" + aPath + "）");
+            if (aNow.State == SCP_ServerLiveness.Unreadable)
+                return (SCP_EndpointWrite.RefusedUnreadable,
+                        aNow.Detail + " ⇒ 不知道主人還在不在 ⇒ **不蓋**；人工看過再刪那張名片");
+            string aTmp = aPath + ".tmp" + System.Diagnostics.Process.GetCurrentProcess().Id.ToString(CultureInfo.InvariantCulture);
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(aPath) ?? ".");
-                File.WriteAllText(aPath, SCP_JsonWriter.Write(iInfo.ToJson()) + "\n", new UTF8Encoding(false));
-                return (true, aPath);
+                File.WriteAllText(aTmp, SCP_JsonWriter.Write(iInfo.ToJson()) + "\n", new UTF8Encoding(false));
+                if (File.Exists(aPath)) File.Replace(aTmp, aPath, null);
+                else File.Move(aTmp, aPath);
+                return (SCP_EndpointWrite.Written, aPath);
             }
             catch (Exception e)
             {
-                return (false, "名片寫不出去（" + aPath + "）：" + e.Message
+                try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch (Exception) { }
+                return (SCP_EndpointWrite.Failed, "名片寫不出去（" + aPath + "）：" + e.Message
                                + " ⇒ ⚠ **讀名片的一方會判成『這棵樹沒有 Server』**");
             }
         }
 
-        /// <summary>收工時刪掉名片。回 <c>(成功, 說明)</c>；檔本來就不在也算成功。</summary>
-        public static (bool Ok, string Message) Delete(string iDataRoot, string iServerId)
+        /// <summary>
+        /// 收工時刪掉名片 —— **只刪自己的**（pid＋啟動時刻對上才刪；TASK-0468）。回 <c>(成功, 說明)</c>；檔本來就不在也算成功。
+        /// <para>🩸 原本收工一律刪：同一個 id 有兩顆時，先收工的那顆會把**還在跑的那顆**的名片帶走。</para>
+        /// </summary>
+        public static (bool Ok, string Message) Delete(string iDataRoot, string iServerId, int iPid, string iStartedAtUtc)
         {
             string aPath = PathFor(iDataRoot, iServerId);
             try
             {
-                if (File.Exists(aPath)) File.Delete(aPath);
+                if (!File.Exists(aPath)) return (true, aPath);
+                SCP_ServerEndpointInfo aInfo;
+                try { aInfo = SCP_ServerEndpointInfo.FromJson(SCP_JsonParser.Parse(File.ReadAllText(aPath))); }
+                catch (Exception e) { return (false, "名片讀不開（" + aPath + "）：" + e.Message + " ⇒ 不知道是不是自己的 ⇒ **沒刪**"); }
+                if (!aInfo.IsSameServer(iPid, iStartedAtUtc))
+                    return (true, "名片上是別顆（pid=" + aInfo.Pid + "）⇒ 不是我的，**沒刪**（" + aPath + "）");
+                File.Delete(aPath);
                 return (true, aPath);
             }
             catch (Exception e)
@@ -156,6 +288,29 @@ namespace SCP.Core.Proc
                                + "（心跳過期那一態會擋住，但那要下一個人去讀心跳）");
             }
         }
+
+        /// <summary>
+        /// 這棵資料根上的**全部**名片（不分哪一份 Senate 寫的）—— 管理頁要看得到別的工作副本開的 Server（TASK-0468）。
+        /// <para>回 (serverId, 探測)；列舉本身失敗丟例外（⛔ 不回空清單假裝沒有）。</para>
+        /// </summary>
+        public static System.Collections.Generic.List<(string ServerId, SCP_ServerProbe Probe)> ProbeAll(string iDataRoot)
+        {
+            var aOut = new System.Collections.Generic.List<(string, SCP_ServerProbe)>();
+            const string aHead = "_server_endpoint.", aTail = ".json";
+            foreach (string aFile in Directory.GetFiles(iDataRoot, aHead + "*" + aTail))
+            {
+                string aName = Path.GetFileName(aFile);
+                string aId = aName.Substring(aHead.Length, aName.Length - aHead.Length - aTail.Length);
+                aOut.Add((aId, Probe(iDataRoot, aId)));
+            }
+            aOut.Sort((a, b) => string.CompareOrdinal(a.Item1, b.Item1));
+            return aOut;
+        }
+
+        /// <summary>兩個 repo 根是不是同一個（大小寫、斜線、結尾斜線不算差別）。</summary>
+        public static bool SameRoot(string iA, string iB)
+            => string.Equals((iA ?? "").Replace('\\', '/').TrimEnd('/'), (iB ?? "").Replace('\\', '/').TrimEnd('/'),
+                             StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// 探一下這棵資料根上那顆 Server。⛔ **不讀就不要說「沒有」** —— 四態各自說得出下一步。

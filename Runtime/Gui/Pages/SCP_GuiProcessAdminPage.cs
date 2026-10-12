@@ -88,8 +88,50 @@ namespace SCP.Core.Gui
             DrawToolRow(g);
             g.Separator();
             DrawRows(g);
+            DrawServerCards(g);
 
             if (m_Message != null) g.Note(m_Message);
+        }
+
+        // ── 資料根上的 Server 名片（TASK-0468）────────────────────────────
+        // 🩸 上面那張表只讀**本程式的 registry** ⇒ 另一份工作副本（或測試用 exe）在同一棵資料根上開的 Server 不在表上，
+        //    而它照樣在送 Discord、搶游標（2026-10-08，Tim 的截圖只看得到本尊兩顆）。
+        //    ⇒ 再列一次資料根上的全部名片（不分誰寫的）。
+
+        /// <summary>宿主宣告「本程式服務哪棵資料根」；null ＝ 宿主沒裝（那時本段說出來，⛔ 不畫空表）。</summary>
+        public static Func<string?>? ServerCardsDataRoot;
+
+        void DrawServerCards(SCP_Ui g)
+        {
+            g.Separator();
+            g.Label("**資料根上的 Server 名片**（含其他工作副本／測試用 exe 開的）");
+            if (ServerCardsDataRoot == null)
+            {
+                g.Note("⚠ 宿主沒有裝 `ServerCardsDataRoot` ⇒ 讀不到名片（⛔ 不代表沒有別的 Server）。");
+                return;
+            }
+            string? aRoot;
+            List<(string ServerId, SCP_ServerProbe Probe)> aCards;
+            try
+            {
+                aRoot = ServerCardsDataRoot();
+                if (aRoot == null) { g.Note("⚠ 解析不出資料根 ⇒ 讀不到名片（⛔ 不代表沒有別的 Server）。"); return; }
+                aCards = SCP_ServerEndpoint.ProbeAll(aRoot);
+            }
+            catch (Exception e)
+            {
+                g.Note("🔴 名片列舉失敗（" + e.GetType().Name + "：" + e.Message + "）—— ⛔ 不是「沒有名片」，是本頁量不到。");
+                return;
+            }
+            g.Note("資料根：`" + aRoot + "`　同一棵資料根上同一個 id 只能有一顆。repo 根欄可以分辨是不是本程式這一份。");
+            if (aCards.Count == 0) { g.Note("・沒有名片。"); return; }
+            using (g.Table("serverId", "名片狀態", "pid", "repo 根"))
+            {
+                foreach (var (aId, p) in aCards)
+                    g.TableRow(aId, p.State.ToString(),
+                               p.Info != null ? p.Info.Pid.ToString(CultureInfo.InvariantCulture) : "—",
+                               p.Info != null && p.Info.RepoRoot.Length > 0 ? p.Info.RepoRoot : "（名片上沒有）");
+            }
         }
 
         // ── 工具列（頁面內的那排，不是 SCP_GuiToolPage 的導覽列）────────
