@@ -16,6 +16,7 @@ using System.IO;
 using System.Text;
 using SCP.Core.Io;
 using SCP.Core.Json;
+using SCP.Core.Reflect;
 
 namespace SCP.Core.Sculpture
 {
@@ -36,6 +37,8 @@ namespace SCP.Core.Sculpture
         public List<int> pivot = new List<int> { 1, 1, 1 };
         public bool enabled = true;
         public string created_at = "", persona = "", note = "";
+        /// <summary>給下游認部件的 鍵 → 字串或數字（TASK-0517，<see cref="SCP_SculptMeta"/>）。⚠ 對映器不碰它：由 Read／Save 自己讀寫；用到就寫 schema 3。</summary>
+        [SCP_Ignore] public SortedDictionary<string, SCP_JsonData> meta = SCP_SculptMeta.New();
     }
 
     public sealed class SCP_SculptLinkFile
@@ -141,11 +144,18 @@ namespace SCP.Core.Sculpture
             {
                 aOut = new SCP_SculptLinkFile { schema = 0 };
                 var aOpt = new SCP_JsonMapOptions();
-                SCP_JsonMapper.Populate(aOut, SCP_JsonParser.Parse(File.ReadAllText(aFile, new UTF8Encoding(false)), false), aOpt);
+                SCP_JsonData aRoot = SCP_JsonParser.Parse(File.ReadAllText(aFile, new UTF8Encoding(false)), false);
+                SCP_JsonMapper.Populate(aOut, aRoot, aOpt);
                 if (aOpt.Diagnostics.Count > 0) throw new InvalidOperationException(string.Join("; ", aOpt.Diagnostics));
+                // meta（[SCP_Ignore]，對映器不碰）：照順序對回每一筆
+                SCP_JsonData aList = aRoot["links"];
+                for (int i = 0; i < aOut.links.Count && aList.IsArray && i < aList.Count; i++)
+                    if (SCP_SculptMeta.ReadFrom(aList[i]["meta"], aOut.links[i].meta) is string aMetaBad)
+                        throw new InvalidOperationException("關聯 `" + aOut.links[i].name + "` 的 " + aMetaBad);
             }
             catch (Exception e) { throw new InvalidOperationException("links.json 讀不了（" + aFile + "：" + e.Message + "）—— ⛔ 不當成沒有關聯，修好再用"); }
-            if (aOut.schema != 1 && aOut.schema != SchemaWithMirror) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema != 1 && aOut.schema != SchemaWithMirror && aOut.schema != SchemaWithMeta) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema != SchemaWithMeta && aOut.links.Exists(l => l.meta.Count > 0)) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：有 meta 卻是 schema " + aOut.schema + " —— 手改的檔？）");
             var aNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var l in aOut.links)
             {
@@ -166,6 +176,12 @@ namespace SCP.Core.Sculpture
         /// 舊版只認 schema 1 ⇒ 升號讓它**大聲讀不了**；沒用鏡像的檔維持 1，舊版照樣讀。
         /// </summary>
         public const int SchemaWithMirror = 2;
+
+        /// <summary>
+        /// 有 meta 的 links.json 寫這個 schema（TASK-0517；有沒有鏡像都一樣）。同 <see cref="SchemaWithMirror"/> 的理由：
+        /// 認得 2 的舊版沒有 meta 成員 ⇒ 會默默丟掉、寫回去就清光 ⇒ 再升一號讓它大聲讀不了。
+        /// </summary>
+        public const int SchemaWithMeta = 3;
 
         /// <summary>
         /// 鏡像參數正規化：""／"none"／"0" ＝ 不翻；否則由 x／y／z 組成（可用逗號隔開、大小寫不拘），每軸至多一次 ⇒ 依 xyz 順序。
@@ -189,12 +205,16 @@ namespace SCP.Core.Sculpture
 
         public static void Save(SCP_SculptPaths iPaths, SCP_SculptLinkFile iFile)
         {
-            iFile.schema = iFile.links.Exists(l => !string.IsNullOrEmpty(l.mirror)) ? SchemaWithMirror : 1;
+            iFile.schema = iFile.links.Exists(l => l.meta.Count > 0) ? SchemaWithMeta
+                         : iFile.links.Exists(l => !string.IsNullOrEmpty(l.mirror)) ? SchemaWithMirror : 1;
             string aFile = iPaths.LinksFile;
             string aTmp = aFile + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
             try
             {
-                File.WriteAllText(aTmp, SCP_JsonWriter.Write(SCP_JsonMapper.ToJson(iFile), true) + "\n", new UTF8Encoding(false));
+                SCP_JsonData aRoot = SCP_JsonMapper.ToJson(iFile);
+                SCP_JsonData aList = aRoot["links"];
+                for (int i = 0; i < iFile.links.Count; i++) SCP_SculptMeta.WriteTo(aList[i], iFile.links[i].meta);
+                File.WriteAllText(aTmp, SCP_JsonWriter.Write(aRoot, true) + "\n", new UTF8Encoding(false));
                 if (File.Exists(aFile)) File.Replace(aTmp, aFile, null);
                 else File.Move(aTmp, aFile);
             }

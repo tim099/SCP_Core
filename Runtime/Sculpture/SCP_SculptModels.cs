@@ -27,6 +27,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using SCP.Core.Json;
+using SCP.Core.Reflect;
 
 namespace SCP.Core.Sculpture
 {
@@ -57,10 +58,13 @@ namespace SCP.Core.Sculpture
         public string color = "";
         public bool enabled = true;
         public string note = "", persona = "", created_at = "";
+        /// <summary>給下游認部件的 鍵 → 字串或數字（TASK-0517，<see cref="SCP_SculptMeta"/>）。⚠ 對映器不碰它：由 ReadModels／SaveModels 自己讀寫。</summary>
+        [SCP_Ignore] public SortedDictionary<string, SCP_JsonData> meta = SCP_SculptMeta.New();
     }
 
     public sealed class SCP_SculptModelFile
     {
+        /// <summary>1；有任何一個模型用到 meta ⇒ 2（<see cref="SCP_SculptModels.SchemaWithMeta"/>）。</summary>
         public int schema = 1;
         public List<SCP_SculptModel> models = new List<SCP_SculptModel>();
     }
@@ -233,6 +237,12 @@ namespace SCP.Core.Sculpture
         public const double MaxScale = 1e4;
         /// <summary>快取格式版本：匯出那一側的輸出改了就加一（舊快取的鍵就對不上）。</summary>
         public const string CacheVersion = "sculpt-model-cache 1";
+        /// <summary>
+        /// 有 meta 的 models.json 寫這個 schema（TASK-0517）。
+        /// 🩸 為什麼要升號：舊版 senate.exe 的 <see cref="SCP_SculptModel"/> 沒有 meta ⇒ 讀到會**默默丟掉**、下一次寫回去就清光，而檔看起來完全正常。
+        /// 舊版只認 schema 1 ⇒ 升號讓它大聲讀不了；沒用 meta 的檔維持 1。
+        /// </summary>
+        public const int SchemaWithMeta = 2;
 
         // ───────────────────────── 讀寫 ─────────────────────────
 
@@ -244,11 +254,18 @@ namespace SCP.Core.Sculpture
             try
             {
                 var aOpt = new SCP_JsonMapOptions();
-                SCP_JsonMapper.Populate(aOut, SCP_JsonParser.Parse(File.ReadAllText(aFile, new UTF8Encoding(false)), false), aOpt);
+                SCP_JsonData aRoot = SCP_JsonParser.Parse(File.ReadAllText(aFile, new UTF8Encoding(false)), false);
+                SCP_JsonMapper.Populate(aOut, aRoot, aOpt);
                 if (aOpt.Diagnostics.Count > 0) throw new InvalidOperationException(string.Join("; ", aOpt.Diagnostics));
+                // meta（[SCP_Ignore]，對映器不碰）：照順序對回每一筆
+                SCP_JsonData aList = aRoot["models"];
+                for (int i = 0; i < aOut.models.Count && aList.IsArray && i < aList.Count; i++)
+                    if (SCP_SculptMeta.ReadFrom(aList[i]["meta"], aOut.models[i].meta) is string aMetaBad)
+                        throw new InvalidOperationException("模型 `" + aOut.models[i].name + "` 的 " + aMetaBad);
             }
             catch (Exception e) { throw new InvalidOperationException("models.json 讀不了（" + aFile + "：" + e.Message + "）—— ⛔ 不當成沒有，修好再用"); }
-            if (aOut.schema != 1) throw new InvalidOperationException("models.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema != 1 && aOut.schema != SchemaWithMeta) throw new InvalidOperationException("models.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema == 1 && aOut.models.Exists(m => m.meta.Count > 0)) throw new InvalidOperationException("models.json 讀不了（" + aFile + "：有 meta 卻是 schema 1 —— 手改的檔？）");
             var aNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var m in aOut.models)
             {
@@ -260,11 +277,14 @@ namespace SCP.Core.Sculpture
 
         public static void SaveModels(SCP_SculptPaths iPaths, SCP_SculptModelFile iFile)
         {
-            iFile.schema = 1;
+            iFile.schema = iFile.models.Exists(m => m.meta.Count > 0) ? SchemaWithMeta : 1;
             string aPath = iPaths.ModelsFile, aTmp = aPath + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
             try
             {
-                File.WriteAllText(aTmp, SCP_JsonWriter.Write(SCP_JsonMapper.ToJson(iFile), true) + "\n", new UTF8Encoding(false));
+                SCP_JsonData aRoot = SCP_JsonMapper.ToJson(iFile);
+                SCP_JsonData aList = aRoot["models"];
+                for (int i = 0; i < iFile.models.Count; i++) SCP_SculptMeta.WriteTo(aList[i], iFile.models[i].meta);
+                File.WriteAllText(aTmp, SCP_JsonWriter.Write(aRoot, true) + "\n", new UTF8Encoding(false));
                 if (File.Exists(aPath)) File.Replace(aTmp, aPath, null);
                 else File.Move(aTmp, aPath);
             }
