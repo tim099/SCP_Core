@@ -165,6 +165,15 @@ namespace SCP.Core.Gui
         /// <para>id 走**顯式 key 逐字採用**（跟按鈕同一個契約）—— 收合狀態要存進 session，
         /// 會漂的 id 會讓「我收起來的是哪一段」隔一版就跑掉。</para>
         /// </summary>
+        /// <summary>
+        /// 只**問**某個摺疊區塊現在開不開（跟 <see cref="Fold"/> 同一個 id 契約、同一份狀態），⛔ 不建任何節點。
+        /// <para>用途：區塊畫在後面、但前面就要決定要不要做事（例：渲染結果收起來 ⇒ 自動渲染不做）。
+        /// 用「上一幀記下來的值」代替的話，文字模式每道指令都是新的頁面實例 ⇒ 第一幀永遠是預設值，收起來也照做一次。</para>
+        /// <para>⚠ 直接拿 key 查（顯式 key 逐字就是 id），⛔ 不走 MakeExplicit —— 它會登記「用過了」，之後真的畫 Fold 時 id 會變成 key#2、狀態對不上。</para>
+        /// </summary>
+        public bool FoldOpen(string iKey, bool iDefaultOpen = true)
+            => m_Input.Folds.TryGetValue(iKey, out bool v) ? v : iDefaultOpen;
+
         public FoldScope Fold(string iTitle, string iKey, bool iDefaultOpen = true)
         {
             string aId = m_Ids.MakeExplicit(iKey);
