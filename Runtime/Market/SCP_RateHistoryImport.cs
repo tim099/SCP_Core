@@ -108,7 +108,6 @@ namespace SCP.Core.Market
                     aPlan.Unreadable.Add($"{p}：{(aShow.Ok ? aErr : aShow.ReasonLine)}");
                     continue;
                 }
-                v = v!;
                 var aItem = new SCP_RateImportItem { VersionId = SCP_RateHistory.VersionIdOf(v.FetchedAtUtc), FetchedAtUtc = v.FetchedAtUtc, SourcePath = p, Source = v };
                 aPlan.Items.Add(aItem);
                 if (v.Origin.StartsWith(OriginPrefix, StringComparison.Ordinal)) { aItem.Skip = "來源本身就是匯入的版本（不轉手）"; continue; }

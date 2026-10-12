@@ -36,6 +36,12 @@ namespace SCP.Core.Sculpture
         /// <summary>預設比例：1 公尺＝32 格（建築與家具的共用基準）。</summary>
         public const double DefaultMetersPerVoxel = 1.0 / 32;
         [SCP_Ignore] public double MetersPerVoxel => meters_per_voxel > 0 ? meters_per_voxel : DefaultMetersPerVoxel;
+        /// <summary>
+        /// 標籤（TASK-0505）：<see cref="SCP_SculptWorks.TagSub"/> ＝ 子作品，沒標的一律是主作品。
+        /// ⚠ 跟 <see cref="parent_work"/> 無關 —— 那一格管任務歸屬與計費；組裝整艘船的那件掛在任務底下，卻是主作品。
+        /// </summary>
+        public List<string> tags = new List<string>();
+        [SCP_Ignore] public bool IsSub => tags != null && tags.Contains(SCP_SculptWorks.TagSub);
         [SCP_JsonExtensionData] public Dictionary<string, SCP_JsonData> extra = new Dictionary<string, SCP_JsonData>();
     }
 
@@ -61,6 +67,27 @@ namespace SCP.Core.Sculpture
         /// <summary>宿主沒給政策上限時的預設（Tim 2026-10-10：256 不寫死、改成參數）。</summary>
         public const int DefaultMaxAxis = 4096;
         public static bool ValidSize(int iValue) => iValue >= 1 && iValue <= MaxAxisHard;
+        /// <summary>保留標籤：子作品（Tim 2026-10-12：沒標的一律當主作品）。</summary>
+        public const string TagSub = "sub";
+        public const int MaxTags = 16, MaxTagLength = 32;
+        /// <summary>
+        /// `tags=` 的解析：逗號分隔、轉小寫，每個 1–32 字的英數／底線／連字號，最多 16 個；重複的只留第一個；空字串 ＝ 清空。
+        /// 不合法 ⇒ ArgumentException（整份不收，⛔ 不挑合法的那幾個寫進去 —— 半套寫入看起來跟成功一樣）。
+        /// </summary>
+        public static List<string> ParseTags(string iText)
+        {
+            var aTags = new List<string>();
+            foreach (string aRaw in (iText ?? "").Split(','))
+            {
+                string t = aRaw.Trim().ToLowerInvariant();
+                if (t.Length == 0) continue;
+                if (t.Length > MaxTagLength) throw new ArgumentException("標籤 `" + t + "` 超過 " + MaxTagLength + " 字");
+                foreach (char c in t) if (!IsAlnum(c) && c != '-' && c != '_') throw new ArgumentException("標籤 `" + t + "` 含不合法字元（只收英數、底線、連字號）");
+                if (!aTags.Contains(t)) aTags.Add(t);
+            }
+            if (aTags.Count > MaxTags) throw new ArgumentException("標籤最多 " + MaxTags + " 個（給了 " + aTags.Count + " 個）");
+            return aTags;
+        }
         /// <summary>政策上限只管**建立與調整尺寸**；<paramref name="iMaxAxis"/> 由宿主給（夾在 1..結構上限）。</summary>
         public static int[] ParseSize(string iText, int iMaxAxis = DefaultMaxAxis)
         {
@@ -135,6 +162,7 @@ namespace SCP.Core.Sculpture
             var options = new SCP_JsonMapOptions();
             var card = new SCP_SculptWork();
             SCP_JsonMapper.Populate(card, SCP_JsonParser.Parse(File.ReadAllText(path, Encoding.UTF8)), options);
+            if (card != null && card.tags == null) card.tags = new List<string>();   // 舊卡沒有 tags（或寫成 null）⇒ 沒標 ＝ 主作品
             if (options.Diagnostics.Count > 0 || card == null || card.schema != 1 || card.id != id || !ValidSize(card.size) ||
                 !ValidSize(card.SizeX) || !ValidSize(card.SizeY) || !ValidSize(card.SizeZ) ||
                 ((card.size_x != 0 || card.size_y != 0 || card.size_z != 0) &&
