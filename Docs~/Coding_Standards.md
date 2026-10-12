@@ -409,7 +409,7 @@ senate cmd            → 執行位置：本地 75 ／ ⤷Server 6 ／ ⛔未實
 
 ---
 
-## §4.7 ⛔ SCP_Core 有多份工作副本：改完**自己 push**；Unity 那側的副本**不用 agent 去 pull**（Tim 2026-10-09 改）
+## §4.7 ⛔ SCP_Core 有多份工作副本：改完**自己 push**；其他消費端的副本不歸 agent
 
 SCP_Core 同時掛在好幾個消費端底下（`Senate/SCP_Core`、`LY/Assets/Plugins/SCP_Core`、`Bar/...`）——
 那**不是複本，是同一個 repo 的多份工作副本**。在其中一份改完，其他份**不會自己知道**。
@@ -420,24 +420,17 @@ SCP_Core 同時掛在好幾個消費端底下（`Senate/SCP_Core`、`LY/Assets/P
 git -C <改動那份> fetch origin && git -C <改動那份> push origin master
 ```
 
-- ⭐ **到 push 為止**（Tim 2026-10-09）：掛在 Unity 專案（`Assets/Plugins/SCP_Core`）底下的工作副本 ⛔ **不用 agent 去 pull**，
-  也不用開 Editor 等 `.meta` 長出來 —— 那一側由 Editor 自己同步、`.meta` 也由那一側入版控。
-  ⇒ 回報時**不要寫「Bar／LY 已同步」**，也不要把「等 Editor 長 `.meta`」列成待辦。**在 Senate 這側手工造 `.meta` 仍是偽造**。
+- ⭐ **到 push 為止**：掛在 Unity 專案（`Assets/Plugins/SCP_Core`）底下的工作副本 ⛔ **不歸 agent** ——
+  不去 pull、不驗那一側的編譯、不等 `.meta`；那一側自己同步、自己入版控。
+  ⇒ 回報時**不要寫「Bar／LY 已同步」**，也不要把 Unity 那側的任何一格列成待辦。**在 Senate 這側手工造 `.meta` 仍是偽造**。
 - ⚠ **push 前先 fetch**：遠端比你新 ⇒ 兩份各自 commit 過、已經分叉 ⇒ **當場喊**，⛔ 不 merge、不 rebase 別人的 commit。
 - ⚠ **push 會連帶推出你底下別人還沒推的 commit**（同一條分支，沒辦法只推自己那筆）⇒ 推之前看 `git log origin/master..HEAD`，回報時點名是誰的哪幾筆。
 - ⚠ **父層的 submodule pointer bump 不在這一步**：消費端 repo 會顯示 `M <mount path>`。
   那是**各消費端自己的 commit**（本專案由 Tim 收尾），不要順手一起提。
 
-🩸 **為什麼這一節值得存在**（2026-09-03／09-04 各一次）：Editor 那側的 SCP_Core 停在舊 commit，
-於是從 Unity 看 canvas 會看到「**沒有 place 的版本**」—— 而那個「找不到」長得像**功能沒做**，
-不像「你的工作副本落後兩筆」。
-⇒ **落後的工作副本不會報錯，它會給你一個看起來完整的舊世界。**
-⇒ 2026-09-04 起曾規定 agent 自己到每一份 pull；2026-10-09 Tim 改成 Unity 那側由 Editor 自己同步 ——
-   所以從 Unity 看到「功能沒做」時，**先查那份副本落後幾筆**，再懷疑程式。
+📌 push 由 **agent 自己來**，不等人做。
 
-📌 push 由 **agent 自己來**（Tim 2026-09-04 拍板），不等人做；Unity 副本的 pull 不歸 agent（Tim 2026-10-09）。
-
-### ⛔ 掛在 `Assets/` 底下的那一份**不要 `dotnet build`**（2026-09-04）
+### ⛔ 掛在 `Assets/` 底下的那一份**不要 `dotnet build`**
 
 `SCP_Core.csproj` 在每一份工作副本裡都在（同一個 repo）⇒ 在 Unity 專案那一份跑 `dotnet build`
 **編得過、0 warning 0 error**，而它把 `bin/` `obj/` 生在**Unity 會 import 的位置**
@@ -450,13 +443,7 @@ error CS1704: An assembly with the same simple name 'SCP_Core' has already been 
 
 ⚠ **`bin/` `obj/` 在 `.gitignore` 裡** ⇒ `git status` 不會提醒你它們躺在那裡。
 
-⇒ 規則：**要編 SCP_Core 就編 Senate 那一份**（`D:/Unity/Senate/SCP_Core`）。
-Unity 那一份的語法驗收走 **Unity CLI 的重編**（`unity command recompile` → 輪詢 `recompile_status` → 看 `compilationFailed`，
-錯誤明細從 `console --since <觸發前的 cursor>` 拿；流程見 `senate cmd doc --arg op=show --arg name=Unity_CLI`）。
-⛔ **Unity 的綠燈不涵蓋 `senate.exe`，反之亦然** —— 兩邊編譯設定不同：
-🩸 2026-09-07 同一份 `SCP_Cmd_Keys.cs`，Unity **0 errors**（LangVersion 9、nullable 沒開，
-`?` 只是 CS8632 警告），`dotnet build` **CS8603 紅燈**（nullable 開著且警告當錯誤）。
-⇒ 改 SCP_Core **兩邊都要編過**，只驗一邊等於只驗了一半。
+⇒ 規則：**要編 SCP_Core 就編 Senate 那一份**（`D:/Unity/Senate/SCP_Core`）；改 SCP_Core 的編譯驗收只看 Senate 這側。
 📌 一般形：**同一個 repo 掛兩份工作副本，而只有一份會被宿主 import** ——
 在被 import 的那一份上產生建置產物，等於自己塞一顆重複的 assembly 進去。
 
