@@ -734,10 +734,12 @@ namespace SCP.Core.Sculpture
         /// <paramref name="iGeometry"/> false ⇒ 只算矩陣與狀態、不讀網格（列清單、寫入前驗證、繩端點）。
         /// <paramref name="iProducer"/>：work 來源的快取不在時用它產生（null ⇒ 那幾個 broken 並說原因）。
         /// <paramref name="iRootOverride"/>：組裝件自己那份換成還沒存的那一份（寫入前驗證）。models.json 讀不了 ⇒ InvalidOperationException 照丟。
+        /// <paramref name="iBake"/> false ⇒ 讀網格但**不烘**成組裝件座標（Geom／Min／Max 留空）—— 子模型分開畫（TASK-0509）自己套矩陣、同一個 obj 共用一份。
         /// </summary>
         public static SCP_SculptModelSet Resolve(SCP_SculptWorks iWorks, string iRootId, List<SCP_SculptLinkNode>? iTree,
                                                  SCP_SculptLinkSelection iLinkSel, SCP_SculptModelSelection iSel, bool iGeometry,
-                                                 SCP_SculptModelCacheProducer? iProducer = null, SCP_SculptModelFile? iRootOverride = null)
+                                                 SCP_SculptModelCacheProducer? iProducer = null, SCP_SculptModelFile? iRootOverride = null,
+                                                 bool iBake = true)
         {
             var aSet = new SCP_SculptModelSet { Works = iWorks };
             var aIndex = SCP_SculptRopes.IndexTree(iTree);
@@ -798,6 +800,7 @@ namespace SCP.Core.Sculpture
                             catch (Exception e) when (e is InvalidDataException || e is IOException) { aMeshBad = e.Message; }
                         }
                         if (aMeshBad != null) { r.State = SCP_SculptModelReading.Broken; aWhy.Add(aMeshBad); }
+                        else if (!iBake) { if (r.Mesh!.Warnings.Count > 0) aWhy.Add("⚠ " + string.Join("；", r.Mesh.Warnings)); }
                         else
                         {
                             double[] aRawToRoot = Compose(r.ToRoot, r.Axes);

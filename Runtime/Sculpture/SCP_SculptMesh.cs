@@ -73,6 +73,24 @@ namespace SCP.Core.Sculpture
             return m;
         }
 
+        /// <summary>
+        /// 淺複本＋一串額外的外框點（子模型實例在世界座標的外框八角，TASK-0509）—— 框景／地板／燈用，⛔ 不碰網格本身。
+        /// <paramref name="iIndexCount"/> 只給「有沒有東西會投影子」那一格判斷用（同 <see cref="WithExtra"/>）。沒有點 ⇒ 回自己。
+        /// </summary>
+        public SCP_SculptMesh WithPoints(IReadOnlyList<Vector3> iPoints, int iIndexCount)
+        {
+            if (iPoints.Count == 0) return this;
+            var m = (SCP_SculptMesh)MemberwiseClone();
+            bool aHad = HasGeometry;
+            Vector3 aMin = aHad ? Min : new Vector3(float.MaxValue), aMax = aHad ? Max : new Vector3(float.MinValue);
+            var aExtra = new List<Vector3>(Extra);
+            foreach (Vector3 p in iPoints) { aMin = Vector3.Min(aMin, p); aMax = Vector3.Max(aMax, p); aExtra.Add(p); }
+            m.Min = aMin; m.Max = aMax;
+            m.Extra = aExtra.ToArray();
+            m.IndexCount += iIndexCount;
+            return m;
+        }
+
         /// <summary>框景點 ＝ voxel 中心＋另一趟的外框八角。</summary>
         public Vector3[] FrameCenters()
         {

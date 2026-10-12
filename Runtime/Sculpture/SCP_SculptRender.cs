@@ -129,6 +129,19 @@ namespace SCP.Core.Sculpture
         /// </summary>
         public List<SCP_SculptModelGeom> Models = new List<SCP_SculptModelGeom>();
 
+        /// <summary>
+        /// 子模型分開畫（TASK-0509，觀測頁 GPU 預覽）：關聯節點與外部模型各自一份網格、同件共用、每個實例帶自己的矩陣。
+        /// 有值 ⇒ voxel 清單只是主作品自己的格、<see cref="Models"/> 是空的（模型改由這裡畫）、繩另外一趟（⛔ 不併進 voxel 網格 ——
+        /// 切關聯時繩會換，併在一起的話整塊 voxel 網格要重建）。null ＝ 合併的舊樣子（CLI view 與分享圖逐位元不變）。
+        /// </summary>
+        public SCP_SculptParts? Parts;
+
+        /// <summary>這一幀每個實例畫不畫（長度 ＝ Parts.Instances；null ＝ 全畫）—— 開關只改這一格，⛔ 不動 Parts（渲染器不重建網格）。</summary>
+        public bool[]? PartVisible;
+
+        /// <summary>這一幀主作品自己的格畫不畫（hide_links=self ⇒ false）。⚠ 外框照算（切開關時框景、地板、陰影不跳）。</summary>
+        public bool OwnVisible = true;
+
         /// <summary>淺複製（燈與地板物件共用 —— 呼叫端只改純量欄位時用；要改燈或地板就自己再複製那一格）。</summary>
         public SCP_SculptRenderParams Clone() => (SCP_SculptRenderParams)MemberwiseClone();
     }
