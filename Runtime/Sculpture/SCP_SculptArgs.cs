@@ -113,8 +113,13 @@ namespace SCP.Core.Sculpture
 
     public sealed class SCP_SculptExportArgs
     {
-        /// <summary>obj ／ vox。</summary>
+        /// <summary>obj ／ vox ／ list ／ vxk。</summary>
         public string Format = "";
+        /// <summary>
+        /// vxk（TASK-0518）：檔頭的前段（format／version／work／title／owner／meters_per_voxel／size）與後段（parts／rig／rig_skipped／points）由呼叫端組好；
+        /// 引擎在中間補格子那一段（bbox／chunk／voxels／checksum／palette／colors／source／exported_at），最後 nchunks —— 照 voxel_export.py 的欄位順序。
+        /// </summary>
+        public SCP.Core.Json.SCP_JsonData? VxkHead, VxkTail;
         public string Region = "";
         public string ExcludeColor = "";
         public string Out = "";

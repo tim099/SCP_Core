@@ -1282,8 +1282,8 @@ namespace SCP.Core.Sculpture
         /// </summary>
         public SCP_SculptResult Export(SCP_SculptExportArgs iArgs)
         {
-            if (iArgs.Format != "obj" && iArgs.Format != "vox" && iArgs.Format != FormatList)
-                return SCP_SculptResult.Error(2, "--format 只能是 obj、vox 或 list：" + iArgs.Format);
+            if (iArgs.Format != "obj" && iArgs.Format != "vox" && iArgs.Format != FormatList && iArgs.Format != SCP_SculptVxk.Format)
+                return SCP_SculptResult.Error(2, "--format 只能是 obj、vox、list 或 vxk：" + iArgs.Format);
             if (iArgs.Merge != MergeGreedy && iArgs.Merge != MergeNone)
                 return SCP_SculptResult.Error(2, "--merge 只能是 greedy 或 none：" + iArgs.Merge);
             SCP_SculptSpace aSpace;
@@ -1303,6 +1303,7 @@ namespace SCP.Core.Sculpture
             if (!string.IsNullOrEmpty(aParent)) Directory.CreateDirectory(aParent);
 
             var aRes = new SCP_SculptExportResult { Format = iArgs.Format, VoxelCount = aVox.Count, OutputPath = aOutPath };
+            if (iArgs.Format == SCP_SculptVxk.Format) return ExportVxk(iArgs, aVox, aRes);
             if (iArgs.Format == FormatList)
             {
                 // 純格子清單（TASK-0492）：x,y,z,color 絕對座標、照 x→y→z 排 ⇒ 設計程式直接讀、stampvox at=0,0,0 原樣貼得回去
@@ -1448,6 +1449,42 @@ namespace SCP.Core.Sculpture
             aRes.Lines.Add("  voxels    : " + aVox.Count + "  size: " + sx + "x" + sy + "x" + sz);
             aRes.Lines.Add("  vox       : " + aOutPath);
             return aRes;
+        }
+
+        /// <summary>
+        /// .vxk（TASK-0518）：檔頭 ＝ 呼叫端的前段 ＋ 格子那一段 ＋ source（同 list 檔頭的 `# link …` 行）＋ exported_at ＋ 呼叫端的後段；封裝之後解回來
+        /// 跟這次的格子逐格逐色比、checksum 也比，⛔ 對不上就不寫（同 voxel_export.py）。
+        /// </summary>
+        SCP_SculptResult ExportVxk(SCP_SculptExportArgs iArgs, List<(int X, int Y, int Z, int Color)> iVox, SCP_SculptExportResult ioRes)
+        {
+            if (iArgs.Region.Length > 0 || iArgs.ExcludeColor.Length > 0) return SCP_SculptResult.Error(2, "vxk 是整件作品的封裝 —— 不吃 region／exclude_color");
+            var aHeader = SCP.Core.Json.SCP_JsonData.NewObject();
+            if (iArgs.VxkHead != null) foreach (string k in iArgs.VxkHead.Keys) aHeader.Set(k, iArgs.VxkHead[k]);
+            SCP_SculptVxk.AppendVoxelFields(aHeader, iVox);
+            var aSource = SCP.Core.Json.SCP_JsonData.NewArray();
+            foreach (string aLine in LinkHeader().Split('\n'))
+            {
+                string s = aLine.StartsWith("#", StringComparison.Ordinal) ? aLine.Substring(1).Trim() : "";
+                if (s.StartsWith("link ", StringComparison.Ordinal)) aSource.Add(s);
+            }
+            aHeader.Set("source", aSource);
+            aHeader.Set("exported_at", Clock().ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture));
+            if (iArgs.VxkTail != null) foreach (string k in iArgs.VxkTail.Keys) aHeader.Set(k, iArgs.VxkTail[k]);
+            byte[] aBlob;
+            try { aBlob = SCP_SculptVxk.Pack(iVox, aHeader); }
+            catch (InvalidDataException e) { return SCP_SculptResult.Error(1, "vxk 封裝：" + e.Message); }
+            var (aBack, aBackVox) = SCP_SculptVxk.Unpack(aBlob);
+            uint aSum = SCP_SculptVxk.Checksum(iVox);
+            if (!SCP_SculptVxk.SameVoxels(iVox, aBackVox) || SCP_SculptVxk.Checksum(aBackVox) != aSum || (uint)aBack["checksum"].AsLong() != aSum)
+                return SCP_SculptResult.Error(1, "vxk 對拍不過：封裝回讀 " + aBackVox.Count + " 格 vs 匯出 " + iVox.Count + " 格 —— 沒寫");
+            File.WriteAllBytes(ioRes.OutputPath, aBlob);
+            ioRes.Sha256 = SCP_SculptPy.Sha256Hex(aBlob);
+            ioRes.Lines.Add("# 📦 VXK 匯出完成（VoxelKit 封裝，TASK-0518）");
+            ioRes.Lines.Add("  voxels    : " + iVox.Count + "（" + aHeader["colors"].Count + " 色）、非空 16³ 區塊 " + aHeader["nchunks"].AsLong() + "、checksum " + aSum.ToString("x8", CultureInfo.InvariantCulture));
+            ioRes.Lines.Add("  size      : " + (aBlob.Length / 1e6).ToString("0.00", CultureInfo.InvariantCulture) + " MB（deflate-raw）");
+            ioRes.Lines.Add("  對拍      : 封裝回讀 ＝ 匯出的格子（逐格、逐色、checksum）✓");
+            ioRes.Lines.Add("  vxk       : " + ioRes.OutputPath);
+            return ioRes;
         }
 
         /// <summary>匯出檔頭的關聯紀錄（TASK-0494）：每條組進來的關聯一行 <c># link 路徑 作品@版本</c>（草稿另註）；沒有關聯 ⇒ 空字串。</summary>
