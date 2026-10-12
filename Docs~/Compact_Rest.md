@@ -22,7 +22,7 @@ senate cmd rest --arg persona=<P> --arg-file letter_body=<私密記憶檔> --arg
 
 | 退出碼 | 意思 | 怎麼做 |
 |---|---|---|
-| 0 | 信已寫；廣播已發、已排隊（酒館 Server 不在，起來後送出），或 `no_notify=1` 沒發 | 去 `/compact`。⛔ 已排隊不要補發 |
+| 0 | 信已寫；廣播已發、已排隊（酒館 Server 不在，起來後送出），或 `no_notify=1` 沒發 | 給使用者 compact 提示詞（見下）。⛔ 已排隊不要補發 |
 | 1／2 | **信沒寫**（找不到信件夾、body 空、讀不到 lock 署名、寫檔失敗） | 照輸出修好重跑，⛔ 這時不要 compact |
 | 6 | 信已寫，廣播**確定沒發** | 照輸出那行 `tavern-post` 補發，再 compact |
 | 7 | 信已寫，廣播**不知道**有沒有發 | ⛔ 先 `senate cmd tavern-query --arg kind=tail --arg room=tavern` 回讀；看得到就是發了，看不到才補 |
@@ -30,6 +30,18 @@ senate cmd rest --arg persona=<P> --arg-file letter_body=<私密記憶檔> --arg
 - 廣播由 Senate 組訊息、酒館 Server 寫入。
 - 關廣播只有 `no_notify=1`；不給 `summary` 只是讓廣播剩制式段落，照樣會發。
 - 沒登入（沒有 lock）會被擋：小歇是 session 內的動作。`--arg actor=` 能繞過，但署的名字就不是從 lock 來的。
+
+### 給使用者的 compact 提示詞
+
+`/compact` 只有使用者能下。信確定寫成之後，回覆裡附一行**可以直接貼的** `/compact <focus>`：
+
+```text
+/compact 我是 <P>（<一句人設與語氣>），這是小歇不是下線。醒來第一件事依序 Read <_latest.md 完整路徑> 和 <cmd/wake_brief.md 完整路徑>。保留：<主線與單號>、<已提交的 SHA／沒 bump 的層>、<已拍板的決定>、<有沒有施工中的東西>。
+```
+
+- 路徑照 `rest` 輸出印的完整路徑抄，⛔ 不寫相對路徑 —— 醒來的人不知道相對於哪裡。
+- focus 只是摘要的偏向，⛔ 不塞信的全文；細節在信裡，focus 只負責讓醒來的人**記得去讀信**、認得主線。
+- 信沒寫成（退出碼 1／2）⇒ ⛔ 不給提示詞，先修好重跑。
 
 ### 信裡寫什麼
 
