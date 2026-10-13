@@ -337,12 +337,32 @@ namespace SCP.Core.Proc
                     + " ⇒ 那顆 Server 已經不在了，這張名片是遺物。");
 
             string aBeat;
-            try { aBeat = SCP_JsonParser.Parse(File.ReadAllText(aInfo.HeartbeatPath)).GetString("beat_at_utc", ""); }
+            int aBeatPid;
+            string aBeatStarted;
+            try
+            {
+                SCP_JsonData aHb = SCP_JsonParser.Parse(File.ReadAllText(aInfo.HeartbeatPath));
+                aBeat = aHb.GetString("beat_at_utc", "");
+                aBeatPid = aHb.GetInt("pid", 0);
+                aBeatStarted = aHb.GetString("started_at_utc", "");
+            }
             catch (Exception e)
             {
                 return new SCP_ServerProbe(SCP_ServerLiveness.Unreadable, aInfo, null,
                     "心跳檔讀不開（" + aInfo.HeartbeatPath + "）：" + e.Message + " ⇒ **不知道**。");
             }
+
+            // 🩸 TASK-0527：心跳檔照 server id 取路徑 ⇒ 同一份 repo 的下一代寫的是**同一個檔**。
+            //    只看新不新的話，下一代（連它自己寫名片前的第一拍）會替死掉的名片作證 ⇒ 遺物永遠 Alive、沒有人接手。
+            //    ⇒ 心跳上寫的是另一顆 ⇒ 名片是遺物。心跳檔沒寫 pid（舊格式）⇒ 認不出是誰，照舊只看新不新。
+            if (aBeatPid != 0
+                && (aBeatPid != aInfo.Pid
+                    || (aBeatStarted.Length > 0 && aInfo.StartedAtUtc.Length > 0
+                        && !string.Equals(aBeatStarted, aInfo.StartedAtUtc, StringComparison.Ordinal))))
+                return new SCP_ServerProbe(SCP_ServerLiveness.StaleHeartbeat, aInfo, null,
+                    "名片在（pid=" + aInfo.Pid + "）而心跳檔已被另一顆接手（心跳 pid=" + aBeatPid
+                    + (aBeatStarted.Length > 0 ? "，啟動 " + aBeatStarted : "") + "）"
+                    + " ⇒ 名片上那顆已經不在了，這張名片是遺物。");
 
             if (!DateTime.TryParse(aBeat, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime aAt))
                 return new SCP_ServerProbe(SCP_ServerLiveness.Unreadable, aInfo, null,
