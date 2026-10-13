@@ -537,8 +537,7 @@ namespace SCP.Core.Sculpture
                 }
                 foreach (var t in aTmps)
                 {
-                    if (File.Exists(t.Full)) File.Replace(t.Tmp, t.Full, null);   // 只有拆舊檔時會蓋到既有的頭檔
-                    else File.Move(t.Tmp, t.Full);
+                    SCP.Core.Io.SCP_SharedFile.Replace(t.Tmp, t.Full);   // 只有拆舊檔時會蓋到既有的頭檔
                 }
             }
             finally { foreach (var t in aTmps) try { if (File.Exists(t.Tmp)) File.Delete(t.Tmp); } catch (Exception) { } }

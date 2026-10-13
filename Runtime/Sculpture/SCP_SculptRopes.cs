@@ -294,7 +294,7 @@ namespace SCP.Core.Sculpture
             try
             {
                 var aOpt = new SCP_JsonMapOptions();
-                SCP_JsonMapper.Populate(ioTarget, SCP_JsonParser.Parse(File.ReadAllText(iFile, new UTF8Encoding(false)), false), aOpt);
+                SCP_JsonMapper.Populate(ioTarget, SCP_JsonParser.Parse(SCP.Core.Io.SCP_SharedFile.ReadAllText(iFile), false), aOpt);
                 if (aOpt.Diagnostics.Count > 0) throw new InvalidOperationException(string.Join("; ", aOpt.Diagnostics));
             }
             catch (Exception e) { throw new InvalidOperationException(Path.GetFileName(iFile) + " 讀不了（" + iFile + "：" + e.Message + "）—— ⛔ 不當成沒有，修好再用"); }
@@ -314,8 +314,7 @@ namespace SCP.Core.Sculpture
             try
             {
                 File.WriteAllText(aTmp, SCP_JsonWriter.Write(iJson, true) + "\n", new UTF8Encoding(false));
-                if (File.Exists(iFile)) File.Replace(aTmp, iFile, null);
-                else File.Move(aTmp, iFile);
+                SCP.Core.Io.SCP_SharedFile.Replace(aTmp, iFile);
             }
             finally { try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch (Exception) { } }
         }

@@ -72,6 +72,12 @@ related:
 >
 > 📌 一般形：**方言限制的護欄只咬得到語法；API 的射程要自己去撞，而撞的時機是「搬家那一刻」。**
 > ⇒ 從消費端搬碼進來時，`dotnet build` 跑的是 **SCP_Core.csproj**（netstandard2.1）那一份才算數。
+>
+> ⚠ `File.Replace` 本身也有射程：目標檔這一瞬間被別的行程開著、而那個 handle **沒給 `FileShare.Delete`**
+> （`File.ReadAllText` 就是這樣開的）⇒ 丟 IOException（共享衝突 0x20，或「無法移除要被取代的檔案」1175）。
+> 別的行程隨時會來讀的檔（雕刻作品的 json 是一例：常駐視窗的雕刻頁每秒重讀整棵關聯樹）⇒ 讀與換檔都走
+> `SCP_SharedFile`（讀給 ReadWrite｜Delete 共享；換檔撞到共享衝突有上限地重試、失敗訊息帶目標路徑）。
+> 🩸 TASK-0534（2026-10-13）：讀取端用 `File.ReadAllText` 每 1 ms 讀一輪 ⇒ 舊寫法換檔 150 筆撞 11；換成 `SCP_SharedFile` 300 筆 0。
 
 ---
 

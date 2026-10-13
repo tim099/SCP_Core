@@ -144,7 +144,7 @@ namespace SCP.Core.Sculpture
             {
                 aOut = new SCP_SculptLinkFile { schema = 0 };
                 var aOpt = new SCP_JsonMapOptions();
-                SCP_JsonData aRoot = SCP_JsonParser.Parse(File.ReadAllText(aFile, new UTF8Encoding(false)), false);
+                SCP_JsonData aRoot = SCP_JsonParser.Parse(SCP.Core.Io.SCP_SharedFile.ReadAllText(aFile), false);
                 SCP_JsonMapper.Populate(aOut, aRoot, aOpt);
                 if (aOpt.Diagnostics.Count > 0) throw new InvalidOperationException(string.Join("; ", aOpt.Diagnostics));
                 // meta（[SCP_Ignore]，對映器不碰）：照順序對回每一筆
@@ -215,8 +215,7 @@ namespace SCP.Core.Sculpture
                 SCP_JsonData aList = aRoot["links"];
                 for (int i = 0; i < iFile.links.Count; i++) SCP_SculptMeta.WriteTo(aList[i], iFile.links[i].meta);
                 File.WriteAllText(aTmp, SCP_JsonWriter.Write(aRoot, true) + "\n", new UTF8Encoding(false));
-                if (File.Exists(aFile)) File.Replace(aTmp, aFile, null);
-                else File.Move(aTmp, aFile);
+                SCP.Core.Io.SCP_SharedFile.Replace(aTmp, aFile);
             }
             finally { try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch (Exception) { } }
         }

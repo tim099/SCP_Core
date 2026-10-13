@@ -163,7 +163,7 @@ namespace SCP.Core.Sculpture
             if (!File.Exists(path)) throw new InvalidOperationException("作品不存在或書卡遺失：" + id);
             var options = new SCP_JsonMapOptions();
             var card = new SCP_SculptWork();
-            SCP_JsonMapper.Populate(card, SCP_JsonParser.Parse(File.ReadAllText(path, Encoding.UTF8)), options);
+            SCP_JsonMapper.Populate(card, SCP_JsonParser.Parse(SCP.Core.Io.SCP_SharedFile.ReadAllText(path)), options);
             if (card != null && card.tags == null) card.tags = new List<string>();   // 舊卡沒有 tags（或寫成 null）⇒ 沒標 ＝ 主作品
             if (options.Diagnostics.Count > 0 || card == null || card.schema != 1 || card.id != id || !ValidSize(card.size) ||
                 !ValidSize(card.SizeX) || !ValidSize(card.SizeY) || !ValidSize(card.SizeZ) ||
@@ -197,7 +197,7 @@ namespace SCP.Core.Sculpture
             string path = Path.Combine(Folder(iCard.id), "work.json");
             string text = SCP_JsonWriter.Write(SCP_JsonMapper.ToJson(iCard), SCP_JsonStyle.UclLegacy);
             SCP_CmdPayload.WriteAtomic(path, text);
-            if (File.ReadAllText(path, Encoding.UTF8) != text) throw new IOException("作品書卡回讀不符");
+            if (SCP.Core.Io.SCP_SharedFile.ReadAllText(path) != text) throw new IOException("作品書卡回讀不符");
         }
         public string ReadText(string iId, bool iTodo) => File.Exists(TextPath(iId, iTodo)) ? File.ReadAllText(TextPath(iId, iTodo), Encoding.UTF8) : "";
         public void WriteText(string iId, bool iTodo, string iText) => SCP_CmdPayload.WriteAtomic(TextPath(iId, iTodo), iText);

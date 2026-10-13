@@ -56,7 +56,7 @@ namespace SCP.Core.Sculpture
             {
                 var aOut = new SCP_SculptMarkFile { schema = 0 };
                 var aOpt = new SCP_JsonMapOptions();
-                SCP_JsonMapper.Populate(aOut, SCP_JsonParser.Parse(File.ReadAllText(aFile, new UTF8Encoding(false)), false), aOpt);
+                SCP_JsonMapper.Populate(aOut, SCP_JsonParser.Parse(SCP.Core.Io.SCP_SharedFile.ReadAllText(aFile), false), aOpt);
                 if (aOpt.Diagnostics.Count > 0) throw new InvalidOperationException(string.Join("; ", aOpt.Diagnostics));
                 if (aOut.schema != 1) throw new InvalidOperationException("schema=" + aOut.schema);
                 return aOut;
@@ -74,8 +74,7 @@ namespace SCP.Core.Sculpture
             try
             {
                 File.WriteAllText(aTmp, SCP_JsonWriter.Write(SCP_JsonMapper.ToJson(iFile), true) + "\n", new UTF8Encoding(false));
-                if (File.Exists(aFile)) File.Replace(aTmp, aFile, null);
-                else File.Move(aTmp, aFile);
+                SCP.Core.Io.SCP_SharedFile.Replace(aTmp, aFile);
             }
             finally { try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch (Exception) { } }
         }

@@ -104,7 +104,7 @@ namespace SCP.Core.Sculpture
                 if (!File.Exists(iFile)) return null;
                 var aIndex = new SCP_SculptHistoryIndex { version = 0 };
                 var aOptions = new SCP_JsonMapOptions();
-                SCP_JsonMapper.Populate(aIndex, SCP_JsonParser.Parse(File.ReadAllText(iFile, new UTF8Encoding(false)), false), aOptions);
+                SCP_JsonMapper.Populate(aIndex, SCP_JsonParser.Parse(SCP.Core.Io.SCP_SharedFile.ReadAllText(iFile), false), aOptions);
                 return aIndex.version == CurrentVersion && aOptions.Diagnostics.Count == 0 ? aIndex : null;
             }
             catch (Exception) { return null; }
@@ -117,8 +117,7 @@ namespace SCP.Core.Sculpture
             try
             {
                 File.WriteAllText(aTmp, SCP_JsonWriter.Write(SCP_JsonMapper.ToJson(iIndex), false) + "\n", new UTF8Encoding(false));
-                if (File.Exists(iFile)) File.Replace(aTmp, iFile, null);
-                else File.Move(aTmp, iFile);
+                SCP.Core.Io.SCP_SharedFile.Replace(aTmp, iFile, 1);   // 索引是衍生物 ⇒ 不重試（撞到就放棄，同舊行為）
             }
             catch (Exception) { }
             finally { try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch (Exception) { } }
