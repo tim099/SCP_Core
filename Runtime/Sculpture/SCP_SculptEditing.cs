@@ -208,9 +208,9 @@ namespace SCP.Core.Sculpture
         /// 續檔的 action 是 <c>part</c>、最上層帶 <c>part_of</c>（頭檔）與 <c>part</c>（第幾段）。
         /// <para>⭐ 每一格只落在一段裡 ⇒ 依序重播各段 ＝ 重播整刀；沒更新的 senate.exe 也照樣重播得出來（只讀 edit.after）。</para>
         /// <para><paramref name="iTop"/>：拆舊檔時原事件最上層的其他欄位（照原樣留在頭檔）；新寫的刀給 null。</para>
-        /// <para><paramref name="iIndent"/>：false ⇒ 寫成單行（拆舊檔時跟原檔同格式 —— 單行的舊檔照引擎的 indent=2 重寫會膨脹兩倍多）。</para>
+        /// <para><paramref name="iIndent"/>：預設 false ＝ 單行（新寫的刀一律單行，TASK-0528）；true ＝ indent=2 —— 只給拆舊檔用：跟原檔同格式。</para>
         /// </summary>
-        public static List<(string Rel, string Text)> EventFiles(SCP_SculptEdit iEdit, SCP_SculptPyObj? iSource, SCP_SculptPyObj? iTop, string iHeadRel, bool iIndent = true)
+        public static List<(string Rel, string Text)> EventFiles(SCP_SculptEdit iEdit, SCP_SculptPyObj? iSource, SCP_SculptPyObj? iTop, string iHeadRel, bool iIndent = false)
         {
             int total = iEdit.after.Count, per = Math.Max(1, total);
             while (true)
@@ -238,7 +238,7 @@ namespace SCP.Core.Sculpture
                     string rel = p == 0 ? iHeadRel : SCP_SculptStore.PartRel(iHeadRel, p + 1);
                     if (p == 0) { if (parts > 1) ev.Put("parts", parts); else ev.RemoveAll(kv => kv.Key == "parts"); }
                     else ev.Put("part_of", iHeadRel.Replace('\\', '/')).Put("part", p + 1);
-                    string text = SCP_SculptPy.Dumps(ev, iIndent);
+                    string text = iIndent ? SCP_SculptPy.Dumps(ev, true) : SCP_SculptPy.DumpsCompact(ev);
                     if (SCP_SculptStore.DiskBytes(text) > SCP_SculptStore.MaxEventBytes && per > 1) fits = false;
                     else outFiles.Add((rel, text));
                 }

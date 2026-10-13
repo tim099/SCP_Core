@@ -54,8 +54,30 @@ namespace SCP.Core.Sculpture
         public static string Dumps(object? iValue, bool iIndent2)
         {
             var aSb = new StringBuilder();
-            Write(aSb, iValue, iIndent2, 0);
+            Write(aSb, iValue, iIndent2 ? Style.Indent2 : Style.Inline, 0);
             return aSb.ToString();
+        }
+
+        /// <summary>
+        /// 單行、分隔符不帶空白（＝ python <c>json.dumps(v, ensure_ascii=False, separators=(",", ":"))</c>）——
+        /// 雕刻事件檔用（TASK-0528）：同一刀縮排版約大 2.7 倍。數字、字串轉義與 <see cref="Dumps"/> 相同。
+        /// </summary>
+        public static string DumpsCompact(object? iValue)
+        {
+            var aSb = new StringBuilder();
+            Write(aSb, iValue, Style.Compact, 0);
+            return aSb.ToString();
+        }
+
+        /// <summary>輸出樣式：換不換行縮排、項目分隔符、鍵值分隔符。</summary>
+        sealed class Style
+        {
+            public static readonly Style Indent2 = new Style(true, ",", ": ");   // json.dumps(indent=2)
+            public static readonly Style Inline = new Style(false, ", ", ": ");  // json.dumps()
+            public static readonly Style Compact = new Style(false, ",", ":");   // json.dumps(separators=(",", ":"))
+            public readonly bool Indent;
+            public readonly string Sep, Colon;
+            Style(bool iBreak, string iSep, string iColon) { Indent = iBreak; Sep = iSep; Colon = iColon; }
         }
 
         /// <summary>
@@ -68,7 +90,7 @@ namespace SCP.Core.Sculpture
             File.WriteAllText(iPath, aText, new UTF8Encoding(false));
         }
 
-        static void Write(StringBuilder oSb, object? iValue, bool iIndent, int iDepth)
+        static void Write(StringBuilder oSb, object? iValue, Style iIndent, int iDepth)
         {
             switch (iValue)
             {
@@ -86,7 +108,7 @@ namespace SCP.Core.Sculpture
                     oSb.Append('[');
                     for (int i = 0; i < ia.Length; i++)
                     {
-                        if (i > 0) oSb.Append(iIndent ? "," : ", ");
+                        if (i > 0) oSb.Append(iIndent.Sep);
                         NewLine(oSb, iIndent, iDepth + 1);
                         oSb.Append(ia[i].ToString(CultureInfo.InvariantCulture));
                     }
@@ -100,7 +122,7 @@ namespace SCP.Core.Sculpture
                     oSb.Append('[');
                     for (int i = 0; i < list.Count; i++)
                     {
-                        if (i > 0) oSb.Append(iIndent ? "," : ", ");
+                        if (i > 0) oSb.Append(iIndent.Sep);
                         NewLine(oSb, iIndent, iDepth + 1);
                         Write(oSb, list[i], iIndent, iDepth + 1);
                     }
@@ -113,23 +135,23 @@ namespace SCP.Core.Sculpture
             }
         }
 
-        static void WriteObject(StringBuilder oSb, SCP_SculptPyObj iObj, bool iIndent, int iDepth)
+        static void WriteObject(StringBuilder oSb, SCP_SculptPyObj iObj, Style iIndent, int iDepth)
         {
             if (iObj.Count == 0) { oSb.Append("{}"); return; }
             oSb.Append('{');
             for (int i = 0; i < iObj.Count; i++)
             {
-                if (i > 0) oSb.Append(iIndent ? "," : ", ");
+                if (i > 0) oSb.Append(iIndent.Sep);
                 NewLine(oSb, iIndent, iDepth + 1);
                 WriteString(oSb, iObj[i].Key);
-                oSb.Append(": ");
+                oSb.Append(iIndent.Colon);
                 Write(oSb, iObj[i].Value, iIndent, iDepth + 1);
             }
             NewLine(oSb, iIndent, iDepth);
             oSb.Append('}');
         }
 
-        static void WriteJsonData(StringBuilder oSb, SCP_JsonData iData, bool iIndent, int iDepth)
+        static void WriteJsonData(StringBuilder oSb, SCP_JsonData iData, Style iIndent, int iDepth)
         {
             switch (iData.Type)
             {
@@ -144,7 +166,7 @@ namespace SCP.Core.Sculpture
                     int i = 0;
                     foreach (var aItem in iData)
                     {
-                        if (i++ > 0) oSb.Append(iIndent ? "," : ", ");
+                        if (i++ > 0) oSb.Append(iIndent.Sep);
                         NewLine(oSb, iIndent, iDepth + 1);
                         WriteJsonData(oSb, aItem, iIndent, iDepth + 1);
                     }
@@ -159,10 +181,10 @@ namespace SCP.Core.Sculpture
                     oSb.Append('{');
                     for (int i = 0; i < aKeys.Count; i++)
                     {
-                        if (i > 0) oSb.Append(iIndent ? "," : ", ");
+                        if (i > 0) oSb.Append(iIndent.Sep);
                         NewLine(oSb, iIndent, iDepth + 1);
                         WriteString(oSb, aKeys[i]);
-                        oSb.Append(": ");
+                        oSb.Append(iIndent.Colon);
                         WriteJsonData(oSb, iData[aKeys[i]], iIndent, iDepth + 1);
                     }
                     NewLine(oSb, iIndent, iDepth);
@@ -190,9 +212,9 @@ namespace SCP.Core.Sculpture
                 ? JsonFloat(aD) : iRaw;
         }
 
-        static void NewLine(StringBuilder oSb, bool iIndent, int iDepth)
+        static void NewLine(StringBuilder oSb, Style iIndent, int iDepth)
         {
-            if (!iIndent) return;
+            if (!iIndent.Indent) return;
             oSb.Append('\n');
             oSb.Append(' ', iDepth * 2);
         }

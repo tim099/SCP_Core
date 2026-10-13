@@ -483,7 +483,8 @@ namespace SCP.Core.Sculpture
 
         // ───────────────────────── record_event ─────────────────────────
         /// <summary>
-        /// python <c>record_event()</c>：落 <c>events/&lt;YYYY-MM-DD&gt;/&lt;HHMMSS_mmm&gt;_&lt;uuid6&gt;.json</c>（indent=2、平台換行）。
+        /// python <c>record_event()</c>：落 <c>events/&lt;YYYY-MM-DD&gt;/&lt;HHMMSS_mmm&gt;_&lt;uuid6&gt;.json</c>。
+        /// <para>格式：單行、分隔符不帶空白（<see cref="SCP_SculptPy.DumpsCompact"/>；TASK-0528）—— python 原本是 indent=2，同一刀約大 2.7 倍。讀取端不看格式，舊檔照讀。</para>
         /// <para>🩸 python 取了**兩次** <c>datetime.now()</c>（一次給資料夾、一次給檔名）⇒ 跨午夜那一刀會落進前一天的資料夾、
         /// 檔名卻是隔天的時間，排序就錯位。這裡只取**一次** <paramref name="iNow"/>，兩者同源。</para>
         /// </summary>
@@ -491,7 +492,7 @@ namespace SCP.Core.Sculpture
         public static string RecordEvent(SCP_SculptPaths iPaths, SCP_SculptPyObj iEvent, DateTime iNow, out string oRel)
         {
             oRel = NewEventRel(iPaths, iNow);
-            return WriteEvents(iPaths, new List<(string, string)> { (oRel, SCP_SculptPy.Dumps(iEvent, true)) });
+            return WriteEvents(iPaths, new List<(string, string)> { (oRel, SCP_SculptPy.DumpsCompact(iEvent)) });
         }
 
         /// <summary>下一個事件的相對路徑（<c>&lt;YYYY-MM-DD&gt;/&lt;HHMMSS_mmm&gt;_&lt;uuid6&gt;.json</c>，平台分隔符）—— 只算名字、不寫檔。</summary>
