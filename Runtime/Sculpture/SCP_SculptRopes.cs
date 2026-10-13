@@ -20,6 +20,8 @@
 // 分組（TASK-0512）：每條繩可以歸到一個組（`group`，`/` 分層）；ropes.json 的 `groups` 記每組平常開不開（關著 ⇒ 組裡的繩 disabled）。
 //          觀測時用「全路徑」指組：繩所在那一層的關聯路徑＋`/`＋組路徑（組裝件自己的就是組路徑）；指一個組 ＝ 連同底下的子組。
 //          有用到組或子繩的 ropes.json 寫 schema 2（同 links.json 的鏡像：沒更新的 senate.exe 讀到會大聲讀不了，⛔ 不會默默丟掉組再寫回去）。
+// meta（TASK-0539）：每條繩可以帶一包 meta（同模型／關聯，<see cref="SCP_SculptMeta"/>；例 `kind=sheet, sail=fore-topsail`）—— 給下游（遊戲）認「這條繩是什麼、屬於哪面帆」，
+//          引擎自己不讀它的意思。有任何一條帶 meta ⇒ schema 升 <see cref="SCP_SculptRopes.SchemaWithMeta"/>（3，含 2 的一切）；沒用到的檔逐位元組照舊。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -28,6 +30,7 @@ using System.IO;
 using System.Text;
 using SCP.Core.Canvas;
 using SCP.Core.Json;
+using SCP.Core.Reflect;
 
 namespace SCP.Core.Sculpture
 {
@@ -60,6 +63,8 @@ namespace SCP.Core.Sculpture
         /// <summary>組路徑（TASK-0512；`/` 分層，例 `standing/shrouds`）；空 ＝ 未分組。</summary>
         public string group = "";
         public string note = "", persona = "", created_at = "";
+        /// <summary>meta（TASK-0539）：[SCP_Ignore]，由 <see cref="SCP_SculptRopes.ReadRopes"/>／<see cref="SCP_SculptRopes.SaveRopes"/> 手動讀寫（同模型）；空 ⇒ 不寫 key。</summary>
+        [SCP_Ignore] public SortedDictionary<string, SCP_JsonData> meta = SCP_SculptMeta.New();
     }
 
     /// <summary>一個組平常開不開（TASK-0512）：關著 ⇒ 組裡（連同子組）的繩平常不畫（state disabled）。沒記的組 ＝ 開著。</summary>
@@ -235,6 +240,8 @@ namespace SCP.Core.Sculpture
         public const int ChildSides = 3;
         /// <summary>有用到組或子繩的 ropes.json 寫這個 schema（理由同 <see cref="SCP_SculptLinks.SchemaWithMirror"/>：舊版讀到要大聲讀不了，⛔ 不默默丟掉）。</summary>
         public const int SchemaWithGroups = 2;
+        /// <summary>有任何一條繩帶 meta 的 ropes.json 寫這個 schema（TASK-0539；含 <see cref="SchemaWithGroups"/> 的一切）：舊版 senate.exe 讀到要大聲讀不了，⛔ 不默默丟掉 meta 再寫回去。</summary>
+        public const int SchemaWithMeta = 3;
         public const double DefaultThickness = 0.5;
         public const double MaxThickness = 64;
         public const double MaxSlack = 10;
@@ -267,8 +274,14 @@ namespace SCP.Core.Sculpture
             string aFile = iPaths.RopesFile;
             if (!File.Exists(aFile)) return new SCP_SculptRopeFile();
             var aOut = new SCP_SculptRopeFile { schema = 0 };
-            Populate(aFile, aOut);
-            if (aOut.schema != 1 && aOut.schema != SchemaWithGroups) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            SCP_JsonData aRoot = Populate(aFile, aOut);
+            // meta（[SCP_Ignore]，對映器不碰）：照順序對回每一條（TASK-0539，同 models.json）
+            SCP_JsonData aList = aRoot["ropes"];
+            for (int i = 0; i < aOut.ropes.Count && aList.IsArray && i < aList.Count; i++)
+                if (SCP_SculptMeta.ReadFrom(aList[i]["meta"], aOut.ropes[i].meta) is string aMetaBad)
+                    throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：繩 `" + aOut.ropes[i].name + "` 的 " + aMetaBad + "）—— ⛔ 不當成沒有，修好再用");
+            if (aOut.schema != 1 && aOut.schema != SchemaWithGroups && aOut.schema != SchemaWithMeta) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema != SchemaWithMeta && aOut.ropes.Exists(r => r.meta.Count > 0)) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：有 meta 卻是 schema " + aOut.schema + " —— 手改的檔？）");
             if (aOut.groups == null) aOut.groups = new List<SCP_SculptRopeGroup>();
             var aNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var r in aOut.ropes)
@@ -289,13 +302,16 @@ namespace SCP.Core.Sculpture
             return aOut;
         }
 
-        static void Populate(string iFile, object ioTarget)
+        /// <summary>讀檔、對映進 <paramref name="ioTarget"/>，回原始的 JSON（給 [SCP_Ignore] 的欄位手動讀）。</summary>
+        static SCP_JsonData Populate(string iFile, object ioTarget)
         {
             try
             {
                 var aOpt = new SCP_JsonMapOptions();
-                SCP_JsonMapper.Populate(ioTarget, SCP_JsonParser.Parse(SCP.Core.Io.SCP_SharedFile.ReadAllText(iFile), false), aOpt);
+                SCP_JsonData aRoot = SCP_JsonParser.Parse(SCP.Core.Io.SCP_SharedFile.ReadAllText(iFile), false);
+                SCP_JsonMapper.Populate(ioTarget, aRoot, aOpt);
                 if (aOpt.Diagnostics.Count > 0) throw new InvalidOperationException(string.Join("; ", aOpt.Diagnostics));
+                return aRoot;
             }
             catch (Exception e) { throw new InvalidOperationException(Path.GetFileName(iFile) + " 讀不了（" + iFile + "：" + e.Message + "）—— ⛔ 不當成沒有，修好再用"); }
         }
@@ -304,8 +320,12 @@ namespace SCP.Core.Sculpture
 
         public static void SaveRopes(SCP_SculptPaths iPaths, SCP_SculptRopeFile iFile)
         {
-            iFile.schema = iFile.groups.Count > 0 || iFile.ropes.Exists(r => r.group.Length > 0 || IsChild(r)) ? SchemaWithGroups : 1;
-            WriteAtomic(iPaths.RopesFile, SCP_JsonMapper.ToJson(iFile));
+            iFile.schema = iFile.ropes.Exists(r => r.meta.Count > 0) ? SchemaWithMeta
+                         : iFile.groups.Count > 0 || iFile.ropes.Exists(r => r.group.Length > 0 || IsChild(r)) ? SchemaWithGroups : 1;
+            SCP_JsonData aRoot = SCP_JsonMapper.ToJson(iFile);
+            SCP_JsonData aList = aRoot["ropes"];
+            for (int i = 0; i < iFile.ropes.Count; i++) SCP_SculptMeta.WriteTo(aList[i], iFile.ropes[i].meta);   // 空的不寫 key ⇒ 沒用 meta 的檔位元組不變
+            WriteAtomic(iPaths.RopesFile, aRoot);
         }
 
         static void WriteAtomic(string iFile, SCP_JsonData iJson)

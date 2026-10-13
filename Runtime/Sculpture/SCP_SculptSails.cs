@@ -16,6 +16,8 @@
 //          渲染端（GPU／CLI view／obj）拿 <see cref="SCP_SculptSailRig.SailDrawGeoms"/>：每色一份平色網格、一個像素一塊（細分到不低於布的解析度）
 //            ⇒ 像素畫保持銳利、跟著布鼓，三條管線的著色器不動。
 //          遊戲（vxk）拿 <see cref="SCP_SculptSailRig.SailGeoms"/>：帆仍是一整塊布（對轟拿它跑布料物理、算面積、撕裂、綁繩），只多 uv 與貼圖。
+// meta（TASK-0539）：每面帆可以帶一包 meta（同模型／關聯，<see cref="SCP_SculptMeta"/>；例 `kind=sail, mast=fore, sail=topsail`、旗 `kind=flag, flag=ensign`）——
+//          給下游（遊戲）認「這是哪一種帆、是不是旗」，引擎自己不讀它的意思。有任何一面帶 meta ⇒ schema 升 <see cref="SCP_SculptSails.SchemaWithMeta"/>（3，含 2 的一切）。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -58,6 +60,8 @@ namespace SCP.Core.Sculpture
         /// 沒有貼圖就不寫這個 key（舊檔位元組不變）；有任何一面帆用到 ⇒ schema 升 <see cref="SCP_SculptSails.SchemaWithTexture"/>。
         /// </summary>
         [SCP_Ignore] public string texture = "";
+        /// <summary>meta（TASK-0539）：[SCP_Ignore]，<see cref="SCP_SculptSails.ReadSails"/>／<see cref="SCP_SculptSails.SaveSails"/> 手動讀寫（同模型）；空 ⇒ 不寫 key。</summary>
+        [SCP_Ignore] public SortedDictionary<string, SCP_JsonData> meta = SCP_SculptMeta.New();
     }
 
     /// <summary>解好的貼圖（TASK-0530）：RGBA8、列優先、第 0 列是圖的最上面。</summary>
@@ -446,6 +450,8 @@ namespace SCP.Core.Sculpture
         /// 舊版只認 schema 1 ⇒ 升號讓它大聲讀不了；沒用貼圖的檔維持 1（位元組不變）。
         /// </summary>
         public const int SchemaWithTexture = 2;
+        /// <summary>有任何一面帆帶 meta 的 sails.json 寫這個 schema（TASK-0539；含 <see cref="SchemaWithTexture"/> 的一切）—— 理由同上。</summary>
+        public const int SchemaWithMeta = 3;
         /// <summary>貼圖住在作品資料夾的這個子資料夾（跟 sails.json 一起進版控）。</summary>
         public const string TextureDir = "textures";
         /// <summary>貼圖每邊最多幾個像素 —— 像素畫的旗；觀測頁每次更新都要重展開，上限壓住頂點數。</summary>
@@ -478,6 +484,8 @@ namespace SCP.Core.Sculpture
                 SCP_JsonData aList = aRoot["sails"];
                 for (int i = 0; i < aOut.sails.Count && aList.IsArray && i < aList.Count; i++)
                 {
+                    if (SCP_SculptMeta.ReadFrom(aList[i]["meta"], aOut.sails[i].meta) is string aMetaBad)   // meta（TASK-0539）
+                        throw new InvalidOperationException("帆 `" + aOut.sails[i].name + "` 的 " + aMetaBad);
                     SCP_JsonData t = aList[i]["texture"];
                     if (t.IsMissing) continue;
                     if (!t.IsString) throw new InvalidOperationException("帆 `" + aOut.sails[i].name + "` 的 texture 要是字串（作品資料夾裡的 PNG 相對路徑）");
@@ -485,8 +493,9 @@ namespace SCP.Core.Sculpture
                 }
             }
             catch (Exception e) { throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：" + e.Message + "）—— ⛔ 不當成沒有，修好再用"); }
-            if (aOut.schema != 1 && aOut.schema != SchemaWithTexture) throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema != 1 && aOut.schema != SchemaWithTexture && aOut.schema != SchemaWithMeta) throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
             if (aOut.schema == 1 && aOut.sails.Exists(s => s.texture.Length > 0)) throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：有 texture 卻是 schema 1 —— 手改的檔？）");
+            if (aOut.schema != SchemaWithMeta && aOut.sails.Exists(s => s.meta.Count > 0)) throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：有 meta 卻是 schema " + aOut.schema + " —— 手改的檔？）");
             if (CheckWind(aOut.wind) is string aWindBad) throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：wind " + aWindBad + "）");
             if (CheckSeconds(aOut.seconds) is string aSecBad) throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：" + aSecBad + "）");
             var aNames = new HashSet<string>(StringComparer.Ordinal);
@@ -500,14 +509,17 @@ namespace SCP.Core.Sculpture
 
         public static void SaveSails(SCP_SculptPaths iPaths, SCP_SculptSailFile iFile)
         {
-            iFile.schema = iFile.sails.Exists(s => s.texture.Length > 0) ? SchemaWithTexture : 1;
+            iFile.schema = iFile.sails.Exists(s => s.meta.Count > 0) ? SchemaWithMeta : iFile.sails.Exists(s => s.texture.Length > 0) ? SchemaWithTexture : 1;
             string aPath = iPaths.SailsFile, aTmp = aPath + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
             try
             {
                 SCP_JsonData aRoot = SCP_JsonMapper.ToJson(iFile);
                 SCP_JsonData aList = aRoot["sails"];
                 for (int i = 0; i < iFile.sails.Count; i++)
+                {
                     if (iFile.sails[i].texture.Length > 0) aList[i].Set("texture", iFile.sails[i].texture);   // 沒貼圖不寫 key ⇒ 舊檔位元組不變
+                    SCP_SculptMeta.WriteTo(aList[i], iFile.sails[i].meta);                                    // 沒 meta 不寫 key（TASK-0539）
+                }
                 File.WriteAllText(aTmp, SCP_JsonWriter.Write(aRoot, true) + "\n", new UTF8Encoding(false));
                 SCP.Core.Io.SCP_SharedFile.Replace(aTmp, aPath);
             }
