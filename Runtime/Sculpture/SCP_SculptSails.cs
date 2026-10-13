@@ -10,7 +10,12 @@
 // 數值影響：每面帆一筆 <see cref="SCP_SculptSailReading"/>：ok（畫）／hidden（所在或綁的那一層沒組進來、或這次的顯示開關關掉）／disabled（自己關著）／
 //          broken（角解不到、或資料不合）—— ⛔ 壞掉的不靜默消失。讀數：最鼓那一點離綁點平面幾格（帶正負號與法線）、平均位移、模擬了幾秒幾步。
 // 失敗處置：sails.json 讀不了 ⇒ InvalidOperationException（⛔ 不當成沒有 —— 寫回去會清光）。
-// ⚠ 沒有碰撞：帆會穿過格子與繩（同繩）。⚠ 貼圖、收帆、縮帆本版不做（Tim 2026-10-11「先可以設定顏色就好」）—— 欄位留給之後加。
+// ⚠ 沒有碰撞：帆會穿過格子與繩（同繩）。⚠ 收帆、縮帆本版不做（Tim 2026-10-11「先可以設定顏色就好」）。
+// 貼圖（TASK-0530，Tim 2026-10-13「用帆當旗幟，貼圖可以用像素畫」）：帆可以帶一張作品資料夾裡的 PNG。
+//          圖的欄 → 角 0→角 1（u）、列 → 角 0→角 3（四邊形）／角 0→角 2（三角帆）（v）；圖的左上角 ＝ 角 0；alpha < 128 的像素不畫。
+//          渲染端（GPU／CLI view／obj）拿 <see cref="SCP_SculptSailRig.SailDrawGeoms"/>：每色一份平色網格、一個像素一塊（細分到不低於布的解析度）
+//            ⇒ 像素畫保持銳利、跟著布鼓，三條管線的著色器不動。
+//          遊戲（vxk）拿 <see cref="SCP_SculptSailRig.SailGeoms"/>：帆仍是一整塊布（對轟拿它跑布料物理、算面積、撕裂、綁繩），只多 uv 與貼圖。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -18,6 +23,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using SCP.Core.Json;
+using SCP.Core.Reflect;
 
 namespace SCP.Core.Sculpture
 {
@@ -46,6 +52,23 @@ namespace SCP.Core.Sculpture
         public double fullness = SCP_SculptSails.DefaultFullness;
         public bool enabled = true;
         public string note = "", persona = "", created_at = "";
+        /// <summary>
+        /// 貼圖（TASK-0530）：作品資料夾裡的 PNG 相對路徑（<c>textures/&lt;檔名&gt;.png</c>）；空 ＝ 沒有（照 <see cref="color"/> 畫）。
+        /// ⚠ [SCP_Ignore]：對映器不碰，<see cref="SCP_SculptSails.ReadSails"/>／<see cref="SCP_SculptSails.SaveSails"/> 手動讀寫 ——
+        /// 沒有貼圖就不寫這個 key（舊檔位元組不變）；有任何一面帆用到 ⇒ schema 升 <see cref="SCP_SculptSails.SchemaWithTexture"/>。
+        /// </summary>
+        [SCP_Ignore] public string texture = "";
+    }
+
+    /// <summary>解好的貼圖（TASK-0530）：RGBA8、列優先、第 0 列是圖的最上面。</summary>
+    public sealed class SCP_SculptSailTexture
+    {
+        /// <summary>帆上記的相對路徑（給人讀、給遊戲認）。</summary>
+        public string File = "";
+        public int Width, Height;
+        public byte[] Rgba = new byte[0];
+        /// <summary>會畫的像素（alpha ≥ <see cref="SCP_SculptSails.TextureAlpha"/>）與它們用到幾種顏色。</summary>
+        public int Opaque, Colors;
     }
 
     public sealed class SCP_SculptSailFile
@@ -93,6 +116,11 @@ namespace SCP.Core.Sculpture
         public int[] Triangles = new int[0];
         public byte R, G, B;
         public int PointCount => Points.Length / 3;
+        /// <summary>貼圖（TASK-0530）：每個布點的 (u, v)（攤平，2 個一組；u ＝ 角 0→角 1、v ＝ 角 0→角 3／三角帆角 0→角 2）與那張圖。沒有貼圖 ⇒ 兩個都 null。</summary>
+        public double[]? Uv;
+        public SCP_SculptSailTexture? Texture;
+        /// <summary>布的格網：每邊幾格、幾個角（3 ⇒ 布點只有 i + j ≤ Res 那一半）—— 展開貼圖時拿 (u, v) 直接找格子用。</summary>
+        public int Res, CornerCount;
     }
 
     /// <summary>一面帆這次觀測的讀數。</summary>
@@ -121,6 +149,9 @@ namespace SCP.Core.Sculpture
         /// <summary>綁住的繩數（牽繩：綁在 free 角上、而且這次有組進來的）。</summary>
         public int Tethers;
         public SCP_SculptSailGeom? Geom;
+        /// <summary>貼圖（TASK-0530）：解好的那張；讀不了 ⇒ null、<see cref="TextureError"/> 寫原因，照 <c>color</c> 畫（⛔ 不靜默 —— 讀數印 ⚠）。</summary>
+        public SCP_SculptSailTexture? Texture;
+        public string TextureError = "";
     }
 
     /// <summary>
@@ -149,6 +180,8 @@ namespace SCP.Core.Sculpture
         internal int[] m_CA = new int[0], m_CB = new int[0];
         internal double[] m_CR = new double[0], m_CK = new double[0];
         internal int[] m_Tri = new int[0];
+        /// <summary>每個布點的 (u, v)（貼圖用，TASK-0530）：格網 (i, j) ⇒ (i/res, j/res)。不參與模擬。</summary>
+        internal double[] m_Uv = new double[0];
         internal readonly List<int[]> m_Tethers = new List<int[]>();       // { 布點 a, 布點 b（−1 ＝ 固定點）, 繩索引 }
         internal readonly List<double[]> m_TetherFix = new List<double[]>(); // 固定點（b ＝ −1 時）＋長度 L：{x,y,z,L}
         /// <summary>每面帆在布點陣列裡的範圍與三角形範圍：{ 布點起, 布點數, 三角形起（×3 之前）, 三角形數 }；沒模擬 ⇒ null。</summary>
@@ -190,11 +223,30 @@ namespace SCP.Core.Sculpture
             return true;
         }
 
-        /// <summary>畫得出來的帆（state ok）。</summary>
+        /// <summary>
+        /// 畫得出來的帆（state ok），**一面帆一份**（布本身：帶貼圖的也是整塊、多 Uv／Texture）—— 給把帆當布用的消費端（vxk：遊戲拿它跑布料物理）。
+        /// 要**畫**的走 <see cref="SailDrawGeoms"/>。
+        /// </summary>
         public List<SCP_SculptSailGeom> SailGeoms()
         {
             var aOut = new List<SCP_SculptSailGeom>();
             foreach (var s in Sails) if (s.Geom != null) aOut.Add(s.Geom);
+            return aOut;
+        }
+
+        /// <summary>
+        /// 要畫的帆（TASK-0530）：沒貼圖的 ＝ <see cref="SailGeoms"/> 那一份；有貼圖的展開成**每色一份**平色網格（<see cref="SCP_SculptSails.Textured"/>）。
+        /// 渲染器（GPU／CLI view）與 obj 匯出走這支 ⇒ 它們只認得「一份一色」，一行都不必改。
+        /// </summary>
+        public List<SCP_SculptSailGeom> SailDrawGeoms()
+        {
+            var aOut = new List<SCP_SculptSailGeom>();
+            foreach (var s in Sails)
+            {
+                if (s.Geom == null) continue;
+                if (s.Geom.Texture == null) aOut.Add(s.Geom);
+                else aOut.AddRange(SCP_SculptSails.Textured(s.Geom));
+            }
             return aOut;
         }
 
@@ -328,7 +380,14 @@ namespace SCP.Core.Sculpture
                 if (r.State == SCP_SculptSailReading.Ok)
                 {
                     SCP_SculptRopes.TryParseColor(r.Sail.color, out byte cr, out byte cg, out byte cb, out _);
-                    r.Geom = new SCP_SculptSailGeom { Path = r.Path, Points = aPts, Normals = aNrm, Triangles = aTri, R = cr, G = cg, B = cb };
+                    r.Geom = new SCP_SculptSailGeom { Path = r.Path, Points = aPts, Normals = aNrm, Triangles = aTri, R = cr, G = cg, B = cb, Res = r.Resolution, CornerCount = r.Sail.corners.Count };
+                    if (r.Texture != null)
+                    {
+                        var aUv = new double[pn * 2];
+                        Array.Copy(m_Uv, p0 * 2, aUv, 0, pn * 2);
+                        r.Geom.Uv = aUv;
+                        r.Geom.Texture = r.Texture;
+                    }
                 }
             }
             // 綁帆角的繩：兩端換成那一刻的位置；繩長 ＝ slack × 設計時兩端的直線距離（不變），形狀照新的兩端重算
@@ -381,6 +440,18 @@ namespace SCP.Core.Sculpture
         public const double MaxSeconds = 60;
         public const double MaxWind = 60;    // m/s
         public const int MinRes = 3, MaxRes = 48;
+        /// <summary>
+        /// 有貼圖的 sails.json 寫這個 schema（TASK-0530；同 models.json 的 meta）。
+        /// 🩸 為什麼要升號：舊版 senate.exe 的 <see cref="SCP_SculptSail"/> 沒有 texture ⇒ 讀到會**默默丟掉**、下一次寫回去就清光。
+        /// 舊版只認 schema 1 ⇒ 升號讓它大聲讀不了；沒用貼圖的檔維持 1（位元組不變）。
+        /// </summary>
+        public const int SchemaWithTexture = 2;
+        /// <summary>貼圖住在作品資料夾的這個子資料夾（跟 sails.json 一起進版控）。</summary>
+        public const string TextureDir = "textures";
+        /// <summary>貼圖每邊最多幾個像素 —— 像素畫的旗；觀測頁每次更新都要重展開，上限壓住頂點數。</summary>
+        public const int MaxTextureSide = 128;
+        /// <summary>alpha 低於這個的像素不畫（燕尾旗這類形狀；同 stampimg 的門檻）。</summary>
+        public const int TextureAlpha = 128;
         /// <summary>模擬的固定時間步（秒）、每步的約束迭代次數、速度阻尼（每秒）—— 三個都是常數 ⇒ 決定性。</summary>
         public const double Dt = 1.0 / 60;
         public const int Iterations = 8;
@@ -400,11 +471,22 @@ namespace SCP.Core.Sculpture
             try
             {
                 var aOpt = new SCP_JsonMapOptions();
-                SCP_JsonMapper.Populate(aOut, SCP_JsonParser.Parse(File.ReadAllText(aFile, new UTF8Encoding(false)), false), aOpt);
+                SCP_JsonData aRoot = SCP_JsonParser.Parse(File.ReadAllText(aFile, new UTF8Encoding(false)), false);
+                SCP_JsonMapper.Populate(aOut, aRoot, aOpt);
                 if (aOpt.Diagnostics.Count > 0) throw new InvalidOperationException(string.Join("; ", aOpt.Diagnostics));
+                // texture（[SCP_Ignore]，對映器不碰）：照順序對回每一面帆
+                SCP_JsonData aList = aRoot["sails"];
+                for (int i = 0; i < aOut.sails.Count && aList.IsArray && i < aList.Count; i++)
+                {
+                    SCP_JsonData t = aList[i]["texture"];
+                    if (t.IsMissing) continue;
+                    if (!t.IsString) throw new InvalidOperationException("帆 `" + aOut.sails[i].name + "` 的 texture 要是字串（作品資料夾裡的 PNG 相對路徑）");
+                    aOut.sails[i].texture = t.AsString();
+                }
             }
             catch (Exception e) { throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：" + e.Message + "）—— ⛔ 不當成沒有，修好再用"); }
-            if (aOut.schema != 1) throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema != 1 && aOut.schema != SchemaWithTexture) throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema == 1 && aOut.sails.Exists(s => s.texture.Length > 0)) throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：有 texture 卻是 schema 1 —— 手改的檔？）");
             if (CheckWind(aOut.wind) is string aWindBad) throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：wind " + aWindBad + "）");
             if (CheckSeconds(aOut.seconds) is string aSecBad) throw new InvalidOperationException("sails.json 讀不了（" + aFile + "：" + aSecBad + "）");
             var aNames = new HashSet<string>(StringComparer.Ordinal);
@@ -418,11 +500,15 @@ namespace SCP.Core.Sculpture
 
         public static void SaveSails(SCP_SculptPaths iPaths, SCP_SculptSailFile iFile)
         {
-            iFile.schema = 1;
+            iFile.schema = iFile.sails.Exists(s => s.texture.Length > 0) ? SchemaWithTexture : 1;
             string aPath = iPaths.SailsFile, aTmp = aPath + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
             try
             {
-                File.WriteAllText(aTmp, SCP_JsonWriter.Write(SCP_JsonMapper.ToJson(iFile), true) + "\n", new UTF8Encoding(false));
+                SCP_JsonData aRoot = SCP_JsonMapper.ToJson(iFile);
+                SCP_JsonData aList = aRoot["sails"];
+                for (int i = 0; i < iFile.sails.Count; i++)
+                    if (iFile.sails[i].texture.Length > 0) aList[i].Set("texture", iFile.sails[i].texture);   // 沒貼圖不寫 key ⇒ 舊檔位元組不變
+                File.WriteAllText(aTmp, SCP_JsonWriter.Write(aRoot, true) + "\n", new UTF8Encoding(false));
                 if (File.Exists(aPath)) File.Replace(aTmp, aPath, null);
                 else File.Move(aTmp, aPath);
             }
@@ -456,7 +542,57 @@ namespace SCP.Core.Sculpture
             if (TryParseColorStored(s.color) is string aColorBad) return aColorBad;
             if (s.res != 0 && (s.res < MinRes || s.res > MaxRes)) return "res（每邊幾格）要是 0（自動）或 " + MinRes + ".." + MaxRes + "：" + s.res;
             if (double.IsNaN(s.fullness) || s.fullness < 1 || s.fullness > MaxFullness) return "fullness（布比框多幾成）要在 1.." + MaxFullness.ToString(CultureInfo.InvariantCulture) + "：" + s.fullness.ToString(CultureInfo.InvariantCulture);
+            if (s.texture.Length > 0 && CheckTexturePath(s.texture) is string aTexBad) return aTexBad;
             return null;
+        }
+
+        /// <summary>
+        /// 帆上記的貼圖路徑合不合（TASK-0530）：<c>textures/&lt;檔名&gt;.png</c>，檔名只用英數＿-.（⛔ 不准跳出作品資料夾、不准反斜線）。null ＝ 合法。
+        /// </summary>
+        public static string? CheckTexturePath(string iRel)
+        {
+            string aPrefix = TextureDir + "/";
+            if (!iRel.StartsWith(aPrefix, StringComparison.Ordinal)) return "texture 要是作品資料夾裡的 `" + aPrefix + "<檔名>.png`：`" + iRel + "`";
+            string aName = iRel.Substring(aPrefix.Length);
+            if (!aName.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || aName.Length <= 4) return "texture 要是 .png：`" + iRel + "`";
+            foreach (char ch in aName)
+                if (!(ch < 128 && (char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' || ch == '.'))) return "texture 的檔名只能用英數＿-.：`" + iRel + "`";
+            if (aName.StartsWith(".", StringComparison.Ordinal) || aName.Contains("..")) return "texture 的檔名不能以 . 開頭或含 ..：`" + iRel + "`";
+            return null;
+        }
+
+        /// <summary>貼圖在磁碟上的位置：sails.json 那個資料夾 ＋ 相對路徑。</summary>
+        public static string TextureFile(SCP_SculptPaths iPaths, string iRel)
+            => Path.Combine(Path.GetDirectoryName(iPaths.SailsFile) ?? "", iRel.Replace('/', Path.DirectorySeparatorChar));
+
+        /// <summary>
+        /// 解一張貼圖（PNG 位元組 ⇒ RGBA）：每邊 1..<see cref="MaxTextureSide"/>、至少一個會畫的像素。
+        /// 失敗 ⇒ InvalidOperationException（訊息是人話）。<paramref name="iRel"/> 只拿來記在結果上。
+        /// </summary>
+        public static SCP_SculptSailTexture DecodeTexture(byte[] iPng, string iRel)
+        {
+            byte[] aRgba;
+            int w, h;
+            try { aRgba = SCP_SculptPng.DecodeRgba(iPng, out w, out h); }
+            catch (SCP_SculptPngException e) { throw new InvalidOperationException("貼圖不是讀得了的 PNG：" + e.Message); }
+            if (w < 1 || h < 1 || w > MaxTextureSide || h > MaxTextureSide)
+                throw new InvalidOperationException("貼圖 " + w + "×" + h + " 超過上限（每邊 1.." + MaxTextureSide + " 像素 —— 像素畫的旗；大圖先縮）");
+            var t = new SCP_SculptSailTexture { File = iRel, Width = w, Height = h, Rgba = aRgba };
+            var aColors = new HashSet<int>();
+            for (int k = 0; k < w * h; k++)
+                if (aRgba[k * 4 + 3] >= TextureAlpha) { t.Opaque++; aColors.Add((aRgba[k * 4] << 16) | (aRgba[k * 4 + 1] << 8) | aRgba[k * 4 + 2]); }
+            t.Colors = aColors.Count;
+            if (t.Opaque == 0) throw new InvalidOperationException("貼圖 " + w + "×" + h + " 沒有任何會畫的像素（alpha 全 < " + TextureAlpha + "）");
+            return t;
+        }
+
+        /// <summary>讀作品資料夾裡的貼圖（<see cref="DecodeTexture"/>）；檔不在 ⇒ InvalidOperationException。</summary>
+        public static SCP_SculptSailTexture LoadTexture(SCP_SculptPaths iPaths, string iRel)
+        {
+            if (CheckTexturePath(iRel) is string aBad) throw new InvalidOperationException(aBad);
+            string aFile = TextureFile(iPaths, iRel);
+            if (!File.Exists(aFile)) throw new InvalidOperationException("貼圖檔不在：" + aFile.Replace('\\', '/'));
+            return DecodeTexture(File.ReadAllBytes(aFile), iRel);
         }
 
         static string? TryParseColorStored(string iColor)
@@ -533,6 +669,7 @@ namespace SCP.Core.Sculpture
             var aFrames = new List<string> { "" };
             SCP_SculptLinks.Paths(iTree ?? new List<SCP_SculptLinkNode>(), aFrames);
             var aByPath = new Dictionary<string, SCP_SculptSailReading>(StringComparer.Ordinal);
+            var aTexCache = new Dictionary<string, object>(StringComparer.Ordinal);   // 作品|路徑 ⇒ SCP_SculptSailTexture 或錯誤訊息
 
             // ① 帆：解角（設計位置）、定狀態
             foreach (string aFrame in aFrames)
@@ -543,6 +680,19 @@ namespace SCP.Core.Sculpture
                 foreach (SCP_SculptSail s in aFile.sails)
                 {
                     var r = new SCP_SculptSailReading { Path = aFrame.Length == 0 ? s.name : aFrame + "/" + s.name, Owner = aWork, Frame = aFrame, Sail = s, Corners = new double[s.corners.Count][] };
+                    if (s.texture.Length > 0)
+                    {
+                        // 貼圖（TASK-0530）：同一件作品的同一張圖只讀一次；讀不了 ⇒ 照底色畫、記原因（讀數印 ⚠，⛔ 不靜默）
+                        string aTexKey = aWork + "|" + s.texture;
+                        if (!aTexCache.TryGetValue(aTexKey, out object? aTex))
+                        {
+                            try { aTex = LoadTexture(iWorks.SpacePaths(aWork), s.texture); }
+                            catch (InvalidOperationException e) { aTex = e.Message; }
+                            aTexCache[aTexKey] = aTex;
+                        }
+                        if (aTex is SCP_SculptSailTexture tx) r.Texture = tx;
+                        else r.TextureError = (string)aTex;
+                    }
                     var aWhy = new List<string>();
                     bool aLinkHidden = !aFrameDrawn;
                     if (aLinkHidden) aWhy.Add("帆所在的 `" + aFrame + "` 這次沒畫");
@@ -640,6 +790,7 @@ namespace SCP.Core.Sculpture
         {
             var X = new List<double>(); var W = new List<double>(); var Pin = new List<double>(); var Mass = new List<double>();
             var CA = new List<int>(); var CB = new List<int>(); var CR = new List<double>(); var CK = new List<double>(); var Tri = new List<int>();
+            var Uv = new List<double>();   // TASK-0530：每個布點的 (u, v)，不參與模擬
             foreach (SCP_SculptSailReading r in ioRig.Sails)
             {
                 if (!r.Simulated) { ioRig.m_Range.Add(null); continue; }
@@ -664,6 +815,7 @@ namespace SCP.Core.Sculpture
                             : new[] { C[0][0] + (C[1][0] - C[0][0]) * u + (C[2][0] - C[0][0]) * v, C[0][1] + (C[1][1] - C[0][1]) * u + (C[2][1] - C[0][1]) * v, C[0][2] + (C[1][2] - C[0][2]) * u + (C[2][2] - C[0][2]) * v };
                         aLocal[((long)i << 32) | (uint)j] = W.Count - p0;
                         X.Add(P[0]); X.Add(P[1]); X.Add(P[2]);
+                        Uv.Add(u); Uv.Add(v);
                         W.Add(1); Pin.Add(P[0]); Pin.Add(P[1]); Pin.Add(P[2]); Mass.Add(0);
                     }
                 int Gl(int i, int j) { int l = Id(i, j); return l < 0 ? -1 : p0 + l; }
@@ -737,6 +889,7 @@ namespace SCP.Core.Sculpture
             for (int i = 0; i < ioRig.m_Mass.Length; i++) if (ioRig.m_Mass[i] < 1e-9) ioRig.m_Mass[i] = 1e-9;
             ioRig.m_CA = CA.ToArray(); ioRig.m_CB = CB.ToArray(); ioRig.m_CR = CR.ToArray(); ioRig.m_CK = CK.ToArray();
             ioRig.m_Tri = Tri.ToArray();
+            ioRig.m_Uv = Uv.ToArray();
         }
 
         static void AddTri(List<int> ioTri, int a, int b, int c) { if (a >= 0 && b >= 0 && c >= 0) { ioTri.Add(a); ioTri.Add(b); ioTri.Add(c); } }
@@ -806,6 +959,108 @@ namespace SCP.Core.Sculpture
                 if (l > 1e-12) { aN[i] /= l; aN[i + 1] /= l; aN[i + 2] /= l; } else aN[i + 2] = 1;
             }
             return aN;
+        }
+
+        // ───────────────────────── 貼圖展開（TASK-0530）─────────────────────────
+
+        /// <summary>
+        /// 帶貼圖的一面帆 ⇒ **每色一份**平色網格（順序 ＝ 顏色在圖上第一次出現的順序 ⇒ 同樣輸入同樣輸出）。
+        /// <para>· 一列裡相鄰同色的像素併成一條；每條細分到不粗於布格的一半（每邊 ≥ 2 × res 等分）⇒ 跟著布鼓。</para>
+        /// <para>· 取樣點的位置與法線：在布本身的三角形上做重心內插（同 <see cref="BuildParticles"/> 的切法）⇒ 每一點都在模擬出來的布面上。</para>
+        /// <para>· 三角帆：像素中心 u + v &gt; 1（落在布外）的不畫；跨過斜邊的那幾點投影回斜邊。alpha &lt; <see cref="TextureAlpha"/> 的不畫。</para>
+        /// <para>繞序與布相同（法線那側看逆時針）⇒ <see cref="TwoSided"/> 照常出雙面；背面是鏡像（同真的旗）。</para>
+        /// </summary>
+        public static List<SCP_SculptSailGeom> Textured(SCP_SculptSailGeom g)
+        {
+            SCP_SculptSailTexture? t = g.Texture;
+            int res = g.Res;
+            bool aTri = g.CornerCount == 3;
+            if (t == null || res < 1 || g.PointCount == 0) return new List<SCP_SculptSailGeom> { g };
+            int Idx(int i, int j) => aTri ? j * (res + 1) - j * (j - 1) / 2 + i : j * (res + 1) + i;
+            void Sample(double u, double v, double[] oP, double[] oN)
+            {
+                if (aTri && u + v > 1) { double s = (u + v - 1) / 2; u -= s; v -= s; }
+                u = Math.Max(0, Math.Min(1, u)); v = Math.Max(0, Math.Min(1, v));
+                double x = u * res, y = v * res;
+                int i = Math.Min((int)Math.Floor(x), res - 1), j = Math.Min((int)Math.Floor(y), res - 1);
+                if (aTri && i + j > res - 1) { if (i > 0) i = res - 1 - j; else j = res - 1 - i; }
+                double fu = x - i, fv = y - j;
+                int a, b, c;
+                double wa, wb, wc;
+                if (aTri)
+                {
+                    if (fu + fv <= 1 || i + j >= res - 1) { a = Idx(i, j); b = Idx(i + 1, j); c = Idx(i, j + 1); wb = fu; wc = fv; wa = 1 - fu - fv; }
+                    else { a = Idx(i + 1, j); b = Idx(i + 1, j + 1); c = Idx(i, j + 1); wb = fu + fv - 1; wa = 1 - fv; wc = 1 - fu; }
+                }
+                else if (fu >= fv) { a = Idx(i, j); b = Idx(i + 1, j); c = Idx(i + 1, j + 1); wa = 1 - fu; wb = fu - fv; wc = fv; }
+                else { a = Idx(i, j); b = Idx(i + 1, j + 1); c = Idx(i, j + 1); wa = 1 - fv; wb = fu; wc = fv - fu; }
+                double nl = 0;
+                for (int k = 0; k < 3; k++)
+                {
+                    oP[k] = wa * g.Points[a * 3 + k] + wb * g.Points[b * 3 + k] + wc * g.Points[c * 3 + k];
+                    oN[k] = wa * g.Normals[a * 3 + k] + wb * g.Normals[b * 3 + k] + wc * g.Normals[c * 3 + k];
+                    nl += oN[k] * oN[k];
+                }
+                nl = Math.Sqrt(nl);
+                if (nl > 1e-12) for (int k = 0; k < 3; k++) oN[k] /= nl;
+            }
+
+            var aOrder = new List<int>();
+            var aPts = new Dictionary<int, List<double>>();
+            var aNrm = new Dictionary<int, List<double>>();
+            var aTris = new Dictionary<int, List<int>>();
+            var p = new double[3]; var n = new double[3];
+            int W = t.Width, H = t.Height;
+            int nv = Math.Max(1, (int)Math.Ceiling(2.0 * res / H));
+            for (int ty = 0; ty < H; ty++)
+            {
+                int Key(int x)
+                {
+                    int o = (ty * W + x) * 4;
+                    if (t.Rgba[o + 3] < TextureAlpha) return -1;
+                    if (aTri && (x + 0.5) / W + (ty + 0.5) / H > 1) return -1;   // 像素中心落在三角帆外
+                    return (t.Rgba[o] << 16) | (t.Rgba[o + 1] << 8) | t.Rgba[o + 2];
+                }
+                int tx = 0;
+                while (tx < W)
+                {
+                    int aKey = Key(tx);
+                    int tx1 = tx + 1;
+                    while (tx1 < W && Key(tx1) == aKey) tx1++;
+                    if (aKey >= 0)
+                    {
+                        if (!aPts.ContainsKey(aKey)) { aOrder.Add(aKey); aPts[aKey] = new List<double>(); aNrm[aKey] = new List<double>(); aTris[aKey] = new List<int>(); }
+                        List<double> P = aPts[aKey], N = aNrm[aKey];
+                        List<int> T = aTris[aKey];
+                        double u0 = (double)tx / W, u1 = (double)tx1 / W, v0 = (double)ty / H, v1 = (double)(ty + 1) / H;
+                        int nu = Math.Max(1, (int)Math.Ceiling(2.0 * res * (u1 - u0)));
+                        int aBase = P.Count / 3;
+                        for (int q = 0; q <= nv; q++)
+                            for (int s = 0; s <= nu; s++)
+                            {
+                                Sample(u0 + (u1 - u0) * s / nu, v0 + (v1 - v0) * q / nv, p, n);
+                                P.Add(p[0]); P.Add(p[1]); P.Add(p[2]);
+                                N.Add(n[0]); N.Add(n[1]); N.Add(n[2]);
+                            }
+                        for (int q = 0; q < nv; q++)
+                            for (int s = 0; s < nu; s++)
+                            {
+                                int a = aBase + q * (nu + 1) + s, b = a + 1, c = a + (nu + 1) + 1, d = a + (nu + 1);
+                                T.Add(a); T.Add(b); T.Add(c);
+                                T.Add(a); T.Add(c); T.Add(d);
+                            }
+                    }
+                    tx = tx1;
+                }
+            }
+            var aOut = new List<SCP_SculptSailGeom>();
+            foreach (int k in aOrder)
+                aOut.Add(new SCP_SculptSailGeom
+                {
+                    Path = g.Path, Points = aPts[k].ToArray(), Normals = aNrm[k].ToArray(), Triangles = aTris[k].ToArray(),
+                    R = (byte)(k >> 16), G = (byte)((k >> 8) & 0xFF), B = (byte)(k & 0xFF), Res = res, CornerCount = g.CornerCount,
+                });
+            return aOut;
         }
 
         // ───────────────────────── 雙面網格（渲染器與 obj 匯出共用）─────────────────────────

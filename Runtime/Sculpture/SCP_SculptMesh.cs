@@ -528,6 +528,8 @@ namespace SCP.Core.Sculpture
             var aMesh = new SCP_SculptMesh();
             var c = new Collector();
             if (iSails != null)
+            {
+                string? aLastPath = null;
                 foreach (SCP_SculptSailGeom s in iSails)
                 {
                     SCP_SculptSails.TwoSided(s, out List<double[]> aPos, out List<double[]> aNrm, out List<int[]> aTris);
@@ -536,9 +538,12 @@ namespace SCP.Core.Sculpture
                     c.Emit(aPos, aNrm, s.R, s.G, s.B);
                     // 世界裡從法線那側看逆時針 ⇒ y 鏡像後順時針 ⇒ 反過來寫
                     foreach (int[] t in aTris) { c.Idx.Add(aBase + (uint)t[0]); c.Idx.Add(aBase + (uint)t[2]); c.Idx.Add(aBase + (uint)t[1]); }
-                    aMesh.SailCount++;
+                    // 帶貼圖的帆展開成每色一份（TASK-0530，同一面的份相鄰）⇒ 數「幾面帆」照路徑換了才加一
+                    if (s.Path.Length == 0 || s.Path != aLastPath) aMesh.SailCount++;   // 沒有路徑的（呼叫端自己組的網格）各算一面
+                    aLastPath = s.Path;
                     aMesh.SailTriangles += aTris.Count;
                 }
+            }
             if (iRopes != null)
                 foreach (SCP_SculptRopeGeom r in iRopes)
                 {

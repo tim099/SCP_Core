@@ -190,6 +190,27 @@ namespace SCP.Core.Sculpture
             return aOut;
         }
 
+        /// <summary>
+        /// 帆的貼圖（TASK-0530）：帆仍是一整塊布（遊戲拿它跑布料物理），這裡只**多給**畫圖要的東西 ——
+        /// <c>uv</c>：跟 <c>verts</c> 一一對應（雙面 ⇒ 兩面同一組）、每頂點 2 個（u ＝ 角 0→角 1、v ＝ 角 0→角 3／三角帆角 0→角 2；圖的左上角 ＝ (0, 0)）、0.0001；
+        /// <c>w</c>／<c>h</c>／<c>rgba</c>：RGBA8 列優先（第 0 列是圖的最上面）、base64；<c>alpha_min</c>：低於它的像素不畫；<c>file</c>：作品裡的相對路徑。
+        /// </summary>
+        static SCP_JsonData Texture(SCP_SculptSailGeom s)
+        {
+            var aUv = SCP_JsonData.NewArray();
+            for (int side = 0; side < 2; side++)
+                for (int i = 0; i < s.PointCount; i++) { aUv.Add(Num(F4(s.Uv![i * 2]))); aUv.Add(Num(F4(s.Uv[i * 2 + 1]))); }
+            SCP_SculptSailTexture t = s.Texture!;
+            var o = SCP_JsonData.NewObject();
+            o.Set("file", t.File);
+            o.Set("w", SCP_JsonData.NewNumber((long)t.Width));
+            o.Set("h", SCP_JsonData.NewNumber((long)t.Height));
+            o.Set("alpha_min", SCP_JsonData.NewNumber((long)SCP_SculptSails.TextureAlpha));
+            o.Set("rgba", Convert.ToBase64String(t.Rgba));
+            o.Set("uv", aUv);
+            return o;
+        }
+
         /// <summary>帆：雙面三角網格（同 obj 的 TwoSided）—— 頂點 0.01、三角形照 obj 寫的順序（反過來寫的那一份）、色。</summary>
         public static SCP_JsonData Sails(List<SCP_SculptSailGeom> iSails)
         {
@@ -207,6 +228,7 @@ namespace SCP.Core.Sculpture
                 o.Set("color", Rgb(s.R, s.G, s.B));
                 o.Set("verts", aV);
                 o.Set("tris", aT);
+                if (s.Uv != null && s.Texture != null) o.Set("texture", Texture(s));   // TASK-0530：沒貼圖的帆位元組不變
                 aOut.Add(o);
             }
             return aOut;
