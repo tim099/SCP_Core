@@ -490,6 +490,13 @@ namespace SCP.Core.Sculpture
         /// <returns>完整路徑（平台分隔符）；<paramref name="oRel"/> ＝ 相對 events/ 的路徑（＝新水位）。</returns>
         public static string RecordEvent(SCP_SculptPaths iPaths, SCP_SculptPyObj iEvent, DateTime iNow, out string oRel)
         {
+            oRel = NewEventRel(iPaths, iNow);
+            return WriteEvents(iPaths, new List<(string, string)> { (oRel, SCP_SculptPy.Dumps(iEvent, true)) });
+        }
+
+        /// <summary>下一個事件的相對路徑（<c>&lt;YYYY-MM-DD&gt;/&lt;HHMMSS_mmm&gt;_&lt;uuid6&gt;.json</c>，平台分隔符）—— 只算名字、不寫檔。</summary>
+        public static string NewEventRel(SCP_SculptPaths iPaths, DateTime iNow)
+        {
             // 同毫秒或時鐘倒退仍保持追加順序，否則Undo與刪快取後的重播會交換兩刀。
             var previous = ListEvents(iPaths);
             if (previous.Count > 0)
@@ -502,16 +509,86 @@ namespace SCP.Core.Sculpture
                     iNow = last.AddMilliseconds(1);
             }
             string aDay = iNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-            string aDir = Path.Combine(iPaths.Events, aDay);
-            Directory.CreateDirectory(aDir);
             int aMs = (int)((iNow.Ticks % TimeSpan.TicksPerSecond) / 10 / 1000);
             string aName = iNow.ToString("HHmmss", CultureInfo.InvariantCulture) + "_"
                            + aMs.ToString("000", CultureInfo.InvariantCulture) + "_"
                            + Guid.NewGuid().ToString("D").Substring(0, 6) + ".json";
-            string aFull = Path.Combine(aDir, aName);
-            SCP_SculptPy.WriteTextFile(aFull, SCP_SculptPy.Dumps(iEvent, true));
-            oRel = aDay + Path.DirectorySeparatorChar + aName;
-            return aFull;
+            return aDay + Path.DirectorySeparatorChar + aName;
+        }
+
+        /// <summary>
+        /// 依序落一組事件檔（rel 相對 events/）：先全部寫成 <c>.tmp</c>（<see cref="ListEvents"/> 只收 .json ⇒ 寫到一半的不會被重播），
+        /// 全部寫完才依序改名。回傳最後一檔的完整路徑。
+        /// <para>⚠ 改名那幾步之間仍有極短的窗：中途斷掉 ⇒ 磁碟上只有前面幾段（重播得到半刀）。寫檔失敗的那一種（磁碟滿、權限）在改名前就丟例外、一檔都不落。</para>
+        /// </summary>
+        public static string WriteEvents(SCP_SculptPaths iPaths, List<(string Rel, string Text)> iFiles)
+        {
+            var aTmps = new List<(string Tmp, string Full)>();
+            try
+            {
+                foreach (var f in iFiles)
+                {
+                    string aFull = Path.Combine(iPaths.Events, f.Rel);
+                    Directory.CreateDirectory(Path.GetDirectoryName(aFull)!);
+                    string aTmp = aFull + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
+                    aTmps.Add((aTmp, aFull));
+                    SCP_SculptPy.WriteTextFile(aTmp, f.Text);
+                }
+                foreach (var t in aTmps)
+                {
+                    if (File.Exists(t.Full)) File.Replace(t.Tmp, t.Full, null);   // 只有拆舊檔時會蓋到既有的頭檔
+                    else File.Move(t.Tmp, t.Full);
+                }
+            }
+            finally { foreach (var t in aTmps) try { if (File.Exists(t.Tmp)) File.Delete(t.Tmp); } catch (Exception) { } }
+            return aTmps[aTmps.Count - 1].Full;
+        }
+
+        // ───────────────────────── 大事件拆檔（TASK-0521） ─────────────────────────
+        /// <summary>
+        /// 一個事件檔寫到磁碟的上限（位元組）。超過就拆成**頭檔＋續檔**：頭檔 <c>X.json</c>，續檔 <c>X_p2.json</c>、<c>X_p3.json</c>…
+        /// （排序天生緊跟在頭檔後面）。GitHub 對單檔 50 MB 起警告、100 MB 拒收 ⇒ 留一段餘裕。
+        /// </summary>
+        public const long DefaultMaxEventBytes = 40L * 1024 * 1024;
+        /// <summary>目前生效的上限（預設 <see cref="DefaultMaxEventBytes"/>）。⛔ 只有自測可以暫時調小（用完在 finally 還原）。</summary>
+        public static long MaxEventBytes { get; set; } = DefaultMaxEventBytes;
+        const string PartTag = "_p";
+
+        /// <summary>續檔的相對路徑：<paramref name="iPart"/> 從 2 起算（1 ＝ 頭檔本身）。</summary>
+        public static string PartRel(string iHeadRel, int iPart)
+            => iHeadRel.Substring(0, iHeadRel.Length - ".json".Length) + PartTag + iPart.ToString(CultureInfo.InvariantCulture) + ".json";
+
+        /// <summary>續檔 ⇒ 它的頭檔（同分隔符）；不是續檔的名字 ⇒ null。只看檔名（事件檔名的 uuid 段是十六進位，不會出現 <c>_p</c>）。</summary>
+        public static string? PartHead(string iRel)
+        {
+            if (!iRel.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) return null;
+            string aStem = iRel.Substring(0, iRel.Length - ".json".Length);
+            int p = aStem.LastIndexOf(PartTag, StringComparison.Ordinal);
+            if (p <= 0 || p + PartTag.Length >= aStem.Length) return null;
+            for (int i = p + PartTag.Length; i < aStem.Length; i++) if (aStem[i] < '0' || aStem[i] > '9') return null;
+            return aStem.Substring(0, p) + ".json";
+        }
+
+        /// <summary><paramref name="iRel"/> 是 <paramref name="iHeadRel"/> 的續檔嗎（分隔符不拘）。</summary>
+        public static bool IsPartOf(string iRel, string iHeadRel)
+            => PartHead(iRel) is string h && h.Replace('\\', '/') == iHeadRel.Replace('\\', '/');
+
+        /// <summary>第 <paramref name="iIndex"/> 個事件那一刀的最後一個檔（緊跟在後的續檔都算同一刀；指到續檔本身也一樣）；負數原樣回傳。</summary>
+        public static int LastPartIndex(List<EventFile> iEvents, int iIndex)
+        {
+            if (iIndex < 0) return iIndex;
+            string aHead = PartHead(iEvents[iIndex].Rel) ?? iEvents[iIndex].Rel;
+            int j = iIndex;
+            while (j + 1 < iEvents.Count && IsPartOf(iEvents[j + 1].Rel, aHead)) j++;
+            return j;
+        }
+
+        /// <summary>這段文字照 <see cref="SCP_SculptPy.WriteTextFile"/> 寫到磁碟會是幾個位元組（平台換行）。</summary>
+        public static long DiskBytes(string iText)
+        {
+            long n = Encoding.UTF8.GetByteCount(iText);
+            if (Environment.NewLine != "\n") foreach (char ch in iText) if (ch == '\n') n += Environment.NewLine.Length - 1;
+            return n;
         }
 
         // ───────────────────────── apply_event_to_space ─────────────────────────

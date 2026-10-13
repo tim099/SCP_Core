@@ -80,13 +80,16 @@ namespace SCP.Core.Sculpture
             finally { try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch (Exception) { } }
         }
 
-        /// <summary>事件在清單裡的序號；<see cref="Start"/>／空字串 ⇒ −1；找不到 ⇒ ArgumentException。</summary>
+        /// <summary>
+        /// 事件在清單裡的序號；<see cref="Start"/>／空字串 ⇒ −1；找不到 ⇒ ArgumentException。
+        /// <para>⭐ 回的是「那一刀之後」那一刻：指到拆過檔的頭檔 ⇒ 延伸到它最後一個續檔（TASK-0521）—— 時間點不會停在半刀上。</para>
+        /// </summary>
         public static int IndexOf(List<SCP_SculptStore.EventFile> iEvents, string iRel, string iWho)
         {
             if (iRel.Length == 0 || iRel == Start) return -1;
             string aWant = Norm(iRel);
             for (int i = 0; i < iEvents.Count; i++)
-                if (Norm(iEvents[i].Rel) == aWant) return i;
+                if (Norm(iEvents[i].Rel) == aWant) return SCP_SculptStore.LastPartIndex(iEvents, i);
             throw new ArgumentException(iWho + " 指的事件 `" + aWant + "` 不在 events/ 裡（被刪、改名，或打錯了？）");
         }
 
@@ -102,7 +105,7 @@ namespace SCP.Core.Sculpture
                     aIdx = i;
                 }
             if (aIdx < 0) throw new ArgumentException(iWho + " 指的事件 `" + iSpec + "` 不在 events/ 裡");
-            return aIdx;
+            return SCP_SculptStore.LastPartIndex(iEvents, aIdx);
         }
 
         /// <summary>

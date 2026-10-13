@@ -46,10 +46,13 @@ namespace SCP.Core.Sculpture
             var result = new SCP_SculptHistory();
             var files = SCP_SculptStore.ListEvents(iPaths);
             var entries = SCP_SculptHistoryIndex.Refresh(iPaths, files, out result.Parsed);
+            string head = "";
             for (int i = 0; i < files.Count; i++)
             {
                 var file = files[i]; var entry = entries[i];
                 if (entry.kind == SCP_SculptHistoryEntry.KindUnreadable) throw new SCP_SculptReplayException("事件讀取失敗：" + file.Rel);
+                if (head.Length > 0 && SCP_SculptStore.IsPartOf(file.Rel, head)) continue;   // 續檔：同一刀的後半（TASK-0521），不另算一筆
+                head = file.Rel;
                 if (entry.kind == SCP_SculptHistoryEntry.KindUndo || entry.kind == SCP_SculptHistoryEntry.KindRedo)
                 {
                     bool undo = entry.kind == SCP_SculptHistoryEntry.KindUndo;
@@ -132,7 +135,19 @@ namespace SCP.Core.Sculpture
             var target = candidates[candidates.Count - 1];
             var current = LoadSpace();
             var desired = iRedo ? CopySpace(current) : Paths.NewStart();   // 草稿 ⇒ 從底起重播（TASK-0493）
-            if (iRedo) SCP_SculptStore.ApplyEvent(desired, SCP_SculptStore.ReadEvent(target.Full)!, target.Rel);
+            if (iRedo)
+            {
+                // 頭檔連同續檔一起套（TASK-0521）；Undo 那一支在頭檔就停 ⇒ 續檔天生不在裡面
+                var all = SCP_SculptStore.ListEvents(Paths);
+                int at = all.FindIndex(f => f.Rel == target.Rel);
+                if (at < 0) throw new SCP_SculptReplayException("Redo 的目標不在 events/：" + target.Rel);
+                for (int i = at; i <= SCP_SculptStore.LastPartIndex(all, at); i++)
+                {
+                    var ev = SCP_SculptStore.ReadEvent(all[i].Full);
+                    if (ev == null) throw new SCP_SculptReplayException("事件讀取失敗：" + all[i].Rel);
+                    SCP_SculptStore.ApplyEvent(desired, ev, all[i].Rel);
+                }
+            }
             else foreach (var file in SCP_SculptStore.ListEvents(Paths))
             {
                 if (file.Rel == target.Rel) break;
@@ -175,16 +190,64 @@ namespace SCP.Core.Sculpture
             var space = LoadSpace();
             foreach (var v in iEdit.before)
                 if (space.Voxels.Get(v[0], v[1], v[2]) != v[3]) throw new InvalidOperationException("編輯前的內容已改變；未提交");
-            var options = new SCP_JsonMapOptions();
-            var data = SCP_JsonMapper.ToJson(iEdit, options);
-            if (options.Diagnostics.Count > 0) throw new InvalidOperationException("編輯事件無法完整寫入：" + string.Join("; ", options.Diagnostics));
-            var ev = new SCP_SculptPyObj().Put("op", "workedit");
-            if (iSource != null) ev.Put("source", iSource);
-            ev.Put("edit", data);
-            string file = SCP_SculptStore.RecordEvent(Paths, ev, Clock(), out string rel);
+            string headRel = SCP_SculptStore.NewEventRel(Paths, Clock());
+            var files = EventFiles(iEdit, iSource, null, headRel);
+            string file = SCP_SculptStore.WriteEvents(Paths, files);
+            LastParts = files.Count;
             foreach (var v in iEdit.after) space.Voxels.Set(v[0], v[1], v[2], v[3]);
-            space.LastEventFile = rel; SCP_SculptStore.SaveCache(Paths, space);
+            space.LastEventFile = files[files.Count - 1].Rel; SCP_SculptStore.SaveCache(Paths, space);
             return file;
         }
+
+        /// <summary>上一次 <see cref="CommitEdit"/> 寫了幾個檔（1 ＝ 沒拆；TASK-0521）。</summary>
+        public int LastParts { get; private set; }
+
+        /// <summary>
+        /// 一刀 ⇒ 要落的檔（rel, 全文）（TASK-0521）：整份寫得下就一個檔；超過 <see cref="SCP_SculptStore.MaxEventBytes"/>
+        /// 就把 before／after 照同一個順序切段 —— 頭檔留這一刀的 action／target_event／credits／source，最上層多一個 <c>parts</c>；
+        /// 續檔的 action 是 <c>part</c>、最上層帶 <c>part_of</c>（頭檔）與 <c>part</c>（第幾段）。
+        /// <para>⭐ 每一格只落在一段裡 ⇒ 依序重播各段 ＝ 重播整刀；沒更新的 senate.exe 也照樣重播得出來（只讀 edit.after）。</para>
+        /// <para><paramref name="iTop"/>：拆舊檔時原事件最上層的其他欄位（照原樣留在頭檔）；新寫的刀給 null。</para>
+        /// <para><paramref name="iIndent"/>：false ⇒ 寫成單行（拆舊檔時跟原檔同格式 —— 單行的舊檔照引擎的 indent=2 重寫會膨脹兩倍多）。</para>
+        /// </summary>
+        public static List<(string Rel, string Text)> EventFiles(SCP_SculptEdit iEdit, SCP_SculptPyObj? iSource, SCP_SculptPyObj? iTop, string iHeadRel, bool iIndent = true)
+        {
+            int total = iEdit.after.Count, per = Math.Max(1, total);
+            while (true)
+            {
+                int parts = total == 0 ? 1 : (total + per - 1) / per;
+                var outFiles = new List<(string Rel, string Text)>(parts);
+                bool fits = true;
+                for (int p = 0; p < parts && fits; p++)
+                {
+                    var piece = new SCP_SculptEdit
+                    {
+                        action = p == 0 ? iEdit.action : PartAction, target_event = p == 0 ? iEdit.target_event : "", persona = iEdit.persona,
+                        before = iEdit.before.GetRange(p * per, Math.Min(per, total - p * per)),
+                        after = iEdit.after.GetRange(p * per, Math.Min(per, total - p * per)),
+                        credits = p == 0 ? iEdit.credits : new List<SCP_SculptCredit>(),
+                    };
+                    var options = new SCP_JsonMapOptions();
+                    var data = SCP_JsonMapper.ToJson(piece, options);
+                    if (options.Diagnostics.Count > 0) throw new InvalidOperationException("編輯事件無法完整寫入：" + string.Join("; ", options.Diagnostics));
+                    var ev = new SCP_SculptPyObj();
+                    if (p == 0 && iTop != null) foreach (var kv in iTop) ev.Put(kv.Key, kv.Value);
+                    ev.Put("op", "workedit");
+                    if (p == 0 && iSource != null) ev.Put("source", iSource);
+                    ev.Put("edit", data);
+                    string rel = p == 0 ? iHeadRel : SCP_SculptStore.PartRel(iHeadRel, p + 1);
+                    if (p == 0) { if (parts > 1) ev.Put("parts", parts); else ev.RemoveAll(kv => kv.Key == "parts"); }
+                    else ev.Put("part_of", iHeadRel.Replace('\\', '/')).Put("part", p + 1);
+                    string text = SCP_SculptPy.Dumps(ev, iIndent);
+                    if (SCP_SculptStore.DiskBytes(text) > SCP_SculptStore.MaxEventBytes && per > 1) fits = false;
+                    else outFiles.Add((rel, text));
+                }
+                if (fits) return outFiles;
+                per = (per + 1) / 2;
+            }
+        }
+
+        /// <summary>續檔的 edit.action（TASK-0521）。⛔ 不沿用頭檔的 action：沒更新的 senate.exe 會把 undo 的續檔當成第二次 undo 而整份歷史讀不了。</summary>
+        public const string PartAction = "part";
     }
 }
