@@ -90,6 +90,8 @@ namespace SCP.Core.Sculpture
         public double SkyboxTiltDeg = 0;
         /// <summary>地板（Tim 2026-10-02）。null ＝ 沒有地板（舊行為）。</summary>
         public SCP_SculptFloor? Floor;
+        /// <summary>海面（TASK-0585）。null 或 <see cref="SCP_SculptSea.Enabled"/> ＝ false ⇒ 沒有海（舊行為，圖逐位元不變）。</summary>
+        public SCP_SculptSea? Sea;
 
         /// <summary>
         /// 網格合併同色面（TASK-0472）：同色、同朝向、共面、**四角 AO 都相同**的相鄰面併成一塊大矩形（面數大減）。
@@ -188,6 +190,26 @@ namespace SCP.Core.Sculpture
         public byte R = 255, G = 255, B = 255;
         /// <summary>邊緣淡出寬度（佔範圍的比例 0..0.5）；0 ＝ 硬邊。</summary>
         public double Fade = 0.15;
+    }
+
+    /// <summary>
+    /// 海面（TASK-0585，Tim 2026-10-14「預覽模式是否可以開海水（可以設定高度）因為不希望實際建模海水 但是想要港口建築能在水中」）：
+    /// z ＝ <see cref="Z"/> 的一片水平面，⛔ 不是 voxel（不進清單、不影響讀數與匯出）。
+    /// 渲染器在所有不透明的東西之後畫：深度測試、不寫深度、alpha 混色 ⇒ 海面以上照常，以下被蓋住（<see cref="Opacity"/> 1）或帶海色淡淡看得到（&lt; 1）；
+    /// 平面鋪到遠方（⛔ 不跟作品外框、也不算進框景 —— 鏡頭不會為了海退到天邊）；接影子、不投影子。
+    /// <para>開關放在物件裡（不是 null ＝ 關）：疊層時「這一層只換高度、開關沿用下層」不用另外掛草稿（地板就是為這個掛了一套）。</para>
+    /// </summary>
+    public sealed class SCP_SculptSea
+    {
+        public bool Enabled;
+        /// <summary>海面高度（世界 z，格；跟 voxel 同一套 —— 格 k 佔 [k, k+1)，海面 z 60 ＝ 第 60 格的底面）。</summary>
+        public double Z = 0;
+        /// <summary>海色（0..255）。預設深藍綠。</summary>
+        public byte R = 30, G = 90, B = 120;
+        /// <summary>不透明度 0..1：1 ＝ 水下全部蓋住；預設 0.85 ⇒ 水下的東西帶海色、淡淡看得到。</summary>
+        public double Opacity = 0.85;
+
+        public SCP_SculptSea Clone() => (SCP_SculptSea)MemberwiseClone();
     }
 
     public enum SCP_SculptProjection

@@ -182,7 +182,14 @@ namespace SCP.Core.Sculpture
         }
 
         static readonly HashSet<string> s_TopKeys = new HashSet<string>(StringComparer.Ordinal)
-        { "camera", "lights", "ambient", "ao", "shadow", "skybox", "floor", "background", "width", "height" };
+        { "camera", "lights", "ambient", "ao", "shadow", "skybox", "floor", "sea", "background", "width", "height" };
+        static readonly HashSet<string> s_SeaKeys = new HashSet<string>(StringComparer.Ordinal) { "enabled", "z", "color", "opacity" };
+        /// <summary>CLI 的扁平海面鍵 → 設定檔 sea 物件裡的鍵（TASK-0585；`render-profile set`、view 的一次性參數、`work sub=sea` 同一份）。</summary>
+        static readonly Dictionary<string, string> s_SeaFlat = new Dictionary<string, string>(StringComparer.Ordinal)
+        { ["sea"] = "enabled", ["sea_z"] = "z", ["sea_color"] = "color", ["sea_opacity"] = "opacity" };
+        public static IReadOnlyCollection<string> SeaFlatKeys => s_SeaFlat.Keys;
+        /// <summary>海面高度的範圍：跟作品一樣大（各軸上限 4096）、可以低到作品底下一點。</summary>
+        public const double SeaZMin = -64, SeaZMax = 4096;
         static readonly HashSet<string> s_CameraKeys = new HashSet<string>(StringComparer.Ordinal)
         { "projection", "yaw", "pitch", "roll", "target", "eye", "distance", "fov", "zoom", "fit_upscale" };
         static readonly HashSet<string> s_FloorKeys = new HashSet<string>(StringComparer.Ordinal)
@@ -300,6 +307,8 @@ namespace SCP.Core.Sculpture
 
                 var fl = iProfile["floor"];
                 if (fl.Exists && !TryApplyFloor(fl, ioP, iFloorBase, out oError)) return false;
+                var se = iProfile["sea"];
+                if (se.Exists && !TryApplySea(se, ioP, out oError)) return false;
             }
             catch (BadValue e) { oError = e.Message; return false; }
             catch (SCP_JsonTypeException e) { oError = "型別不對：" + e.Message; return false; }
@@ -321,6 +330,73 @@ namespace SCP.Core.Sculpture
             if (!File.Exists(aPath)) { oError = "skybox 圖不存在：" + aPath; return false; }
             oSkybox = aPath;
             return true;
+        }
+
+        // ───────────────────────────── 海面（TASK-0585） ─────────────────────────────
+        //
+        // 區塊職責：sea 物件的逐層疊加、作品自己的海面預設（sea.json）。
+        // 物理意義：開關在物件裡（Enabled），每層只改有寫的欄位 ⇒ 「這層只換高度、開關沿用下層」不用草稿。
+        //          ⛔ 驗證失敗不寫回：先在複本上改，全部過了才換進 ioP.Sea。
+
+        static bool TryApplySea(SCP_JsonData iSea, SCP_SculptRenderParams ioP, out string oError)
+        {
+            oError = "";
+            if (iSea.Type != SCP_JsonType.Object) { oError = "sea 要是物件（{\"enabled\":true,\"z\":60,…}）"; return false; }
+            if (!CheckKeys(iSea, s_SeaKeys, "sea.", out oError)) return false;
+            SCP_SculptSea v = ioP.Sea?.Clone() ?? new SCP_SculptSea();
+            if (iSea["enabled"].Exists) v.Enabled = iSea["enabled"].AsBool();
+            if (iSea["z"].Exists) v.Z = Range(iSea["z"], "sea.z", SeaZMin, SeaZMax);
+            if (iSea["opacity"].Exists) v.Opacity = Range(iSea["opacity"], "sea.opacity", 0, 1);
+            if (iSea["color"].Exists)
+            {
+                if (!TryHexColor(iSea["color"].AsString(), out byte r, out byte g, out byte b))
+                { oError = "sea.color 要 #RRGGBB：" + iSea["color"].AsString(); return false; }
+                v.R = r; v.G = g; v.B = b;
+            }
+            ioP.Sea = v;
+            return true;
+        }
+
+        /// <summary>目前這份參數的海面 → 設定檔同形的 JSON（沒設過 ⇒ 預設值、enabled false）。</summary>
+        public static SCP_JsonData DescribeSea(SCP_SculptRenderParams iP)
+        {
+            SCP_SculptSea s = iP.Sea ?? new SCP_SculptSea();
+            var o = SCP_JsonData.NewObject();
+            o.Set("enabled", s.Enabled);
+            o.Set("z", s.Z);
+            o.Set("color", "#" + s.R.ToString("x2") + s.G.ToString("x2") + s.B.ToString("x2"));
+            o.Set("opacity", s.Opacity);
+            return o;
+        }
+
+        /// <summary>
+        /// 作品自己的海面預設（`work sub=sea` 寫的 sea.json：{"schema":1,"sea":{…}}，同設定檔的 sea 物件）。
+        /// 沒有檔 ⇒ null（不是錯）；讀不了或格式不對 ⇒ 例外（呼叫端轉成擋 —— ⛔ 不默默當成沒有海）。
+        /// </summary>
+        public static SCP_JsonData? ReadWorkSea(SCP_SculptPaths iPaths)
+        {
+            if (!File.Exists(iPaths.SeaFile)) return null;
+            SCP_JsonData aJ = SCP_JsonData.Parse(File.ReadAllText(iPaths.SeaFile));
+            if (aJ.Type != SCP_JsonType.Object || !aJ["sea"].Exists || aJ["sea"].Type != SCP_JsonType.Object)
+                throw new InvalidDataException("sea.json 要是 {\"schema\":1,\"sea\":{…}}：" + iPaths.SeaFile);
+            return aJ["sea"];
+        }
+
+        public static void SaveWorkSea(SCP_SculptPaths iPaths, SCP_JsonData iSea)
+        {
+            var aJ = SCP_JsonData.NewObject();
+            aJ.Set("schema", 1L);
+            aJ.Set("sea", iSea);
+            Directory.CreateDirectory(Path.GetDirectoryName(iPaths.SeaFile)!);
+            SCP_CmdPayload.WriteAtomic(iPaths.SeaFile, aJ.ToJson(true) + "\n");
+        }
+
+        /// <summary>把一份 sea 物件疊到 <paramref name="ioP"/> 上（作品層、`work sub=sea` 的驗證都走這支）。</summary>
+        public static bool TryApplySeaObject(SCP_JsonData iSea, SCP_SculptRenderParams ioP, out string oError)
+        {
+            try { return TryApplySea(iSea, ioP, out oError); }
+            catch (BadValue e) { oError = e.Message; return false; }
+            catch (SCP_JsonTypeException e) { oError = "型別不對：" + e.Message; return false; }
         }
 
         // ───────────────────────────── 地板（疊層草稿） ─────────────────────────────
@@ -448,6 +524,7 @@ namespace SCP.Core.Sculpture
         /// 認得的鍵：projection yaw pitch roll target eye distance fov zoom ambient ao shadow skybox skybox_yaw skybox_tilt background
         /// width height fit_upscale、lights（整組 JSON 陣列取代）、light_add（`x,y,z[;#rrggbb[;強度[;shadow 0|1]]]`，可用 `|` 串多盞）、
         /// light_clear=1、地板 floor（on|off）floor_z floor_full_grid floor_margin floor_margin_ratio floor_texture floor_tile floor_color floor_fade、
+        /// 海面 sea（on|off）sea_z sea_color sea_opacity（TASK-0585）、
         /// unset（逗號分隔的鍵 ⇒ 從設定裡拿掉，回到沿用下層；`floor` ＝ 整個地板物件，floor_* ＝ 其中一格）。
         /// <para>target／eye／distance／zoom 給 <c>auto</c> ⇒ 寫 null（明確改回自動）。</para>
         /// </summary>
@@ -468,6 +545,11 @@ namespace SCP.Core.Sculpture
             {
                 if (!ioProfile["floor"].Exists || ioProfile["floor"].Type != SCP_JsonType.Object) ioProfile.Set("floor", SCP_JsonData.NewObject());
                 return ioProfile["floor"];
+            }
+            SCP_JsonData Sea()
+            {
+                if (!ioProfile["sea"].Exists || ioProfile["sea"].Type != SCP_JsonType.Object) ioProfile.Set("sea", SCP_JsonData.NewObject());
+                return ioProfile["sea"];
             }
             try
             {
@@ -494,6 +576,9 @@ namespace SCP.Core.Sculpture
                         case "floor_full_grid": Floor().Set("full_grid", Bool(v, k)); break;
                         case "floor_z": case "floor_margin": case "floor_margin_ratio": case "floor_tile": case "floor_fade": Floor().Set(s_FloorFlat[k], Num(v, k)); break;
                         case "floor_texture": case "floor_color": Floor().Set(s_FloorFlat[k], v); break;
+                        case "sea": Sea().Set("enabled", Bool(v, k)); break;                                  // TASK-0585
+                        case "sea_z": case "sea_opacity": Sea().Set(s_SeaFlat[k], Num(v, k)); break;
+                        case "sea_color": Sea().Set("color", v); break;
                         case "lights":
                         {
                             SCP_JsonData aArr = SCP_JsonData.Parse(v);
@@ -527,6 +612,7 @@ namespace SCP.Core.Sculpture
                                    : u == "skybox_yaw" ? (ioProfile["skybox"].Exists && ioProfile["skybox"].Remove("yaw"))
                                    : u == "skybox_tilt" ? (ioProfile["skybox"].Exists && ioProfile["skybox"].Remove("tilt"))
                                    : u != "floor" && s_FloorFlat.TryGetValue(u, out string? aFk) ? (ioProfile["floor"].Exists && ioProfile["floor"].Remove(aFk!))
+                                   : u != "sea" && s_SeaFlat.TryGetValue(u, out string? aSk) ? (ioProfile["sea"].Exists && ioProfile["sea"].Remove(aSk!))
                                    : s_TopKeys.Contains(u) ? ioProfile.Remove(u)
                                    : throw new BadValue("unset 不認得的鍵：" + u);
                         oChanged.Add("unset " + u + (aDone ? "" : "（本來就沒寫）"));
