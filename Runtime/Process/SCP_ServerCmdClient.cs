@@ -252,28 +252,34 @@ namespace SCP.Core.Proc
             return aNode;
         }
 
-        /// <summary>temp → move overwrite；撞檔鎖 backoff 重試（多個寫入端可能同時碰同一個 queue）。</summary>
+        /// <summary>
+        /// 測試縫（TASK-0565）：tmp 寫好、換檔之前叫一次（參數 ＝ queue 路徑）。selftest 在這裡丟例外，模擬行程死在換檔中間。
+        /// <para>⛔ 正式路徑不設 —— 它是 null 時這一行什麼都不做。</para>
+        /// </summary>
+        public static Action<string>? BeforeQueueSwap;
+
+        /// <summary>
+        /// temp → <see cref="SCP.Core.Io.SCP_SharedFile.Replace"/>（目標在就 Replace、不在就 Move；共享衝突有上限地重試）。
+        /// <para>🩸 TASK-0565：舊版是 `File.Delete(queue)` 再 `File.Move(tmp, queue)` —— 兩步之間有一格**檔案不存在**。
+        /// 守同一把 <see cref="SCP.Core.Io.SCP_FileLock"/> 的讀者看不到那一格；看得到的是兩種：
+        /// ① 行程死在兩步之間（被殺、build.sh 收掉、斷電）⇒ queue.json 不見、資料只在 tmp，下一次 Submit 從空骨架寫回 ⇒ 排著的指令全沒了，沒有任何一層會叫；
+        /// ② 沒拿鎖的讀者（`AgentCmdClient` 的唯讀輪詢）讀到「不存在」⇒ 當成空的 ⇒ 把自己那一筆判成「消失了、不知道」。
+        /// ⇒ 換檔改成一步；中斷時目標不是舊版就是新版，⛔ 沒有「不存在」那一格。</para>
+        /// </summary>
         static void WriteAtomic(string iPath, string iPayload)
         {
             string aTmp = iPath + ".tmp." + Guid.NewGuid().ToString("N").Substring(0, 6);
-            Exception? aLast = null;
-            for (int i = 0; i < 5; ++i)
+            try
             {
-                try
-                {
-                    File.WriteAllText(aTmp, iPayload, new UTF8Encoding(false));
-                    if (File.Exists(iPath)) File.Delete(iPath);
-                    File.Move(aTmp, iPath);
-                    return;
-                }
-                catch (IOException e)
-                {
-                    aLast = e;
-                    System.Threading.Thread.Sleep(20 * (i + 1));
-                }
+                File.WriteAllText(aTmp, iPayload, new UTF8Encoding(false));
+                BeforeQueueSwap?.Invoke(iPath);
+                SCP.Core.Io.SCP_SharedFile.Replace(aTmp, iPath);
             }
-            try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch { }
-            throw new IOException("queue.json 寫不進去（重試 5 次）：" + iPath, aLast);
+            catch
+            {
+                try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch { }   // 殘檔清不掉不該蓋掉真錯
+                throw;
+            }
         }
     }
     /// <summary>
