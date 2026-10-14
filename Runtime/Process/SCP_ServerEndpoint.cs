@@ -22,12 +22,17 @@
 //   兩者的下一步不同（前者去啟動，後者去查它為什麼死、順手清遺物），
 //   壓成 bool 的話兩邊都只會印「Server 沒跑」。
 //
+// 🩸 TASK-0533：名片與心跳都是「別的行程隨時會來讀」的小檔 ⇒ 讀一律走 SCP_SharedFile.ReadAllText（給 Delete 共享、不擋 Server 換檔），
+//   換檔走 SCP_SharedFile.Replace（一瞬間被開著就有上限地重試）。原本讀的一側用 File.ReadAllText（只給 Read 共享）——
+//   每一次 CLI 呼叫都會 Probe，撞上 Server 換心跳的那一瞬間 ⇒ Server 那側 Move 丟 UnauthorizedAccessException、整顆掛掉。
+//
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
 using System;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using SCP.Core.Io;
 using SCP.Core.Json;
 
 namespace SCP.Core.Proc
@@ -251,8 +256,7 @@ namespace SCP.Core.Proc
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(aPath) ?? ".");
                 File.WriteAllText(aTmp, SCP_JsonWriter.Write(iInfo.ToJson()) + "\n", new UTF8Encoding(false));
-                if (File.Exists(aPath)) File.Replace(aTmp, aPath, null);
-                else File.Move(aTmp, aPath);
+                SCP_SharedFile.Replace(aTmp, aPath);
                 return (SCP_EndpointWrite.Written, aPath);
             }
             catch (Exception e)
@@ -274,7 +278,7 @@ namespace SCP.Core.Proc
             {
                 if (!File.Exists(aPath)) return (true, aPath);
                 SCP_ServerEndpointInfo aInfo;
-                try { aInfo = SCP_ServerEndpointInfo.FromJson(SCP_JsonParser.Parse(File.ReadAllText(aPath))); }
+                try { aInfo = SCP_ServerEndpointInfo.FromJson(SCP_JsonParser.Parse(SCP_SharedFile.ReadAllText(aPath))); }
                 catch (Exception e) { return (false, "名片讀不開（" + aPath + "）：" + e.Message + " ⇒ 不知道是不是自己的 ⇒ **沒刪**"); }
                 if (!aInfo.IsSameServer(iPid, iStartedAtUtc))
                     return (true, "名片上是別顆（pid=" + aInfo.Pid + "）⇒ 不是我的，**沒刪**（" + aPath + "）");
@@ -324,7 +328,7 @@ namespace SCP.Core.Proc
                     + " ⇒ 它沒起過，或正常收工了。");
 
             SCP_ServerEndpointInfo aInfo;
-            try { aInfo = SCP_ServerEndpointInfo.FromJson(SCP_JsonParser.Parse(File.ReadAllText(aPath))); }
+            try { aInfo = SCP_ServerEndpointInfo.FromJson(SCP_JsonParser.Parse(SCP_SharedFile.ReadAllText(aPath))); }
             catch (Exception e)
             {
                 return new SCP_ServerProbe(SCP_ServerLiveness.Unreadable, null, null,
@@ -341,7 +345,7 @@ namespace SCP.Core.Proc
             string aBeatStarted;
             try
             {
-                SCP_JsonData aHb = SCP_JsonParser.Parse(File.ReadAllText(aInfo.HeartbeatPath));
+                SCP_JsonData aHb = SCP_JsonParser.Parse(SCP_SharedFile.ReadAllText(aInfo.HeartbeatPath));
                 aBeat = aHb.GetString("beat_at_utc", "");
                 aBeatPid = aHb.GetInt("pid", 0);
                 aBeatStarted = aHb.GetString("started_at_utc", "");

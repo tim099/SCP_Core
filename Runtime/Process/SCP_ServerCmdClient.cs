@@ -191,7 +191,7 @@ namespace SCP.Core.Proc
         {
             try
             {
-                SCP_JsonData aJson = SCP_JsonParser.Parse(File.ReadAllText(iPath));
+                SCP_JsonData aJson = SCP_JsonParser.Parse(SCP.Core.Io.SCP_SharedFile.ReadAllText(iPath));   // TASK-0533：給 Delete 共享，不擋 Server 換檔
                 string aVerdict = aJson.GetString("result", "");
                 if (aVerdict.Length == 0) return null;      // 半寫檔 ⇒ 再等一圈
 
