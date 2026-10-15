@@ -346,12 +346,16 @@ namespace SCP.Core.Sculpture
         /// 記材質（TASK-0616）：組裝時順便記每一格的材質 ＝ 它來自的那條關聯、往上第一個有 meta <c>material</c> 的（自己沒寫 ⇒ 照上一層；都沒寫 ⇒ 不記 ＝ 船的預設材質）。
         /// 結果在 <see cref="LastMaterial"/>（組好之後的座標）；被蓋掉、越界的格不記（跟格子同一個「已有的格贏」）。
         /// </summary>
+        /// <para>同一套規則也記 meta <c>render</c>（smooth｜voxel：平滑渲染，TASK-0616 第二段）⇒ <see cref="LastRender"/>。</para>
         public bool TrackMaterial;
         /// <summary>上一次 <see cref="Compose"/> 的材質（<see cref="TrackMaterial"/> 才有）：<see cref="MatKey"/> ⇒ 材質 ID；沒有任何關聯寫 material ⇒ 空的。</summary>
         public Dictionary<long, string>? LastMaterial;
-        public const string MaterialKey = "material";
+        /// <summary>上一次 <see cref="Compose"/> 的 render（同 <see cref="LastMaterial"/>）：<see cref="MatKey"/> ⇒ smooth／voxel；沒有任何關聯寫 render ⇒ 空的。</summary>
+        public Dictionary<long, string>? LastRender;
+        public const string MaterialKey = "material", RenderKey = "render";
+        static readonly string[] s_TrackKeys = { MaterialKey, RenderKey };
         public static long MatKey(int x, int y, int z) => ((long)x << 42) | ((long)y << 21) | (long)z;
-        static string? MaterialOf(SCP_SculptLink iLink) => iLink.meta.TryGetValue(MaterialKey, out SCP_JsonData? v) && v.IsString && v.AsString().Length > 0 ? v.AsString() : null;
+        static string? MetaStr(SCP_SculptLink iLink, string iKey) => iLink.meta.TryGetValue(iKey, out SCP_JsonData? v) && v.IsString && v.AsString().Length > 0 ? v.AsString() : null;
 
         public SCP_SculptLinkComposer(SCP_SculptWorks iWorks, string iDataRoot, List<SCP_SculptLinkNode> iTree, SCP_SculptLinkSelection iSel)
         {
@@ -368,25 +372,31 @@ namespace SCP.Core.Sculpture
             var aReport = new SCP_SculptComposeReport { HideSelf = m_Sel.HideSelf };
             SCP_SculptSpace aInto = m_Sel.HideSelf ? new SCP_SculptSpace { LastEventFile = ioOwn.LastEventFile } : ioOwn;
             var aOwnCache = new Dictionary<string, SCP_SculptSpace>(StringComparer.Ordinal);
-            var aMat = TrackMaterial ? new Dictionary<long, string>() : null;
-            Place(aInto, m_Tree, iSizeX, iSizeY, iSizeZ, aReport, aOwnCache, 0, "", aMat, null);
+            var aTrack = TrackMaterial ? new[] { new Dictionary<long, string>(), new Dictionary<long, string>() } : null;
+            Place(aInto, m_Tree, iSizeX, iSizeY, iSizeZ, aReport, aOwnCache, 0, "", aTrack, aTrack != null ? new string?[s_TrackKeys.Length] : null);
             Last = aReport;
-            LastMaterial = aMat;
+            LastMaterial = aTrack?[0];
+            LastRender = aTrack?[1];
             return aInto;
         }
 
         /// <summary>一層：每個選到的節點 ⇒ 它自己的空間＋它底下選到的（遞迴，在它自己的座標裡、用它自己的尺寸組好）⇒ 轉向、平移、疊進 <paramref name="ioInto"/>（已有的格贏）。</summary>
         void Place(SCP_SculptSpace ioInto, List<SCP_SculptLinkNode> iNodes, int iSizeX, int iSizeY, int iSizeZ,
                    SCP_SculptComposeReport ioReport, Dictionary<string, SCP_SculptSpace> ioOwnCache, int iDepth, string iFrame,
-                   Dictionary<long, string>? ioMat, string? iInherit)
+                   Dictionary<long, string>[]? ioTrack, string?[]? iInherit)
         {
             foreach (var n in iNodes)
             {
                 if (!m_Sel.Includes(n.Path, n.Link.enabled)) continue;
                 SCP_SculptSpace aChild = Copy(LoadOwn(n.Card, ioOwnCache, ioReport));
-                string? aEff = ioMat != null ? MaterialOf(n.Link) ?? iInherit : null;   // 這條關聯的格（含它底下沒寫 material 的）是什麼材質
-                var aChildMat = ioMat != null ? new Dictionary<long, string>() : null;    // 它底下的關聯自己寫了 material 的格（它自己的座標）
-                Place(aChild, n.Children, n.Card.SizeX, n.Card.SizeY, n.Card.SizeZ, ioReport, ioOwnCache, iDepth + 1, n.Card.id, aChildMat, aEff);
+                string?[]? aEff = null;                                                   // 這條關聯的格（含它底下沒寫的）的 material／render
+                Dictionary<long, string>[]? aChildT = null;                               // 它底下的關聯自己寫了的格（它自己的座標）
+                if (ioTrack != null)
+                {
+                    aEff = new string?[s_TrackKeys.Length]; aChildT = new Dictionary<long, string>[s_TrackKeys.Length];
+                    for (int k = 0; k < s_TrackKeys.Length; k++) { aEff[k] = MetaStr(n.Link, s_TrackKeys[k]) ?? iInherit![k]; aChildT[k] = new Dictionary<long, string>(); }
+                }
+                Place(aChild, n.Children, n.Card.SizeX, n.Card.SizeY, n.Card.SizeZ, ioReport, ioOwnCache, iDepth + 1, n.Card.id, aChildT, aEff);
                 var aWorkInfo = ioReport.Works[n.Card.id];
                 var aRow = new SCP_SculptComposeReport.Row { Path = n.Path, Work = n.Card.id, Revision = aWorkInfo.Revision, Draft = aWorkInfo.Draft, PivotDrift = n.PivotDrift };
                 foreach (var v in aChild.Voxels.Entries())
@@ -407,10 +417,14 @@ namespace SCP.Core.Sculpture
                     }
                     ioInto.Voxels.Set((int)x, (int)y, (int)z, v.Color);
                     aRow.Placed++;
-                    if (ioMat != null)
+                    if (ioTrack != null)
                     {
-                        string? m = aChildMat!.TryGetValue(MatKey(v.X, v.Y, v.Z), out string? cm) ? cm : aEff;
-                        if (m != null) ioMat[MatKey((int)x, (int)y, (int)z)] = m;
+                        long ck = MatKey(v.X, v.Y, v.Z), pk = MatKey((int)x, (int)y, (int)z);
+                        for (int k = 0; k < s_TrackKeys.Length; k++)
+                        {
+                            string? m = aChildT![k].TryGetValue(ck, out string? cm) ? cm : aEff![k];
+                            if (m != null) ioTrack[k][pk] = m;
+                        }
                     }
                 }
                 ioReport.Rows.Add(aRow);

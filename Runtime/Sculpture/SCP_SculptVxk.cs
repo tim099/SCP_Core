@@ -144,6 +144,7 @@ namespace SCP.Core.Sculpture
         /// 材質層（TASK-0616）：每一格的材質 ⇒ 檔頭 <c>materials</c> ＝ { ids：材質 ID（照字典序；索引 1 起，0 ＝ 船的預設材質）、voxels：每種幾格、
         /// index：線性索引的算法、runs：[跟上一段結尾差幾、長度、材質索引] × n }。照線性索引 x＋sx·(y＋sy·z) 排、線性索引相連、同材質的格併成一段（⛔ 不跨空格：跨了讀的那側要掃一大片空的 —— 測試鐵甲船 13 萬格掃 2,500 萬，載入 1 秒）；
         /// 只寫非預設的段。格子那一段一位元都不動（遊戲端與成品壓縮照舊）。<paramref name="iMat"/> 空 ⇒ null（⇒ 不寫這個欄位）。
+        /// 檔頭 <c>render</c>（關聯的 meta render：smooth｜voxel）用同一支、同一個格式（ids ＝ render 值）。
         /// </summary>
         public static SCP_JsonData? Materials(List<(int X, int Y, int Z, int Color)> iVox, Dictionary<long, string>? iMat, int iSizeX, int iSizeY)
         {
