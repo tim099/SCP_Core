@@ -1470,6 +1470,9 @@ namespace SCP.Core.Sculpture
             aHeader.Set("source", aSource);
             aHeader.Set("exported_at", Clock().ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture));
             if (iArgs.VxkTail != null) foreach (string k in iArgs.VxkTail.Keys) aHeader.Set(k, iArgs.VxkTail[k]);
+            // 材質（TASK-0616）：有關聯寫了 meta material 才寫 ⇒ 沒寫的作品檔頭跟以前逐欄相同
+            SCP.Core.Json.SCP_JsonData? aMatJ = Links != null && Links.TrackMaterial ? SCP_SculptVxk.Materials(iVox, Links.LastMaterial, SizeX, SizeY) : null;
+            if (aMatJ != null) aHeader.Set("materials", aMatJ);
             byte[] aBlob;
             try { aBlob = SCP_SculptVxk.Pack(iVox, aHeader); }
             catch (InvalidDataException e) { return SCP_SculptResult.Error(1, "vxk 封裝：" + e.Message); }

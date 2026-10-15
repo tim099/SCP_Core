@@ -140,6 +140,49 @@ namespace SCP.Core.Sculpture
             ioHeader.Set("colors", aCol);
         }
 
+        /// <summary>
+        /// 材質層（TASK-0616）：每一格的材質 ⇒ 檔頭 <c>materials</c> ＝ { ids：材質 ID（照字典序；索引 1 起，0 ＝ 船的預設材質）、voxels：每種幾格、
+        /// index：線性索引的算法、runs：[跟上一段結尾差幾、長度、材質索引] × n }。照線性索引 x＋sx·(y＋sy·z) 排、線性索引相連、同材質的格併成一段（⛔ 不跨空格：跨了讀的那側要掃一大片空的 —— 測試鐵甲船 13 萬格掃 2,500 萬，載入 1 秒）；
+        /// 只寫非預設的段。格子那一段一位元都不動（遊戲端與成品壓縮照舊）。<paramref name="iMat"/> 空 ⇒ null（⇒ 不寫這個欄位）。
+        /// </summary>
+        public static SCP_JsonData? Materials(List<(int X, int Y, int Z, int Color)> iVox, Dictionary<long, string>? iMat, int iSizeX, int iSizeY)
+        {
+            if (iMat == null || iMat.Count == 0) return null;
+            var aIds = new List<string>(new SortedSet<string>(iMat.Values, StringComparer.Ordinal));
+            var aIdx = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < aIds.Count; i++) aIdx[aIds[i]] = i + 1;
+            var aLin = new List<(long L, int M)>(iVox.Count);
+            var aCount = new int[aIds.Count + 1];
+            foreach (var v in iVox)
+            {
+                int m = iMat.TryGetValue(SCP_SculptLinkComposer.MatKey(v.X, v.Y, v.Z), out string? id) ? aIdx[id] : 0;
+                aCount[m]++;
+                aLin.Add((v.X + (long)iSizeX * (v.Y + (long)iSizeY * v.Z), m));
+            }
+            aLin.Sort((p, q) => p.L.CompareTo(q.L));
+            var aRuns = SCP_JsonData.NewArray();
+            long aPrevEnd = 0, s = 0, e = 0;
+            int aCur = 0;
+            void Emit() { if (aCur == 0) return; aRuns.Add(s - aPrevEnd); aRuns.Add(e - s + 1); aRuns.Add(aCur); aPrevEnd = e + 1; }
+            foreach (var p in aLin)
+            {
+                if (p.M == aCur && (aCur == 0 || p.L == e + 1)) { e = p.L; continue; }
+                Emit();
+                aCur = p.M; s = e = p.L;
+            }
+            Emit();
+            var o = SCP_JsonData.NewObject();
+            var aIdsJ = SCP_JsonData.NewArray();
+            foreach (string id in aIds) aIdsJ.Add(id);
+            o.Set("ids", aIdsJ);
+            var aVoxJ = SCP_JsonData.NewObject();
+            for (int i = 0; i < aIds.Count; i++) aVoxJ.Set(aIds[i], aCount[i + 1]);
+            o.Set("voxels", aVoxJ);
+            o.Set("index", "x+sx*(y+sy*z)");
+            o.Set("runs", aRuns);
+            return o;
+        }
+
         // ───────────────────────── 繩／帆／模型（照 voxel_export.py 的 read_rig）─────────────────────────
 
         /// <summary>obj 寫出的那一個數（F4）讀回來 —— Python 那支看到的就是它。</summary>

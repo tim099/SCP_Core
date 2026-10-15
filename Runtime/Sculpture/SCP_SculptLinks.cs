@@ -342,6 +342,16 @@ namespace SCP.Core.Sculpture
         public bool UseDrafts;
         /// <summary>上一次 <see cref="Compose"/> 的讀數。</summary>
         public SCP_SculptComposeReport? Last;
+        /// <summary>
+        /// 記材質（TASK-0616）：組裝時順便記每一格的材質 ＝ 它來自的那條關聯、往上第一個有 meta <c>material</c> 的（自己沒寫 ⇒ 照上一層；都沒寫 ⇒ 不記 ＝ 船的預設材質）。
+        /// 結果在 <see cref="LastMaterial"/>（組好之後的座標）；被蓋掉、越界的格不記（跟格子同一個「已有的格贏」）。
+        /// </summary>
+        public bool TrackMaterial;
+        /// <summary>上一次 <see cref="Compose"/> 的材質（<see cref="TrackMaterial"/> 才有）：<see cref="MatKey"/> ⇒ 材質 ID；沒有任何關聯寫 material ⇒ 空的。</summary>
+        public Dictionary<long, string>? LastMaterial;
+        public const string MaterialKey = "material";
+        public static long MatKey(int x, int y, int z) => ((long)x << 42) | ((long)y << 21) | (long)z;
+        static string? MaterialOf(SCP_SculptLink iLink) => iLink.meta.TryGetValue(MaterialKey, out SCP_JsonData? v) && v.IsString && v.AsString().Length > 0 ? v.AsString() : null;
 
         public SCP_SculptLinkComposer(SCP_SculptWorks iWorks, string iDataRoot, List<SCP_SculptLinkNode> iTree, SCP_SculptLinkSelection iSel)
         {
@@ -358,20 +368,25 @@ namespace SCP.Core.Sculpture
             var aReport = new SCP_SculptComposeReport { HideSelf = m_Sel.HideSelf };
             SCP_SculptSpace aInto = m_Sel.HideSelf ? new SCP_SculptSpace { LastEventFile = ioOwn.LastEventFile } : ioOwn;
             var aOwnCache = new Dictionary<string, SCP_SculptSpace>(StringComparer.Ordinal);
-            Place(aInto, m_Tree, iSizeX, iSizeY, iSizeZ, aReport, aOwnCache, 0, "");
+            var aMat = TrackMaterial ? new Dictionary<long, string>() : null;
+            Place(aInto, m_Tree, iSizeX, iSizeY, iSizeZ, aReport, aOwnCache, 0, "", aMat, null);
             Last = aReport;
+            LastMaterial = aMat;
             return aInto;
         }
 
         /// <summary>一層：每個選到的節點 ⇒ 它自己的空間＋它底下選到的（遞迴，在它自己的座標裡、用它自己的尺寸組好）⇒ 轉向、平移、疊進 <paramref name="ioInto"/>（已有的格贏）。</summary>
         void Place(SCP_SculptSpace ioInto, List<SCP_SculptLinkNode> iNodes, int iSizeX, int iSizeY, int iSizeZ,
-                   SCP_SculptComposeReport ioReport, Dictionary<string, SCP_SculptSpace> ioOwnCache, int iDepth, string iFrame)
+                   SCP_SculptComposeReport ioReport, Dictionary<string, SCP_SculptSpace> ioOwnCache, int iDepth, string iFrame,
+                   Dictionary<long, string>? ioMat, string? iInherit)
         {
             foreach (var n in iNodes)
             {
                 if (!m_Sel.Includes(n.Path, n.Link.enabled)) continue;
                 SCP_SculptSpace aChild = Copy(LoadOwn(n.Card, ioOwnCache, ioReport));
-                Place(aChild, n.Children, n.Card.SizeX, n.Card.SizeY, n.Card.SizeZ, ioReport, ioOwnCache, iDepth + 1, n.Card.id);
+                string? aEff = ioMat != null ? MaterialOf(n.Link) ?? iInherit : null;   // 這條關聯的格（含它底下沒寫 material 的）是什麼材質
+                var aChildMat = ioMat != null ? new Dictionary<long, string>() : null;    // 它底下的關聯自己寫了 material 的格（它自己的座標）
+                Place(aChild, n.Children, n.Card.SizeX, n.Card.SizeY, n.Card.SizeZ, ioReport, ioOwnCache, iDepth + 1, n.Card.id, aChildMat, aEff);
                 var aWorkInfo = ioReport.Works[n.Card.id];
                 var aRow = new SCP_SculptComposeReport.Row { Path = n.Path, Work = n.Card.id, Revision = aWorkInfo.Revision, Draft = aWorkInfo.Draft, PivotDrift = n.PivotDrift };
                 foreach (var v in aChild.Voxels.Entries())
@@ -392,6 +407,11 @@ namespace SCP.Core.Sculpture
                     }
                     ioInto.Voxels.Set((int)x, (int)y, (int)z, v.Color);
                     aRow.Placed++;
+                    if (ioMat != null)
+                    {
+                        string? m = aChildMat!.TryGetValue(MatKey(v.X, v.Y, v.Z), out string? cm) ? cm : aEff;
+                        if (m != null) ioMat[MatKey((int)x, (int)y, (int)z)] = m;
+                    }
                 }
                 ioReport.Rows.Add(aRow);
                 // 放了幾格只算進最上層（巢狀那幾格已經算在它父節點那一列裡）；被蓋掉／越界每一層都是真的少了格 ⇒ 全加
