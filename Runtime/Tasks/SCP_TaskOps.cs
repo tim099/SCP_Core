@@ -102,12 +102,12 @@ namespace SCP.Core.Tasks
         public static readonly Dictionary<string, string[]> Known = new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["create"] = new[] { "title", "type", "description", "evidence", "criteria", "severity", "priority",
-                                 "status", "epic_id", "milestone", "tags", "memory_topic" },
+                                 "status", "epic_id", "milestone", "project", "tags", "memory_topic" },
             ["claim"] = new[] { "index", "role", "scope" },
             ["assign"] = new[] { "index", "target_persona", "role", "replace" },
             ["unassign"] = new[] { "index", "target_persona", "role" },
             ["update"] = new[] { "index", "title", "description", "criteria", "status", "priority", "severity",
-                                 "milestone", "memory_topic", "memory_archived_commit", "allow_shrink", "unset" },
+                                 "milestone", "project", "memory_topic", "memory_archived_commit", "allow_shrink", "unset" },
             ["comment"] = new[] { "index", "body" },
             ["check"] = new[] { "index", "criteria_index", "expect_text" },
             ["link"] = new[] { "index", "target", "op_link", "remove" },
@@ -119,7 +119,7 @@ namespace SCP.Core.Tasks
         };
 
         /// <summary>可被 `unset=` 清空的欄位白名單（TASK-0079）—— status／priority／title 沒有「空」這個合法狀態。</summary>
-        static readonly string[] UNSETTABLE = { "memory_topic", "memory_archived_commit", "milestone" };
+        static readonly string[] UNSETTABLE = { "memory_topic", "memory_archived_commit", "milestone", "project" };
 
         const int ShrinkFloor = 10;
 
@@ -243,6 +243,7 @@ namespace SCP.Core.Tasks
                     + "### 🔬 證據（開單時附；含「讀數怎麼拿到的」）\n\n" + aEvidence;
             List<string> aTags = SplitList(c.Arg("tags"));
             string aMilestone = c.Trim("milestone"), aEpic = c.Trim("epic_id"), aTopic = c.Trim("memory_topic");
+            string aProject = CheckProject(c, c.Trim("project"));
 
             SCP_TaskEntry? e = null;
             SCP_TaskCreateResult aCreated = SCP_TaskStore.Create(c.Root, aIdx =>
@@ -250,7 +251,7 @@ namespace SCP.Core.Tasks
                 var n = new SCP_TaskEntry
                 {
                     index = aIdx, type = aType, priority = aPriority, severity = aSeverity, status = aStatus,
-                    title = aTitle, reporter = c.Actor, milestone = aMilestone, epic_id = aEpic, memory_topic = aTopic,
+                    title = aTitle, reporter = c.Actor, milestone = aMilestone, project = aProject, epic_id = aEpic, memory_topic = aTopic,
                     created_at = aNow, updated_at = aNow,
                 };
                 n.tags.AddRange(aTags);
@@ -514,6 +515,13 @@ namespace SCP.Core.Tasks
             string aCriteria = c.Arg("criteria");
             string aDescription = c.Arg("description");
             bool aAllowShrink = c.Trim("allow_shrink") == "1";
+            string aProject = c.Trim("project");
+            if (aProject.Length > 0)
+            {
+                if (aUnset.Contains("project"))
+                    throw new SCP_TaskOpException("[Task] 同一次不能既給 project 又 unset=project —— 要哪一個？");
+                aProject = CheckProject(c, aProject);
+            }
 
             bool aWrote = SCP_TaskStore.Mutate(c.Root, aIndex, m =>
             {
@@ -535,6 +543,13 @@ namespace SCP.Core.Tasks
                 if (aTitle.Length > 0) { aChanges.Add("title 改寫"); m.title = aTitle; }
                 string aMilestone = c.Trim("milestone");
                 if (aMilestone.Length > 0) { aChanges.Add($"milestone → {aMilestone}"); m.milestone = aMilestone; }
+                // 專案一樣 ⇒ 不算變更（批次整理重跑時不灌時間線）
+                if (aProject.Length > 0 && !string.Equals(m.project, aProject, StringComparison.Ordinal))
+                {
+                    aChanges.Add($"project {(m.project.Length == 0 ? "(空)" : m.project)} → {aProject}");
+                    m.project = aProject;
+                }
+                else if (aProject.Length > 0) aUnsetNotes.Add($"`project` 本來就是 `{aProject}` ⇒ 沒有寫入");
                 string aMemTopic = c.Trim("memory_topic");
                 if (aMemTopic.Length > 0)
                 {
@@ -548,10 +563,12 @@ namespace SCP.Core.Tasks
                 foreach (string aField in aUnset)
                 {
                     string aOld = aField == "memory_topic" ? m.memory_topic
-                                : aField == "memory_archived_commit" ? m.memory_archived_commit : m.milestone;
+                                : aField == "memory_archived_commit" ? m.memory_archived_commit
+                                : aField == "project" ? m.project : m.milestone;
                     if ((aOld ?? "").Trim().Length == 0) { aUnsetNotes.Add($"`{aField}` 本來就是空的 ⇒ 沒有寫入"); continue; }
                     if (aField == "memory_topic") m.memory_topic = "";
                     else if (aField == "memory_archived_commit") m.memory_archived_commit = "";
+                    else if (aField == "project") m.project = "";
                     else m.milestone = "";
                     aChanges.Add($"{aField} 清空（原 `{aOld}`）");
                 }
@@ -577,7 +594,7 @@ namespace SCP.Core.Tasks
                 c.Rep.AppendLine($"## {e.Id} 沒有任何變更");
                 foreach (string n in aUnsetNotes) c.Rep.AppendLine($"- ✓ {n}");
                 if (aUnsetNotes.Count > 0) return;
-                c.Rep.AppendLine("- 沒給任何可更新的欄位（status / priority / severity / title / milestone / memory_topic /"
+                c.Rep.AppendLine("- 沒給任何可更新的欄位（status / priority / severity / title / milestone / project / memory_topic /"
                     + " memory_archived_commit / criteria / description / unset=<欄位>）⇒ **什麼都沒寫**。");
                 return;
             }
@@ -1372,6 +1389,22 @@ namespace SCP.Core.Tasks
             if (v.Length == 0) return iDefault;
             if (SCP_TaskWire.TryParse(v, out T aV)) return aV;
             throw new SCP_TaskOpException($"[Task] --arg {iKey}={v} 不是合法值（{string.Join("|", Enum.GetNames(typeof(T)))}）");
+        }
+
+        /// <summary>
+        /// 專案名（TASK-0618）：空 ⇒ 空；不合法或跟既有專案只差大小寫 ⇒ 炸（零寫入）並指出既有拼法。
+        /// ⚠ 撞名要掃全庫：只有給了 project 才掃（其他寫入不付這個代價）。
+        /// </summary>
+        static string CheckProject(Ctx c, string iName)
+        {
+            if (iName.Length == 0) return "";
+            string? aBad = SCP_TaskProjects.Validate(iName);
+            if (aBad != null) throw new SCP_TaskOpException("[Task] project：" + aBad);
+            string? aClash = SCP_TaskProjects.CaseClash(SCP_TaskIO.LoadAll(c.Root, null), iName);
+            if (aClash != null)
+                throw new SCP_TaskOpException($"[Task] project `{iName}` 跟既有的專案 `{aClash}` 只差大小寫 —— 同一個專案請用 `{aClash}`"
+                    + "（⛔ 不自動改：拼法不同可能是你要另開一個，那就換個名字）");
+            return iName;
         }
 
         static List<string> SplitList(string iRaw)

@@ -145,6 +145,7 @@ namespace SCP.Core.Tasks
                         case "title": e.title = v; break;
                         case "reporter": e.reporter = v; break;
                         case "milestone": e.milestone = v; break;
+                        case "project": e.project = v; break;
                         case "epic_id": e.epic_id = v; break;
                         case "blocked_by": e.blocked_by = ParseIntList(v); break;
                         case "blocks": e.blocks = ParseIntList(v); break;

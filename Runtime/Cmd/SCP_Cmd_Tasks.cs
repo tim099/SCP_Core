@@ -55,6 +55,9 @@ namespace SCP.Core.Cmd
                 + "外加一個**篩選成員**：`all`（全部）。"
                 + "⛔ 認不得的值同 status：出聲並 exit 2，不回「0 張」。"
                 + "可與 status 同時給（兩個條件是 AND）"),
+            new SCP_CmdArgSpec("project",
+                "只列這個專案的單（TASK-0618；比母單更上一層，例：`Blockside`）。照**有效專案**算："
+                + "子單沒標 ⇒ 跟著母單。比對不分大小寫；`none` ＝ 沒有專案的。與 status／type／mine 是 AND"),
             new SCP_CmdArgSpec("out_json", "把完整資料落成 JSON 的路徑（巢狀資料走檔案，不進 values）"),
             new SCP_CmdArgSpec("wrapup",
                 "`1` ＝ 改印**收工閘**候選（這次上線後動過／還開著／我是參與者／收工紀錄已過期）。"
@@ -97,7 +100,7 @@ namespace SCP.Core.Cmd
                         + aIndex.ToString("0000", CultureInfo.InvariantCulture)
                         + "（掃到 " + aAll.Count + " 張，最大 index="
                         + SCP_TaskIO.ReadMaxIndexOnDisk(aRoot) + "）");
-                AppendOne(aResult, aRoot, aOne, aWarnings);
+                AppendOne(aResult, aRoot, aOne, aWarnings, SCP_TaskProjects.Effective(aAll)[aOne.index]);
                 EmitJson(aResult, iArgs, new List<SCP_TaskEntry> { aOne });
                 return aResult;
             }
@@ -166,6 +169,18 @@ namespace SCP.Core.Cmd
                 return SCP_CmdResult.Fail(2, "✗ mine=1 需要 --arg persona=<誰>",
                     "  「我涉及的單」沒有 persona 這個問題沒有答案 —— ⛔ 不回全庫");
 
+            // 專案（TASK-0618）：照有效專案篩（子單沒標 ⇒ 跟著母單），判準在 SCP_TaskProjects，⛔ 不在這裡重算
+            string aProjectFilter = iArgs.Get("project").Trim();
+            Dictionary<int, (string project, int from)> aEff = SCP_TaskProjects.Effective(aAll);
+            SortedDictionary<string, (int open, int total)> aByProject = SCP_TaskProjects.Counts(aAll, aEff);
+            if (aProjectFilter.Length > 0 && !string.Equals(aProjectFilter, SCP_TaskProjects.None, StringComparison.OrdinalIgnoreCase)
+                && !aByProject.ContainsKey(aProjectFilter))
+                return SCP_CmdResult.Fail(2,
+                    "✗ 沒有這個專案：`" + aProjectFilter + "`",
+                    "  現有：" + (aByProject.Count == 0 ? "（還沒有任何單標專案）" : string.Join(" / ", ProjectNames(aByProject))),
+                    "  · `none` ＝ 沒有專案的單",
+                    "  ⛔ 不回「0 張」—— 那跟「這個專案真的沒有單」長得一樣");
+
             string aPersona = aPersona0;
             var aRows = new List<SCP_TaskEntry>();
             int aOpen = 0, aMine = 0, aMineOpen = 0, aInvolved = 0, aInvolvedOpen = 0;
@@ -189,6 +204,7 @@ namespace SCP.Core.Cmd
                 }
                 if (KeepByStatus(e, aStatusFilter, aStatusWanted)
                     && KeepByType(e, aTypeFilter, aTypeWanted)
+                    && KeepByProject(aEff[e.index].project, aProjectFilter)
                     && (!aMineOnly || aIsInvolved)) aRows.Add(e);
             }
 
@@ -196,6 +212,7 @@ namespace SCP.Core.Cmd
             aResult.Lines.Add("· 資料源：" + aTasksDirAbs);
             aResult.Lines.Add("· 狀態分布：" + Describe(aByStatus));
             aResult.Lines.Add("· 種類分布：" + Describe(aByType));
+            aResult.Lines.Add("· 專案（未關／總數；子單沒標算母單的）：" + DescribeProjects(aByProject));
             if (aPersona.Length > 0)
             {
                 aResult.Lines.Add("· " + aPersona + " 參與 " + aMine + " 張（其中開著 " + aMineOpen + "）");
@@ -205,11 +222,12 @@ namespace SCP.Core.Cmd
             // ⚠ 兩個篩選是 AND，所以那個張數**屬於兩者的交集** —— 要把兩個條件一起印出來。
             //   只印其中一個的話，「status=open ⇒ 1 張」看起來會像「open 只有 1 張」，
             //   而真相是「open 且 type=bug 有 1 張」：同一個數字，兩種讀法。
-            if (aStatusFilter.Length > 0 || aTypeFilter.Length > 0 || aMineOnly)
+            if (aStatusFilter.Length > 0 || aTypeFilter.Length > 0 || aMineOnly || aProjectFilter.Length > 0)
             {
                 var aCond = new List<string>();
                 if (aStatusFilter.Length > 0) aCond.Add("status=" + aStatusFilter);
                 if (aTypeFilter.Length > 0) aCond.Add("type=" + aTypeFilter);
+                if (aProjectFilter.Length > 0) aCond.Add("project=" + aProjectFilter);
                 if (aMineOnly) aCond.Add(aPersona + " 涉及");
                 aResult.Lines.Add("· 篩選 " + string.Join(" 且 ", aCond.ToArray())
                                   + " ⇒ " + aRows.Count + " 張");
@@ -217,7 +235,7 @@ namespace SCP.Core.Cmd
             aResult.Lines.Add("");
             foreach (SCP_TaskEntry e in aRows)
                 aResult.Lines.Add("- " + e.Id + "　" + e.status + "／" + e.type + "／" + e.priority
-                                  + "　" + e.title);
+                                  + ProjectTag(aEff[e.index]) + "　" + e.title);
 
             AppendWarnings(aResult, aWarnings);
             aResult.AddValue("task_total", aAll.Count.ToString(CultureInfo.InvariantCulture));
@@ -268,7 +286,7 @@ namespace SCP.Core.Cmd
         }
 
         static void AppendOne(SCP_CmdResult oResult, SCP_DataRoot iRoot, SCP_TaskEntry e,
-                              List<string> ioWarnings)
+                              List<string> ioWarnings, (string project, int from) iProject)
         {
             oResult.Lines.Add("# " + e.Id + "　" + e.title);
             oResult.Lines.Add("· " + e.status + "／" + e.type + "／" + e.priority + "／severity=" + e.severity);
@@ -284,6 +302,9 @@ namespace SCP.Core.Cmd
             if (aBlockers.Count > 0)
                 oResult.Lines.Add("· ⛔ 還開著的阻塞：" + string.Join("、", aBlockers.ToArray()));
             if (e.memory_topic.Length > 0) oResult.Lines.Add("· 記憶主題：" + e.memory_topic);
+            if (iProject.project.Length > 0)
+                oResult.Lines.Add("· 專案：" + iProject.project + (iProject.from > 0
+                    ? "（自己沒標，跟著母單 TASK-" + iProject.from.ToString("0000", CultureInfo.InvariantCulture) + "）" : ""));
             oResult.Lines.Add("· 留言 " + e.comments.Count + " 則");
             AppendWarnings(oResult, ioWarnings);
             oResult.AddValue("index", e.index.ToString(CultureInfo.InvariantCulture));
@@ -327,6 +348,7 @@ namespace SCP.Core.Cmd
                 J(sb, "title", e.title); sb.Append(',');
                 J(sb, "reporter", e.reporter); sb.Append(',');
                 J(sb, "milestone", e.milestone); sb.Append(',');
+                J(sb, "project", e.project); sb.Append(',');
                 J(sb, "epic_id", e.epic_id); sb.Append(',');
                 J(sb, "created_at", e.created_at); sb.Append(',');
                 J(sb, "updated_at", e.updated_at); sb.Append(',');
@@ -437,6 +459,38 @@ namespace SCP.Core.Cmd
             if (iWire.Length == 0) return true;               // 不給 ＝ 全部（維持既有預設）
             if (iWanted == SCP_TaskType.all) return true;
             return iEntry.type == iWanted;
+        }
+
+        /// <summary>專案篩選（TASK-0618）：不給 ＝ 全部；`none` ＝ 有效專案是空的；其他不分大小寫比對有效專案。</summary>
+        static bool KeepByProject(string iEffective, string iWire)
+        {
+            if (iWire.Length == 0) return true;
+            if (string.Equals(iWire, SCP_TaskProjects.None, StringComparison.OrdinalIgnoreCase)) return iEffective.Length == 0;
+            return string.Equals(iEffective, iWire, StringComparison.OrdinalIgnoreCase);
+        }
+
+        static List<string> ProjectNames(SortedDictionary<string, (int open, int total)> iMap)
+        {
+            var aOut = new List<string>();
+            foreach (string k in iMap.Keys) if (k.Length > 0) aOut.Add(k);
+            return aOut;
+        }
+
+        /// <summary>`Blockside=3/12／（未分類）=40/500`；未分類排最後。</summary>
+        static string DescribeProjects(SortedDictionary<string, (int open, int total)> iMap)
+        {
+            var aParts = new List<string>();
+            foreach (KeyValuePair<string, (int open, int total)> kv in iMap)
+                if (kv.Key.Length > 0) aParts.Add(kv.Key + "=" + kv.Value.open + "/" + kv.Value.total);
+            if (iMap.TryGetValue("", out (int open, int total) n)) aParts.Add("（未分類）=" + n.open + "/" + n.total);
+            return aParts.Count == 0 ? "（沒有單）" : string.Join("／", aParts.ToArray());
+        }
+
+        /// <summary>清單每列的專案標記：自己標的 `［Blockside］`、跟著母單的 `［Blockside←TASK-0553］`、沒有 ⇒ 空。</summary>
+        static string ProjectTag((string project, int from) iEff)
+        {
+            if (iEff.project.Length == 0) return "";
+            return "　［" + iEff.project + (iEff.from > 0 ? "←TASK-" + iEff.from.ToString("0000", CultureInfo.InvariantCulture) : "") + "］";
         }
 
         static void Bump(Dictionary<string, int> ioMap, string iKey)

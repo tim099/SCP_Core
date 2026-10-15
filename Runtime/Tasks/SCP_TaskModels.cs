@@ -115,6 +115,8 @@ namespace SCP.Core.Tasks
         public SCP_TaskStatus status = SCP_TaskStatus.todo;
         public string title = "";
         public string milestone = "";
+        /// <summary>專案（TASK-0618；比母單更上一層，例：`Blockside`）。空 ＝ 沒標；子單沒標時跟著母單由 <see cref="SCP_TaskProjects.Effective"/> 在讀的時候算。</summary>
+        public string project = "";
         public string epic_id = "";
         public string reporter = "";
         public string resolution_note = "";

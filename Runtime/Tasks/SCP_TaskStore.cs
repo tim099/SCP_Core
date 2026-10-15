@@ -260,6 +260,8 @@ namespace SCP.Core.Tasks
                 sb.Append($"    assigned_at: {OneLine(p.assigned_at)}\n");
             }
             sb.Append($"milestone: {OneLine(e.milestone)}\n");
+            // project 空 ⇒ 不落行（同 severity=none）—— 缺席即「沒標」，既有單零 diff（TASK-0618）
+            if (e.project.Length > 0) sb.Append($"project: {OneLine(e.project)}\n");
             sb.Append($"epic_id: {OneLine(e.epic_id)}\n");
             sb.Append($"blocked_by: {IntList(e.blocked_by)}\n");
             sb.Append($"blocks: {IntList(e.blocks)}\n");
