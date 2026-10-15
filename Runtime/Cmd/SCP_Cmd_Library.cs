@@ -74,7 +74,9 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("character_id", "add_character／revise_view 用：人物 id（必填）"),
             new SCP_CmdArgSpec("name", "op=add_character 用：人物名（必填）"),
             new SCP_CmdArgSpec("name_original", "op=add_character 用：原文讀音"),
-            new SCP_CmdArgSpec("facts", "add_character／revise_view 用：已確認 facts，一行一條"),
+            new SCP_CmdArgSpec("facts", "add_character／revise_view 用：已確認 facts，一行一條。revise_view ⇒ **接在既有後面**（相同的不重收）；只給本章新查到的就好"),
+            new SCP_CmdArgSpec("facts_mode", "op=revise_view 用：append（預設，接在後面）｜replace（整份換成 facts；回傳逐條列出被拿掉的）"
+                + " —— 🩸 TASK-0634：舊版一律整份覆寫，前面幾章的 facts 安靜消失", false, "append", new[] { "append", "replace" }),
             new SCP_CmdArgSpec("view", "add_character／revise_view 用：主觀看法（必填）"),
             new SCP_CmdArgSpec("change_reason", "op=revise_view 用：**為什麼改觀** —— 比「改成什麼」更難事後重建"),
             new SCP_CmdArgSpec("full", "op=recall 用：=0 ⇒ 只列 round 索引不展開全文（預設展開）"),
@@ -290,8 +292,11 @@ namespace SCP.Core.Cmd
             string aView = iArgs.Get("view");
             if (aId.Length == 0 || string.IsNullOrWhiteSpace(aView))
                 return SCP_CmdResult.Fail(2, "✗ revise_view 需要 `character_id` 與 `view`");
+            string aMode = iArgs.Get("facts_mode").Trim().ToLowerInvariant();   // 可選值由 ArgSpec 擋（append／replace）
+            if (aMode == "replace" && string.IsNullOrWhiteSpace(iArgs.Get("facts")))
+                return SCP_CmdResult.Fail(2, "✗ facts_mode=replace 要配 `facts`（整份換成什麼）—— 什麼都沒寫");
             string? aLog = SCP_LibraryCharacter.ReviseView(iLetters, iDataRoot, iMediaId, iPersona,
-                aId, aView, iArgs.Get("change_reason"), iArgs.Get("facts"), out string? aErr);
+                aId, aView, iArgs.Get("change_reason"), iArgs.Get("facts"), aMode == "replace", out string? aErr);
             if (aLog == null) return SCP_CmdResult.Fail(1, "✗ revise_view：" + aErr);
             var aR = new SCP_CmdResult();
             aR.Lines.Add("# 🧑 看法已 fork");

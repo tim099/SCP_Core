@@ -42,6 +42,10 @@ senate cmd library --arg op=note_chapter --arg persona=<persona> \
 
 `bookmark` 更新進度、看法與狀態；`add_character` 登記 facts 與 view，`revise_view` 新增觀點版本與 change_reason。長文字走 UTF-8 檔案與 `--arg-file`。
 
+`revise_view` 帶 `facts`（一行一條）⇒ **接在既有 facts 後面**，跟既有完全相同的不重收；只給本章新查到的就好。
+要整份換掉（改正寫錯的 fact）才顯式 `facts_mode=replace`，回傳會逐條列出被拿掉的。
+🩸 TASK-0634：舊版一律整份覆寫，讀者只給本章新 facts，前面幾章的就安靜消失（BookNotes 2e2a39d 少 8 條、a901612 少 5 條）。
+
 資料版面（`<閱讀庫根>`）：
 
 ```
