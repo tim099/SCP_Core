@@ -94,6 +94,18 @@ namespace SCP.Core.Sculpture
         public SCP_SculptSea? Sea;
 
         /// <summary>
+        /// 點光源的開關與樣子（TASK-0650）。null 或 <see cref="SCP_SculptLamps.Enabled"/> ＝ false ⇒ 一盞都不點（舊行為，圖逐位元不變）。
+        /// 燈在哪是場景的事，見 <see cref="LampPoints"/>。
+        /// </summary>
+        public SCP_SculptLamps? Lamps;
+        /// <summary>
+        /// 這次場景裡的燈（TASK-0650，已換到世界座標）：外部模型或關聯的 meta 帶 kind=light 的那幾個（<see cref="SCP_SculptLampFinder"/>）。
+        /// 空 ＝ 沒有燈。渲染器最多點 <see cref="MaxLamps"/> 盞（多了取離鏡頭近的）。
+        /// </summary>
+        public List<SCP_SculptLampPoint> LampPoints = new List<SCP_SculptLampPoint>();
+        public const int MaxLamps = 64;
+
+        /// <summary>
         /// 網格合併同色面（TASK-0472）：同色、同朝向、共面、**四角 AO 都相同**的相鄰面併成一塊大矩形（面數大減）。
         /// <para>預設 false ＝ 逐 voxel 面（CLI `op=view` 與分享圖維持逐位元相同）；觀測頁的即時預覽開它。
         /// ⚠ 四角 AO 不同的面不併：併了 AO 漸層會被拉成一大片、角落陰影被抹平（selftest 有反向對照）。</para>
@@ -216,6 +228,39 @@ namespace SCP.Core.Sculpture
         public double Opacity = 0.85;
 
         public SCP_SculptSea Clone() => (SCP_SculptSea)MemberwiseClone();
+    }
+
+    /// <summary>
+    /// 點光源的開關與樣子（TASK-0650，Tim 2026-10-16 岩堡港的燈籠「可以有光源」）：跟 Blockside 01_gl.js LAMP_GLSL 同式 ——
+    /// 照到的面加上 底色 × 光色 × 強度 × a² × (0.35 ＋ 0.65 × max(N·L, 0))，a ＝ 1 − 距離／半徑（夾在 0..1）。⛔ 不投影子。
+    /// <para>開關放在物件裡（同海面）：疊層時「這一層只換強度、開關沿用下層」不用另外掛草稿。</para>
+    /// </summary>
+    public sealed class SCP_SculptLamps
+    {
+        public bool Enabled;
+        /// <summary>強度（0..8）：燈心那一點、正對它的面加上 底色 × 光色 × 本值。</summary>
+        public double Intensity = 0.6;
+        /// <summary>照得到多遠（公尺；Blockside LAMP_R 6）—— 觀測時照組裝件的「一格幾公尺」換成格（<see cref="SCP_SculptLampPoint.Radius"/>）。</summary>
+        public double Radius = 6;
+        /// <summary>光色（0..255）。預設暖橘（Blockside 模型的燈 [1, 0.62, 0.25]）。</summary>
+        public byte R = 255, G = 158, B = 64;
+
+        public SCP_SculptLamps Clone() => (SCP_SculptLamps)MemberwiseClone();
+    }
+
+    /// <summary>場景裡的一盞燈（TASK-0650）。</summary>
+    public sealed class SCP_SculptLampPoint
+    {
+        /// <summary>給人讀：模型路徑或關聯路徑。</summary>
+        public string Path = "";
+        /// <summary>燈心（組裝件的世界座標，格；跟 voxel 同一套連續座標）。</summary>
+        public double X, Y, Z;
+        /// <summary>照得到多遠（格）。</summary>
+        public double Radius;
+        /// <summary>燈心從哪來：<see cref="SCP_SculptLampFinder.AtWick"/>（固定點 wick）｜<see cref="SCP_SculptLampFinder.AtCenter"/>（外框中心）。</summary>
+        public string From = "";
+        /// <summary>子模型分開畫（parts=1）時是第幾個實例 —— 那個實例這一幀關著 ⇒ 燈也熄；−1 ＝ 不看（合併的場景只收畫出來的那幾個）。</summary>
+        public int Part = -1;
     }
 
     public enum SCP_SculptProjection

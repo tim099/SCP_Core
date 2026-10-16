@@ -182,7 +182,14 @@ namespace SCP.Core.Sculpture
         }
 
         static readonly HashSet<string> s_TopKeys = new HashSet<string>(StringComparer.Ordinal)
-        { "camera", "lights", "ambient", "ao", "shadow", "skybox", "floor", "sea", "background", "width", "height" };
+        { "camera", "lights", "ambient", "ao", "shadow", "skybox", "floor", "sea", "lamps", "background", "width", "height" };
+        static readonly HashSet<string> s_LampKeys = new HashSet<string>(StringComparer.Ordinal) { "enabled", "intensity", "radius", "color" };
+        /// <summary>CLI 的扁平點光源鍵 → 設定檔 lamps 物件裡的鍵（TASK-0650；`render-profile set`、view 的一次性參數、`work sub=lamps` 同一份）。</summary>
+        static readonly Dictionary<string, string> s_LampFlat = new Dictionary<string, string>(StringComparer.Ordinal)
+        { ["lamps"] = "enabled", ["lamp_intensity"] = "intensity", ["lamp_radius"] = "radius", ["lamp_color"] = "color" };
+        public static IReadOnlyCollection<string> LampFlatKeys => s_LampFlat.Keys;
+        /// <summary>點光源強度上限、半徑範圍（公尺）。</summary>
+        public const double LampIntensityMax = 8, LampRadiusMin = 0.01, LampRadiusMax = 1000;
         static readonly HashSet<string> s_SeaKeys = new HashSet<string>(StringComparer.Ordinal) { "enabled", "z", "color", "opacity" };
         /// <summary>CLI 的扁平海面鍵 → 設定檔 sea 物件裡的鍵（TASK-0585；`render-profile set`、view 的一次性參數、`work sub=sea` 同一份）。</summary>
         static readonly Dictionary<string, string> s_SeaFlat = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -309,6 +316,8 @@ namespace SCP.Core.Sculpture
                 if (fl.Exists && !TryApplyFloor(fl, ioP, iFloorBase, out oError)) return false;
                 var se = iProfile["sea"];
                 if (se.Exists && !TryApplySea(se, ioP, out oError)) return false;
+                var la = iProfile["lamps"];
+                if (la.Exists && !TryApplyLamps(la, ioP, out oError)) return false;
             }
             catch (BadValue e) { oError = e.Message; return false; }
             catch (SCP_JsonTypeException e) { oError = "型別不對：" + e.Message; return false; }
@@ -395,6 +404,72 @@ namespace SCP.Core.Sculpture
         public static bool TryApplySeaObject(SCP_JsonData iSea, SCP_SculptRenderParams ioP, out string oError)
         {
             try { return TryApplySea(iSea, ioP, out oError); }
+            catch (BadValue e) { oError = e.Message; return false; }
+            catch (SCP_JsonTypeException e) { oError = "型別不對：" + e.Message; return false; }
+        }
+
+        // ───────────────────────────── 點光源（TASK-0650） ─────────────────────────────
+        //
+        // 區塊職責：lamps 物件的逐層疊加、作品自己的點光源預設（lamps.json）—— 跟海面同一套（開關在物件裡、先在複本上改、全過才換進去）。
+        // 物理意義：這裡只管「點不點、多亮、多遠、什麼色」；燈在哪是場景的事（SCP_SculptLampFinder，meta kind=light 的模型與關聯）。
+
+        static bool TryApplyLamps(SCP_JsonData iLamps, SCP_SculptRenderParams ioP, out string oError)
+        {
+            oError = "";
+            if (iLamps.Type != SCP_JsonType.Object) { oError = "lamps 要是物件（{\"enabled\":true,\"intensity\":0.6,…}）"; return false; }
+            if (!CheckKeys(iLamps, s_LampKeys, "lamps.", out oError)) return false;
+            SCP_SculptLamps v = ioP.Lamps?.Clone() ?? new SCP_SculptLamps();
+            if (iLamps["enabled"].Exists) v.Enabled = iLamps["enabled"].AsBool();
+            if (iLamps["intensity"].Exists) v.Intensity = Range(iLamps["intensity"], "lamps.intensity", 0, LampIntensityMax);
+            if (iLamps["radius"].Exists) v.Radius = Range(iLamps["radius"], "lamps.radius", LampRadiusMin, LampRadiusMax);
+            if (iLamps["color"].Exists)
+            {
+                if (!TryHexColor(iLamps["color"].AsString(), out byte r, out byte g, out byte b))
+                { oError = "lamps.color 要 #RRGGBB：" + iLamps["color"].AsString(); return false; }
+                v.R = r; v.G = g; v.B = b;
+            }
+            ioP.Lamps = v;
+            return true;
+        }
+
+        /// <summary>目前這份參數的點光源 → 設定檔同形的 JSON（沒設過 ⇒ 預設值、enabled false）。</summary>
+        public static SCP_JsonData DescribeLamps(SCP_SculptRenderParams iP)
+        {
+            SCP_SculptLamps l = iP.Lamps ?? new SCP_SculptLamps();
+            var o = SCP_JsonData.NewObject();
+            o.Set("enabled", l.Enabled);
+            o.Set("intensity", l.Intensity);
+            o.Set("radius", l.Radius);
+            o.Set("color", "#" + l.R.ToString("x2") + l.G.ToString("x2") + l.B.ToString("x2"));
+            return o;
+        }
+
+        /// <summary>
+        /// 作品自己的點光源預設（`work sub=lamps` 寫的 lamps.json：{"schema":1,"lamps":{…}}，同設定檔的 lamps 物件）。
+        /// 沒有檔 ⇒ null（不是錯）；讀不了或格式不對 ⇒ 例外（呼叫端轉成擋 —— ⛔ 不默默當成不點燈）。
+        /// </summary>
+        public static SCP_JsonData? ReadWorkLamps(SCP_SculptPaths iPaths)
+        {
+            if (!File.Exists(iPaths.LampsFile)) return null;
+            SCP_JsonData aJ = SCP_JsonData.Parse(File.ReadAllText(iPaths.LampsFile));
+            if (aJ.Type != SCP_JsonType.Object || !aJ["lamps"].Exists || aJ["lamps"].Type != SCP_JsonType.Object)
+                throw new InvalidDataException("lamps.json 要是 {\"schema\":1,\"lamps\":{…}}：" + iPaths.LampsFile);
+            return aJ["lamps"];
+        }
+
+        public static void SaveWorkLamps(SCP_SculptPaths iPaths, SCP_JsonData iLamps)
+        {
+            var aJ = SCP_JsonData.NewObject();
+            aJ.Set("schema", 1L);
+            aJ.Set("lamps", iLamps);
+            Directory.CreateDirectory(Path.GetDirectoryName(iPaths.LampsFile)!);
+            SCP_CmdPayload.WriteAtomic(iPaths.LampsFile, aJ.ToJson(true) + "\n");
+        }
+
+        /// <summary>把一份 lamps 物件疊到 <paramref name="ioP"/> 上（作品層、`work sub=lamps` 的驗證都走這支）。</summary>
+        public static bool TryApplyLampsObject(SCP_JsonData iLamps, SCP_SculptRenderParams ioP, out string oError)
+        {
+            try { return TryApplyLamps(iLamps, ioP, out oError); }
             catch (BadValue e) { oError = e.Message; return false; }
             catch (SCP_JsonTypeException e) { oError = "型別不對：" + e.Message; return false; }
         }
@@ -524,7 +599,7 @@ namespace SCP.Core.Sculpture
         /// 認得的鍵：projection yaw pitch roll target eye distance fov zoom ambient ao shadow skybox skybox_yaw skybox_tilt background
         /// width height fit_upscale、lights（整組 JSON 陣列取代）、light_add（`x,y,z[;#rrggbb[;強度[;shadow 0|1]]]`，可用 `|` 串多盞）、
         /// light_clear=1、地板 floor（on|off）floor_z floor_full_grid floor_margin floor_margin_ratio floor_texture floor_tile floor_color floor_fade、
-        /// 海面 sea（on|off）sea_z sea_color sea_opacity（TASK-0585）、
+        /// 海面 sea（on|off）sea_z sea_color sea_opacity（TASK-0585）、點光源 lamps（on|off）lamp_intensity lamp_radius lamp_color（TASK-0650）、
         /// unset（逗號分隔的鍵 ⇒ 從設定裡拿掉，回到沿用下層；`floor` ＝ 整個地板物件，floor_* ＝ 其中一格）。
         /// <para>target／eye／distance／zoom 給 <c>auto</c> ⇒ 寫 null（明確改回自動）。</para>
         /// </summary>
@@ -550,6 +625,11 @@ namespace SCP.Core.Sculpture
             {
                 if (!ioProfile["sea"].Exists || ioProfile["sea"].Type != SCP_JsonType.Object) ioProfile.Set("sea", SCP_JsonData.NewObject());
                 return ioProfile["sea"];
+            }
+            SCP_JsonData Lamps()
+            {
+                if (!ioProfile["lamps"].Exists || ioProfile["lamps"].Type != SCP_JsonType.Object) ioProfile.Set("lamps", SCP_JsonData.NewObject());
+                return ioProfile["lamps"];
             }
             try
             {
@@ -579,6 +659,9 @@ namespace SCP.Core.Sculpture
                         case "sea": Sea().Set("enabled", Bool(v, k)); break;                                  // TASK-0585
                         case "sea_z": case "sea_opacity": Sea().Set(s_SeaFlat[k], Num(v, k)); break;
                         case "sea_color": Sea().Set("color", v); break;
+                        case "lamps": Lamps().Set("enabled", Bool(v, k)); break;                              // TASK-0650
+                        case "lamp_intensity": case "lamp_radius": Lamps().Set(s_LampFlat[k], Num(v, k)); break;
+                        case "lamp_color": Lamps().Set("color", v); break;
                         case "lights":
                         {
                             SCP_JsonData aArr = SCP_JsonData.Parse(v);
@@ -613,6 +696,7 @@ namespace SCP.Core.Sculpture
                                    : u == "skybox_tilt" ? (ioProfile["skybox"].Exists && ioProfile["skybox"].Remove("tilt"))
                                    : u != "floor" && s_FloorFlat.TryGetValue(u, out string? aFk) ? (ioProfile["floor"].Exists && ioProfile["floor"].Remove(aFk!))
                                    : u != "sea" && s_SeaFlat.TryGetValue(u, out string? aSk) ? (ioProfile["sea"].Exists && ioProfile["sea"].Remove(aSk!))
+                                   : u != "lamps" && s_LampFlat.TryGetValue(u, out string? aLk) ? (ioProfile["lamps"].Exists && ioProfile["lamps"].Remove(aLk!))
                                    : s_TopKeys.Contains(u) ? ioProfile.Remove(u)
                                    : throw new BadValue("unset 不認得的鍵：" + u);
                         oChanged.Add("unset " + u + (aDone ? "" : "（本來就沒寫）"));

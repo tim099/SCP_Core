@@ -65,6 +65,8 @@ namespace SCP.Core.Sculpture
         public string SailsFile => Path.Combine(Aux, "sails.json");
         /// <summary>海面預設（TASK-0585，<see cref="SCP_SculptRenderProfiles.ReadWorkSea"/>）：這件作品觀測時的海；同上，⛔ 不是 voxel。</summary>
         public string SeaFile => Path.Combine(Aux, "sea.json");
+        /// <summary>點光源預設（TASK-0650，<see cref="SCP_SculptRenderProfiles.ReadWorkLamps"/>）：這件作品觀測時點不點燈、多亮；同上，⛔ 不是 voxel。</summary>
+        public string LampsFile => Path.Combine(Aux, "lamps.json");
         /// <summary>外部模型（<see cref="SCP_SculptModels"/>，TASK-0507）：哪裡擺一個網格模型、怎麼轉、怎麼縮；同上，⛔ 不是 voxel。</summary>
         public string ModelsFile => Path.Combine(Aux, "models.json");
         /// <summary>meta 的變更紀錄（TASK-0539：`work sub=meta` 不限作者 ⇒ 每一筆記誰、什麼時候、改之前、改之後；一行一筆 JSON，只會往後加）。</summary>
