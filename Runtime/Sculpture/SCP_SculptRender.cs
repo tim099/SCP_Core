@@ -39,6 +39,13 @@ namespace SCP.Core.Sculpture
         public const int MaxShadowLights = 2;
         /// <summary>環境光比例 0..1。</summary>
         public double Ambient = 0.4;
+        /// <summary>
+        /// 太陽（TASK-0650 夜景，Tim 2026-10-16「可以壓暗或關掉太陽光」）0..1：平行光全部乘上它；天空、背景與環境光乘上 0.25 ＋ 0.75 × 它
+        /// （天黑了天空也暗，只留一點夜空的亮）。1 ＝ 白天（舊行為，圖逐位元不變）；0 ＝ 沒有太陽、只剩一點夜空與點光源。
+        /// </summary>
+        public double Sun = 1;
+        /// <summary>天空、背景、環境光跟著太陽暗下來的倍率（見 <see cref="Sun"/>）。</summary>
+        public double SkyLight => Sun >= 1 ? 1 : 0.25 + 0.75 * Sun;
         /// <summary>陰影總開關（關 ⇒ 每盞光的 CastShadow 都不生效）。新引擎預設開。</summary>
         public bool Shadow = true;
         /// <summary>環境遮蔽（逐頂點 AO）。</summary>
@@ -259,6 +266,8 @@ namespace SCP.Core.Sculpture
         public double Radius;
         /// <summary>燈心從哪來：<see cref="SCP_SculptLampFinder.AtWick"/>（固定點 wick）｜<see cref="SCP_SculptLampFinder.AtCenter"/>（外框中心）。</summary>
         public string From = "";
+        /// <summary>這盞自己的光色（meta light_color=#rrggbb，例：風暴角號船尾的綠燈）；null ＝ 照 <see cref="SCP_SculptLamps"/> 的光色。</summary>
+        public byte[]? Color;
         /// <summary>子模型分開畫（parts=1）時是第幾個實例 —— 那個實例這一幀關著 ⇒ 燈也熄；−1 ＝ 不看（合併的場景只收畫出來的那幾個）。</summary>
         public int Part = -1;
     }

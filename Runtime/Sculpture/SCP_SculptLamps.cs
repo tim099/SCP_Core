@@ -1,6 +1,7 @@
 // 區塊職責：場景裡的燈在哪（TASK-0650）—— 外部模型與關聯的 meta 帶 kind=light（或 lantern）⇒ 一盞點光源。
 // 物理意義：跟 Blockside 60_render.js 同一套慣例（isLamp／lampAt）：
 //          ・誰是燈：meta kind ＝ light｜lantern。
+//          ・光色：meta light_color=#rrggbb（觀測用；沒寫 ⇒ 照設定的光色）。
 //          ・燈心：來源作品的固定點 `wick`（造船規格：火焰中心）換到組裝件座標；沒有 ⇒ 外框中心。
 //            外部模型：只有作品來源（source=work）有固定點；外框中心 ＝ obj 外框中心經過模型矩陣（仿射把中點送到中點 ⇒ 合併與分開畫同一個值）。
 //            關聯：被關聯作品的固定點；外框中心 ＝ 那件作品的空間中心。兩種都照關聯路徑一層層換到組裝件（同繩的 ToRoot）。
@@ -17,6 +18,8 @@ namespace SCP.Core.Sculpture
     public static class SCP_SculptLampFinder
     {
         public const string KindKey = "kind";
+        /// <summary>這盞自己的光色（#rrggbb）—— 觀測用；遊戲的模型燈一律暖橘，船殼上的燈照 game.json 的 rgb。</summary>
+        public const string ColorKey = "light_color";
         public const string WickAnchor = "wick";
         public const string AtWick = "wick", AtCenter = "center";
 
@@ -46,18 +49,27 @@ namespace SCP.Core.Sculpture
                 SCP_SculptAnchor? a = f?.anchors.Find(x => x.name == WickAnchor);
                 return a == null ? null : new[] { a.at[0] + 0.5, a.at[1] + 0.5, a.at[2] + 0.5 };
             }
-            void Add(string iPath, double[] p, string iFrom) => aOut.Add(new SCP_SculptLampPoint { Path = iPath, X = p[0], Y = p[1], Z = p[2], Radius = iRadius, From = iFrom });
+            void Add(string iPath, double[] p, string iFrom, SortedDictionary<string, SCP_JsonData> iMeta)
+            {
+                byte[]? aColor = null;
+                if (iMeta.TryGetValue(ColorKey, out SCP_JsonData? c))
+                {
+                    if (c.IsString && SCP_SculptRenderProfiles.TryHexColor(c.AsString(), out byte r, out byte g, out byte b)) aColor = new[] { r, g, b };
+                    else ioNotes.Add("燈 `" + iPath + "`：meta " + ColorKey + " 要 #rrggbb（" + c.ToJson(false) + "）⇒ 照預設光色");
+                }
+                aOut.Add(new SCP_SculptLampPoint { Path = iPath, X = p[0], Y = p[1], Z = p[2], Radius = iRadius, From = iFrom, Color = aColor });
+            }
 
             if (iModels != null)
                 foreach (var r in iModels.Models)
                 {
                     if (!IsLamp(r.Model.meta) || r.ToRoot == null || !iModelIn(r)) continue;
                     double[]? w = r.Model.source == SCP_SculptModels.SourceWork ? Wick(r.Model.work, "`" + r.Path + "`") : null;
-                    if (w != null) { Add(r.Path, SCP_SculptModels.Apply(r.ToRoot, w), AtWick); continue; }
+                    if (w != null) { Add(r.Path, SCP_SculptModels.Apply(r.ToRoot, w), AtWick, r.Model.meta); continue; }
                     if (r.Mesh == null) { ioNotes.Add("燈 `" + r.Path + "`：沒有網格、也沒有固定點 wick ⇒ 不點"); continue; }
                     var c = new double[3];
                     for (int i = 0; i < 3; i++) c[i] = (r.Mesh.Min[i] + r.Mesh.Max[i]) * 0.5;
-                    Add(r.Path, SCP_SculptModels.Apply(SCP_SculptModels.Compose(r.ToRoot, r.Axes), c), AtCenter);
+                    Add(r.Path, SCP_SculptModels.Apply(SCP_SculptModels.Compose(r.ToRoot, r.Axes), c), AtCenter, r.Model.meta);
                 }
 
             if (iTree != null)
@@ -70,8 +82,8 @@ namespace SCP.Core.Sculpture
                         if (IsLamp(n.Link.meta) && iLinkIn(n))
                         {
                             double[]? w = Wick(n.Card.id, "`" + n.Path + "`");
-                            if (w != null) Add(n.Path, SCP_SculptRopes.ToRoot(n.Path, w, aIndex), AtWick);
-                            else Add(n.Path, SCP_SculptRopes.ToRoot(n.Path, new[] { n.Card.SizeX * 0.5, n.Card.SizeY * 0.5, n.Card.SizeZ * 0.5 }, aIndex), AtCenter);
+                            if (w != null) Add(n.Path, SCP_SculptRopes.ToRoot(n.Path, w, aIndex), AtWick, n.Link.meta);
+                            else Add(n.Path, SCP_SculptRopes.ToRoot(n.Path, new[] { n.Card.SizeX * 0.5, n.Card.SizeY * 0.5, n.Card.SizeZ * 0.5 }, aIndex), AtCenter, n.Link.meta);
                         }
                         Walk(n.Children);
                     }

@@ -182,7 +182,7 @@ namespace SCP.Core.Sculpture
         }
 
         static readonly HashSet<string> s_TopKeys = new HashSet<string>(StringComparer.Ordinal)
-        { "camera", "lights", "ambient", "ao", "shadow", "skybox", "floor", "sea", "lamps", "background", "width", "height" };
+        { "camera", "lights", "ambient", "sun", "ao", "shadow", "skybox", "floor", "sea", "lamps", "background", "width", "height" };
         static readonly HashSet<string> s_LampKeys = new HashSet<string>(StringComparer.Ordinal) { "enabled", "intensity", "radius", "color" };
         /// <summary>CLI 的扁平點光源鍵 → 設定檔 lamps 物件裡的鍵（TASK-0650；`render-profile set`、view 的一次性參數、`work sub=lamps` 同一份）。</summary>
         static readonly Dictionary<string, string> s_LampFlat = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -291,6 +291,7 @@ namespace SCP.Core.Sculpture
                 }
 
                 if (iProfile["ambient"].Exists) ioP.Ambient = Range(iProfile["ambient"], "ambient", 0, 1);
+                if (iProfile["sun"].Exists) ioP.Sun = Range(iProfile["sun"], "sun", 0, 1);   // TASK-0650 夜景
                 if (iProfile["ao"].Exists) ioP.AmbientOcclusion = iProfile["ao"].AsBool();
                 if (iProfile["shadow"].Exists) ioP.Shadow = iProfile["shadow"].AsBool();
                 if (iProfile["width"].Exists) ioP.Width = (int)Range(iProfile["width"], "width", 16, 8192);
@@ -599,7 +600,7 @@ namespace SCP.Core.Sculpture
         /// 認得的鍵：projection yaw pitch roll target eye distance fov zoom ambient ao shadow skybox skybox_yaw skybox_tilt background
         /// width height fit_upscale、lights（整組 JSON 陣列取代）、light_add（`x,y,z[;#rrggbb[;強度[;shadow 0|1]]]`，可用 `|` 串多盞）、
         /// light_clear=1、地板 floor（on|off）floor_z floor_full_grid floor_margin floor_margin_ratio floor_texture floor_tile floor_color floor_fade、
-        /// 海面 sea（on|off）sea_z sea_color sea_opacity（TASK-0585）、點光源 lamps（on|off）lamp_intensity lamp_radius lamp_color（TASK-0650）、
+        /// 海面 sea（on|off）sea_z sea_color sea_opacity（TASK-0585）、點光源 lamps（on|off）lamp_intensity lamp_radius lamp_color、太陽 sun（0..1，夜景；TASK-0650）、
         /// unset（逗號分隔的鍵 ⇒ 從設定裡拿掉，回到沿用下層；`floor` ＝ 整個地板物件，floor_* ＝ 其中一格）。
         /// <para>target／eye／distance／zoom 給 <c>auto</c> ⇒ 寫 null（明確改回自動）。</para>
         /// </summary>
@@ -645,6 +646,7 @@ namespace SCP.Core.Sculpture
                         case "distance": case "zoom":
                             Cam().Set(k, v.Equals("auto", StringComparison.OrdinalIgnoreCase) ? SCP_JsonData.NewNull() : SCP_JsonData.NewNumber(Num(v, k))); break;
                         case "ambient": ioProfile.Set("ambient", Num(v, k)); break;
+                        case "sun": ioProfile.Set("sun", Num(v, k)); break;   // TASK-0650 夜景
                         case "width": case "height": ioProfile.Set(k, (long)Num(v, k)); break;
                         case "ao": case "shadow": ioProfile.Set(k, Bool(v, k)); break;
                         case "background": ioProfile.Set("background", v); break;
