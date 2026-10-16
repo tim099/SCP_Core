@@ -23,7 +23,7 @@ namespace SCP.Core.Session
         /// <summary>觀影。</summary>
         public const string StreamWatch = "StreamWatch";
 
-        /// <summary>改 C# 的施工場（TASK-0058）——**全域同時至多一人**，見 <see cref="IsGlobalExclusive"/>。</summary>
+        /// <summary>改既有程式碼的施工場（TASK-0058；2026-10-16 起不限 C#）——**全域同時至多一人**，見 <see cref="IsGlobalExclusive"/>。</summary>
         public const string Coding = "Coding";
 
         /// <summary>

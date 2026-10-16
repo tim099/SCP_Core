@@ -1,5 +1,5 @@
 // 區塊職責：`cmd coding` —— **Senate 側的 Coding 場入口**（TASK-0058 **A2**）。
-// 物理意義：改 `.cs` 的人在這裡進場，互斥與退場編譯閘都走它。
+// 物理意義：改既有程式碼的人（任何語言；只新增檔案不算）在這裡進場，互斥與退場編譯閘都走它。
 //           ⭐ session 檔是 `<DataRoot>/sessions/<persona>.json` ⇒ 互斥就靠這個檔，不需要另一把鎖。
 // 數值影響：`op=show` 一個位元組都不寫；`start`／`status`／`end` 各寫一次那個檔。
 //           **不發薪、不廣播** —— Coding 沒有金流，而公告是宿主的事。
@@ -34,11 +34,15 @@ namespace SCP.Core.Cmd
         public override string Name => "coding";
         public override string Category => SCP_CmdCategory.Task;
 
-        public override string Summary => "Coding 施工場（改 C# 前進場／場中更新 status 兼續期／"
+        public override string Summary => "Coding 施工場（改既有程式碼前進場／場中更新 status 兼續期／"
             + "**綁單後單子進 in_review 就自動收場**／退場過編譯閘）";
 
         public override string Details =>
-            "⛔ **射程**：改 C# 的施工場**只有這一個入口**。\n"
+            "⛔ **射程**：改程式碼的施工場**只有這一個入口**。\n"
+            + "   **要進場**：改動既有的程式碼 —— 任何語言、任何專案（C#、JS、Python、shader…；Tim 2026-10-16）。\n"
+            + "   **不用進場**：只新增檔案、沒動到任何既有的檔（新檔沒有人會跟你撞）。\n"
+            + "   ⚠ 新增的檔要接進既有的檔（註冊、import、清單）⇒ 那就是改了既有的檔，要進場。\n"
+            + "   📖 建置產物也要宣告、範圍重疊就開 worktree、找不到工程時怎麼退場 ⇒ 文件 `Coding`。\n"
             + "退場閘由宿主注入；Senate 依 scope 每條施工路徑找工程、各自驗編譯（.NET／Unity CLI）。\n"
             + "⭐ 全域互斥由 `SCP_ActivitySessionStore.TryStart` 那一層保證，本 Cmd 不自己判 ——\n"
             + "   自己判就是第三份判準，而它會跟前兩份不一致且**不報錯**。\n"
@@ -52,10 +56,7 @@ namespace SCP.Core.Cmd
             + "   ⚠ 判準是**純路徑**（Tim 2026-09-11 拍板）：同一個 repo 的兩份工作副本\n"
             + "     （`Senate/SCP_Core` 與 `LY/Assets/Plugins/SCP_Core`）**不算衝突**。\n"
             + "     代價已知：兩人各改一份副本的同一支檔時這道閘不叫，要到 push 分叉才現形。\n"
-            + "   ⚠ **建置產物也是施工範圍**（Tim 2026-10-16）：產物會把整個來源一起建進去的專案\n"
-            + "     （單檔成品、打包檔），在共用工作區 build ＝ 把別人沒提交的半成品包進去 ——\n"
-            + "     兩人改的來源不重疊，這道閘也不會叫。⇒ **要 build 的人，scope 一律含那份產物**\n"
-            + "     （build 的人彼此互斥）；**進不了場（範圍重疊）⇒ 開 worktree**，在自己那份裡改、在那裡 build。\n"
+            + "   ⚠ **建置產物也是施工範圍**：要 build 的人 scope 含那份產物；**進不了場 ⇒ 開 worktree**（文件 `Coding` §3／§4）。\n"
             + "⚠ `op=start` 一律帶租期（預設 " + DefaultLeaseHours + " 小時）：沒有 `end_ts` 的場永遠不會變成殘留，\n"
             + "   而那代表**持有者掉線之後沒有人能回收它**。續期走 `op=status`（那一步本來就要跑）。\n"
             + "⚠ `op=end` 的編譯閘**由宿主注入**：沒登記時明說「未驗編譯」——「沒有量」不是「綠燈」。\n"

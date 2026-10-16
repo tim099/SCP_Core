@@ -366,7 +366,7 @@ namespace SCP.Core.Tasks
                 : $"- 狀態**維持 `{aFrom}`**　role=`{aRole}` —— {aWhyNoMove}" + aDup);
             c.Rep.AppendLine($"- 參與：{Participants(e.participants)}");
             if (c.Trim("scope").Length == 0)
-                c.Rep.AppendLine("- ⚠ **沒有開 Coding 場**（沒給 `--arg scope=`）⇒ 這只是「記錄我在做這件事」。要動工（會改 C#）請帶範圍："
+                c.Rep.AppendLine("- ⚠ **沒有開 Coding 場**（沒給 `--arg scope=`）⇒ 這只是「記錄我在做這件事」。要動工（會改既有的程式碼，任何語言；只新增檔案不算）請帶範圍："
                     + $"`{Cmd($"--arg op=claim --arg persona={c.Actor} --arg index={aIndex} --arg scope=<絕對路徑>")}`");
             List<string> aBlockers = SCP_TaskStore.OpenBlockers(c.Root, e);
             if (aBlockers.Count > 0)

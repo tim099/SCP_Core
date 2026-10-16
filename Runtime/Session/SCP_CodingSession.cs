@@ -11,7 +11,7 @@
 namespace SCP.Core.Session
 {
     /// <summary>
-    /// 一場 `Coding` session（改 C# 的施工場）。
+    /// 一場 `Coding` session（改既有程式碼的施工場；不限 C#）。
     /// <para>⚠ 欄位名就是 JSON 的鍵名 —— 改名＝舊檔讀回預設值。</para>
     /// <para>⚠ <c>end_ts</c> / <c>until_local</c> 的格式是讀者依賴的介面
     /// （<c>yyyy-MM-ddTHH:mm:ss.fffZ</c> ／ <c>yyyy-MM-dd HH:mm</c>）—— 編譯器擋不到。</para>
