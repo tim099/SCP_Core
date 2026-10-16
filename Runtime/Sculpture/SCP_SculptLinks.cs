@@ -36,6 +36,13 @@ namespace SCP.Core.Sculpture
         /// <summary>加關聯當下被關聯作品的尺寸（x,y,z）—— 轉向的軸心固定用它（⛔ 不用那件作品現在的尺寸：它長大了整件會平移）。</summary>
         public List<int> pivot = new List<int> { 1, 1, 1 };
         public bool enabled = true;
+        /// <summary>
+        /// 替換色（TASK-0584）：「舊色:新色」逗號隔開，正規化成依舊色排序（"10:20,20:10"）；「」＝不換。
+        /// 組裝時換這條關聯底下**整棵子樹**組好的格（巢狀：內層先換、外層看到的是換完的色）；同時換、不連鎖；表外的色不動。
+        /// ⚠ 有任何一條用到替換色，links.json 就寫 schema 4（見 <see cref="SCP_SculptLinks.Save"/>）。
+        /// ⚠ 對映器不碰它（同 meta）：由 Read／Save 自己讀寫，**空的不寫進檔** —— 沒用替換色的 links.json 存回去逐位元組不變。
+        /// </summary>
+        [SCP_Ignore] public string recolor = "";
         public string created_at = "", persona = "", note = "";
         /// <summary>給下游認部件的 鍵 → 字串或數字（TASK-0517，<see cref="SCP_SculptMeta"/>）。⚠ 對映器不碰它：由 Read／Save 自己讀寫；用到就寫 schema 3。</summary>
         [SCP_Ignore] public SortedDictionary<string, SCP_JsonData> meta = SCP_SculptMeta.New();
@@ -150,12 +157,22 @@ namespace SCP.Core.Sculpture
                 // meta（[SCP_Ignore]，對映器不碰）：照順序對回每一筆
                 SCP_JsonData aList = aRoot["links"];
                 for (int i = 0; i < aOut.links.Count && aList.IsArray && i < aList.Count; i++)
+                {
                     if (SCP_SculptMeta.ReadFrom(aList[i]["meta"], aOut.links[i].meta) is string aMetaBad)
                         throw new InvalidOperationException("關聯 `" + aOut.links[i].name + "` 的 " + aMetaBad);
+                    // recolor（[SCP_Ignore]，同 meta）：沒有 ⇒ 不換；有就要是字串（⛔ 別的形狀不猜）
+                    SCP_JsonData aRe = aList[i]["recolor"];
+                    if (aRe.Exists && !aRe.IsNull)
+                    {
+                        if (!aRe.IsString) throw new InvalidOperationException("關聯 `" + aOut.links[i].name + "` 的 recolor 要是字串");
+                        aOut.links[i].recolor = aRe.AsString();
+                    }
+                }
             }
             catch (Exception e) { throw new InvalidOperationException("links.json 讀不了（" + aFile + "：" + e.Message + "）—— ⛔ 不當成沒有關聯，修好再用"); }
-            if (aOut.schema != 1 && aOut.schema != SchemaWithMirror && aOut.schema != SchemaWithMeta) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
-            if (aOut.schema != SchemaWithMeta && aOut.links.Exists(l => l.meta.Count > 0)) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：有 meta 卻是 schema " + aOut.schema + " —— 手改的檔？）");
+            if (aOut.schema != 1 && aOut.schema != SchemaWithMirror && aOut.schema != SchemaWithMeta && aOut.schema != SchemaWithRecolor) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema < SchemaWithMeta && aOut.links.Exists(l => l.meta.Count > 0)) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：有 meta 卻是 schema " + aOut.schema + " —— 手改的檔？）");
+            if (aOut.schema < SchemaWithRecolor && aOut.links.Exists(l => !string.IsNullOrEmpty(l.recolor))) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：有 recolor 卻是 schema " + aOut.schema + " —— 手改的檔，或沒更新的 senate.exe 寫回去的？）");
             var aNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var l in aOut.links)
             {
@@ -164,6 +181,7 @@ namespace SCP.Core.Sculpture
                                      || (l.turn != 0 && l.turn != 90 && l.turn != 180 && l.turn != 270))) aBad = "at／pivot／turn 不合法";
                 // ⛔ 檔上寫的就要是正規化的樣子（xyz 順序、不重複）—— 寫入端只會寫這種；別的樣子是手改的，猜它的意思等於猜幾何
                 if (aBad == null && (NormalizeMirror(l.mirror ?? "", out string aNorm) != null || aNorm != l.mirror)) aBad = "mirror 不合法（`" + l.mirror + "`；要是 x／y／z 或組合，依 xyz 順序）";
+                if (aBad == null && (NormalizeRecolor(l.recolor ?? "", out string aNormRe, out _) is string aBadRe || aNormRe != l.recolor)) aBad = "recolor 不合法（`" + l.recolor + "`；要是正規化的 舊色:新色,…，依舊色排序）";
                 if (aBad != null) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：關聯 `" + l.name + "` " + aBad + "）");
             }
             return aOut;
@@ -182,6 +200,12 @@ namespace SCP.Core.Sculpture
         /// 認得 2 的舊版沒有 meta 成員 ⇒ 會默默丟掉、寫回去就清光 ⇒ 再升一號讓它大聲讀不了。
         /// </summary>
         public const int SchemaWithMeta = 3;
+
+        /// <summary>
+        /// 有替換色（recolor）的 links.json 寫這個 schema（TASK-0584；有沒有鏡像、meta 都一樣）。同 <see cref="SchemaWithMirror"/> 的理由：
+        /// 認得 3 的舊版沒有 recolor 成員 ⇒ 會默默丟掉 ⇒ 換色悄悄失效、畫出原色，寫回去就清光 ⇒ 再升一號讓它大聲讀不了。
+        /// </summary>
+        public const int SchemaWithRecolor = 4;
 
         /// <summary>
         /// 鏡像參數正規化：""／"none"／"0" ＝ 不翻；否則由 x／y／z 組成（可用逗號隔開、大小寫不拘），每軸至多一次 ⇒ 依 xyz 順序。
@@ -203,9 +227,39 @@ namespace SCP.Core.Sculpture
             return null;
         }
 
+        /// <summary>
+        /// 替換色參數正規化：""／"none"／"0" ＝ 不換；否則「舊色:新色」逗號隔開（可有空白），兩邊都要 1..255（0 在 3D 是空），
+        /// 舊色不准重複、舊色 ＝ 新色不准（沒換卻寫了，多半是打錯）⇒ 依舊色排序。回 null ＝ 合法（<paramref name="oMap"/> 是對照表，不換時 null）；否則是一句人話。
+        /// </summary>
+        public static string? NormalizeRecolor(string iText, out string oNorm, out Dictionary<int, int>? oMap)
+        {
+            oNorm = ""; oMap = null;
+            string a = iText.Trim().ToLowerInvariant();
+            if (a.Length == 0 || a == "none" || a == "0") return null;
+            var aMap = new SortedDictionary<int, int>();
+            foreach (string aPart in a.Split(','))
+            {
+                string p = aPart.Trim();
+                string[] kv = p.Split(':');
+                if (kv.Length != 2 || !int.TryParse(kv[0].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int aFrom)
+                    || !int.TryParse(kv[1].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int aTo))
+                    return "recolor 要寫成 舊色:新色,…（例 218:213,213:218 ＝ 互換）；got '" + p + "'";
+                if (aFrom < 1 || aFrom > 255 || aTo < 1 || aTo > 255) return "recolor 的色要在 1..255（0 在 3D 是空 ⇒ 換成 0 等於挖掉，⛔ 不收）；got '" + p + "'";
+                if (aFrom == aTo) return "recolor `" + p + "` 舊色跟新色一樣 —— 沒有換，多半是打錯";
+                if (aMap.ContainsKey(aFrom)) return "recolor 舊色 " + aFrom + " 寫了兩次 —— ⛔ 不猜你要換成哪個";
+                aMap[aFrom] = aTo;
+            }
+            var aParts = new List<string>();
+            foreach (var kv in aMap) aParts.Add(kv.Key.ToString(CultureInfo.InvariantCulture) + ":" + kv.Value.ToString(CultureInfo.InvariantCulture));
+            oNorm = string.Join(",", aParts);
+            oMap = new Dictionary<int, int>(aMap);
+            return null;
+        }
+
         public static void Save(SCP_SculptPaths iPaths, SCP_SculptLinkFile iFile)
         {
-            iFile.schema = iFile.links.Exists(l => l.meta.Count > 0) ? SchemaWithMeta
+            iFile.schema = iFile.links.Exists(l => !string.IsNullOrEmpty(l.recolor)) ? SchemaWithRecolor
+                         : iFile.links.Exists(l => l.meta.Count > 0) ? SchemaWithMeta
                          : iFile.links.Exists(l => !string.IsNullOrEmpty(l.mirror)) ? SchemaWithMirror : 1;
             string aFile = iPaths.LinksFile;
             string aTmp = aFile + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
@@ -213,7 +267,11 @@ namespace SCP.Core.Sculpture
             {
                 SCP_JsonData aRoot = SCP_JsonMapper.ToJson(iFile);
                 SCP_JsonData aList = aRoot["links"];
-                for (int i = 0; i < iFile.links.Count; i++) SCP_SculptMeta.WriteTo(aList[i], iFile.links[i].meta);
+                for (int i = 0; i < iFile.links.Count; i++)
+                {
+                    SCP_SculptMeta.WriteTo(aList[i], iFile.links[i].meta);
+                    if (!string.IsNullOrEmpty(iFile.links[i].recolor)) aList[i].Set("recolor", iFile.links[i].recolor);
+                }
                 File.WriteAllText(aTmp, SCP_JsonWriter.Write(aRoot, true) + "\n", new UTF8Encoding(false));
                 SCP.Core.Io.SCP_SharedFile.Replace(aTmp, aFile);
             }
@@ -397,6 +455,9 @@ namespace SCP.Core.Sculpture
                     for (int k = 0; k < s_TrackKeys.Length; k++) { aEff[k] = MetaStr(n.Link, s_TrackKeys[k]) ?? iInherit![k]; aChildT[k] = new Dictionary<long, string>(); }
                 }
                 Place(aChild, n.Children, n.Card.SizeX, n.Card.SizeY, n.Card.SizeZ, ioReport, ioOwnCache, iDepth + 1, n.Card.id, aChildT, aEff);
+                // 替換色（TASK-0584）：換的是這條關聯底下整棵組好的格（內層已經換過）⇒ 外層看到內層換完的色；一次查表 ⇒ 互換不連鎖
+                // （Read 已驗過格式 ⇒ 這裡不會失敗）
+                SCP_SculptLinks.NormalizeRecolor(n.Link.recolor ?? "", out _, out Dictionary<int, int>? aRecolor);
                 var aWorkInfo = ioReport.Works[n.Card.id];
                 var aRow = new SCP_SculptComposeReport.Row { Path = n.Path, Work = n.Card.id, Revision = aWorkInfo.Revision, Draft = aWorkInfo.Draft, PivotDrift = n.PivotDrift };
                 foreach (var v in aChild.Voxels.Entries())
@@ -415,7 +476,7 @@ namespace SCP.Core.Sculpture
                         if (ioReport.Samples.Count < SCP_SculptEngine.StructureSamples) ioReport.Samples.Add("`" + n.Path + "` 被蓋掉 (" + x + "," + y + "," + z + ")" + FrameNote(iFrame));
                         continue;
                     }
-                    ioInto.Voxels.Set((int)x, (int)y, (int)z, v.Color);
+                    ioInto.Voxels.Set((int)x, (int)y, (int)z, aRecolor != null && aRecolor.TryGetValue(v.Color, out int aNew) ? aNew : v.Color);
                     aRow.Placed++;
                     if (ioTrack != null)
                     {

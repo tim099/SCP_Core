@@ -123,28 +123,56 @@ namespace SCP.Core.Sculpture
         {
             var aIndex = SCP_SculptRopes.IndexTree(iTree);
             var aByWork = new Dictionary<string, int>(StringComparer.Ordinal);
-            void Walk(List<SCP_SculptLinkNode> iNodes)
+            // 替換色（TASK-0584）：一個節點的格 ＝ 先套它自己那條的表、再一路交給外層（跟組裝器同一個順序：外層看到內層換完的色）
+            // ⇒ 有效表 ＝ 父節點的有效表 ∘ 自己的表。同一件作品、有效表不同 ⇒ 各一份來源（Key 帶表）；沒換色 ⇒ Key 跟以前一樣。
+            void Walk(List<SCP_SculptLinkNode> iNodes, int[]? iParentMap)
             {
                 foreach (var n in iNodes)
                 {
-                    if (!aByWork.TryGetValue(n.Card.id, out int aSrc))
+                    int[]? aMap = ComposeRecolor(iParentMap, n.Link.recolor ?? "");
+                    string aMapKey = RecolorKey(aMap);
+                    string aWorkKey = n.Card.id + (aMapKey.Length > 0 ? "|recolor:" + aMapKey : "");
+                    if (!aByWork.TryGetValue(aWorkKey, out int aSrc))
                     {
                         aSrc = Sources.Count;
-                        Sources.Add(LoadLinkSource(iWorks, n.Card, iUseDrafts));
-                        aByWork[n.Card.id] = aSrc;
+                        Sources.Add(LoadLinkSource(iWorks, n.Card, iUseDrafts, aMap, aMapKey));
+                        aByWork[aWorkKey] = aSrc;
                     }
                     Instances.Add(new SCP_SculptPartInstance
                     {
                         Kind = SCP_SculptPartInstance.KindLink, Path = n.Path, Frame = n.Path, Enabled = n.Link.enabled,
                         Source = aSrc, ToWorld = LinkMatrix(n.Path, aIndex),
                     });
-                    Walk(n.Children);
+                    Walk(n.Children, aMap);
                 }
             }
-            Walk(iTree);
+            Walk(iTree, null);
         }
 
-        static SCP_SculptPartSource LoadLinkSource(SCP_SculptWorks iWorks, SCP_SculptWork iCard, bool iUseDrafts)
+        /// <summary>有效替換表：c ⇒ 父表(自己的表(c))。兩邊都沒有 ⇒ null（不換）。表是 256 格、index ＝ 舊色。</summary>
+        static int[]? ComposeRecolor(int[]? iParent, string iOwn)
+        {
+            SCP_SculptLinks.NormalizeRecolor(iOwn, out _, out Dictionary<int, int>? aOwn);   // Read 已驗過格式
+            if (aOwn == null) return iParent;
+            var aOut = new int[256];
+            for (int c = 0; c < 256; c++)
+            {
+                int m = aOwn.TryGetValue(c, out int t) ? t : c;
+                aOut[c] = iParent != null ? iParent[m] : m;
+            }
+            return aOut;
+        }
+
+        /// <summary>有效表的快取鍵：只列真的有換的（舊:新，依舊色）；全都沒換 ⇒ 空字串（跟沒有表同一個鍵）。</summary>
+        static string RecolorKey(int[]? iMap)
+        {
+            if (iMap == null) return "";
+            var aParts = new List<string>();
+            for (int c = 1; c < 256; c++) if (iMap[c] != c) aParts.Add(c.ToString(CultureInfo.InvariantCulture) + ":" + iMap[c].ToString(CultureInfo.InvariantCulture));
+            return string.Join(",", aParts);
+        }
+
+        static SCP_SculptPartSource LoadLinkSource(SCP_SculptWorks iWorks, SCP_SculptWork iCard, bool iUseDrafts, int[]? iRecolor, string iRecolorKey)
         {
             SCP_SculptSpace aSpace;
             bool aDraft = false;
@@ -163,11 +191,17 @@ namespace SCP.Core.Sculpture
             foreach (var v in aSpace.Voxels.Entries())
             {
                 int c = v.Color;
+                if (iRecolor != null && c >= 0 && c < 256) c = iRecolor[c];   // 替換色（TASK-0584）
                 if (c < 1 || c > 255) c = 4;   // 同 BuildPlan 的 OutOfRangeColors：場景裡 0 ＝ 空 ⇒ 映到近黑
                 aVox.Add(new SCP_SculptVoxel(v.X, v.Y, v.Z, (byte)c));
             }
             string aRev = SCP_SculptWorks.Revision(aSpace, iCard.Dimensions);
-            return new SCP_SculptPartSource { Key = "link:" + iCard.id + "@" + aRev + (aDraft ? "~draft" : ""), Label = iCard.id + (aDraft ? "（草稿）" : ""), Voxels = aVox };
+            return new SCP_SculptPartSource
+            {
+                Key = "link:" + iCard.id + "@" + aRev + (aDraft ? "~draft" : "") + (iRecolorKey.Length > 0 ? "|recolor:" + iRecolorKey : ""),
+                Label = iCard.id + (aDraft ? "（草稿）" : "") + (iRecolorKey.Length > 0 ? "（換色 " + iRecolorKey + "）" : ""),
+                Voxels = aVox,
+            };
         }
 
         static readonly object s_GeomLock = new object();
