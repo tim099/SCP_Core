@@ -1729,10 +1729,14 @@ namespace SCP.Core.Sculpture
         /// 只給 shadow ⇒ 只動總開關 <c>Shadow</c> 與現有每盞燈的 CastShadow。</para>
         /// <para>⚠ 會 <see cref="LoadSpace"/>（重寫快取）—— 呼叫端握雕刻鎖。輸出路徑由呼叫端決定（⛔ 不提供共用的固定檔名 —— 會被別人的 view 換掉而不報錯）。</para>
         /// </summary>
+        /// <summary>雕刻的材質表（TASK-0645；呼叫端讀好給，沒給 ⇒ 平滑面一律不反光）。</summary>
+        public SCP_SculptMaterials? Materials;
+
         public SCP_SculptViewPlan PrepareView(SCP_SculptViewArgs iArgs, SCP_SculptRenderParams? iBase = null)
         {
             var aFail = new SCP_SculptViewPlan();
             SCP_SculptSpace aSpace;
+            if (Links != null) Links.TrackMaterial = true;   // TASK-0645：逐格記 meta render／material（平滑渲染）
             try { aSpace = LoadView(); }
             catch (SCP_SculptReplayException e) { aFail.ExitCode = 1; aFail.Error = e.Message; return aFail; }
             catch (ArgumentException e) { aFail.ExitCode = 2; aFail.Error = e.Message; return aFail; }
@@ -1804,6 +1808,9 @@ namespace SCP.Core.Sculpture
             }
             SCP_SculptViewPlan aPlan = BuildPlan(aSpace, aIn, iArgs.Camera, aPreset, iBase ?? PythonDefaults());
             aPlan.Lines.InsertRange(0, aLines);
+            // 平滑渲染＋材質（TASK-0645）：只看這一次可見的格；沒有平滑格 ⇒ null（渲染器整條不走）
+            aPlan.Params.Surface = Links != null ? SCP_SculptSurface.FromCompose(aPlan.Voxels, Links.LastRender, Links.LastMaterial, Materials ?? new SCP_SculptMaterials()) : null;
+            if (aPlan.Params.Surface != null) aPlan.Lines.Add("· 平滑渲染：" + aPlan.Params.Surface.Describe());
             return aPlan;
         }
 

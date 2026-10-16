@@ -138,6 +138,12 @@ namespace SCP.Core.Sculpture
         /// </summary>
         public SCP_SculptParts? Parts;
 
+        /// <summary>
+        /// 平滑渲染＋材質（TASK-0645）：合併路徑裡哪幾格畫成平滑面、各自的金屬度與粗糙度（組裝器逐格記的 meta render／material）。
+        /// null ＝ 沒有任何格要平滑 ⇒ 渲染器整條不走、輸出逐位元不變。子模型路徑不看這一格（每份來源自己帶，見 <see cref="SCP_SculptPartSource.Surface"/>）。
+        /// </summary>
+        public SCP_SculptSurface? Surface;
+
         /// <summary>這一幀每個實例畫不畫（長度 ＝ Parts.Instances；null ＝ 全畫）—— 開關只改這一格，⛔ 不動 Parts（渲染器不重建網格）。</summary>
         public bool[]? PartVisible;
 

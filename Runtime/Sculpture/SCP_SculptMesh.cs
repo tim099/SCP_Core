@@ -137,7 +137,7 @@ namespace SCP.Core.Sculpture
         /// 稀疏佔用格（TASK-0479）：16³ 一塊、只配有 voxel 的塊 ⇒ 記憶體 ∝ 有東西的塊數，不再 ∝ 外框體積。
         /// <para>塊座標各 21 位元（±2^20 塊 ＝ ±16M voxel），超出就丟例外（⛔ 不安靜地撞 key）。</para>
         /// </summary>
-        sealed class SparseGrid
+        internal sealed class SparseGrid
         {
             const int Shift = 4, Low = 15, Bias = 1 << 20;
             readonly Dictionary<long, byte[]> m_Chunks = new Dictionary<long, byte[]>();
@@ -180,7 +180,8 @@ namespace SCP.Core.Sculpture
         // 區塊職責：voxel —— 只出外露面（鄰格有 voxel 就不出），逐頂點 AO（每角看 3 個鄰格）。
         // 物理意義：三角形依 AO 選對角線，避免 AO 漸層的方向性條紋；<paramref name="iMerge"/> ⇒ 同色同 AO 的面 greedy 併成矩形。
         // ════════════════════════════════════════════════════════════════════════════════════
-        public static SCP_SculptMesh Voxels(IReadOnlyList<SCP_SculptVoxel> iVoxels, bool iAo, bool iMerge = false)
+        /// <param name="iSurf">平滑渲染（TASK-0645）：它說平滑的格**不出自己的方塊面**（照樣擋住鄰格的面、照樣算 AO 與框景）—— 平滑面另建（<see cref="SCP_SculptSmoothMesh"/>）。null ⇒ 跟以前逐位元相同。</param>
+        public static SCP_SculptMesh Voxels(IReadOnlyList<SCP_SculptVoxel> iVoxels, bool iAo, bool iMerge = false, SCP_SculptSurface? iSurf = null)
         {
             var aMesh = new SCP_SculptMesh();
             if (iVoxels.Count == 0) return aMesh;
@@ -304,6 +305,7 @@ namespace SCP.Core.Sculpture
                 {
                     Decode(aCoords[c], out int x, out int y, out int z);
                     byte aColor = aGrid.Get(x, y, z);
+                    if (iSurf != null && iSurf.IsSmooth(x, y, z)) continue;   // 平滑格：面另建（TASK-0645）
                     for (int f = 0; f < 6; f++)
                     {
                         if (Solid(x + s_Faces[f, 0], y + s_Faces[f, 1], z + s_Faces[f, 2])) continue;   // 鄰格有 voxel ⇒ 這面看不到
@@ -335,6 +337,7 @@ namespace SCP.Core.Sculpture
                     {
                         Decode(aCoords[c], out int x, out int y, out int z);
                         if (Solid(x + s_Faces[f, 0], y + s_Faces[f, 1], z + s_Faces[f, 2])) continue;
+                        if (iSurf != null && iSurf.IsSmooth(x, y, z)) continue;   // 平滑格：面另建（TASK-0645）
                         aC[0] = x - aMinX; aC[1] = y - aMinY; aC[2] = z - aMinZ;
                         aFaces.Add(((long)aC[aNa] << 42) | ((long)aC[aVa] << 21) | (long)aC[aUa]);
                     }

@@ -28,6 +28,8 @@ namespace SCP.Core.Sculpture
         public IReadOnlyList<SCP_SculptVoxel>? Voxels;
         /// <summary>外部模型：模型座標（軸向已換）的三角形。</summary>
         public SCP_SculptModelGeom? Model;
+        /// <summary>平滑渲染（TASK-0645）：這份來源整份畫成平滑面＋它的材質（關聯 meta render=smooth，沿樹往下繼承）；null ＝ 方塊。</summary>
+        public SCP_SculptSurface? Surface;
     }
 
     /// <summary>一個實例：用哪一份來源、擺在哪（3×4，列優先）。</summary>
@@ -119,23 +121,39 @@ namespace SCP.Core.Sculpture
         /// 關聯樹上**每一個**節點（含作品裡設為關的 —— 頁面可以這次把它打開）各一個實例；同一件作品只讀一次、只一份來源。
         /// 看草稿（<paramref name="iUseDrafts"/>）且那件有開著的草稿 ⇒ 用草稿（Key 會不同）。讀不了 ⇒ ArgumentException（呼叫端轉 exit 2）。
         /// </summary>
-        public void AddLinks(SCP_SculptWorks iWorks, List<SCP_SculptLinkNode> iTree, bool iUseDrafts)
+        /// <param name="iMats">平滑渲染（TASK-0645）：給了 ⇒ 關聯 meta render／material 沿樹往下繼承（最近的那一層贏，跟組裝器同一套），
+        /// 平滑的節點各自一份來源（Key 帶 |smooth 與材質）；null ⇒ 不看 meta（glb 匯出那一支照舊）。</param>
+        public void AddLinks(SCP_SculptWorks iWorks, List<SCP_SculptLinkNode> iTree, bool iUseDrafts, SCP_SculptMaterials? iMats = null)
         {
             var aIndex = SCP_SculptRopes.IndexTree(iTree);
             var aByWork = new Dictionary<string, int>(StringComparer.Ordinal);
             // 替換色（TASK-0584）：一個節點的格 ＝ 先套它自己那條的表、再一路交給外層（跟組裝器同一個順序：外層看到內層換完的色）
             // ⇒ 有效表 ＝ 父節點的有效表 ∘ 自己的表。同一件作品、有效表不同 ⇒ 各一份來源（Key 帶表）；沒換色 ⇒ Key 跟以前一樣。
-            void Walk(List<SCP_SculptLinkNode> iNodes, int[]? iParentMap)
+            void Walk(List<SCP_SculptLinkNode> iNodes, int[]? iParentMap, string? iRender, string? iMaterial)
             {
                 foreach (var n in iNodes)
                 {
                     int[]? aMap = ComposeRecolor(iParentMap, n.Link.recolor ?? "");
                     string aMapKey = RecolorKey(aMap);
-                    string aWorkKey = n.Card.id + (aMapKey.Length > 0 ? "|recolor:" + aMapKey : "");
+                    string? aRender = iMats != null ? MetaStr(n.Link, SCP_SculptLinkComposer.RenderKey) ?? iRender : null;
+                    string? aMaterial = iMats != null ? MetaStr(n.Link, SCP_SculptLinkComposer.MaterialKey) ?? iMaterial : null;
+                    SCP_SculptSurface? aSurf = null;
+                    string aSmKey = "";
+                    if (aRender == "smooth")
+                    {
+                        float m = 0, r = 0.5f;
+                        if (aMaterial != null && !iMats!.TryGet(aMaterial, out m, out r)) Notes.Add("`" + n.Path + "` 的材質 `" + aMaterial + "` 材質表沒有 ⇒ 照不反光畫");
+                        aSurf = SCP_SculptSurface.AllSmooth(m, r);
+                        if (aMaterial != null) aSurf.MaterialCounts[aMaterial] = 1;
+                        aSmKey = "|smooth:" + m.ToString("R", CultureInfo.InvariantCulture) + "," + r.ToString("R", CultureInfo.InvariantCulture);
+                    }
+                    string aWorkKey = n.Card.id + (aMapKey.Length > 0 ? "|recolor:" + aMapKey : "") + aSmKey;
                     if (!aByWork.TryGetValue(aWorkKey, out int aSrc))
                     {
                         aSrc = Sources.Count;
-                        Sources.Add(LoadLinkSource(iWorks, n.Card, iUseDrafts, aMap, aMapKey));
+                        SCP_SculptPartSource aSource = LoadLinkSource(iWorks, n.Card, iUseDrafts, aMap, aMapKey);
+                        if (aSurf != null) { aSource.Surface = aSurf; aSource.Key += aSmKey; aSource.Label += "（平滑）"; }
+                        Sources.Add(aSource);
                         aByWork[aWorkKey] = aSrc;
                     }
                     Instances.Add(new SCP_SculptPartInstance
@@ -143,11 +161,13 @@ namespace SCP.Core.Sculpture
                         Kind = SCP_SculptPartInstance.KindLink, Path = n.Path, Frame = n.Path, Enabled = n.Link.enabled,
                         Source = aSrc, ToWorld = LinkMatrix(n.Path, aIndex),
                     });
-                    Walk(n.Children, aMap);
+                    Walk(n.Children, aMap, aRender, aMaterial);
                 }
             }
-            Walk(iTree, null);
+            Walk(iTree, null, null, null);
         }
+
+        static string? MetaStr(SCP_SculptLink iLink, string iKey) => iLink.meta.TryGetValue(iKey, out SCP.Core.Json.SCP_JsonData? v) && v.IsString && v.AsString().Length > 0 ? v.AsString() : null;
 
         /// <summary>有效替換表：c ⇒ 父表(自己的表(c))。兩邊都沒有 ⇒ null（不換）。表是 256 格、index ＝ 舊色。</summary>
         static int[]? ComposeRecolor(int[]? iParent, string iOwn)
