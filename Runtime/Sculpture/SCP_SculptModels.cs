@@ -771,8 +771,10 @@ namespace SCP.Core.Sculpture
                 string aWork = aFrame.Length == 0 ? iRootId : aIndex[aFrame].Card.id;
                 if (!aFiles.TryGetValue(aWork, out SCP_SculptModelFile? aFile)) { aFile = ReadModels(iWorks.SpacePaths(aWork)); aFiles[aWork] = aFile; }
                 bool aFrameDrawn = SCP_SculptRopes.PathDrawn(aFrame, aIndex, iLinkSel);
+                HashSet<string>? aHidden = aFrame.Length > 0 && aIndex[aFrame].HiddenModels.Count > 0 ? aIndex[aFrame].HiddenModels : null;
                 foreach (SCP_SculptModel m in aFile.models)
                 {
+                    if (aHidden != null && aHidden.Contains(m.name)) continue;   // 上層關聯的 hide 拿掉的（TASK-0656 改裝船）：當作不在 —— 不列、不畫、不匯出
                     var r = new SCP_SculptModelReading { Path = aFrame.Length == 0 ? m.name : aFrame + "/" + m.name, Owner = aWork, Frame = aFrame, Model = m };
                     var aWhy = new List<string>();
                     r.Axes = AxesMatrixOrNull(m.axes) ?? AxesMatrix(AxesYUp);

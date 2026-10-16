@@ -43,6 +43,19 @@ namespace SCP.Core.Sculpture
         /// ⚠ 對映器不碰它（同 meta）：由 Read／Save 自己讀寫，**空的不寫進檔** —— 沒用替換色的 links.json 存回去逐位元組不變。
         /// </summary>
         [SCP_Ignore] public string recolor = "";
+        /// <summary>
+        /// 覆寫・拿掉（TASK-0656 改裝船；Tim 2026-10-16：「概念類似 Unity 的 nested prefab」「修改可以包含挖掉原本船體上的格子 移除原有的子模組」）：
+        /// 被關聯的作品**裡面**要拿掉的關聯或外部模型，路徑相對這條關聯（例 `駕駛塔`、`甲板-main/砲塔`）。
+        /// 讀關聯樹時就剪掉（<see cref="SCP_SculptLinks.Tree"/>）⇒ 觀測、匯出、繩、部件預覽都照它；模型記在它所在的那個節點（<see cref="SCP_SculptLinkNode.HiddenModels"/>）。
+        /// 路徑找不到 ⇒ 讀樹時擋下（⛔ 打錯字不會變成「什麼都沒拿掉」）。⚠ 對映器不碰它（同 recolor）；空的不寫；用到就寫 schema 5。
+        /// </summary>
+        [SCP_Ignore] public List<string> hide = new List<string>();
+        /// <summary>
+        /// 覆寫・挖格子（TASK-0656）：遮罩子作品的 ID —— 它的格（不管顏色）落在被關聯作品**自己的座標**裡哪幾格，組好的那一整棵（含巢狀）就少那幾格。
+        /// 遮罩的尺寸要跟被關聯的作品一樣（同一套座標）；用一般的 stampvox／box 在遮罩上畫 ＝ 挖。只挖格子，模型要拿掉用 <see cref="hide"/>。
+        /// 「」＝不挖。⚠ 對映器不碰它；空的不寫；用到就寫 schema 5。
+        /// </summary>
+        [SCP_Ignore] public string carve = "";
         public string created_at = "", persona = "", note = "";
         /// <summary>給下游認部件的 鍵 → 字串或數字（TASK-0517，<see cref="SCP_SculptMeta"/>）。⚠ 對映器不碰它：由 Read／Save 自己讀寫；用到就寫 schema 3。</summary>
         [SCP_Ignore] public SortedDictionary<string, SCP_JsonData> meta = SCP_SculptMeta.New();
@@ -113,6 +126,12 @@ namespace SCP.Core.Sculpture
         public SCP_SculptLink Link = new SCP_SculptLink();
         public SCP_SculptWork Card = new SCP_SculptWork();
         public List<SCP_SculptLinkNode> Children = new List<SCP_SculptLinkNode>();
+        /// <summary>這一層作品自己的外部模型裡，被上層關聯的 hide 拿掉的（模型名字）。<see cref="SCP_SculptModels.Resolve"/> 跳過。</summary>
+        public HashSet<string> HiddenModels = new HashSet<string>(StringComparer.Ordinal);
+        /// <summary>這條關聯的 hide 實際拿掉了什麼（給讀數：路徑 ＋「（關聯）」／「（模型）」）。</summary>
+        public List<string> HideApplied = new List<string>();
+        /// <summary>這條關聯的 carve 遮罩作品（沒有 ⇒ null）。</summary>
+        public SCP_SculptWork? Carve;
         /// <summary>被關聯作品現在的尺寸 ≠ 加關聯當下記的軸心（它被改過尺寸）—— 照樣用舊軸心轉，只是要讓人知道。</summary>
         public bool PivotDrift => Card.SizeX != Link.pivot[0] || Card.SizeY != Link.pivot[1] || Card.SizeZ != Link.pivot[2];
     }
@@ -124,12 +143,15 @@ namespace SCP.Core.Sculpture
         {
             public string Path = "", Work = "", Revision = "";
             public int Placed, Overlap, Clipped;
+            /// <summary>這條關聯的 carve 挖掉幾格（TASK-0656；在它自己的座標裡、轉向之前）。</summary>
+            public int Carved;
+            public string CarveWork = "", CarveRevision = "";
             /// <summary>這件用的是它開著的草稿（觀測 draft=1，TASK-0493×0494）。</summary>
             public bool Draft;
             public bool PivotDrift;
         }
         public List<Row> Rows = new List<Row>();
-        public int Placed, Overlap, Clipped;
+        public int Placed, Overlap, Clipped, Carved;
         public bool HideSelf;
         public List<string> Samples = new List<string>();
         /// <summary>有組進來的作品（去重）：id → (書卡, 它那份空間的 revision, 是不是草稿)。</summary>
@@ -167,10 +189,28 @@ namespace SCP.Core.Sculpture
                         if (!aRe.IsString) throw new InvalidOperationException("關聯 `" + aOut.links[i].name + "` 的 recolor 要是字串");
                         aOut.links[i].recolor = aRe.AsString();
                     }
+                    // 覆寫（TASK-0656，[SCP_Ignore]）：hide ＝ 字串陣列、carve ＝ 字串；別的形狀不猜
+                    SCP_JsonData aHide = aList[i]["hide"];
+                    if (aHide.Exists && !aHide.IsNull)
+                    {
+                        if (!aHide.IsArray) throw new InvalidOperationException("關聯 `" + aOut.links[i].name + "` 的 hide 要是字串陣列");
+                        for (int k = 0; k < aHide.Count; k++)
+                        {
+                            if (!aHide[k].IsString) throw new InvalidOperationException("關聯 `" + aOut.links[i].name + "` 的 hide 要是字串陣列");
+                            aOut.links[i].hide.Add(aHide[k].AsString());
+                        }
+                    }
+                    SCP_JsonData aCarve = aList[i]["carve"];
+                    if (aCarve.Exists && !aCarve.IsNull)
+                    {
+                        if (!aCarve.IsString) throw new InvalidOperationException("關聯 `" + aOut.links[i].name + "` 的 carve 要是字串（遮罩作品的 ID）");
+                        aOut.links[i].carve = aCarve.AsString();
+                    }
                 }
             }
             catch (Exception e) { throw new InvalidOperationException("links.json 讀不了（" + aFile + "：" + e.Message + "）—— ⛔ 不當成沒有關聯，修好再用"); }
-            if (aOut.schema != 1 && aOut.schema != SchemaWithMirror && aOut.schema != SchemaWithMeta && aOut.schema != SchemaWithRecolor) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema != 1 && aOut.schema != SchemaWithMirror && aOut.schema != SchemaWithMeta && aOut.schema != SchemaWithRecolor && aOut.schema != SchemaWithOverride) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema < SchemaWithOverride && aOut.links.Exists(HasOverride)) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：有 hide／carve 卻是 schema " + aOut.schema + " —— 手改的檔，或沒更新的 senate.exe 寫回去的？）");
             if (aOut.schema < SchemaWithMeta && aOut.links.Exists(l => l.meta.Count > 0)) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：有 meta 卻是 schema " + aOut.schema + " —— 手改的檔？）");
             if (aOut.schema < SchemaWithRecolor && aOut.links.Exists(l => !string.IsNullOrEmpty(l.recolor))) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：有 recolor 卻是 schema " + aOut.schema + " —— 手改的檔，或沒更新的 senate.exe 寫回去的？）");
             var aNames = new HashSet<string>(StringComparer.Ordinal);
@@ -182,6 +222,8 @@ namespace SCP.Core.Sculpture
                 // ⛔ 檔上寫的就要是正規化的樣子（xyz 順序、不重複）—— 寫入端只會寫這種；別的樣子是手改的，猜它的意思等於猜幾何
                 if (aBad == null && (NormalizeMirror(l.mirror ?? "", out string aNorm) != null || aNorm != l.mirror)) aBad = "mirror 不合法（`" + l.mirror + "`；要是 x／y／z 或組合，依 xyz 順序）";
                 if (aBad == null && (NormalizeRecolor(l.recolor ?? "", out string aNormRe, out _) is string aBadRe || aNormRe != l.recolor)) aBad = "recolor 不合法（`" + l.recolor + "`；要是正規化的 舊色:新色,…，依舊色排序）";
+                if (aBad == null && (NormalizeHide(string.Join(",", l.hide), out List<string> aNormHide) != null || string.Join(",", aNormHide) != string.Join(",", l.hide))) aBad = "hide 不合法（要是正規化的路徑清單：不重複、每一段非空、依字典序）";
+                if (aBad == null && l.carve.Length > 0 && (l.carve != l.carve.Trim().ToLowerInvariant() || l.carve.Length > 64)) aBad = "carve 不合法（`" + l.carve + "`；要是作品 ID）";
                 if (aBad != null) throw new InvalidOperationException("links.json 讀不了（" + aFile + "：關聯 `" + l.name + "` " + aBad + "）");
             }
             return aOut;
@@ -206,6 +248,36 @@ namespace SCP.Core.Sculpture
         /// 認得 3 的舊版沒有 recolor 成員 ⇒ 會默默丟掉 ⇒ 換色悄悄失效、畫出原色，寫回去就清光 ⇒ 再升一號讓它大聲讀不了。
         /// </summary>
         public const int SchemaWithRecolor = 4;
+
+        /// <summary>
+        /// 有覆寫（hide／carve，TASK-0656 改裝船）的 links.json 寫這個 schema。同 <see cref="SchemaWithMirror"/> 的理由：
+        /// 認得 4 的舊版沒有這兩個成員 ⇒ 會默默丟掉 ⇒ 改裝船畫成原船（該拿掉的砲塔、該挖掉的格都在），寫回去就清光 ⇒ 再升一號讓它大聲讀不了。
+        /// </summary>
+        public const int SchemaWithOverride = 5;
+
+        public static bool HasOverride(SCP_SculptLink l) => l.hide.Count > 0 || l.carve.Length > 0;
+
+        /// <summary>
+        /// hide 參數正規化：「」／"none" ＝ 不拿；否則路徑逗號隔開（`/` 分層、前後的 `/` 與空白去掉）⇒ 去重、依字典序。
+        /// 每一段要是合法的關聯名（模型名同一套字元規則）。回 null ＝ 合法；否則是一句人話。（路徑存不存在讀樹時才驗：要看被關聯的作品）
+        /// </summary>
+        public static string? NormalizeHide(string iText, out List<string> oNorm)
+        {
+            oNorm = new List<string>();
+            string a = iText.Trim();
+            if (a.Length == 0 || a == "none") return null;
+            var aSet = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (string aPart in a.Split(','))
+            {
+                string p = aPart.Trim().Trim('/');
+                if (p.Length == 0) continue;
+                foreach (string s in p.Split('/'))
+                    if (s.Length == 0 || s.Trim() != s || s.IndexOfAny(new[] { ':', ',', '|', '\\', '\n', '\r' }) >= 0) return "hide 的路徑 `" + p + "` 不合法（每一段非空、不含 : , | \\ 或換行；`/` 分層）";
+                aSet.Add(p);
+            }
+            oNorm = new List<string>(aSet);
+            return null;
+        }
 
         /// <summary>
         /// 鏡像參數正規化：""／"none"／"0" ＝ 不翻；否則由 x／y／z 組成（可用逗號隔開、大小寫不拘），每軸至多一次 ⇒ 依 xyz 順序。
@@ -258,7 +330,8 @@ namespace SCP.Core.Sculpture
 
         public static void Save(SCP_SculptPaths iPaths, SCP_SculptLinkFile iFile)
         {
-            iFile.schema = iFile.links.Exists(l => !string.IsNullOrEmpty(l.recolor)) ? SchemaWithRecolor
+            iFile.schema = iFile.links.Exists(HasOverride) ? SchemaWithOverride
+                         : iFile.links.Exists(l => !string.IsNullOrEmpty(l.recolor)) ? SchemaWithRecolor
                          : iFile.links.Exists(l => l.meta.Count > 0) ? SchemaWithMeta
                          : iFile.links.Exists(l => !string.IsNullOrEmpty(l.mirror)) ? SchemaWithMirror : 1;
             string aFile = iPaths.LinksFile;
@@ -271,6 +344,13 @@ namespace SCP.Core.Sculpture
                 {
                     SCP_SculptMeta.WriteTo(aList[i], iFile.links[i].meta);
                     if (!string.IsNullOrEmpty(iFile.links[i].recolor)) aList[i].Set("recolor", iFile.links[i].recolor);
+                    if (iFile.links[i].hide.Count > 0)
+                    {
+                        var aH = SCP_JsonData.NewArray();
+                        foreach (string h in iFile.links[i].hide) aH.Add(h);
+                        aList[i].Set("hide", aH);
+                    }
+                    if (iFile.links[i].carve.Length > 0) aList[i].Set("carve", iFile.links[i].carve);
                 }
                 File.WriteAllText(aTmp, SCP_JsonWriter.Write(aRoot, true) + "\n", new UTF8Encoding(false));
                 SCP.Core.Io.SCP_SharedFile.Replace(aTmp, aFile);
@@ -318,9 +398,55 @@ namespace SCP.Core.Sculpture
                 ioStack.Add(l.work);
                 aNode.Children = Children(iWorks, l.work, aPath + "/", ioStack, iOverride);
                 ioStack.RemoveAt(ioStack.Count - 1);
+                // 覆寫（TASK-0656）：子樹讀好之後才套 ⇒ hide 指得到它底下任一層
+                if (l.hide.Count > 0) ApplyHide(iWorks, aNode);
+                if (l.carve.Length > 0)
+                {
+                    SCP_SculptWork aMask;
+                    try { aMask = iWorks.Load(l.carve); }
+                    catch (Exception e) when (e is InvalidOperationException || e is ArgumentException || e is IOException)
+                    { throw new ArgumentException("關聯 `" + aPath + "` 的 carve 遮罩作品 `" + l.carve + "` 讀不了：" + e.Message); }
+                    if (aMask.id == l.work || ioStack.Contains(aMask.id)) throw new ArgumentException("關聯 `" + aPath + "` 的 carve 遮罩不能是被關聯的作品自己或它的上層（`" + aMask.id + "`）—— 遮罩要另開一件子作品");
+                    if (aMask.SizeX != aCard.SizeX || aMask.SizeY != aCard.SizeY || aMask.SizeZ != aCard.SizeZ)
+                        throw new ArgumentException("關聯 `" + aPath + "` 的 carve 遮罩 `" + aMask.id + "`（" + aMask.Dimensions + "）要跟被關聯的作品 `" + aCard.id + "`（" + aCard.Dimensions + "）一樣大 —— 遮罩用的是那件作品自己的座標");
+                    aNode.Carve = aMask;
+                }
                 aOut.Add(aNode);
             }
             return aOut;
+        }
+
+        /// <summary>
+        /// 一條關聯的 hide（TASK-0656）：每條路徑從這個節點往下一段一段找 —— 整條都是關聯 ⇒ 從它的上一層剪掉（連同底下）；
+        /// 只差最後一段、那一段是最後找到的那層作品的外部模型 ⇒ 記進那個節點的 <see cref="SCP_SculptLinkNode.HiddenModels"/>；都不是 ⇒ ArgumentException。
+        /// </summary>
+        static void ApplyHide(SCP_SculptWorks iWorks, SCP_SculptLinkNode ioNode)
+        {
+            foreach (string h in ioNode.Link.hide)
+            {
+                string[] aSeg = h.Split('/');
+                SCP_SculptLinkNode aCur = ioNode;
+                List<SCP_SculptLinkNode>? aParentList = null;
+                int k = 0;
+                for (; k < aSeg.Length; k++)
+                {
+                    string s = aSeg[k];
+                    SCP_SculptLinkNode? aNext = aCur.Children.Find(c => c.Link.name == s);
+                    if (aNext == null) break;
+                    aParentList = aCur.Children; aCur = aNext;
+                }
+                if (k == aSeg.Length) { aParentList!.Remove(aCur); ioNode.HideApplied.Add(h + "（關聯）"); continue; }
+                if (k == aSeg.Length - 1)
+                {
+                    string aName = aSeg[k];
+                    if (SCP_SculptModels.ReadModels(iWorks.SpacePaths(aCur.Card.id)).models.Exists(m => m.name == aName))
+                    {
+                        aCur.HiddenModels.Add(aName); ioNode.HideApplied.Add(h + "（模型）"); continue;
+                    }
+                }
+                string aFound = k == 0 ? "（第一段就找不到）" : "（找到 `" + string.Join("/", aSeg, 0, k) + "` 為止）";
+                throw new ArgumentException("關聯 `" + ioNode.Path + "` 的 hide `" + h + "`：被關聯的作品 `" + ioNode.Card.id + "` 裡沒有這條關聯或外部模型" + aFound + " —— ⛔ 打錯字不會變成「什麼都沒拿掉」");
+            }
         }
 
         /// <summary>樹上所有路徑（驗選擇的名字用）。</summary>
@@ -332,7 +458,7 @@ namespace SCP.Core.Sculpture
         /// <summary>樹上出現的作品（去重，不含根）—— 拿鎖用（依 ID 排序一次拿齊）。</summary>
         public static void Closure(List<SCP_SculptLinkNode> iNodes, SortedSet<string> ioOut)
         {
-            foreach (var n in iNodes) { ioOut.Add(n.Card.id); Closure(n.Children, ioOut); }
+            foreach (var n in iNodes) { ioOut.Add(n.Card.id); if (n.Carve != null) ioOut.Add(n.Carve.id); Closure(n.Children, ioOut); }   // carve 的遮罩也要讀 ⇒ 也拿鎖（TASK-0656）
         }
 
         /// <summary>選擇裡點到的路徑都要存在；不存在 ⇒ ArgumentException（⛔ 打錯字不會變成「什麼都沒關」）。</summary>
@@ -455,11 +581,24 @@ namespace SCP.Core.Sculpture
                     for (int k = 0; k < s_TrackKeys.Length; k++) { aEff[k] = MetaStr(n.Link, s_TrackKeys[k]) ?? iInherit![k]; aChildT[k] = new Dictionary<long, string>(); }
                 }
                 Place(aChild, n.Children, n.Card.SizeX, n.Card.SizeY, n.Card.SizeZ, ioReport, ioOwnCache, iDepth + 1, n.Card.id, aChildT, aEff);
+                // 覆寫・挖格子（TASK-0656）：這條關聯底下整棵組好之後、轉向之前 ⇒ 遮罩用的是被關聯作品自己的座標（巢狀進來的格也挖得到）
+                int aCarved = 0;
+                string aCarveRev = "";
+                if (n.Carve != null)
+                {
+                    SCP_SculptSpace aMask = LoadOwn(n.Carve, ioOwnCache, ioReport);
+                    aCarveRev = ioReport.Works[n.Carve.id].Revision;
+                    var aGone = new List<(int X, int Y, int Z, int Color)>();
+                    foreach (var v in aMask.Voxels.Entries()) if (aChild.Voxels.Get(v.X, v.Y, v.Z) != 0) aGone.Add(v);
+                    foreach (var v in aGone) aChild.Voxels.Set(v.X, v.Y, v.Z, 0);
+                    aCarved = aGone.Count;
+                }
                 // 替換色（TASK-0584）：換的是這條關聯底下整棵組好的格（內層已經換過）⇒ 外層看到內層換完的色；一次查表 ⇒ 互換不連鎖
                 // （Read 已驗過格式 ⇒ 這裡不會失敗）
                 SCP_SculptLinks.NormalizeRecolor(n.Link.recolor ?? "", out _, out Dictionary<int, int>? aRecolor);
                 var aWorkInfo = ioReport.Works[n.Card.id];
-                var aRow = new SCP_SculptComposeReport.Row { Path = n.Path, Work = n.Card.id, Revision = aWorkInfo.Revision, Draft = aWorkInfo.Draft, PivotDrift = n.PivotDrift };
+                var aRow = new SCP_SculptComposeReport.Row { Path = n.Path, Work = n.Card.id, Revision = aWorkInfo.Revision, Draft = aWorkInfo.Draft, PivotDrift = n.PivotDrift,
+                                                              Carved = aCarved, CarveWork = n.Carve?.id ?? "", CarveRevision = aCarveRev };
                 foreach (var v in aChild.Voxels.Entries())
                 {
                     SCP_SculptLinks.Transform(n.Link.mirror ?? "", n.Link.turn, n.Link.pivot[0], n.Link.pivot[1], n.Link.pivot[2], v.X, v.Y, v.Z, out int tx, out int ty, out int tz);
@@ -491,7 +630,7 @@ namespace SCP.Core.Sculpture
                 ioReport.Rows.Add(aRow);
                 // 放了幾格只算進最上層（巢狀那幾格已經算在它父節點那一列裡）；被蓋掉／越界每一層都是真的少了格 ⇒ 全加
                 if (iDepth == 0) ioReport.Placed += aRow.Placed;
-                ioReport.Overlap += aRow.Overlap; ioReport.Clipped += aRow.Clipped;
+                ioReport.Overlap += aRow.Overlap; ioReport.Clipped += aRow.Clipped; ioReport.Carved += aRow.Carved;
             }
         }
 

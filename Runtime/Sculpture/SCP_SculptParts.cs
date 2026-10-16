@@ -129,10 +129,27 @@ namespace SCP.Core.Sculpture
             var aByWork = new Dictionary<string, int>(StringComparer.Ordinal);
             // 替換色（TASK-0584）：一個節點的格 ＝ 先套它自己那條的表、再一路交給外層（跟組裝器同一個順序：外層看到內層換完的色）
             // ⇒ 有效表 ＝ 父節點的有效表 ∘ 自己的表。同一件作品、有效表不同 ⇒ 各一份來源（Key 帶表）；沒換色 ⇒ Key 跟以前一樣。
-            void Walk(List<SCP_SculptLinkNode> iNodes, int[]? iParentMap, string? iRender, string? iMaterial)
+            // 覆寫・挖格子（TASK-0656）：遮罩在「有 carve 的那條關聯」所連作品自己的座標 ⇒ 那條底下每一層的格先換到那個座標再查遮罩（跟組裝器同一個結果）；
+            // 被挖到的節點各自一份來源（Key 帶 |carve@路徑）；沒有 carve ⇒ 跟以前一樣共用。
+            var aMasks = new Dictionary<string, (SCP_SculptSpace Mask, string Rev)>(StringComparer.Ordinal);
+            void Walk(List<SCP_SculptLinkNode> iNodes, int[]? iParentMap, string? iRender, string? iMaterial, List<(string Path, SCP_SculptSpace Mask, string Rev)> iCarves)
             {
                 foreach (var n in iNodes)
                 {
+                    var aCarves = iCarves;
+                    if (n.Carve != null)
+                    {
+                        if (!aMasks.TryGetValue(n.Carve.id, out var aM))
+                        {
+                            SCP_SculptSpace aSp;
+                            try { aSp = SCP_SculptStore.Load(iWorks.SpacePaths(n.Carve.id), false); }
+                            catch (Exception e) when (e is SCP_SculptReplayException || e is InvalidOperationException || e is IOException)
+                            { throw new ArgumentException("carve 遮罩 `" + n.Carve.id + "` 讀不了：" + e.Message); }
+                            aM = (aSp, SCP_SculptWorks.Revision(aSp, n.Carve.Dimensions));
+                            aMasks[n.Carve.id] = aM;
+                        }
+                        aCarves = new List<(string, SCP_SculptSpace, string)>(iCarves) { (n.Path, aM.Mask, aM.Rev) };
+                    }
                     int[]? aMap = ComposeRecolor(iParentMap, n.Link.recolor ?? "");
                     string aMapKey = RecolorKey(aMap);
                     string? aRender = iMats != null ? MetaStr(n.Link, SCP_SculptLinkComposer.RenderKey) ?? iRender : null;
@@ -147,11 +164,24 @@ namespace SCP.Core.Sculpture
                         if (aMaterial != null) aSurf.MaterialCounts[aMaterial] = 1;
                         aSmKey = "|smooth:" + m.ToString("R", CultureInfo.InvariantCulture) + "," + r.ToString("R", CultureInfo.InvariantCulture);
                     }
-                    string aWorkKey = n.Card.id + (aMapKey.Length > 0 ? "|recolor:" + aMapKey : "") + aSmKey;
+                    string aCarveKey = "";
+                    if (aCarves.Count > 0)
+                    {
+                        aCarveKey = "|carve@" + n.Path;
+                        foreach (var cv in aCarves) aCarveKey += ":" + cv.Rev;
+                    }
+                    string aWorkKey = n.Card.id + (aMapKey.Length > 0 ? "|recolor:" + aMapKey : "") + aSmKey + aCarveKey;
                     if (!aByWork.TryGetValue(aWorkKey, out int aSrc))
                     {
                         aSrc = Sources.Count;
                         SCP_SculptPartSource aSource = LoadLinkSource(iWorks, n.Card, iUseDrafts, aMap, aMapKey);
+                        if (aCarveKey.Length > 0)
+                        {
+                            var aKeep = new List<SCP_SculptVoxel>(aSource.Voxels!.Count);
+                            int aGone = 0;
+                            foreach (var v in aSource.Voxels) { if (CarvedAt(n.Path, v.X, v.Y, v.Z, aCarves, aIndex)) aGone++; else aKeep.Add(v); }
+                            aSource.Voxels = aKeep; aSource.Key += aCarveKey; aSource.Label += "（挖掉 " + aGone + " 格）";
+                        }
                         if (aSurf != null) { aSource.Surface = aSurf; aSource.Key += aSmKey; aSource.Label += "（平滑）"; }
                         Sources.Add(aSource);
                         aByWork[aWorkKey] = aSrc;
@@ -161,10 +191,33 @@ namespace SCP.Core.Sculpture
                         Kind = SCP_SculptPartInstance.KindLink, Path = n.Path, Frame = n.Path, Enabled = n.Link.enabled,
                         Source = aSrc, ToWorld = LinkMatrix(n.Path, aIndex),
                     });
-                    Walk(n.Children, aMap, aRender, aMaterial);
+                    Walk(n.Children, aMap, aRender, aMaterial, aCarves);
                 }
             }
-            Walk(iTree, null, null, null);
+            Walk(iTree, null, null, null, new List<(string, SCP_SculptSpace, string)>());
+        }
+
+        /// <summary>
+        /// 路徑 <paramref name="iPath"/> 那一層自己座標的一格，有沒有被哪一條上層（或自己）的 carve 挖掉（TASK-0656）：
+        /// 從這一層一路照每一條關聯的 Transform＋at 往上換，換到那條 carve 所連作品的座標就查它的遮罩。
+        /// </summary>
+        static bool CarvedAt(string iPath, int iX, int iY, int iZ, List<(string Path, SCP_SculptSpace Mask, string Rev)> iCarves, Dictionary<string, SCP_SculptLinkNode> iIndex)
+        {
+            foreach (var cv in iCarves)
+            {
+                int x = iX, y = iY, z = iZ;
+                string p = iPath;
+                while (p != cv.Path)
+                {
+                    SCP_SculptLink l = iIndex[p].Link;
+                    SCP_SculptLinks.Transform(l.mirror ?? "", l.turn, l.pivot[0], l.pivot[1], l.pivot[2], x, y, z, out int tx, out int ty, out int tz);
+                    x = tx + l.at[0]; y = ty + l.at[1]; z = tz + l.at[2];
+                    int k = p.LastIndexOf('/');
+                    p = k < 0 ? "" : p.Substring(0, k);
+                }
+                if (cv.Mask.Voxels.Get(x, y, z) != 0) return true;
+            }
+            return false;
         }
 
         static string? MetaStr(SCP_SculptLink iLink, string iKey) => iLink.meta.TryGetValue(iKey, out SCP.Core.Json.SCP_JsonData? v) && v.IsString && v.AsString().Length > 0 ? v.AsString() : null;

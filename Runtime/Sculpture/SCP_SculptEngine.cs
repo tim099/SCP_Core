@@ -1501,7 +1501,8 @@ namespace SCP.Core.Sculpture
             if (aLast.HideSelf) aSb.Append("# link-self hidden（本作品自己的格沒畫）\n");
             foreach (var r in aLast.Rows)
                 aSb.Append("# link ").Append(r.Path).Append(' ').Append(r.Work).Append('@').Append(r.Revision).Append(r.Draft ? " (draft)" : "")
-                   .Append("  placed ").Append(r.Placed).Append(r.Overlap > 0 ? "  overlap " + r.Overlap : "").Append(r.Clipped > 0 ? "  clipped " + r.Clipped : "").Append('\n');
+                   .Append("  placed ").Append(r.Placed).Append(r.Overlap > 0 ? "  overlap " + r.Overlap : "").Append(r.Clipped > 0 ? "  clipped " + r.Clipped : "")
+                   .Append(r.CarveWork.Length > 0 ? "  carve " + r.CarveWork + "@" + r.CarveRevision + " carved " + r.Carved : "").Append('\n');   // 改裝船的遮罩（TASK-0656）：沒用 carve ⇒ 這一行跟以前一樣
             return aSb.ToString();
         }
 
