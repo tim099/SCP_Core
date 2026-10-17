@@ -255,8 +255,12 @@ namespace SCP.Core.Sculpture
             return o;
         }
 
-        /// <summary>帆：雙面三角網格（同 obj 的 TwoSided）—— 頂點 0.01、三角形照 obj 寫的順序（反過來寫的那一份）、色。</summary>
-        public static SCP_JsonData Sails(List<SCP_SculptSailGeom> iSails)
+        /// <summary>
+        /// 帆：雙面三角網格（同 obj 的 TwoSided）—— 頂點 0.01、三角形照 obj 寫的順序（反過來寫的那一份）、色。
+        /// <paramref name="iRecipe"/>（<c>include=recipe</c>）⇒ 每面帆多一個 <c>recipe</c>：res、fullness、corners（設計位置，0.01，同頂點）、names、pin、bind ——
+        /// 遊戲照它切平布、自己吹鼓（Blockside TASK-0602 ①）。不給 ⇒ 跟以前逐位元組相同。
+        /// </summary>
+        public static SCP_JsonData Sails(List<SCP_SculptSailGeom> iSails, bool iRecipe = false)
         {
             var aOut = SCP_JsonData.NewArray();
             foreach (SCP_SculptSailGeom s in iSails)
@@ -273,9 +277,30 @@ namespace SCP.Core.Sculpture
                 o.Set("verts", aV);
                 o.Set("tris", aT);
                 if (s.Uv != null && s.Texture != null) o.Set("texture", Texture(s));   // TASK-0530：沒貼圖的帆位元組不變
+                if (iRecipe && s.Corners != null) o.Set("recipe", Recipe(s));
                 aOut.Add(o);
             }
             return aOut;
+        }
+
+        /// <summary>帆的配方（<see cref="Sails"/> 的 <c>include=recipe</c>）：res、fullness、corners（0.01，同頂點的取法）、names、pin、bind。</summary>
+        static SCP_JsonData Recipe(SCP_SculptSailGeom s)
+        {
+            var o = SCP_JsonData.NewObject();
+            o.Set("res", SCP_JsonData.NewNumber((long)s.Res));
+            o.Set("fullness", Num(s.Fullness));
+            var aC = SCP_JsonData.NewArray(); var aN = SCP_JsonData.NewArray(); var aP = SCP_JsonData.NewArray(); var aB = SCP_JsonData.NewArray();
+            for (int k = 0; k < s.Corners!.Length; k++)
+            {
+                var c = SCP_JsonData.NewArray();
+                c.Add(Num(R2(F4(s.Corners[k][0])))); c.Add(Num(R2(F4(s.Corners[k][1])))); c.Add(Num(R2(F4(s.Corners[k][2]))));
+                aC.Add(c);
+                aN.Add(SCP_JsonData.NewString(s.CornerNames![k]));
+                aP.Add(SCP_JsonData.NewBool(s.Pins![k]));
+            }
+            foreach (int e in s.Bind!) aB.Add(SCP_JsonData.NewNumber((long)e));
+            o.Set("corners", aC); o.Set("names", aN); o.Set("pin", aP); o.Set("bind", aB);
+            return o;
         }
 
         /// <summary>

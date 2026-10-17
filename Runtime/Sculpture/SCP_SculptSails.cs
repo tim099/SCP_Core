@@ -125,6 +125,15 @@ namespace SCP.Core.Sculpture
         public SCP_SculptSailTexture? Texture;
         /// <summary>布的格網：每邊幾格、幾個角（3 ⇒ 布點只有 i + j ≤ Res 那一半）—— 展開貼圖時拿 (u, v) 直接找格子用。</summary>
         public int Res, CornerCount;
+        /// <summary>
+        /// 配方（Blockside TASK-0602 ①；vxk <c>include=recipe</c> 才寫）：角的設計位置（組裝件座標，固定點已解好）、角名、作者標的 pin、整條釘住的邊、布比框多出幾成。
+        /// 遊戲照它切平布（同 <see cref="SCP_SculptSails"/> 的 BuildParticles），用自己的帆繩物理吹鼓 ⇒ 成品不用存模擬完的 verts／tris（Tim 2026-10-17）。
+        /// </summary>
+        public double[][]? Corners;
+        public string[]? CornerNames;
+        public bool[]? Pins;
+        public int[]? Bind;
+        public double Fullness;
     }
 
     /// <summary>一面帆這次觀測的讀數。</summary>
@@ -385,6 +394,11 @@ namespace SCP.Core.Sculpture
                 {
                     SCP_SculptRopes.TryParseColor(r.Sail.color, out byte cr, out byte cg, out byte cb, out _);
                     r.Geom = new SCP_SculptSailGeom { Path = r.Path, Points = aPts, Normals = aNrm, Triangles = aTri, R = cr, G = cg, B = cb, Res = r.Resolution, CornerCount = r.Sail.corners.Count };
+                    int nc = r.Sail.corners.Count;   // 配方（state ok ⇒ 每個角都解得到）
+                    r.Geom.Corners = new double[nc][]; r.Geom.CornerNames = new string[nc]; r.Geom.Pins = new bool[nc];
+                    for (int k = 0; k < nc; k++) { r.Geom.Corners[k] = (double[])r.Corners[k]!.Clone(); r.Geom.CornerNames[k] = r.Sail.corners[k].name; r.Geom.Pins[k] = r.Sail.corners[k].pin; }
+                    r.Geom.Bind = r.Sail.bind.ToArray();
+                    r.Geom.Fullness = r.Sail.fullness;
                     if (r.Texture != null)
                     {
                         var aUv = new double[pn * 2];
