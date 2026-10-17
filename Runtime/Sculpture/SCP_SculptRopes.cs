@@ -22,6 +22,8 @@
 //          有用到組或子繩的 ropes.json 寫 schema 2（同 links.json 的鏡像：沒更新的 senate.exe 讀到會大聲讀不了，⛔ 不會默默丟掉組再寫回去）。
 // meta（TASK-0539）：每條繩可以帶一包 meta（同模型／關聯，<see cref="SCP_SculptMeta"/>；例 `kind=sheet, sail=fore-topsail`）—— 給下游（遊戲）認「這條繩是什麼、屬於哪面帆」，
 //          引擎自己不讀它的意思。有任何一條帶 meta ⇒ schema 升 <see cref="SCP_SculptRopes.SchemaWithMeta"/>（3，含 2 的一切）；沒用到的檔逐位元組照舊。
+// 橫繩組（TASK-0678）：ropes.json 的 `ratlines` 只記兩條母繩＋間距（<see cref="SCP_SculptRatlines"/>），觀測時才照母繩現在的形狀等高展開成子繩（`組名.NN`）——
+//          展開後跟手寫的子繩走同一支 Bind／Settle ⇒ 畫法、匯出、開關都不另寫。climb ⇒ 每道 meta 帶繩梯的落腳點給遊戲。有橫繩組 ⇒ schema 4。
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -76,11 +78,41 @@ namespace SCP.Core.Sculpture
         public string note = "";
     }
 
+    /// <summary>
+    /// 橫繩組（TASK-0678）：兩條母繩之間每隔 <see cref="step"/> 格（沿 z，等高 ⇒ 水平）一道橫繩 —— 只記這一筆，觀測時才照母繩**現在的形狀**展開成子繩
+    /// （名字 <c>組名.NN</c>，由下往上；跟手寫的 `rope:母繩/比例` 子繩同一支解、同一支畫）。母繩換端點、改 slack ⇒ 橫繩跟著重排。
+    /// <para>繩梯：<see cref="climb"/> ⇒ 展開的每道橫繩帶 meta（kind=ratline、ratlines、rung、rungs、climb、foot、head）給遊戲認成一座梯子；
+    /// foot／head ＝ 上下兩個落腳點（同繩的端點寫法：固定點、關聯/…/固定點、x,y,z、model:）。</para>
+    /// </summary>
+    public sealed class SCP_SculptRatlines
+    {
+        public string name = "";
+        /// <summary>兩條母繩的路徑（相對於這組所在的作品；同 `rope:` 的寫法，不帶比例）。</summary>
+        public string a = "", b = "";
+        /// <summary>每幾格一道（沿 z）。</summary>
+        public double step = 4;
+        /// <summary>兩條母繩較高的那個下端往上 start 格起、較低的那個上端往下 stop 格止。</summary>
+        public double start = 0, stop = 0;
+        /// <summary>一道短於這個（格）就停（母繩往上收攏，最上面幾道只剩一兩格）；0 ＝ 不限。</summary>
+        public double min_span = 0;
+        public string color = SCP_SculptRopes.DefaultColor;
+        public double thickness = SCP_SculptRopes.DefaultThickness;
+        public bool enabled = true;
+        public string group = "";
+        /// <summary>繩梯（遊戲裡爬得上去）。</summary>
+        public bool climb;
+        /// <summary>繩梯的下、上落腳點（climb 時必填）。</summary>
+        public string foot = "", head = "";
+        public string note = "", persona = "", created_at = "";
+    }
+
     public sealed class SCP_SculptRopeFile
     {
         public int schema = 1;
         public List<SCP_SculptRope> ropes = new List<SCP_SculptRope>();
         public List<SCP_SculptRopeGroup> groups = new List<SCP_SculptRopeGroup>();
+        /// <summary>橫繩組（TASK-0678）；空 ⇒ 不寫 key（沒用到的檔逐位元組照舊）。</summary>
+        public List<SCP_SculptRatlines> ratlines = new List<SCP_SculptRatlines>();
     }
 
     /// <summary>給渲染器／匯出的一條繩（已算好形狀、已換到組裝件座標）：折線點（世界座標，格）、半徑、顏色。</summary>
@@ -138,6 +170,8 @@ namespace SCP.Core.Sculpture
         public int Depth;
         /// <summary>這次沒畫的原因只是 rope_groups 沒點到它（TASK-0512）⇒ 掛在它上面的子繩**不跟著**藏（子繩照自己的組判；點名只畫 ratlines 就看得到 ratlines）。</summary>
         public bool OnlyFiltered;
+        /// <summary>橫繩組展開出來的（TASK-0678）⇒ 那一組的路徑（關聯路徑＋`/`＋組名）；手寫的繩 ⇒ 空。整組壞掉時只有一筆、路徑就是組的路徑。</summary>
+        public string Ratlines = "";
     }
 
     /// <summary>
@@ -242,6 +276,10 @@ namespace SCP.Core.Sculpture
         public const int SchemaWithGroups = 2;
         /// <summary>有任何一條繩帶 meta 的 ropes.json 寫這個 schema（TASK-0539；含 <see cref="SchemaWithGroups"/> 的一切）：舊版 senate.exe 讀到要大聲讀不了，⛔ 不默默丟掉 meta 再寫回去。</summary>
         public const int SchemaWithMeta = 3;
+        /// <summary>有橫繩組的 ropes.json 寫這個 schema（TASK-0678；含 <see cref="SchemaWithMeta"/> 的一切）：舊版讀到要大聲讀不了，⛔ 不默默丟掉橫繩組再寫回去。</summary>
+        public const int SchemaWithRatlines = 4;
+        /// <summary>一組最多展開幾道（防 step 打錯變成幾萬條）。</summary>
+        public const int MaxRungs = 400;
         public const double DefaultThickness = 0.5;
         public const double MaxThickness = 64;
         public const double MaxSlack = 10;
@@ -280,9 +318,11 @@ namespace SCP.Core.Sculpture
             for (int i = 0; i < aOut.ropes.Count && aList.IsArray && i < aList.Count; i++)
                 if (SCP_SculptMeta.ReadFrom(aList[i]["meta"], aOut.ropes[i].meta) is string aMetaBad)
                     throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：繩 `" + aOut.ropes[i].name + "` 的 " + aMetaBad + "）—— ⛔ 不當成沒有，修好再用");
-            if (aOut.schema != 1 && aOut.schema != SchemaWithGroups && aOut.schema != SchemaWithMeta) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
-            if (aOut.schema != SchemaWithMeta && aOut.ropes.Exists(r => r.meta.Count > 0)) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：有 meta 卻是 schema " + aOut.schema + " —— 手改的檔？）");
+            if (aOut.schema != 1 && aOut.schema != SchemaWithGroups && aOut.schema != SchemaWithMeta && aOut.schema != SchemaWithRatlines) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema < SchemaWithMeta && aOut.ropes.Exists(r => r.meta.Count > 0)) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：有 meta 卻是 schema " + aOut.schema + " —— 手改的檔？）");
             if (aOut.groups == null) aOut.groups = new List<SCP_SculptRopeGroup>();
+            if (aOut.ratlines == null) aOut.ratlines = new List<SCP_SculptRatlines>();
+            if (aOut.schema != SchemaWithRatlines && aOut.ratlines.Count > 0) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：有橫繩組卻是 schema " + aOut.schema + " —— 手改的檔？）");
             var aNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var r in aOut.ropes)
             {
@@ -299,7 +339,43 @@ namespace SCP.Core.Sculpture
                 string? aBad = (g.name ?? "").Length == 0 ? "組要有名字" : CheckGroup(g.name!) ?? (aGroups.Add(g.name!) ? null : "組重複");
                 if (aBad != null) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：組 `" + g.name + "` " + aBad + "）");
             }
+            foreach (var s in aOut.ratlines)
+                if (CheckRatlines(aOut, s) is string aBad) throw new InvalidOperationException("ropes.json 讀不了（" + aFile + "：橫繩組 `" + s.name + "` " + aBad + "）");
             return aOut;
+        }
+
+        /// <summary>
+        /// 橫繩組的規矩（TASK-0678）：名字（不跟繩撞、展開的 `名字.NN` 也不跟繩撞、組名不重複）、兩條母繩的路徑、數值範圍、顏色、粗細、組、繩梯的兩個落腳點。null ＝ 合法。
+        /// ⛔ 母繩在不在不在這裡判（可能在關聯裡）—— 那是解的時候的事（解不到 ⇒ broken；寫入前先解一次擋下）。
+        /// </summary>
+        public static string? CheckRatlines(SCP_SculptRopeFile iFile, SCP_SculptRatlines s)
+        {
+            if (ValidName(s.name, "橫繩組") is string aBadName) return aBadName;
+            if (iFile.ratlines.FindAll(x => x.name == s.name).Count > 1) return "橫繩組名字重複";
+            if (iFile.ropes.Exists(r => r.name == s.name || r.name.StartsWith(s.name + ".", StringComparison.Ordinal)))
+                return "名字跟繩撞了（展開的橫繩叫 `" + s.name + ".01`…，本作品已經有 `" + iFile.ropes.Find(r => r.name == s.name || r.name.StartsWith(s.name + ".", StringComparison.Ordinal))!.name + "`）";
+            foreach (var (aWhich, aPath) in new[] { ("a", s.a), ("b", s.b) })
+            {
+                if ((aPath ?? "").Length == 0) return aWhich + "（母繩）是空的 —— 給繩名或 關聯/…/繩名";
+                foreach (string seg in aPath!.Split('/'))
+                    if (SCP_SculptLinks.ValidName(seg) is string aSegBad) return aWhich + "（母繩）`" + aPath + "` 的 `" + seg + "`：" + aSegBad;
+            }
+            if (s.a == s.b) return "a 和 b 是同一條繩";
+            if (double.IsNaN(s.step) || s.step < 0.5 || s.step > 1000) return "step（每幾格一道）要在 0.5..1000：" + s.step.ToString(CultureInfo.InvariantCulture);
+            foreach (var (aWhich, v) in new[] { ("start", s.start), ("stop", s.stop), ("min_span", s.min_span) })
+                if (double.IsNaN(v) || double.IsInfinity(v) || v < 0) return aWhich + " 要 ≥ 0：" + v.ToString(CultureInfo.InvariantCulture);
+            if (TryParseColor(s.color, out _, out _, out _, out string aNorm) is string aColorBad) return aColorBad;
+            if (aNorm != s.color) return "color 不是正規化的寫法（`" + s.color + "`）";
+            if (CheckThickness(s.thickness) is string aT) return aT;
+            if (CheckGroup(s.group ?? "") is string aG) return aG;
+            if (s.climb && ((s.foot ?? "").Length == 0 || (s.head ?? "").Length == 0)) return "繩梯（climb）要給 foot 與 head 兩個落腳點";
+            foreach (var (aWhich, e) in new[] { ("foot", s.foot ?? ""), ("head", s.head ?? "") })
+            {
+                if (e.Length == 0) continue;
+                if (!TryParseEndpoint(e, out _, out _, out string aEndBad)) return aWhich + "：" + aEndBad;
+                if (IsRopePoint(e) || e.Trim().StartsWith(SailPrefix, StringComparison.Ordinal)) return aWhich + "：落腳點要是固定點、模型上的點或 x,y,z（不是繩上、帆角）";
+            }
+            return null;
         }
 
         /// <summary>讀檔、對映進 <paramref name="ioTarget"/>，回原始的 JSON（給 [SCP_Ignore] 的欄位手動讀）。</summary>
@@ -320,9 +396,11 @@ namespace SCP.Core.Sculpture
 
         public static void SaveRopes(SCP_SculptPaths iPaths, SCP_SculptRopeFile iFile)
         {
-            iFile.schema = iFile.ropes.Exists(r => r.meta.Count > 0) ? SchemaWithMeta
+            iFile.schema = iFile.ratlines.Count > 0 ? SchemaWithRatlines
+                         : iFile.ropes.Exists(r => r.meta.Count > 0) ? SchemaWithMeta
                          : iFile.groups.Count > 0 || iFile.ropes.Exists(r => r.group.Length > 0 || IsChild(r)) ? SchemaWithGroups : 1;
             SCP_JsonData aRoot = SCP_JsonMapper.ToJson(iFile);
+            if (iFile.ratlines.Count == 0) aRoot.Remove("ratlines");   // TASK-0678：沒用到 ⇒ 檔逐位元組照舊
             SCP_JsonData aList = aRoot["ropes"];
             for (int i = 0; i < iFile.ropes.Count; i++) SCP_SculptMeta.WriteTo(aList[i], iFile.ropes[i].meta);   // 空的不寫 key ⇒ 沒用 meta 的檔位元組不變
             WriteAtomic(iPaths.RopesFile, aRoot);
@@ -726,12 +804,14 @@ namespace SCP.Core.Sculpture
             var aPaths = new List<string>();
             SCP_SculptLinks.Paths(iTree ?? new List<SCP_SculptLinkNode>(), aPaths);
             aFrames.AddRange(aPaths);
+            var aSets = new List<(string Frame, string Work, SCP_SculptRopeFile File, SCP_SculptRatlines Set)>();   // 橫繩組（TASK-0678）：母繩解完才展開
             // ① 第一趟：一般的端點（固定點、座標、帆角、模型）；子繩的 rope: 端點留到第二趟
             foreach (string aFrame in aFrames)
             {
                 string aWork = aFrame.Length == 0 ? iRootId : aIndex[aFrame].Card.id;
                 if (!aRopeCache.TryGetValue(aWork, out SCP_SculptRopeFile? aFile)) { aFile = ReadRopes(iWorks.SpacePaths(aWork)); aRopeCache[aWork] = aFile; }
                 bool aFrameDrawn = PathDrawn(aFrame, aIndex, iLinkSel);
+                foreach (SCP_SculptRatlines s in aFile.ratlines) aSets.Add((aFrame, aWork, aFile, s));
                 foreach (SCP_SculptRope r in aFile.ropes)
                 {
                     var aR = new SCP_SculptRopeReading
@@ -825,8 +905,141 @@ namespace SCP.Core.Sculpture
                 if (aCycle.TryGetValue(c, out string? aRingWhy)) { c.State = SCP_SculptRopeReading.Broken; aP.Why.Add(aRingWhy); }
                 Settle(c, aP, iRopeSel);
             }
-            foreach (var x in aOut) if (x.Child) Bind(x);
+            // ③ 橫繩組（TASK-0678）：照母繩現在的形狀展開成子繩（rope:母繩/比例），接著跟手寫的子繩一起 Bind —— ⛔ 不另寫一份解法與畫法
+            foreach (var (aFrame, aWork, aFile, s) in aSets) ExpandRatlines(aFrame, aWork, aFile, s);
+            foreach (var x in aOut.ToArray()) if (x.Child) Bind(x);
             return aOut;
+
+            void ExpandRatlines(string aFrame, string aWork, SCP_SculptRopeFile aFile, SCP_SculptRatlines s)
+            {
+                string aSetPath = aFrame.Length == 0 ? s.name : aFrame + "/" + s.name;
+                string aGroup = s.group.Length == 0 ? "" : aFrame.Length == 0 ? s.group : aFrame + "/" + s.group;
+                string? aGroupOff = GroupDisabled(aFile, s.group);
+                bool aFrameDrawn = PathDrawn(aFrame, aIndex, iLinkSel);
+                string? aBad = null;
+                var aPar = new SCP_SculptRopeReading[2];
+                string[] aRel = { s.a, s.b };
+                for (int e = 0; e < 2 && aBad == null; e++)
+                {
+                    string aLabel = e == 0 ? "a" : "b", aPP = aFrame.Length == 0 ? aRel[e] : aFrame + "/" + aRel[e];
+                    if (!aByPath.TryGetValue(aPP, out SCP_SculptRopeReading? p) || p.Ratlines.Length > 0) { aBad = aLabel + "：沒有繩 `" + aPP + "`（母繩要是手寫的繩，不能是別組展開的橫繩）"; break; }
+                    if (p.Child) Bind(p);
+                    if (p.State == SCP_SculptRopeReading.Broken) aBad = aLabel + "：母繩 `" + p.Path + "` 壞了";
+                    else if (p.Line == null) aBad = aLabel + "：母繩 `" + p.Path + "` 沒有形狀（兩端沒解出來）";
+                    aPar[e] = p!;
+                }
+                double[]? aFoot = null, aHead = null;
+                if (aBad == null && s.climb)
+                {
+                    if (aPoints.Resolve(aFrame, s.foot, false, out aFoot, out _, out _) is string aFootBad) aBad = "繩梯 foot：" + aFootBad;
+                    else if (aPoints.Resolve(aFrame, s.head, false, out aHead, out _, out _) is string aHeadBad) aBad = "繩梯 head：" + aHeadBad;
+                }
+                List<double[]> aRungs = aBad == null ? Rungs(aPar[0].Line!, aPar[1].Line!, s, out aBad) : new List<double[]>();
+                var aBase = new SCP_SculptRope { color = s.color, thickness = s.thickness, slack = 1, enabled = s.enabled, group = s.group, note = s.note, persona = s.persona, created_at = s.created_at };
+                if (aBad != null)
+                {
+                    // 整組一筆 broken（⛔ 不靜默消失）：路徑 ＝ 組的路徑
+                    var aR = new SCP_SculptRopeReading { Path = aSetPath, Owner = aWork, Group = aGroup, Ratlines = aSetPath, State = SCP_SculptRopeReading.Broken };
+                    aR.Rope = Clone(aBase, s.name, RopePrefix + s.a + "/0", RopePrefix + s.b + "/0");
+                    var aP = new Pending { Frame = aFrame, GroupOff = aGroupOff };
+                    aP.Why.Add("橫繩組 `" + aSetPath + "`：" + aBad);
+                    aPend[aR] = aP;
+                    Settle(aR, aP, iRopeSel);
+                    aOut.Add(aR);
+                    return;
+                }
+                for (int k = 0; k < aRungs.Count; k++)
+                {
+                    string aName = s.name + "." + (k + 1).ToString(aRungs.Count >= 100 ? "000" : "00", CultureInfo.InvariantCulture);
+                    SCP_SculptRope r = Clone(aBase, aName, RopePrefix + s.a + "/" + aRungs[k][0].ToString("R", CultureInfo.InvariantCulture),
+                                                           RopePrefix + s.b + "/" + aRungs[k][1].ToString("R", CultureInfo.InvariantCulture));
+                    // meta：給下游（遊戲）認「這是哪一組的第幾道、能不能爬、從哪裡上下」（座標 ＝ 組裝件座標，同繩的 pts）
+                    r.meta["kind"] = "ratline";
+                    r.meta["ratlines"] = aSetPath;
+                    r.meta["rung"] = k + 1;
+                    r.meta["rungs"] = aRungs.Count;
+                    if (s.climb) { r.meta["climb"] = 1; r.meta["foot"] = Xyz(aFoot!); r.meta["head"] = Xyz(aHead!); }
+                    var aR = new SCP_SculptRopeReading { Path = aFrame.Length == 0 ? aName : aFrame + "/" + aName, Owner = aWork, Rope = r, Group = aGroup, Child = true, Ratlines = aSetPath };
+                    var aP = new Pending { Frame = aFrame, GroupOff = aGroupOff };
+                    if (!aFrameDrawn) { aR.LinkHidden = true; aP.Why.Add("繩子所在的 `" + aFrame + "` 這次沒畫"); }
+                    aPend[aR] = aP;
+                    aOut.Add(aR);
+                    if (!aByPath.ContainsKey(aR.Path)) aByPath[aR.Path] = aR;
+                }
+            }
+        }
+
+        static SCP_SculptRope Clone(SCP_SculptRope b, string iName, string iFrom, string iTo)
+            => new SCP_SculptRope { name = iName, from = iFrom, to = iTo, color = b.color, thickness = b.thickness, slack = 1, enabled = b.enabled, group = b.group, note = b.note, persona = b.persona, created_at = b.created_at };
+
+        static string Xyz(double[] p)
+            => p[0].ToString("0.###", CultureInfo.InvariantCulture) + "," + p[1].ToString("0.###", CultureInfo.InvariantCulture) + "," + p[2].ToString("0.###", CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// 橫繩組的每一道（TASK-0678）：兩條母繩的折線（組裝件座標）之間，z 從「較高的下端＋start」到「較低的上端−stop」每 step 格一道（z0 ＋ k·step，⛔ 不累加）；
+        /// 每道回 {a 上的比例, b 上的比例}（沿各自折線的長度比，同 `rope:` 的比例）。一道兩端距離短於 min_span ⇒ 停（往上收攏）。
+        /// 一道都沒有、某一高度母繩碰不到、超過 <see cref="MaxRungs"/> 道 ⇒ <paramref name="oBad"/>。
+        /// </summary>
+        public static List<double[]> Rungs(double[] iA, double[] iB, SCP_SculptRatlines s, out string? oBad)
+        {
+            oBad = null;
+            var aOut = new List<double[]>();
+            ZRange(iA, out double aLoA, out double aHiA);
+            ZRange(iB, out double aLoB, out double aHiB);
+            double z0 = Math.Max(aLoA, aLoB) + s.start, z1 = Math.Min(aHiA, aHiB) - s.stop;
+            if (z1 < z0) { oBad = "兩條母繩共同的高度留白之後是空的（z " + z0.ToString("0.##", CultureInfo.InvariantCulture) + " > " + z1.ToString("0.##", CultureInfo.InvariantCulture) + "；start／stop 調小，或母繩不夠直立）"; return aOut; }
+            for (int k = 0; ; k++)
+            {
+                double z = z0 + k * s.step;
+                if (z > z1 + 1e-9) break;
+                double ta = RatioAtZ(iA, z), tb = RatioAtZ(iB, z);
+                if (double.IsNaN(ta) || double.IsNaN(tb)) { oBad = "z " + z.ToString("0.##", CultureInfo.InvariantCulture) + " 碰不到母繩 " + (double.IsNaN(ta) ? "a" : "b"); return aOut; }
+                double[] p = PointAt(iA, ta), q = PointAt(iB, tb);
+                double dx = p[0] - q[0], dy = p[1] - q[1], dz = p[2] - q[2];
+                if (s.min_span > 0 && Math.Sqrt(dx * dx + dy * dy + dz * dz) < s.min_span) break;
+                if (aOut.Count >= MaxRungs) { oBad = "超過 " + MaxRungs + " 道（step 太小？）"; return aOut; }
+                aOut.Add(new[] { ta, tb });
+            }
+            if (aOut.Count == 0) oBad = "一道都沒有（第一道就短於 min_span " + s.min_span.ToString("0.##", CultureInfo.InvariantCulture) + "）";
+            return aOut;
+        }
+
+        static void ZRange(double[] iLine, out double oLo, out double oHi)
+        {
+            int n = iLine.Length / 3;
+            double a = iLine[2], b = iLine[(n - 1) * 3 + 2];
+            oLo = Math.Min(a, b); oHi = Math.Max(a, b);
+        }
+
+        /// <summary>
+        /// 折線上高度 <paramref name="iZ"/> 那一點的長度比（0 ＝ 第一點、1 ＝ 最後一點）：從**低的那一端**往上找第一個穿過 z 的地方（垂下來的繩可能穿兩次 ⇒ 取靠下端那一次）；碰不到 ⇒ NaN。
+        /// </summary>
+        public static double RatioAtZ(double[] iLine, double iZ)
+        {
+            int n = iLine.Length / 3;
+            if (n < 2) return double.NaN;
+            var aSeg = new double[n - 1];
+            double aTotal = 0;
+            for (int i = 0; i + 1 < n; i++)
+            {
+                double ex = iLine[i * 3 + 3] - iLine[i * 3], ey = iLine[i * 3 + 4] - iLine[i * 3 + 1], ez = iLine[i * 3 + 5] - iLine[i * 3 + 2];
+                aSeg[i] = Math.Sqrt(ex * ex + ey * ey + ez * ez);
+                aTotal += aSeg[i];
+            }
+            if (aTotal < 1e-12) return double.NaN;
+            bool aUp = iLine[2] <= iLine[(n - 1) * 3 + 2];
+            double aAcc = 0, aHit = double.NaN;
+            for (int i = 0; i + 1 < n; i++)
+            {
+                double za = iLine[i * 3 + 2], zb = iLine[i * 3 + 5];
+                if ((za - iZ) * (zb - iZ) <= 0 && Math.Abs(zb - za) > 1e-12)
+                {
+                    aHit = (aAcc + aSeg[i] * (iZ - za) / (zb - za)) / aTotal;
+                    if (aUp) return aHit;   // 從第一點（低端）往上：第一次就是
+                }
+                aAcc += aSeg[i];
+            }
+            return aHit;   // 低端在最後一點 ⇒ 最後一次穿過的（離低端最近）
         }
 
         /// <summary>
