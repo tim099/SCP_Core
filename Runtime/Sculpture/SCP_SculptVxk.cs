@@ -283,23 +283,30 @@ namespace SCP.Core.Sculpture
             return aOut;
         }
 
-        /// <summary>帆的配方（<see cref="Sails"/> 的 <c>include=recipe</c>）：res、fullness、corners（0.01，同頂點的取法）、names、pin、bind。</summary>
+        /// <summary>
+        /// 帆的配方（<see cref="Sails"/> 的 <c>include=recipe</c>）：res、fullness、corners（設計位置，0.01，同頂點的取法）、names、refs（每個角原樣的參照）、pin、bind；
+        /// 帆在子關聯裡 ⇒ 多一個 frame（那一層的關聯路徑，refs 照它補前綴）。
+        /// 遊戲照 refs 綁帆（帆角引用的模型、部件固定點）、照繩的 ends（<c>sail:&lt;帆&gt;/&lt;角&gt;</c>）綁帆腳 —— 不照距離猜（Tim 2026-10-17）。
+        /// 只帶作者寫的東西，不帶雕刻引擎模擬完的形狀（吹鼓交給遊戲的帆繩物理）。
+        /// </summary>
         static SCP_JsonData Recipe(SCP_SculptSailGeom s)
         {
             var o = SCP_JsonData.NewObject();
             o.Set("res", SCP_JsonData.NewNumber((long)s.Res));
             o.Set("fullness", Num(s.Fullness));
-            var aC = SCP_JsonData.NewArray(); var aN = SCP_JsonData.NewArray(); var aP = SCP_JsonData.NewArray(); var aB = SCP_JsonData.NewArray();
+            if (s.Frame.Length > 0) o.Set("frame", SCP_JsonData.NewString(s.Frame));
+            var aC = SCP_JsonData.NewArray(); var aN = SCP_JsonData.NewArray(); var aR = SCP_JsonData.NewArray(); var aP = SCP_JsonData.NewArray(); var aB = SCP_JsonData.NewArray();
             for (int k = 0; k < s.Corners!.Length; k++)
             {
                 var c = SCP_JsonData.NewArray();
                 c.Add(Num(R2(F4(s.Corners[k][0])))); c.Add(Num(R2(F4(s.Corners[k][1])))); c.Add(Num(R2(F4(s.Corners[k][2]))));
                 aC.Add(c);
                 aN.Add(SCP_JsonData.NewString(s.CornerNames![k]));
+                aR.Add(SCP_JsonData.NewString(s.CornerRefs![k]));
                 aP.Add(SCP_JsonData.NewBool(s.Pins![k]));
             }
             foreach (int e in s.Bind!) aB.Add(SCP_JsonData.NewNumber((long)e));
-            o.Set("corners", aC); o.Set("names", aN); o.Set("pin", aP); o.Set("bind", aB);
+            o.Set("corners", aC); o.Set("names", aN); o.Set("refs", aR); o.Set("pin", aP); o.Set("bind", aB);
             return o;
         }
 

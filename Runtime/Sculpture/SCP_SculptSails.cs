@@ -131,6 +131,9 @@ namespace SCP.Core.Sculpture
         /// </summary>
         public double[][]? Corners;
         public string[]? CornerNames;
+        /// <summary>每個角原樣的參照（sails.json 的 at：<c>model:…</c>、部件固定點、座標）與帆所在那一層的關聯路徑 —— 遊戲照它綁帆（Tim 2026-10-17：帆跟繩的綁定必須靠 meta，不要靠猜）。</summary>
+        public string[]? CornerRefs;
+        public string Frame = "";
         public bool[]? Pins;
         public int[]? Bind;
         public double Fullness;
@@ -395,8 +398,8 @@ namespace SCP.Core.Sculpture
                     SCP_SculptRopes.TryParseColor(r.Sail.color, out byte cr, out byte cg, out byte cb, out _);
                     r.Geom = new SCP_SculptSailGeom { Path = r.Path, Points = aPts, Normals = aNrm, Triangles = aTri, R = cr, G = cg, B = cb, Res = r.Resolution, CornerCount = r.Sail.corners.Count };
                     int nc = r.Sail.corners.Count;   // 配方（state ok ⇒ 每個角都解得到）
-                    r.Geom.Corners = new double[nc][]; r.Geom.CornerNames = new string[nc]; r.Geom.Pins = new bool[nc];
-                    for (int k = 0; k < nc; k++) { r.Geom.Corners[k] = (double[])r.Corners[k]!.Clone(); r.Geom.CornerNames[k] = r.Sail.corners[k].name; r.Geom.Pins[k] = r.Sail.corners[k].pin; }
+                    r.Geom.Corners = new double[nc][]; r.Geom.CornerNames = new string[nc]; r.Geom.Pins = new bool[nc]; r.Geom.CornerRefs = new string[nc]; r.Geom.Frame = r.Frame;
+                    for (int k = 0; k < nc; k++) { r.Geom.Corners[k] = (double[])r.Corners[k]!.Clone(); r.Geom.CornerNames[k] = r.Sail.corners[k].name; r.Geom.Pins[k] = r.Sail.corners[k].pin; r.Geom.CornerRefs[k] = r.Sail.corners[k].at; }
                     r.Geom.Bind = r.Sail.bind.ToArray();
                     r.Geom.Fullness = r.Sail.fullness;
                     if (r.Texture != null)
