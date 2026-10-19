@@ -56,8 +56,14 @@ cmds: [tavern-post, tavern-wait]   # 這份文件講哪幾支指令 —— help 
 
 `help <指令>` 第二行印的「型別：…」就是判準。
 
+**外部專案的文件住在那個專案自己的 repo**（Tim 2026-10-19：「可以把文件放在Blocksail本身」「或是讓CLI支援綁定外部專案&文件」）：
+宿主照設定把綁定專案的文件資料夾接成文件根（Senate：`senate.local.json` 的 `linkedProjects`，見 `Config_Schema`），
+標籤 ＝ 專案名小寫（例 `blocksail/WORLD_TOOLS.md`）⇒ `doc` 查得到、skill 的 `docs:` 讀得到；⛔ 不把專案文件抄進 Senate／SCP_Core。
+文件根不存在、跟別份撞名一樣會在清單第一段出聲。
+
 ## 4. 宿主要做的事
 
 文件根由宿主裝上（`SCP_DocStore.RootsProvider`），共用層不推導路徑。
-Senate CLI 錨在 **exe 所在的 repo**：`<repo>/Docs` 與 `<repo>/SCP_Core/Docs~` —— ⛔ 不看 cwd。
+Senate CLI 錨在 **exe 所在的 repo**：`<repo>/Docs` 與 `<repo>/SCP_Core/Docs~` —— ⛔ 不看 cwd；
+後面接 `linkedProjects` 每個有 `docs` 的專案（每次查都重讀設定，改了不用重開）。
 沒裝的宿主 `doc` 回 3、`help` 的文件那一行寫「查不了」，⛔ 不會假裝沒有文件。

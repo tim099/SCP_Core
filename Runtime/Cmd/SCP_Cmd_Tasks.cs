@@ -302,9 +302,14 @@ namespace SCP.Core.Cmd
             if (aBlockers.Count > 0)
                 oResult.Lines.Add("· ⛔ 還開著的阻塞：" + string.Join("、", aBlockers.ToArray()));
             if (e.memory_topic.Length > 0) oResult.Lines.Add("· 記憶主題：" + e.memory_topic);
+            string aProjRoot = "", aProjDocs = "";
             if (iProject.project.Length > 0)
+            {
                 oResult.Lines.Add("· 專案：" + iProject.project + (iProject.from > 0
                     ? "（自己沒標，跟著母單 TASK-" + iProject.from.ToString("0000", CultureInfo.InvariantCulture) + "）" : ""));
+                // 綁定的外部專案（SCP_ProjectLinks）：這張單要去哪個資料夾做事、文件在哪
+                oResult.Lines.Add("  ↳ " + SCP_ProjectLinks.Describe(iProject.project, out aProjRoot, out aProjDocs));
+            }
             oResult.Lines.Add("· 留言 " + e.comments.Count + " 則");
             AppendWarnings(oResult, ioWarnings);
             oResult.AddValue("index", e.index.ToString(CultureInfo.InvariantCulture));
@@ -312,6 +317,9 @@ namespace SCP.Core.Cmd
             oResult.AddValue("comment_count", e.comments.Count.ToString(CultureInfo.InvariantCulture));
             oResult.AddValue("open_blockers", aBlockers.Count.ToString(CultureInfo.InvariantCulture));
             oResult.AddValue("bad_field_warnings", ioWarnings.Count.ToString(CultureInfo.InvariantCulture));
+            oResult.AddValue("project", iProject.project);
+            oResult.AddValue("project_root", aProjRoot);     // 空 ＝ 沒標專案、沒綁、或路徑不存在（摘要那一行說是哪一種）
+            oResult.AddValue("project_docs", aProjDocs);
         }
 
         static void AppendWarnings(SCP_CmdResult oResult, List<string> iWarnings)
