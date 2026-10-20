@@ -431,6 +431,7 @@ git -C <改動那份> fetch origin && git -C <改動那份> push origin master
   ⇒ 回報時**不要寫「Bar／LY 已同步」**，也不要把 Unity 那側的任何一格列成待辦。**在 Senate 這側手工造 `.meta` 仍是偽造**。
 - ⚠ **push 前先 fetch**：遠端比你新 ⇒ 兩份各自 commit 過、已經分叉 ⇒ **當場喊**，⛔ 不 merge、不 rebase 別人的 commit。
 - ⚠ **push 會連帶推出你底下別人還沒推的 commit**（同一條分支，沒辦法只推自己那筆）⇒ 推之前看 `git log origin/master..HEAD`，回報時點名是誰的哪幾筆。
+  （Tim 2026-10-20：「需要push時 一起推(包含別人commit的改動)」⇒ ⛔ 不另做一份只含自己那筆的提交去推、不 force push。）
 - ⚠ **父層的 submodule pointer bump 不在這一步**：消費端 repo 會顯示 `M <mount path>`。
   那是**各消費端自己的 commit**（本專案由 Tim 收尾），不要順手一起提。
 
