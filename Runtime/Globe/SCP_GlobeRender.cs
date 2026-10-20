@@ -3,6 +3,7 @@
 //          equirect ＝ 整顆球攤成世界地圖（經度 −180→180 對橫軸、緯度 90→−90 對直軸，寬：高＝2：1）。
 // 物理意義：沒有 mesh、沒有貼圖取樣；格子的方塊邊緣是「最近鄰」自然留下的。正交投影的光照只是看得出球面的 Lambert，
 //          世界地圖不打光（地圖要讀顏色，不要讀陰影）。疊圖（經緯線、施工區框線、面接縫）是讀數，不寫回格子。
+//          取色讀 State.Display（格子顏色＋水體層的湖、河、瀑布）；沒有水體時它就是格子本身。
 // 數值影響：純函式 → RGBA8（由上到下）。決定性：同樣的格子＋參數 ⇒ 同樣的 bytes。
 using System;
 using SCP.Core.Canvas;
@@ -68,7 +69,7 @@ namespace SCP.Core.Globe
                     double dx = cx * sz + rx * sx + ux * sy, dy = cy * sz + ry * sx + uy * sy, dz = cz * sz + rz * sx + uz * sy;
                     int idx = g.DirToCell(dx, dy, dz);
                     face[py * W + px] = (sbyte)(idx / (g.N * g.N));
-                    int c = s.Cells.Get(idx);
+                    int c = s.Display.Get(idx);
                     if (c == SCP_GlobeCells.Empty) c = aBase;
                     double shade = 0.35 + 0.65 * Math.Max(0, dx * lx + dy * ly + dz * lz);
                     double R = ((c >> 16) & 255) * shade, G = ((c >> 8) & 255) * shade, B = (c & 255) * shade;
@@ -112,7 +113,7 @@ namespace SCP.Core.Globe
                     SCP_GlobeGrid.LatLonToDir(aLat, aLon, out double dx, out double dy, out double dz);
                     int idx = g.DirToCell(dx, dy, dz);
                     face[py * W + px] = (sbyte)(idx / (g.N * g.N));
-                    int c = s.Cells.Get(idx);
+                    int c = s.Display.Get(idx);
                     if (c == SCP_GlobeCells.Empty) c = aBase;
                     double R = (c >> 16) & 255, G = (c >> 8) & 255, B = c & 255;
                     // 施工區框線：ZoneEdge 的經度差會乘 cos(lat)，這裡要的是「一像素」⇒ 先除回去

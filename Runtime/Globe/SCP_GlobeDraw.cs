@@ -176,6 +176,82 @@ namespace SCP.Core.Globe
             return aOut;
         }
 
+        /// <summary>
+        /// 有洞的面（水體層的湖：外環＋湖中島）：只收取樣點在外環裡、不在任何島裡的格子，⛔ 不另外補輪廓 ——
+        /// 湖岸由取樣決定，不會多長一圈。圈都是扁平 lat,lon,…（自動封口）；範圍限制同 <see cref="Polygon"/>。
+        /// </summary>
+        public static List<int> Area(SCP_GlobeGrid g, IReadOnlyList<double> iOuter, IReadOnlyList<IReadOnlyList<double>> iHoles)
+        {
+            if (iOuter.Count < 6 || iOuter.Count % 2 != 0) throw new SCP_GlobeException("面的外環至少 3 個點：" + iOuter.Count / 2);
+            double aLon0 = iOuter[1];
+            void Flat(IReadOnlyList<double> iRing, out double[] oLat, out double[] oLon)
+            {
+                int n = iRing.Count / 2;
+                oLat = new double[n]; oLon = new double[n];
+                for (int k = 0; k < n; k++) { oLat[k] = iRing[2 * k]; oLon[k] = aLon0 + Wrap(iRing[2 * k + 1] - aLon0); }
+            }
+            Flat(iOuter, out double[] lat, out double[] lon);
+            var aHoles = new List<(double[] Lat, double[] Lon)>();
+            foreach (IReadOnlyList<double> h in iHoles)
+            {
+                if (h.Count < 6) continue;
+                Flat(h, out double[] hl, out double[] ho);
+                aHoles.Add((hl, ho));
+            }
+            double mnLat = double.MaxValue, mxLat = double.MinValue, mnLon = double.MaxValue, mxLon = double.MinValue;
+            for (int k = 0; k < lat.Length; k++)
+            {
+                mnLat = Math.Min(mnLat, lat[k]); mxLat = Math.Max(mxLat, lat[k]);
+                mnLon = Math.Min(mnLon, lon[k]); mxLon = Math.Max(mxLon, lon[k]);
+            }
+            if (mxLon - mnLon >= 180) throw new SCP_GlobeException("面的經度跨度 ≥ 180°（prototype 不支援；拆成幾塊）");
+            if (mxLat >= 89.9 || mnLat <= -89.9) throw new SCP_GlobeException("面碰到極點（prototype 不支援）");
+            double aStepDeg = g.CellAngle * 180 / Math.PI * 0.5;
+            double aCosMin = Math.Cos(Math.Max(Math.Abs(mnLat), Math.Abs(mxLat)) * Math.PI / 180);
+            long aEst = (long)((mxLat - mnLat) / aStepDeg + 1) * (long)((mxLon - mnLon) / (aStepDeg / Math.Max(aCosMin, 0.01)) + 1);
+            if (aEst > MaxPolygonSamples)
+                throw new SCP_GlobeException($"面太大：估計取樣 {aEst:N0} 次 > 上限 {MaxPolygonSamples:N0}（拆小一點）");
+            var aSeen = new HashSet<int>();
+            var aOut = new List<int>();
+            for (double la = mnLat + aStepDeg * 0.5; la <= mxLat; la += aStepDeg)
+            {
+                double aLonStep = aStepDeg / Math.Max(Math.Cos(la * Math.PI / 180), 0.01);
+                for (double lo = mnLon + aLonStep * 0.5; lo <= mxLon; lo += aLonStep)
+                {
+                    if (!Inside(lat, lon, la, lo)) continue;
+                    bool aInHole = false;
+                    foreach (var h in aHoles) if (Inside(h.Lat, h.Lon, la, lo)) { aInHole = true; break; }
+                    if (aInHole) continue;
+                    int c = g.LatLonToCell(la, lo);
+                    if (aSeen.Add(c)) aOut.Add(c);
+                }
+            }
+            return aOut;
+        }
+
+        /// <summary>點在不在一圈裡（扁平 lat,lon,…；經緯度平面判，經度以第一點為基準攤平 —— 同 <see cref="Polygon"/>）。</summary>
+        public static bool InsideRing(IReadOnlyList<double> iRing, double iLat, double iLon)
+        {
+            int n = iRing.Count / 2;
+            if (n < 3) return false;
+            double aLon0 = iRing[1], lo = aLon0 + Wrap(iLon - aLon0);
+            bool aIn = false;
+            for (int a = 0, b = n - 1; a < n; b = a++)
+            {
+                double la = iRing[2 * a], lb = iRing[2 * b];
+                double xa = aLon0 + Wrap(iRing[2 * a + 1] - aLon0), xb = aLon0 + Wrap(iRing[2 * b + 1] - aLon0);
+                if ((la > iLat) != (lb > iLat) && lo < (xb - xa) * (iLat - la) / (lb - la) + xa) aIn = !aIn;
+            }
+            return aIn;
+        }
+
+        static double Wrap(double d)
+        {
+            while (d > 180) d -= 360;
+            while (d < -180) d += 360;
+            return d;
+        }
+
         static bool Inside(double[] lat, double[] lon, double la, double lo)
         {
             bool aIn = false;

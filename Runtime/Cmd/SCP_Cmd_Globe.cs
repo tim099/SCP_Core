@@ -12,7 +12,7 @@ using SCP.Core.Paths;
 
 namespace SCP.Core.Cmd
 {
-    public sealed class SCP_Cmd_Globe : SCP_Cmd
+    public sealed partial class SCP_Cmd_Globe : SCP_Cmd
     {
         public override string Name => "globe";
         public override string Category => SCP_CmdCategory.Game;
@@ -21,7 +21,7 @@ namespace SCP.Core.Cmd
 
         public override string Details =>
             "等角立方體球：6 面 × N×N 格（預設 N=2048，約 4.9 km／格），一格 24-bit RGB（全彩）；沒畫過＝顯示 meta 的底色。\n"
-            + "op：status（預設）｜init｜base｜cell｜point｜line｜polygon｜fill｜erase｜undo｜zone｜render｜history｜regrid\n"
+            + "op：status（預設）｜init｜base｜cell｜point｜line｜polygon｜fill｜erase｜undo｜zone｜water｜render｜history｜regrid\n"
             + "· 橡皮擦：op=erase --arg shape=point|line|polygon|fill（參數同那一種畫法）⇒ 擦回底色（大海）。\n"
             + "· 施工區：op=zone --arg sub=add|list|show|join|update —— 標記「誰在這塊畫什麼」，可重疊、⛔ 不擋任何人下筆。\n"
             + "  規劃進度：sub=plan（加計畫項）｜sub=check（勾項＝署名）｜sub=log（記做了什麼、下一步）；畫的時候帶 --arg zone=<id>，show 會自動統計這區畫了多少。\n"
@@ -29,6 +29,10 @@ namespace SCP.Core.Cmd
             + "· 經緯度一律 lat,lon（度；北緯／東經為正）。點列：points=\"lat,lon;lat,lon;…\"（長的走 --arg-file）。\n"
             + "· color：#RRGGBB 或 r,g,b（全彩）；color=empty ＝ 擦回底色。\n"
             + "· undo 一次退最後一筆仍有效的繪製；事件只追加不刪。\n"
+            + "· 水體層（湖、河）：op=water --arg sub=lake|river|delete|undo|list|show|check|history|config —— 水是向量、⛔ 不塗進格子顏色；render 疊在格子上面。\n"
+            + "  湖：--arg surface=<水面海拔 m，可負> --arg points=\"lat,lon;…\"（外環）[--arg holes=\"lat,lon;…|…\"（湖中島）]。\n"
+            + "  河：--arg points=\"lat,lon,水面海拔m,寬m;…\"（上游→下游，只准往下流）--arg from=spring|lake:<id> --arg to=sea|lake:<id>|river:<id>（支流）。\n"
+            + "  落差 ≥ 門檻 ⇒ 瀑布（河身一段還要夠陡；匯入、入湖、入海是垂直落下）。每筆都重驗整個水系，不成立 ⇒ 整筆拒絕。水體的 undo 是 sub=undo，跟格子的 op=undo 分開。\n"
             + "· regrid：每面邊長 ×整數倍（預設 ×2：每格 4.9 km → 2.4 km），舊畫的每一格變成 2×2 格、一格都不位移；預設只預覽（dry-run），--arg confirm=1 才真的做。\n"
             + "  事件只追加（不改舊事件檔）；做完之後舊版程式讀這顆球會直接報錯（不認得的 mapping），不會安靜地算錯。\n"
             + "· radius／width／max_cells 的單位預設是「初始格」（建立時的格，約 4.9 km）—— regrid 之後自動換算成實際格數，所以同樣的指令畫出同樣大小；\n"
@@ -42,19 +46,28 @@ namespace SCP.Core.Cmd
         {
             new SCP_CmdArgSpec("data_root", "AgentCommands 資料根（絕對路徑）", iRequired: true),
             new SCP_CmdArgSpec("letters_root", "信件夾根（Senate CLI 從設定自動補）；render 給了 persona 時圖寫進 <persona>/cmd/"),
-            new SCP_CmdArgSpec("op", "status｜init｜base｜cell｜point｜line｜polygon｜fill｜erase｜undo｜zone｜render｜history｜regrid",
-                               iChoices: new[] { "status", "init", "base", "cell", "point", "line", "polygon", "fill", "erase", "undo", "zone", "render", "history", "regrid" }),
+            new SCP_CmdArgSpec("op", "status｜init｜base｜cell｜point｜line｜polygon｜fill｜erase｜undo｜zone｜water｜render｜history｜regrid",
+                               iChoices: new[] { "status", "init", "base", "cell", "point", "line", "polygon", "fill", "erase", "undo", "zone", "water", "render", "history", "regrid" }),
             new SCP_CmdArgSpec("factor", "regrid：每面邊長的倍率（整數 ≥ 2，預設 2；每面最多 8192 格）"),
             new SCP_CmdArgSpec("confirm", "regrid：=1 才真的做（沒帶 ⇒ dry-run，只印會發生什麼、零寫入）"),
             new SCP_CmdArgSpec("unit", "point／line／fill：radius／width／max_cells 的單位 —— initial（預設，初始格；regrid 後自動換算）｜cell（實際格數）",
                                iChoices: new[] { "initial", "cell" }),
             new SCP_CmdArgSpec("shape", "erase：point｜line｜polygon｜fill（預設 point）", iChoices: new[] { "point", "line", "polygon", "fill" }),
-            new SCP_CmdArgSpec("sub", "zone：add｜list｜show｜join｜update｜plan｜check｜log", iChoices: new[] { "add", "list", "show", "join", "update", "plan", "check", "log" }),
-            new SCP_CmdArgSpec("zone", "point／line／polygon／fill／erase：這一筆算在哪個施工區（zone show 依此統計進度）"),
+            new SCP_CmdArgSpec("sub", "zone：add｜list｜show｜join｜update｜plan｜check｜log；water：lake｜river｜delete｜undo｜list｜show｜check｜history｜config",
+                               iChoices: new[] { "add", "list", "show", "join", "update", "plan", "check", "log", "lake", "river", "delete", "undo", "history", "config" }),
+            new SCP_CmdArgSpec("zone", "point／line／polygon／fill／erase／water：這一筆算在哪個施工區（zone show 依此統計進度）"),
             new SCP_CmdArgSpec("item", "zone plan：計畫清單加一項（例：本州海岸線）"),
             new SCP_CmdArgSpec("index", "zone check：勾第幾項（1-based，show 列的序號）"),
             new SCP_CmdArgSpec("expect_text", "zone check：那一項的開頭文字（防序號對錯格；建議帶）"),
-            new SCP_CmdArgSpec("id", "zone：施工區 id（小寫英數、-、_）"),
+            new SCP_CmdArgSpec("id", "zone：施工區 id；water：水體 id（小寫英數、-、_；新增不給 ⇒ 自動 lake-N／river-N，給了已有的 ⇒ 修改）"),
+            new SCP_CmdArgSpec("name", "water lake／river：名稱（例：恩里基約湖）"),
+            new SCP_CmdArgSpec("surface", "water lake：水面海拔（公尺；可以是負的 ＝ 低於海平面）"),
+            new SCP_CmdArgSpec("holes", "water lake：湖中島，一圈一段、用 | 分開（lat,lon;…|lat,lon;…）；none ＝ 拿掉全部"),
+            new SCP_CmdArgSpec("from", "water river：源頭 spring（預設）｜lake:<id>（湖的出口；第 1 點水面要等於湖面）"),
+            new SCP_CmdArgSpec("to", "water river：河口 sea（預設）｜lake:<id>｜river:<id>（支流，最後一點要接到那條河的河道上）"),
+            new SCP_CmdArgSpec("source", "water lake／river：資料與海拔的出處"),
+            new SCP_CmdArgSpec("fall_drop", "water config：瀑布的最小落差（公尺，預設 10）"),
+            new SCP_CmdArgSpec("fall_grade", "water config：河身一段算瀑布的最小坡度（落差／水平距離，預設 0.1）"),
             new SCP_CmdArgSpec("title", "zone add／update：名稱（例：創造日本）"),
             new SCP_CmdArgSpec("bbox", "zone add／update：範圍 南,西,北,東（度；西 > 東 ＝ 跨 180°）"),
             new SCP_CmdArgSpec("status", "zone update：active｜paused｜done", iChoices: new[] { "active", "paused", "done" }),
@@ -66,7 +79,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("lon", "cell／point／fill：經度（度）"),
             new SCP_CmdArgSpec("radius", "point：半徑（預設單位＝初始格，regrid 後自動換算；可小數；預設 0＝最細的一格）"),
             new SCP_CmdArgSpec("width", "line：筆寬半徑（單位同 radius；預設 0＝一格寬）"),
-            new SCP_CmdArgSpec("points", "line／polygon：lat,lon;lat,lon;…"),
+            new SCP_CmdArgSpec("points", "line／polygon／water lake：lat,lon;lat,lon;…；water river：lat,lon,水面海拔m,寬m;…（上游→下游）"),
             new SCP_CmdArgSpec("max_cells", "fill：最多塗幾格（預設 200000 個初始格的面積，regrid 後自動換算；超過整筆拒絕）"),
             new SCP_CmdArgSpec("note", "寫進事件的一句話"),
             new SCP_CmdArgSpec("center", "render：畫面中心 lat,lon（預設 23.7,121）"),
@@ -78,7 +91,7 @@ namespace SCP.Core.Cmd
             new SCP_CmdArgSpec("seams", "render：1＝疊面接縫"),
             new SCP_CmdArgSpec("export", "render：1＝存進 <球面根>/exports/，檔名帶時間戳（不入版控；跟 out 擇一）"),
             new SCP_CmdArgSpec("out", "render：輸出 PNG 絕對路徑（預設：有 persona ⇒ <letters>/<persona>/cmd/globe_view.png；沒有 ⇒ <球面根>/_cache/view.png）"),
-            new SCP_CmdArgSpec("last", "history：列最後幾筆（預設 10）"),
+            new SCP_CmdArgSpec("last", "history／water history：列最後幾筆（預設 10）"),
         };
 
         public const int DefaultMaxFill = 200000;
@@ -108,6 +121,7 @@ namespace SCP.Core.Cmd
                         return Paint(aStore, aShape, iArgs, true);
                     }
                     case "zone": return Zone(aStore, iArgs);
+                    case "water": return Water(aStore, iArgs);
                     case "undo": return Undo(aStore, iArgs);
                     case "render": return Render(aStore, iArgs);
                     case "history": return History(aStore, iArgs);
@@ -131,6 +145,8 @@ namespace SCP.Core.Cmd
             if (s.Meta.GetInitialN() != s.Grid.N && s.Meta.N != s.Grid.N) r.Lines.Add($"  ⚠ meta 記的 N={s.Meta.N} 與事件重播的 N={s.Grid.N} 不一致（regrid 寫到一半？）—— 事件為準；再跑一次 op=regrid 可修復");
             r.Lines.Add($"  底色：{s.Meta.BaseColor}　格子：rgb24 全彩（{s.Cells.Tile}² 分塊、只存畫過的）");
             r.Lines.Add($"  事件：{s.LastSeq} 筆（仍有效的繪製 {s.Stack.Count} 筆）　已畫格子：{aPainted:N0}");
+            r.Lines.Add($"  水體：湖 {s.WaterReport.Lakes}、河 {s.WaterReport.Rivers}（支流 {s.WaterReport.Tributaries}、瀑布 {s.WaterReport.Falls.Count}）"
+                        + (s.WaterReport.Problems.Count > 0 ? $"　⚠ 水系問題 {s.WaterReport.Problems.Count}（op=water --arg sub=check）" : ""));
             r.Lines.Add($"  根：{iStore.Paths.Root}" + (s.FromCache ? "（讀快取＋補重播）" : "（從頭重播）"));
             return r.AddValue("initialized", "1").AddValue("n", s.Grid.N.ToString(CultureInfo.InvariantCulture))
                     .AddValue("initial_n", s.InitialN.ToString(CultureInfo.InvariantCulture))
@@ -138,7 +154,8 @@ namespace SCP.Core.Cmd
                     .AddValue("base_color", s.Meta.BaseColor)
                     .AddValue("events", s.LastSeq.ToString(CultureInfo.InvariantCulture))
                     .AddValue("undoable", s.Stack.Count.ToString(CultureInfo.InvariantCulture))
-                    .AddValue("painted", aPainted.ToString(CultureInfo.InvariantCulture));
+                    .AddValue("painted", aPainted.ToString(CultureInfo.InvariantCulture))
+                    .AddValue("water", s.Water.Count.ToString(CultureInfo.InvariantCulture));
         }
 
         static SCP_CmdResult Init(SCP_GlobeStore iStore, SCP_CmdArgs iArgs)
@@ -176,6 +193,9 @@ namespace SCP.Core.Cmd
             var zs = new SCP_GlobeZones(iStore.Paths);
             string aSub = iArgs.Get("sub").Trim();
             if (aSub.Length == 0) aSub = "list";
+            // sub 的可選清單跟 water 共用 ⇒ 這裡自己擋（不擋的話 sub=lake 會落進最後那個 update）
+            if (Array.IndexOf(new[] { "add", "list", "show", "join", "update", "plan", "check", "log" }, aSub) < 0)
+                return SCP_CmdResult.Fail(2, "✗ zone 的 sub 只能是 add｜list｜show｜join｜update｜plan｜check｜log：" + aSub);
             string aPersona = iArgs.Get("persona").Trim(), aId = iArgs.Get("id").Trim();
             string Now() => DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
@@ -345,10 +365,19 @@ namespace SCP.Core.Cmd
             var aIn = new List<string>();
             foreach (SCP_GlobeZone z in new SCP_GlobeZones(iStore.Paths).List())
                 if (z.Contains(p.Lat, p.Lon)) aIn.Add($"{z.Id}「{z.Title}」({z.Status}，{z.Owner})");
+            string aWater = "（沒有）", aWaterId = "";
+            if (s.WaterOwner.TryGetValue(idx, out string? wid) && s.Water.Features.TryGetValue(wid, out SCP_GlobeWaterFeature? wf))
+            {
+                aWaterId = wid;
+                aWater = wid + (wf.Name.Length > 0 ? "「" + wf.Name + "」" : "") + (wf.IsLake ? $"（湖，水面 {F(wf.Surface)} m）" : $"（河，{wf.From} → {wf.To}）")
+                         + (s.Display.Get(idx) == SCP_GlobeWaterRaster.FallColor ? "　🌊 瀑布" : "");
+            }
             return SCP_CmdResult.Success(
                     $"· ({F(p.Lat)},{F(p.Lon)}) → 面 {s.Meta.Faces[f].Name} i={i} j={j}（index {idx}，格心 {F(cla)},{F(clo)}）",
                     "  顏色：" + aColor,
+                    "  水體：" + aWater,
                     "  施工區：" + (aIn.Count > 0 ? string.Join("；", aIn) : "（沒有）"))
+                .AddValue("water", aWaterId)
                 .AddValue("zones", string.Join(",", aIn.ConvertAll(x => x.Substring(0, x.IndexOf('「')))))
                 .AddValue("index", idx.ToString(CultureInfo.InvariantCulture)).AddValue("face", s.Meta.Faces[f].Name)
                 .AddValue("i", i.ToString(CultureInfo.InvariantCulture)).AddValue("j", j.ToString(CultureInfo.InvariantCulture))

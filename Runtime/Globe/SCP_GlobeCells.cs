@@ -130,6 +130,26 @@ namespace SCP.Core.Globe
             return c;
         }
 
+        /// <summary>
+        /// 顯示用的疊圖：<paramref name="iTop"/> 不是空的格子蓋在這一層上面。⚠ 沒被蓋到的分塊**共用同一個陣列**（不複製）——
+        /// 回傳的容器只能讀、⛔ 不能 Set（會改到底下那一層）；被蓋到的分塊是新配置的。不標髒（顯示層不進快取）。
+        /// </summary>
+        public SCP_GlobeCells Overlay(SCP_GlobeCells iTop)
+        {
+            if (iTop.N != N) throw new SCP_GlobeException($"疊圖的 N 對不上：{iTop.N} ≠ {N}");
+            var c = new SCP_GlobeCells(N);
+            foreach (var kv in m_Tiles) c.m_Tiles[kv.Key] = kv.Value;
+            foreach (var kv in iTop.m_Tiles)
+            {
+                byte[] t = m_Tiles.TryGetValue(kv.Key, out byte[]? b) ? (byte[])b.Clone() : new byte[Tile * Tile * 3];
+                byte[] top = kv.Value;
+                for (int o = 0; o < top.Length; o += 3)
+                    if (top[o] != 0 || top[o + 1] != 0 || top[o + 2] != 0) { t[o] = top[o]; t[o + 1] = top[o + 1]; t[o + 2] = top[o + 2]; }
+                c.m_Tiles[kv.Key] = t;
+            }
+            return c;
+        }
+
         public SCP_GlobeCells Clone()
         {
             var c = new SCP_GlobeCells(N);

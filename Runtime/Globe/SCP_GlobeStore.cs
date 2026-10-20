@@ -142,6 +142,25 @@ namespace SCP.Core.Globe
         public int InitialN;
         /// <summary>regrid 歷史：扁平 [事件 seq, 新 N] …，由舊到新。</summary>
         public List<int> Regrids = new List<int>();
+        /// <summary>水體層（湖、河）；<see cref="SCP_GlobeStore.Load"/> 才有，寫入路徑的內部重播是空的。</summary>
+        public SCP_GlobeWaterSet Water = new SCP_GlobeWaterSet();
+        public SCP_GlobeWaterReport WaterReport = new SCP_GlobeWaterReport();
+        /// <summary>水體柵格化後的疊圖（只有水的格子有值）與「哪一格是哪個水體」。</summary>
+        public SCP_GlobeCells? WaterCells;
+        public Dictionary<int, string> WaterOwner = new Dictionary<int, string>();
+        SCP_GlobeCells? m_Display;
+
+        /// <summary>
+        /// 畫面上看到的格子：格子顏色＋水體疊圖。沒有水體 ⇒ **就是 <see cref="Cells"/> 本身**（同一個物件 ⇒ 輸出跟沒有水體層時逐像素相同）。
+        /// ⚠ 只能讀；寫入走事件。
+        /// </summary>
+        public SCP_GlobeCells Display => m_Display ?? Cells;
+
+        internal void SetWater(SCP_GlobeWaterSet iSet, SCP_GlobeWaterReport iReport, SCP_GlobeCells? iCells, Dictionary<int, string> iOwner)
+        {
+            Water = iSet; WaterReport = iReport; WaterCells = iCells; WaterOwner = iOwner;
+            m_Display = iCells != null && iSet.Count > 0 ? Cells.Overlay(iCells) : null;
+        }
 
         /// <summary>第 <paramref name="iSeq"/> 筆事件被寫下的那一刻，球面每面幾格（＝它的 index 屬於哪個 N）。</summary>
         public int NAt(int iSeq)
@@ -215,7 +234,22 @@ namespace SCP.Core.Globe
         }
 
         // ── 重播 ──────────────────────────────────────────────
+        /// <summary>格子＋水體層（看、查、渲染用）。水體事件壞了 ⇒ 丟例外（⛔ 不安靜地當成沒有水）；畫格子的路徑不讀水體，照樣能畫。</summary>
         public SCP_GlobeState Load()
+        {
+            SCP_GlobeState s = LoadCells();
+            var aWater = new SCP_GlobeWaterStore(this);
+            SCP_GlobeWaterSet aSet = aWater.Load();
+            if (aSet.Count == 0) return s;
+            SCP_GlobeWaterReport aReport = SCP_GlobeWaterNet.Analyze(aSet.Features, aSet.Meta, SCP_GlobeWaterStore.TolRad(s.Grid.N));
+            var aOwner = new Dictionary<int, string>();
+            SCP_GlobeCells aCells = SCP_GlobeWaterRaster.Build(s.Grid, aSet, aReport, aOwner);
+            s.SetWater(aSet, aReport, aCells, aOwner);
+            return s;
+        }
+
+        /// <summary>只重播格子（寫入路徑在鎖裡用：不必柵格化水體）。</summary>
+        SCP_GlobeState LoadCells()
         {
             SCP_GlobeMeta aMeta = LoadMeta();
             TryParseColor(aMeta.BaseColor, out int br, out int bg, out int bb, out _);
@@ -339,7 +373,7 @@ namespace SCP.Core.Globe
             if (iValue < 0 || iValue > 0xFFFFFF) throw new SCP_GlobeException("格子值越界：" + iValue);
             using (SCP_FileLock.Acquire(LockTargetReady()))
             {
-                SCP_GlobeState s = Load();
+                SCP_GlobeState s = LoadCells();
                 if (iExpectN > 0 && s.Grid.N != iExpectN)
                     throw new SCP_GlobeException($"球面在你算格子的途中變了：你照每面 {iExpectN} 格算，現在是 {s.Grid.N} 格（有人 regrid，或 meta 與事件不一致）⇒ 一格都沒寫，請重跑");
                 var e = new SCP_GlobeEvent { Seq = s.LastSeq + 1, Op = iOp, Persona = iPersona, Note = iNote, At = Now(), Zone = iZone };
@@ -375,7 +409,7 @@ namespace SCP.Core.Globe
         {
             using (SCP_FileLock.Acquire(LockTargetReady()))
             {
-                SCP_GlobeState s = Load();
+                SCP_GlobeState s = LoadCells();
                 if (s.Stack.Count == 0) return null;
                 var e = new SCP_GlobeEvent { Seq = s.LastSeq + 1, Op = "undo", Persona = iPersona, At = Now(), Target = s.Stack[s.Stack.Count - 1] };
                 Commit(s, e);
@@ -392,7 +426,7 @@ namespace SCP.Core.Globe
             if (iFactor < 2) throw new SCP_GlobeException("regrid 倍率要 ≥ 2：" + iFactor);
             using (SCP_FileLock.Acquire(LockTargetReady()))
             {
-                SCP_GlobeState s = Load();
+                SCP_GlobeState s = LoadCells();
                 long aNew = (long)s.Grid.N * iFactor;
                 if (aNew > SCP_GlobeMeta.MaxN) throw new SCP_GlobeException($"regrid 之後每面 {aNew} 格，超過上限 {SCP_GlobeMeta.MaxN}");
                 var e = new SCP_GlobeEvent { Seq = s.LastSeq + 1, Op = "regrid", Persona = iPersona, Note = iNote, At = Now(), GridN = (int)aNew };
