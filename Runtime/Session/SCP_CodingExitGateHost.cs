@@ -9,7 +9,7 @@
 // 🩸 而 Senate 側有一格物理限制要寫下來：**`build.sh` 不能從 `senate.exe` 裡面跑** ——
 //   它會停 Server、殺掉開著的 senate 視窗、然後覆寫 `publish/senate.exe`，
 //   而那正是**當下正在執行的那個檔**（Access denied）。
-//   ⇒ Senate 側的閘只能是**編譯**這一格（.NET／Unity CLI，依施工路徑判），
+//   ⇒ Senate 側的閘只能是**編譯**這一格（依施工路徑找 .NET 工程跑 `dotnet build`），
 //   **出廠驗收（`build.sh`）是人要另外跑的那一格** —— 閘要把這句話印出來，不要讓人以為它驗過了。
 #nullable enable
 using System;
