@@ -5,7 +5,10 @@
 //   · 欄位語意：sender_id=`discord:<uid>`、sender_name＝顯示名、kind=chat、
 //     meta.source=`discord`（⇒ `SCP_TavernMentions.IsExternalRelay` 認得、Outbound ⛔ 不回送）、discord_msg_id／channel_id／guild_id、
 //     source_class／channel_label、`relay=senate`、`discord_whitelisted`（true／false）。
-//   · 過濾：bot 發的、webhook 發的（⛔ 否則 Outbound 送出去的會被收回來，無限迴圈）、空內容沒附件的 —— 逐筆記原因。
+//   · 過濾：**本機登記的 webhook** 發的（⛔ 那是自己 Outbound 送出去的，收回來就是無限迴圈）、bot 發的、空內容沒附件的 —— 逐筆記原因。
+//     本機 webhook 設定讀不了 ⇒ webhook 訊息一律當成自己的丟掉（寧可漏收同伴，⛔ 不冒回收自己的險）。
+//   · 同伴 Senate（別台的 webhook）發的照收：sender_id=`discord:<webhook id>`、顯示名＝它送出時的 username（不加白名單後綴），
+//     內文第一行它那邊的標頭（`**`房間`** · seq N · 時間`）拿掉，改記 meta `peer_room`／`peer_seq`；meta `discord_peer=true`、`discord_webhook_id`。
 //   · 白名單**不擋人，只標記**（Tim 2026-09-30）：白名單外的照收，顯示名後綴「（白名單外）」＋ meta `discord_whitelisted=false`。
 //     ⇒ 標在顯示名上是刻意的：catchup／query／酒館頁／inbox 都印顯示名，**一個點就全部看得到**（⛔ 不在四個顯示端各抄一份判準）；
 //        也讓「暱稱取成 Tim 的非白名單使用者」一眼可辨。
@@ -24,6 +27,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using SCP.Core.Json;
 using SCP.Core.Market;
 using SCP.Core.Tavern;
@@ -172,6 +176,30 @@ namespace SCP.Core.Discord
             return r;
         }
 
+        /// <summary>
+        /// 本機登記過的 webhook id（含停用的 —— 停用前送出去的訊息一樣是自己的）。
+        /// 設定檔在但讀不了 ⇒ 回 false，呼叫端要把 webhook 訊息當成自己的。
+        /// </summary>
+        public static bool TryOwnWebhookIds(string iDataRoot, out HashSet<string> oIds)
+        {
+            SCP_DiscordConfig c = SCP_DiscordConfigStore.Load(iDataRoot);
+            oIds = new HashSet<string>(c.Webhooks.Select(w => w.Id).Where(id => id.Length > 0), StringComparer.Ordinal);
+            return c.Error.Length == 0;
+        }
+
+        static readonly Regex s_PeerHeader = new Regex(@"^\*\*`(?<room>[^`]+)`\*\* · seq (?<seq>\d+) · [^\n]*(\n|$)", RegexOptions.CultureInvariant);
+
+        /// <summary>同伴 Senate 的 Outbound 在第一行放 `**`房間`** · seq N · 時間`（`SCP_DiscordOutbound.BuildPayloads`）⇒ 拿掉並回報房間與 seq。</summary>
+        public static string StripPeerHeader(string iContent, out string oRoom, out string oSeq)
+        {
+            oRoom = ""; oSeq = "";
+            Match m = s_PeerHeader.Match(iContent ?? "");
+            if (!m.Success) return iContent ?? "";
+            oRoom = m.Groups["room"].Value;
+            oSeq = m.Groups["seq"].Value;
+            return iContent!.Substring(m.Length).Trim();
+        }
+
         /// <summary>一則 Discord 訊息 ⇒ 酒館訊息；不收的回原因（<paramref name="oItem"/>＝null）。</summary>
         public static string Convert(string iDataRoot, string iRepoRoot, SCP_DiscordRoute iRoute, SCP_DiscordWhitelist iWhitelist,
                                      SCP_JsonData iMsg, out SCP_DiscordInboundItem? oItem, bool iDownload = true)
@@ -180,8 +208,16 @@ namespace SCP.Core.Discord
             if (!iMsg.IsObject) return "malformed";
             SCP_JsonData aAuthor = iMsg["author"];
             if (!aAuthor.IsObject) return "no-author";
-            if (aAuthor.GetBool("bot", false)) return "bot-author";
-            if (iMsg.GetString("webhook_id", "").Length > 0) return "webhook-msg";   // ⛔ 我們自己 Outbound 送出去的
+            string aWebhookId = iMsg.GetString("webhook_id", "");
+            bool aPeer = false;
+            if (aWebhookId.Length > 0)
+            {
+                // ⛔ 本機 Outbound 送出去的不收回來；別台 Senate 的 webhook ＝ 同伴，照收（webhook 的作者也帶 bot ⇒ 先判 webhook）
+                if (!TryOwnWebhookIds(iDataRoot, out HashSet<string> aOwn)) return "webhook-msg(本機 webhook 設定讀不了 ⇒ 當成自己的)";
+                if (aOwn.Contains(aWebhookId)) return "own-webhook";
+                aPeer = true;
+            }
+            else if (aAuthor.GetBool("bot", false)) return "bot-author";
             string aUid = aAuthor.GetString("id", "");
             if (aUid.Length == 0) return "no-author-id";
             SCP_DiscordWhitelistUser? aWl = iWhitelist.Users.FirstOrDefault(u => u.UserId == aUid);
@@ -202,12 +238,16 @@ namespace SCP.Core.Discord
             }
             int aSaved = aAtts.Count(a => a.Ref != null);
 
+            string aPeerRoom = "", aPeerSeq = "";
+            if (aPeer) aContent = StripPeerHeader(aContent, out aPeerRoom, out aPeerSeq);
+
             string aDisplay = iMsg["member"].GetString("nick", "");
             if (aDisplay.Length == 0) aDisplay = aAuthor.GetString("global_name", "");
             if (aDisplay.Length == 0) aDisplay = aAuthor.GetString("username", "");
             if (aDisplay.Length == 0) aDisplay = aUid;
             if (aWl != null && aWl.DisplayName.Length > 0) aDisplay = aWl.DisplayName;
-            if (aWl == null) aDisplay += NotWhitelistedSuffix;
+            if (aPeer) aDisplay = aAuthor.GetString("username", aUid);
+            else if (aWl == null) aDisplay += NotWhitelistedSuffix;
 
             var aMeta = SCP_JsonData.NewObject();
             aMeta.Set("source", "discord");
@@ -217,6 +257,13 @@ namespace SCP.Core.Discord
             if (iRoute.Label.Length > 0) aMeta.Set("channel_label", iRoute.Label);
             aMeta.Set("source_class", iRoute.SourceClass);
             aMeta.Set("discord_whitelisted", aWl != null ? "true" : "false");
+            if (aPeer)
+            {
+                aMeta.Set("discord_peer", "true");
+                aMeta.Set("discord_webhook_id", aWebhookId);
+                if (aPeerRoom.Length > 0) aMeta.Set("peer_room", aPeerRoom);
+                if (aPeerSeq.Length > 0) aMeta.Set("peer_seq", aPeerSeq);
+            }
             aMeta.Set("relay", "senate");
             if (aWl != null && aWl.Profile.Length > 0) aMeta.Set("discord_user_profile", aWl.Profile);
             if (aAtts.Count > 0)

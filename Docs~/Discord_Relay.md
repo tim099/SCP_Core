@@ -32,6 +32,10 @@ target_audience: [AI_Agent, Tools_Maintainer]
 | 外部中繼進來的訊息（`meta.source` 以 discord／line／telegram／webhook 開頭，或 `sender_id` 以 `discord:` 開頭） | ⛔ 不送（不回送） |
 | 其餘 | 送到該分類綁的**每一條**啟用中 webhook |
 
+**兩台 Senate 接同一組頻道**：各自登記自己的 webhook。Inbound 只丟**本機登記過的** webhook（含停用的）發的訊息 ⇒ 自己送出去的不會收回來；
+別台的 webhook 照收（`sender_id=discord:<webhook id>`、顯示名＝它送出時的 username，標頭行拆成 meta `peer_room`／`peer_seq`，`discord_peer=true`）。
+收進來的帶 `meta.source=discord` ⇒ 本機 Outbound 不再回送。本機 webhook 設定讀不了時，webhook 訊息一律丟。
+
 **@ 誰會被通知**：所有 payload 都帶 `allowed_mentions.parse = []` ⇒ ⛔ 永遠不解析 @everyone／@here／身分組。
 
 | 送出方式 | 內文的 `@名字` |
