@@ -60,11 +60,17 @@ namespace SCP.Core.Sculpture
         public string note = "", persona = "", created_at = "";
         /// <summary>給下游認部件的 鍵 → 字串或數字（TASK-0517，<see cref="SCP_SculptMeta"/>）。⚠ 對映器不碰它：由 ReadModels／SaveModels 自己讀寫。</summary>
         [SCP_Ignore] public SortedDictionary<string, SCP_JsonData> meta = SCP_SculptMeta.New();
+        /// <summary>
+        /// 替換色（TASK-0584）：舊色:新色,…（調色盤 index，格式與規則同關聯的 recolor —— <see cref="SCP_SculptLinks.NormalizeRecolor"/>）；空 ＝ 不換。
+        /// 換的是**材質色**：材質的 Kd 正好是某個調色盤色（作品來源的快取一律是）⇒ 照表換成新色的 RGB；不是調色盤色的材質 ⇒ 表外、不動。
+        /// ⚠ 對映器不碰它（同 meta）：空的不寫 ⇒ 沒用到的 models.json 逐位元組不變；用到就寫 schema 3。
+        /// </summary>
+        [SCP_Ignore] public string recolor = "";
     }
 
     public sealed class SCP_SculptModelFile
     {
-        /// <summary>1；有任何一個模型用到 meta ⇒ 2（<see cref="SCP_SculptModels.SchemaWithMeta"/>）。</summary>
+        /// <summary>1；有任何一個模型用到 meta ⇒ 2（<see cref="SCP_SculptModels.SchemaWithMeta"/>）；用到 recolor ⇒ 3（<see cref="SCP_SculptModels.SchemaWithRecolor"/>）。</summary>
         public int schema = 1;
         public List<SCP_SculptModel> models = new List<SCP_SculptModel>();
     }
@@ -99,6 +105,11 @@ namespace SCP.Core.Sculpture
         public double[] Normals = new double[0];
         /// <summary>每頂點 RGB。</summary>
         public byte[] Colors = new byte[0];
+        /// <summary>
+        /// 換色之前的每頂點 RGB（TASK-0584）：有效替換表真的換到東西才有，否則 null（＝ 跟 <see cref="Colors"/> 一樣）。
+        /// .vxk 照它去重網格（換色的擺放跟原色共用一份），換過的色另外寫在擺放上（<see cref="SCP_SculptVxk.Models"/>）。
+        /// </summary>
+        public byte[]? BaseColors;
         /// <summary>每 3 個一個三角形。</summary>
         public int[] Triangles = new int[0];
         public int PointCount => Points.Length / 3;
@@ -130,6 +141,14 @@ namespace SCP.Core.Sculpture
         /// <summary>換到組裝件之後的外框（有讀網格才有）。</summary>
         public double[]? Min, Max;
         public SCP_SculptModelGeom? Geom;
+        /// <summary>
+        /// 替換表（TASK-0584；256 格、index ＝ 舊色）：模型自己的 recolor（<see cref="SCP_SculptModels.EffectiveRecolor"/>；所在關聯的 recolor 不套到模型上）。
+        /// 沒換 ⇒ null。<see cref="RecolorKey"/> ＝ 只列真的有換的（舊:新，依舊色）。
+        /// </summary>
+        public int[]? Recolor;
+        public string RecolorKey = "";
+        /// <summary>有讀網格時：材質色真的被換到的材質有幾種（有表卻是 0 ⇒ 表裡的舊色這個模型一個都沒有）。</summary>
+        public int RecolorHits;
     }
 
     /// <summary>觀測時選哪些模型：None ＝ 都不畫（models=0）；Hide ＝ 這幾個（模型路徑）不畫。只管畫不畫 —— 綁在上面的繩照樣在。</summary>
@@ -243,6 +262,11 @@ namespace SCP.Core.Sculpture
         /// 舊版只認 schema 1 ⇒ 升號讓它大聲讀不了；沒用 meta 的檔維持 1。
         /// </summary>
         public const int SchemaWithMeta = 2;
+        /// <summary>
+        /// 有替換色（recolor）的 models.json 寫這個 schema（TASK-0584；有沒有 meta 都一樣）。同 <see cref="SchemaWithMeta"/> 的理由：
+        /// 認得 2 的舊版沒有 recolor 成員 ⇒ 會默默丟掉 ⇒ 換色悄悄失效、畫出原色，寫回去就清光 ⇒ 再升一號讓它大聲讀不了。
+        /// </summary>
+        public const int SchemaWithRecolor = 3;
 
         // ───────────────────────── 讀寫 ─────────────────────────
 
@@ -260,12 +284,23 @@ namespace SCP.Core.Sculpture
                 // meta（[SCP_Ignore]，對映器不碰）：照順序對回每一筆
                 SCP_JsonData aList = aRoot["models"];
                 for (int i = 0; i < aOut.models.Count && aList.IsArray && i < aList.Count; i++)
+                {
                     if (SCP_SculptMeta.ReadFrom(aList[i]["meta"], aOut.models[i].meta) is string aMetaBad)
                         throw new InvalidOperationException("模型 `" + aOut.models[i].name + "` 的 " + aMetaBad);
+                    // recolor（[SCP_Ignore]，同 meta）：沒有 ⇒ 不換；有就要是字串（⛔ 別的形狀不猜）
+                    SCP_JsonData aRe = aList[i]["recolor"];
+                    if (aRe.Exists && !aRe.IsNull)
+                    {
+                        if (!aRe.IsString) throw new InvalidOperationException("模型 `" + aOut.models[i].name + "` 的 recolor 要是字串");
+                        aOut.models[i].recolor = aRe.AsString();
+                    }
+                }
             }
             catch (Exception e) { throw new InvalidOperationException("models.json 讀不了（" + aFile + "：" + e.Message + "）—— ⛔ 不當成沒有，修好再用"); }
-            if (aOut.schema != 1 && aOut.schema != SchemaWithMeta) throw new InvalidOperationException("models.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
+            if (aOut.schema != 1 && aOut.schema != SchemaWithMeta && aOut.schema != SchemaWithRecolor) throw new InvalidOperationException("models.json 讀不了（" + aFile + "：schema=" + aOut.schema + "）");
             if (aOut.schema == 1 && aOut.models.Exists(m => m.meta.Count > 0)) throw new InvalidOperationException("models.json 讀不了（" + aFile + "：有 meta 卻是 schema 1 —— 手改的檔？）");
+            if (aOut.schema < SchemaWithRecolor && aOut.models.Exists(m => m.recolor.Length > 0))
+                throw new InvalidOperationException("models.json 讀不了（" + aFile + "：有 recolor 卻是 schema " + aOut.schema + " —— 手改的檔？）");
             var aNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var m in aOut.models)
             {
@@ -277,13 +312,18 @@ namespace SCP.Core.Sculpture
 
         public static void SaveModels(SCP_SculptPaths iPaths, SCP_SculptModelFile iFile)
         {
-            iFile.schema = iFile.models.Exists(m => m.meta.Count > 0) ? SchemaWithMeta : 1;
+            iFile.schema = iFile.models.Exists(m => m.recolor.Length > 0) ? SchemaWithRecolor
+                         : iFile.models.Exists(m => m.meta.Count > 0) ? SchemaWithMeta : 1;
             string aPath = iPaths.ModelsFile, aTmp = aPath + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
             try
             {
                 SCP_JsonData aRoot = SCP_JsonMapper.ToJson(iFile);
                 SCP_JsonData aList = aRoot["models"];
-                for (int i = 0; i < iFile.models.Count; i++) SCP_SculptMeta.WriteTo(aList[i], iFile.models[i].meta);
+                for (int i = 0; i < iFile.models.Count; i++)
+                {
+                    SCP_SculptMeta.WriteTo(aList[i], iFile.models[i].meta);
+                    if (iFile.models[i].recolor.Length > 0) aList[i].Set("recolor", iFile.models[i].recolor);
+                }
                 File.WriteAllText(aTmp, SCP_JsonWriter.Write(aRoot, true) + "\n", new UTF8Encoding(false));
                 SCP.Core.Io.SCP_SharedFile.Replace(aTmp, aPath);
             }
@@ -315,7 +355,86 @@ namespace SCP.Core.Sculpture
             foreach (double s in m.scale) if (s <= 0 || s > MaxScale) return "scale 每軸要在 (0, " + MaxScale + "]（要翻面用 mirror）";
             if (CheckMirror(m.mirror) is string aMirBad) return aMirBad;
             if (m.color.Length > 0 && SCP_SculptRopes.TryParseColor(m.color, out _, out _, out _, out string aNorm) is string aColorBad) return aColorBad;
+            if ((m.recolor ?? "").Length > 0)
+            {
+                if (SCP_SculptLinks.NormalizeRecolor(m.recolor!, out string aNormRe, out _) is string aBadRe) return aBadRe;
+                if (aNormRe != m.recolor) return "recolor 不是正規化的寫法（`" + m.recolor + "`，應為 `" + aNormRe + "`）—— 手改的檔？";
+                if (m.color.Length > 0) return "color 與 recolor 不能同時給（color 已經把整個模型換成一個色 ⇒ 要換色直接改 color）";
+            }
             return null;
+        }
+
+        // ───────────────────────── 替換色（TASK-0584）─────────────────────────
+
+        static readonly Dictionary<int, int> s_PaletteOfRgb = BuildPaletteOfRgb();
+
+        static Dictionary<int, int> BuildPaletteOfRgb()
+        {
+            var d = new Dictionary<int, int>();
+            for (int i = 1; i < 256; i++)
+            {
+                SCP.Core.Canvas.SCP_CanvasPalette.IndexToRgb(i, out byte r, out byte g, out byte b);
+                d[(r << 16) | (g << 8) | b] = i;   // rgb332：1..255 各一個 RGB（一對一）
+            }
+            return d;
+        }
+
+        /// <summary>不建幾何、只數：這個網格（照 <paramref name="iColorOverride"/>）有幾種材質色會被 <paramref name="iRecolor"/> 換到（同 <see cref="BuildGeom(string, SCP_SculptObjMesh, double[], string, int[], out int)"/> 的 oHits）。</summary>
+        public static int RecolorHitsOf(SCP_SculptObjMesh iMesh, string iColorOverride, int[]? iRecolor)
+        {
+            if (iRecolor == null) return 0;
+            var aCols = new HashSet<int>();
+            if (iColorOverride.Length > 0 && SCP_SculptRopes.TryParseColor(iColorOverride, out byte or, out byte og, out byte ob, out _) == null) aCols.Add((or << 16) | (og << 8) | ob);
+            else
+            {
+                SCP_SculptRopes.TryParseColor(DefaultColor, out byte dr, out byte dg, out byte db, out _);
+                var aUsed = new HashSet<int>(iMesh.TriMaterial);
+                foreach (int mat in aUsed)
+                {
+                    byte[] c = mat >= 0 && iMesh.MaterialColors[mat] != null ? iMesh.MaterialColors[mat]! : new[] { dr, dg, db };
+                    aCols.Add((c[0] << 16) | (c[1] << 8) | c[2]);
+                }
+            }
+            int n = 0;
+            foreach (int k in aCols) { int i = PaletteIndexOf((byte)(k >> 16), (byte)(k >> 8), (byte)k); if (i > 0 && iRecolor[i] != i) n++; }
+            return n;
+        }
+
+        /// <summary>這個 RGB 是調色盤的第幾色（1..255）；不是調色盤色 ⇒ 0。</summary>
+        public static int PaletteIndexOf(byte r, byte g, byte b) => s_PaletteOfRgb.TryGetValue((r << 16) | (g << 8) | b, out int i) ? i : 0;
+
+        /// <summary>有效替換表：c ⇒ 外層表(內層表(c))。<paramref name="iOuter"/> 不換 ⇒ 原樣回 <paramref name="iInner"/>。表是 256 格、index ＝ 舊色。</summary>
+        public static int[]? ComposeRecolor(int[]? iInner, string iOuter)
+        {
+            SCP_SculptLinks.NormalizeRecolor(iOuter ?? "", out _, out Dictionary<int, int>? aOuter);   // Read 已驗過格式
+            if (aOuter == null) return iInner;
+            var aOut = new int[256];
+            for (int c = 0; c < 256; c++)
+            {
+                int m = iInner != null ? iInner[c] : c;
+                aOut[c] = aOuter.TryGetValue(m, out int t) ? t : m;
+            }
+            return aOut;
+        }
+
+        /// <summary>有效表的鍵：只列真的有換的（舊:新，依舊色）；全都沒換 ⇒ 空字串。</summary>
+        public static string RecolorKey(int[]? iMap)
+        {
+            if (iMap == null) return "";
+            var aParts = new List<string>();
+            for (int c = 1; c < 256; c++) if (iMap[c] != c) aParts.Add(c.ToString(CultureInfo.InvariantCulture) + ":" + iMap[c].ToString(CultureInfo.InvariantCulture));
+            return string.Join(",", aParts);
+        }
+
+        /// <summary>
+        /// 模型 <paramref name="m"/> 的替換表：只看它自己的 recolor（不換 ⇒ null）。
+        /// ⛔ 所在那一層關聯的 recolor **不**套到模型上（2026-10-21 量過：城鎮房屋的關聯換色是寫給牆與門窗的，子樹裡的燈籠、酒桶、貨箱也是作品來源的模型 ——
+        /// 套上去會讓剛好同色的道具一起換色，而且已經畫好的城鎮會悄悄變色）。要換模型的色 ⇒ 在模型上寫 recolor。
+        /// </summary>
+        public static int[]? EffectiveRecolor(SCP_SculptModel m)
+        {
+            int[]? aMap = ComposeRecolor(null, m.recolor ?? "");
+            return RecolorKey(aMap).Length > 0 ? aMap : null;
         }
 
         public static string? CheckMirror(string iMirror)
@@ -558,7 +677,28 @@ namespace SCP.Core.Sculpture
         /// 有 vn 的角共用頂點（同位置＋同法線＋同材質）；沒有 vn 的角用面法線（各自一份）。行列式 &lt; 0 ⇒ 繞序反過來。
         /// </summary>
         public static SCP_SculptModelGeom BuildGeom(string iPath, SCP_SculptObjMesh iMesh, double[] iRawToRoot, string iColorOverride)
+            => BuildGeom(iPath, iMesh, iRawToRoot, iColorOverride, null, out _);
+
+        /// <summary>
+        /// 同上，再照有效替換表 <paramref name="iRecolor"/>（<see cref="EffectiveRecolor"/>；null ＝ 不換）換材質色：材質色正好是調色盤第 c 色、表把 c 換成 c' ⇒ 畫 c' 的 RGB；
+        /// 不是調色盤色的材質不動。<paramref name="oHits"/> ＝ 真的被換到的材質色有幾種；有換到 ⇒ 幾何多帶 <see cref="SCP_SculptModelGeom.BaseColors"/>（換之前的色）。
+        /// </summary>
+        public static SCP_SculptModelGeom BuildGeom(string iPath, SCP_SculptObjMesh iMesh, double[] iRawToRoot, string iColorOverride, int[]? iRecolor, out int oHits)
         {
+            oHits = 0;
+            var aSwap = new Dictionary<(byte, byte, byte), byte[]>();   // 換之前的色 ⇒ 換之後（只放真的有換的）
+            byte[] Swap(byte[] c0)
+            {
+                if (iRecolor == null) return c0;
+                var k = (c0[0], c0[1], c0[2]);
+                if (aSwap.TryGetValue(k, out byte[]? hit)) return hit;
+                int i = PaletteIndexOf(c0[0], c0[1], c0[2]);
+                if (i <= 0 || iRecolor[i] == i) return c0;
+                SCP.Core.Canvas.SCP_CanvasPalette.IndexToRgb(iRecolor[i], out byte r, out byte g, out byte b);
+                aSwap[k] = new[] { r, g, b };
+                return aSwap[k];
+            }
+            var aBase = iRecolor != null ? new List<byte>() : null;
             double[] A = iRawToRoot;
             bool aFlip = Det(A) < 0;
             // 法線：線性部分的逆轉置（再單位化）
@@ -582,7 +722,8 @@ namespace SCP.Core.Sculpture
             for (int t = 0; t < tc; t++)
             {
                 int mat = iMesh.TriMaterial[t];
-                byte[] c = aOverride.Length > 0 ? aOverride : mat >= 0 && iMesh.MaterialColors[mat] != null ? iMesh.MaterialColors[mat]! : new[] { dr, dg, db };
+                byte[] c0 = aOverride.Length > 0 ? aOverride : mat >= 0 && iMesh.MaterialColors[mat] != null ? iMesh.MaterialColors[mat]! : new[] { dr, dg, db };
+                byte[] c = Swap(c0);
                 int i0 = iMesh.CornerPos[t * 3], i1 = iMesh.CornerPos[t * 3 + 1], i2 = iMesh.CornerPos[t * 3 + 2];
                 // 面法線（世界）：照原繞序算；翻面時繞序反過來，法線跟著反
                 double e1x = aWorld[i1 * 3] - aWorld[i0 * 3], e1y = aWorld[i1 * 3 + 1] - aWorld[i0 * 3 + 1], e1z = aWorld[i1 * 3 + 2] - aWorld[i0 * 3 + 2];
@@ -607,7 +748,7 @@ namespace SCP.Core.Sculpture
                         int aNew = aPts.Count / 3;
                         aPts.Add(aWorld[pi * 3]); aPts.Add(aWorld[pi * 3 + 1]); aPts.Add(aWorld[pi * 3 + 2]);
                         aNrm.Add(wx); aNrm.Add(wy); aNrm.Add(wz);
-                        aCol.Add(c[0]); aCol.Add(c[1]); aCol.Add(c[2]);
+                        aCol.Add(c[0]); aCol.Add(c[1]); aCol.Add(c[2]); aBase?.Add(c0[0]); aBase?.Add(c0[1]); aBase?.Add(c0[2]);
                         aShared[aKey] = aNew;
                         aCorner[k] = aNew;
                     }
@@ -616,14 +757,16 @@ namespace SCP.Core.Sculpture
                         int aNew = aPts.Count / 3;
                         aPts.Add(aWorld[pi * 3]); aPts.Add(aWorld[pi * 3 + 1]); aPts.Add(aWorld[pi * 3 + 2]);
                         aNrm.Add(fx); aNrm.Add(fy); aNrm.Add(fz);
-                        aCol.Add(c[0]); aCol.Add(c[1]); aCol.Add(c[2]);
+                        aCol.Add(c[0]); aCol.Add(c[1]); aCol.Add(c[2]); aBase?.Add(c0[0]); aBase?.Add(c0[1]); aBase?.Add(c0[2]);
                         aCorner[k] = aNew;
                     }
                 }
                 if (aFlip) { aTri.Add(aCorner[0]); aTri.Add(aCorner[2]); aTri.Add(aCorner[1]); }
                 else { aTri.Add(aCorner[0]); aTri.Add(aCorner[1]); aTri.Add(aCorner[2]); }
             }
-            return new SCP_SculptModelGeom { Path = iPath, Points = aPts.ToArray(), Normals = aNrm.ToArray(), Colors = aCol.ToArray(), Triangles = aTri.ToArray() };
+            oHits = aSwap.Count;
+            return new SCP_SculptModelGeom { Path = iPath, Points = aPts.ToArray(), Normals = aNrm.ToArray(), Colors = aCol.ToArray(), Triangles = aTri.ToArray(),
+                                             BaseColors = aSwap.Count > 0 ? aBase!.ToArray() : null };
         }
 
         static double[] InverseTranspose(double[] m)
@@ -782,6 +925,8 @@ namespace SCP.Core.Sculpture
                     string aFrameCopy = aFrame;
                     SCP_SculptModel aModel = m;
                     r.ToRoot = AffineOf(p => SCP_SculptRopes.ToRoot(aFrameCopy, ToWork(aModel, p), aIndex));
+                    r.Recolor = EffectiveRecolor(m);   // TASK-0584：只看模型自己的（關聯的 recolor 只換格子）
+                    r.RecolorKey = RecolorKey(r.Recolor);
                     if (!aFrameDrawn) { r.LinkHidden = true; aWhy.Add("模型所在的 `" + aFrame + "` 這次沒畫"); }
                     // 來源
                     string? aBroken = null;
@@ -821,11 +966,15 @@ namespace SCP.Core.Sculpture
                             catch (Exception e) when (e is InvalidDataException || e is IOException) { aMeshBad = e.Message; }
                         }
                         if (aMeshBad != null) { r.State = SCP_SculptModelReading.Broken; aWhy.Add(aMeshBad); }
-                        else if (!iBake) { if (r.Mesh!.Warnings.Count > 0) aWhy.Add("⚠ " + string.Join("；", r.Mesh.Warnings)); }
+                        else if (!iBake)
+                        {
+                            r.RecolorHits = RecolorHitsOf(r.Mesh!, m.color, r.Recolor);
+                            if (r.Mesh!.Warnings.Count > 0) aWhy.Add("⚠ " + string.Join("；", r.Mesh.Warnings));
+                        }
                         else
                         {
                             double[] aRawToRoot = Compose(r.ToRoot, r.Axes);
-                            r.Geom = BuildGeom(r.Path, r.Mesh!, aRawToRoot, m.color);
+                            r.Geom = BuildGeom(r.Path, r.Mesh!, aRawToRoot, m.color, r.Recolor, out r.RecolorHits);
                             r.Min = new[] { double.MaxValue, double.MaxValue, double.MaxValue };
                             r.Max = new[] { double.MinValue, double.MinValue, double.MinValue };
                             for (int i = 0; i < r.Geom.Points.Length; i++)

@@ -313,15 +313,19 @@ namespace SCP.Core.Sculpture
         /// <summary>
         /// 模型：每個模型一份網格（頂點相對外框最小角取整、0.01；三角形照 obj 的「同色一組」順序、反過來寫；每個三角形的材質 tmat → mats 的 Kd），
         /// 幾何＋材質完全一樣的只存一份（同 Python 拿整份網格當鍵）。回 (models, meshes)。
+        /// 換色（TASK-0584）：網格照**換之前**的色分組、去重（<see cref="SCP_SculptModelGeom.BaseColors"/>）⇒ 換色的擺放跟原色共用同一份網格；
+        /// 換過的色寫在擺放上的 <c>mats</c>（跟網格的 mats 一一對應、同長度，讀取器畫這個擺放時拿它代替網格的 mats）。沒換色的擺放沒有這一欄（位元組跟以前一樣）。
         /// </summary>
         public static (SCP_JsonData Models, SCP_JsonData Meshes) Models(List<SCP_SculptModelGeom> iModels)
         {
             var aModels = SCP_JsonData.NewArray();
             var aMeshes = SCP_JsonData.NewArray();
             var aKeys = new Dictionary<string, int>(StringComparer.Ordinal);
-            foreach (SCP_SculptModelGeom g in iModels)
+            foreach (SCP_SculptModelGeom g0 in iModels)
             {
-                if (g.Triangles.Length == 0) continue;
+                if (g0.Triangles.Length == 0) continue;
+                // 分組、去重一律照換之前的色（g）；換之後的色（g0.Colors）只用來寫擺放上的 mats
+                SCP_SculptModelGeom g = g0.BaseColors == null ? g0 : new SCP_SculptModelGeom { Path = g0.Path, Points = g0.Points, Normals = g0.Normals, Colors = g0.BaseColors, Triangles = g0.Triangles };
                 int n = g.PointCount;
                 var P = new double[n * 3];
                 for (int i = 0; i < n * 3; i++) P[i] = F4(g.Points[i]);
@@ -376,6 +380,22 @@ namespace SCP.Core.Sculpture
                 foreach (double d in mn) aBox.Add(Num(Math.Round(d, 2, MidpointRounding.ToEven)));
                 foreach (double d in mx) aBox.Add(Num(Math.Round(d, 2, MidpointRounding.ToEven)));
                 o.Set("bbox", aBox);
+                if (g0.BaseColors != null)
+                {
+                    // 換之前的色 ⇒ 換之後（頂點一一對應；同一個舊色一定換成同一個新色）
+                    var aTo = new Dictionary<(byte, byte, byte), (byte, byte, byte)>();
+                    for (int k = 0; k + 2 < g0.BaseColors.Length; k += 3)
+                        aTo[(g0.BaseColors[k], g0.BaseColors[k + 1], g0.BaseColors[k + 2])] = (g0.Colors[k], g0.Colors[k + 1], g0.Colors[k + 2]);
+                    var aOwn = SCP_JsonData.NewArray();
+                    bool aDiff = false;
+                    foreach (var m in aMats)
+                    {
+                        var t = aTo.TryGetValue(m, out var hit) ? hit : m;
+                        aDiff |= t != m;
+                        aOwn.Add(Rgb(t.Item1, t.Item2, t.Item3));
+                    }
+                    if (aDiff) o.Set("mats", aOwn);
+                }
                 aModels.Add(o);
             }
             return (aModels, aMeshes);

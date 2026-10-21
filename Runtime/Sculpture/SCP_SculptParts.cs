@@ -312,7 +312,7 @@ namespace SCP.Core.Sculpture
         }
 
         /// <summary>
-        /// 模型來源的 Key（＋軸向＋改色）：
+        /// 模型來源的 Key（＋軸向＋改色＋有效替換表）：
         /// file 來源 ⇒ 匯入時記下的 sha256＋位元組數 —— 同一個 obj 用兩個名字加進來會被複製成兩份檔，內容一樣就共用一份網格；
         ///   ⚠ 檔案現在的大小跟記錄對不上（被手改過）⇒ 退回「路徑＋長度＋修改時間」（⛔ 不拿舊的 sha 去認新的內容）。
         /// work 來源 ⇒ 快取檔（檔名已含來源作品整條相依鏈的 key）＋長度＋修改時間。
@@ -323,7 +323,7 @@ namespace SCP.Core.Sculpture
             long aLen = fi.Exists ? fi.Length : -1, aTicks = fi.Exists ? fi.LastWriteTimeUtc.Ticks : 0;
             var a = new List<string>();
             foreach (double d in r.Axes) a.Add(d.ToString("R", CultureInfo.InvariantCulture));
-            string aTail = "|" + string.Join(",", a) + "|" + (r.Model.color ?? "");
+            string aTail = "|" + string.Join(",", a) + "|" + (r.Model.color ?? "") + (r.RecolorKey.Length > 0 ? "|recolor:" + r.RecolorKey : "");   // 換色（TASK-0584）：有效表不同各一份
             if (r.Model.source == SCP_SculptModels.SourceFile && r.Model.sha256.Length > 0 && r.Model.bytes == aLen)
                 return "model:sha:" + r.Model.sha256 + "|" + aLen + aTail;
             return "model:" + Path.GetFullPath(r.ObjPath).Replace('\\', '/') + "|" + aLen + "|" + aTicks + aTail;
@@ -335,7 +335,7 @@ namespace SCP.Core.Sculpture
             lock (s_GeomLock) { if (s_Geoms.TryGetValue(iKey, out SCP_SculptModelGeom? aHit)) return aHit; }
             double[] A = r.Axes;
             var aAxes = new double[] { A[0], A[1], A[2], 0, A[3], A[4], A[5], 0, A[6], A[7], A[8], 0 };
-            SCP_SculptModelGeom g = SCP_SculptModels.BuildGeom(Path.GetFileName(r.ObjPath), r.Mesh!, aAxes, r.Model.color ?? "");
+            SCP_SculptModelGeom g = SCP_SculptModels.BuildGeom(Path.GetFileName(r.ObjPath), r.Mesh!, aAxes, r.Model.color ?? "", r.Recolor, out _);
             lock (s_GeomLock)
             {
                 if (s_Geoms.Count >= MaxCachedGeoms) s_Geoms.Clear();
