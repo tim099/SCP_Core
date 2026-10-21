@@ -8,7 +8,7 @@
 //
 // 🔴 **射程，先說**：
 //   ⛔ 本支反射的是 **`senate.exe` 這個 process 已載入的組件**（`Senate.Core` / `SCP_Core` / BCL）——
-//   在這裡打 `UnityEditor.*` 一定找不到，而那**不是 bug**（要在 Unity Editor 裡跑 C# 走 Unity CLI 的 `eval`）。
+//   其他組件的型別在這裡一定找不到，而那**不是 bug**。
 //
 // @doc-sync: <Senate>/Docs/API/Cli_Reference.md（`cmd` 節「反射呼叫本 process 的成員：invoke」＋ exit code 表下方那段 5 vs 70）
 //

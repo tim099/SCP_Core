@@ -43,7 +43,7 @@ namespace SCP.Core.Cmd
             + "   **不用進場**：只新增檔案、沒動到任何既有的檔（新檔沒有人會跟你撞）。\n"
             + "   ⚠ 新增的檔要接進既有的檔（註冊、import、清單）⇒ 那就是改了既有的檔，要進場。\n"
             + "   📖 建置產物也要宣告、範圍重疊就開 worktree、找不到工程時怎麼退場 ⇒ 文件 `Coding`。\n"
-            + "退場閘由宿主注入；Senate 依 scope 每條施工路徑找工程、各自驗編譯（.NET／Unity CLI）。\n"
+            + "退場閘由宿主注入；Senate 依 scope 每條施工路徑找工程、各自跑 `dotnet build` 驗編譯；找不到 .NET 工程就擋下。\n"
             + "⭐ 全域互斥由 `SCP_ActivitySessionStore.TryStart` 那一層保證，本 Cmd 不自己判 ——\n"
             + "   自己判就是第三份判準，而它會跟前兩份不一致且**不報錯**。\n"
             + "📐 **施工範圍**（TASK-0201）：`op=start --arg scope=<絕對路徑>` 宣告這一場要動哪一塊，\n"
