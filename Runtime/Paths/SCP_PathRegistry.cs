@@ -10,7 +10,7 @@
 //   酒館 `_seq.txt`、任務 `_index.txt`、`_session` lock ——
 //   兩個資料根就是兩份序號、兩份計數、persona 被切成兩半，而**沒有任何一層會喊**。
 //   ⇒ 「有兩個啟用專案」在本層是**解析錯誤**，不是「替你挑一個」。
-//   📌 資料根在 Valhalla（TASK-0390）。
+//   📌 資料根在 Valhalla（TASK-0390）；`auto` ＝ 宿主自帶的那一份（`<宿主 repo 根>/Valhalla` submodule，Valhalla 的 `Senate` 分支）。
 //
 // ⚠ Stored / Derived 的分野是本檔的核心：
 //   🩸 現場（2026-08-31）：`sessionDir` 曾經可填（`auto` ＝ 從**信件庫根**往上找 `_session`），
@@ -92,8 +92,11 @@ namespace SCP.Core.Paths
 
         [SCP_PathInfo("AgentCommands 資料根",
             "**Global —— 只有一組**（Tim 2026-08-31）。酒館 seq／任務單號／session lock 全都假設只有一棵樹。"
-            + " 存 senate.local.json，⛔ **不支援 auto**：資料根要明說。")]
+            + " 存 senate.local.json。`auto`（或空白）＝ `<宿主 repo 根>/Valhalla` —— 宿主自帶的最小資料樹"
+            + "（submodule，Valhalla 的 `Senate` 分支：只有最低需求的設定檔、persona 只有 Template）。"
+            + " 要接既有的資料樹就填它的絕對路徑。")]
         [SCP_PathStored("agentCommandsRoot", SCP_PathScope.Global)]
+        [SCP_PathAuto(SCP_PathId.HostRepoRoot, "Valhalla")]
         AgentCommandsRoot,
 
         [SCP_PathInfo("persona 信件庫根",
