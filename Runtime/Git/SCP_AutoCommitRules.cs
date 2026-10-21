@@ -84,11 +84,24 @@ namespace SCP.Core.Git
                 Message = "chore(bank): sync new-bank accounts & ledger (auto)",
                 DefaultOn = true,
             },
+            // 沒有自己 .git、直接住在本層的信件夾（crest-001、apex-two、pinnacle、tavern-keeper…）：去掉信件夾前綴後照**信件庫那一張表**判 ——
+            //   機器檔收在這一群，親筆檔（wakes/、rests/、sketchbook/<x>.md、longterm/、opinions/…）落 __other、永不自動收。
+            // 🩸 TASK-0775（2026-10-21）：這種信件夾以前被下面 runtime 的 `ChatTavern/` 前綴整個吃掉 ⇒ crest-001 的收尾信、小歇信、畫像
+            //   跟游標一起進了 `chore(runtime): sync agent runtime state (auto)`（Valhalla bf0fc6d06），沒有 trailer、沒有公告。
+            new SCP_AutoCommitGroupDef
+            {
+                Key = "letters_inline",
+                Label = "信件夾的機器檔（信件夾沒有自己的 repo、住在本層；照信件庫的規則，⛔ 不含親筆）",
+                Match = IsInlineLetterMachine,
+                Message = "[data] 收本層信件夾的機器檔（照信件庫的規則；⛔ 不含親筆）(auto)",
+                DefaultOn = true,
+            },
             new SCP_AutoCommitGroupDef
             {
                 Key = "runtime",
                 Label = "Agent runtime state（cursor / bartender / persona / canvas…）",
-                Match = p => p.StartsWith("ChatTavern/", StringComparison.Ordinal)
+                // ⚠ 本層的信件夾（InlineLetterPath）不收：機器檔上面那一群收了，親筆檔要落 __other（TASK-0775）
+                Match = p => (p.StartsWith("ChatTavern/", StringComparison.Ordinal) && InlineLetterPath(p) == null)
                              || p.StartsWith("AwakenInit/", StringComparison.Ordinal)
                              || p.StartsWith("Canvas/", StringComparison.Ordinal)
                              || p.StartsWith("Inbox/", StringComparison.Ordinal),
@@ -264,6 +277,34 @@ namespace SCP.Core.Git
                 DefaultOn = true,
             },
         };
+
+        /// <summary>本層裡信件夾的根（專案慣例，跟兩張寫死的表同一級）。</summary>
+        public const string InlineLettersPrefix = "ChatTavern/baton/letters/";
+
+        /// <summary>
+        /// 本層（AgentCommands／資料根）裡、**沒有自己 .git 的信件夾**底下的檔 ⇒ 信件夾裡的相對路徑（拿去照 PersonaGroupDefs 判）；不是 ⇒ null。
+        /// <para>不算信件夾的：直接放在 letters/ 底下的檔、底線開頭的系統夾（`_peek/`、`_unassigned/`）—— 照舊 runtime。
+        /// 有自己 .git 的信件夾在本層只會以 submodule pointer／巢狀 repo 出現，走 __subptr，輪不到這裡。</para>
+        /// </summary>
+        public static string? InlineLetterPath(string iPath)
+        {
+            if (!iPath.StartsWith(InlineLettersPrefix, StringComparison.Ordinal)) return null;
+            int aStart = InlineLettersPrefix.Length;
+            int aSlash = iPath.IndexOf('/', aStart);
+            if (aSlash <= aStart || aSlash == iPath.Length - 1) return null;
+            if (iPath[aStart] == '_') return null;
+            return iPath.Substring(aSlash + 1);
+        }
+
+        /// <summary>本層信件夾裡的**機器檔**（照 PersonaGroupDefs 命中某一群）。親筆檔 ⇒ false ⇒ 落 __other。</summary>
+        public static bool IsInlineLetterMachine(string iPath)
+        {
+            string? aIn = InlineLetterPath(iPath);
+            if (aIn == null) return false;
+            foreach (var aDef in PersonaGroupDefs)
+                if (aDef.Match(aIn)) return true;
+            return false;
+        }
 
         /// <summary>
         /// ephemeral —— 永遠不進候選（執行期瞬時檔：log / wait 旗標 / 臨時渲染 / DebugLogs / queue 瞬時檔）。

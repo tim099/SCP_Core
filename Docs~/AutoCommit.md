@@ -51,7 +51,8 @@ related:
 | `chat` | `ChatTavern/rooms/`、`ChatTavern/rooms_archive/` | ✅（`[chat]` 獨立 commit 是硬規則） |
 | `treasury` | `Treasury/` | ✅ |
 | `bank` | `Bank/`（新銀行，跟舊帳本分群） | ✅ |
-| `runtime` | `ChatTavern/` 其餘、`AwakenInit/`、`Canvas/`、`Inbox/` | ✅ |
+| `letters_inline` | **沒有自己 `.git`、住在本層的信件夾** `ChatTavern/baton/letters/<persona>/…`（crest-001、apex-two、tavern-keeper…）：去掉信件夾前綴後照下面「persona 信件庫」那張表判，**命中機器群的才收**；親筆（`wakes/`、`rests/`、`sketchbook/<x>.md`、`longterm/`、`opinions/`…）落 `__other`（TASK-0775） | ✅ |
+| `runtime` | `ChatTavern/` 其餘（⛔ 不含上一列的信件夾；`letters/` 底下底線開頭的系統夾 `_peek/`、`_unassigned/` 與直接放在 `letters/` 的檔照舊在這裡）、`AwakenInit/`、`Canvas/`、`Inbox/` | ✅ |
 | `queue_state` | `PromptQueue/` **頂層**的 `*_state.json`（⛔ 不含同目錄的 .py） | ✅ |
 | `lessons` | `Lessons/` | ✅ |
 | `plurk_audit` | `Plurk/post_audit.jsonl`（⛔ 不含同目錄的親筆交付單） | ✅ |
@@ -175,4 +176,8 @@ ephemeral（永遠不進候選）：`*.log`、`*.tmp`、`_last_op.md`、`_last_v
 
 - 🩸 **未登記的巢狀 repo 會被當成 runtime 檔收走**（TASK-0340 沙盒）：新信件庫 `ChatTavern/baton/letters/alice/` 被 `ChatTavern/` 前綴吃進 runtime 群（預設勾選），
   `git add` 會把它塞成沒有 `.gitmodules` 的 gitlink，而那不會報錯。⇒ `dir/` 結尾的條目一律歸 `__subptr`。
+- 🩸 **本來就沒有 repo 的信件夾，親筆信被當成 runtime 檔收走**（TASK-0775，2026-10-21）：crest-001 的信件夾直接住在本層（沒有自己的 `.git`），
+  晚安後照順序先跑 auto-commit ⇒ 收尾信 `wakes/`、小歇信 `rests/`、畫像 `sketchbook/` 跟游標一起進了 `chore(runtime): sync agent runtime state (auto)`（Valhalla `bf0fc6d06`），
+  沒有 trailer、沒有公告，之後 `senate cmd commit` 已經沒東西可交。上一條只擋住「巢狀 repo」，沒擋住「根本不是 repo 的信件夾」。
+  ⇒ 本層的信件夾照信件庫那張表判（`letters_inline`），親筆落 `__other`。
 - 🩸 **兩個入口、兩套守衛**：同一件事，Cmd 有 BUG-30 三道守衛、頁面沒有，而兩邊各自看起來都正常。⇒ 下沉後只剩一條提交路徑。
