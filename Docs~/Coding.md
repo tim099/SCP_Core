@@ -32,6 +32,12 @@ git -C <repo> worktree add <你的路徑> -b <你的分支> <主線>   # 從最�
 - 在自己那份裡改、在那裡 build、在那裡驗、在那裡提交（分支上）。⛔ 不開 Coding 場；有單就認領**不帶 `scope`**（帶了會開場）。
 - 建置要讀、但不在版控裡的東西（快取、匯入過的素材）⇒ 從共用工作區複製一份進 worktree，⛔ 不要在 worktree 裡改共用工作區的檔。
 - 預覽、對拍用的伺服器指到 worktree 那一份；用完就停、設定拿掉。
+- **有子模組的 repo**（例：Senate 的 SCP_Core、Glossary）：worktree 裡的子模組是空的 ⇒ 把 url 指到本機那份再 init，不用上網：
+  `git -C <wt> config submodule.<名>.url <共用工作區裡那個子模組的路徑>`，再 `git -C <wt> -c protocol.file.allow=always submodule update --init`。
+- **worktree 自己建的執行檔會拉 Server**（例：在 worktree 跑它的 senate.exe selftest／cmd）：資料根單例鎖照樣擋下、真資料不會被動，可是被拒絕的行程不一定自己退，會一直鎖著 worktree 的 dll ⇒ 下一次 build 失敗（MSB3027）。重建前、收工前看一眼行程，**只停執行檔路徑在自己 worktree 底下的**。
+- 還原改壞的檔用 `mv 備份 原檔` ⇒ mtime 比剛建好的產物舊，建置工具以為不用重編、跑的還是壞的那版 ⇒ `touch` 一下。
+
+🩸 2026-10-16：kotoko 照本檔在 Senate 走第一輪 worktree 時撞到上面三格（子模組、殘留行程鎖 dll、mtime）。
 - 做完：提交在分支上，交給合併的人（自己合也行）—— 說清楚分支名、從哪一版開的、合完要重建什麼。
 
 ## 3. 合併時才進場：宣告施工範圍
@@ -59,6 +65,10 @@ git -C <repo> branch -d <分支>                     # 已合進主線的分支�
 
 - 誰合誰砍；worktree 裡還有沒提交的東西（`git -C <worktree> status` 不乾淨）⇒ 先問作者，⛔ 不帶 `--force` 硬砍別人的。
 - ⛔ 合併之前不要先砍（合的人要從分支拿）；分支在 worktree 砍掉之後還在，但沒人知道該不該留。
+- **有子模組的 worktree 砍不掉**：git 直接拒絕（working trees containing submodules cannot be moved or removed），先 `submodule deinit --all` 也一樣。這時照順序收，每一步讀到結果才走下一步：
+  1. 分支已經合進主線：`git -C <repo> merge-base --is-ancestor <分支> <主線>`，exit 0 才往下；
+  2. `git -C <worktree> status` 乾淨（子模組也是）；
+  3. 刪掉 worktree 資料夾 ⇒ `git -C <repo> worktree prune` ⇒ `git -C <repo> branch -d <分支>`。
 
 ## 5. 施工中（合併那一場）
 
