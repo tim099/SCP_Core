@@ -156,10 +156,12 @@ namespace SCP.Core.Sculpture
                     string? aMaterial = iMats != null ? MetaStr(n.Link, SCP_SculptLinkComposer.MaterialKey) ?? iMaterial : null;
                     SCP_SculptSurface? aSurf = null;
                     string aSmKey = "";
-                    if (aRender == "smooth")
+                    SCP_SculptMaterials.Entry? aLook = null;
+                    bool aKnown = aMaterial != null && iMats!.TryLook(aMaterial, out aLook);   // 混合寫法照第一個成分（TASK-0860）
+                    if (aRender == "smooth" || (aRender == null && aKnown && aLook!.Smooth))   // 沒寫 render、材質表標 smooth ⇒ 也平滑（同遊戲 05_material.js；TASK-0860）
                     {
-                        float m = 0, r = 0.5f;
-                        if (aMaterial != null && !iMats!.TryGet(aMaterial, out m, out r)) Notes.Add("`" + n.Path + "` 的材質 `" + aMaterial + "` 材質表沒有 ⇒ 照不反光畫");
+                        float m = aKnown ? aLook!.Metal : 0, r = aKnown ? aLook!.Rough : 0.5f;
+                        if (aMaterial != null && !aKnown) Notes.Add("`" + n.Path + "` 的材質 `" + aMaterial + "` 材質表沒有 ⇒ 照不反光畫");
                         aSurf = SCP_SculptSurface.AllSmooth(m, r);
                         if (aMaterial != null) aSurf.MaterialCounts[aMaterial] = 1;
                         aSmKey = "|smooth:" + m.ToString("R", CultureInfo.InvariantCulture) + "," + r.ToString("R", CultureInfo.InvariantCulture);

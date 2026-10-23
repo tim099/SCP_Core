@@ -9,6 +9,9 @@
 //              ② 再跟周圍 3×3×3 同一面的格角平均一次（f ＝ 0.5）、夾回 ±0.5；
 //            · 周圍 8 格有一般格（不是平滑的實心）⇒ 釘在格角上 ⇒ 跟方塊的角對齊、不露縫。
 //          材質只畫在平滑面（跟遊戲一樣：方塊面不反光）。
+//          TASK-0860（Tim 2026-10-23「Senate中預覽雕刻 混合材質無法顯示為金屬的問題」）—— 兩條照遊戲（Blockside 05_material.js）：
+//            · 混合寫法 `iron*0.15`、`iron*0.5+oak*0.5`：外觀照**第一個成分**（同 matMix；成分 ＝ 表裡的 ID 或 air、比例 (0, 1]、加起來 ≤ 1、第一個不是 air，不合 ⇒ 表裡沒有）；
+//            · 材質表標 `smooth: true` 的材質（iron、boiler）⇒ 關聯只寫 material、沒寫 render 也平滑（同 05_material.js smAuto）；明寫 render=voxel 的照方塊。
 // 數值影響：沒有任何格要平滑 ⇒ 這支不被呼叫、方塊網格與著色結果逐位元不變（Surface ＝ null）。
 // 頂點格式：平滑網格每頂點 8 個 float 槽 —— 位置 3f、法線 3f、4ub（R,G,B,255）、4ub（金屬度,粗糙度,0,255）；GL 座標（世界 x, −y, z）。
 // 方言：C# 9 / netstandard2.1。
@@ -36,6 +39,8 @@ namespace SCP.Core.Sculpture
             public float Metal;
             /// <summary>0..1（越大高光越散）；沒寫 ＝ 0.5。</summary>
             public float Rough = 0.5f;
+            /// <summary>沒寫 render 的關聯也畫成平滑面（遊戲材質表的 smooth，TASK-0860）。</summary>
+            public bool Smooth;
         }
 
         public readonly SortedDictionary<string, Entry> List = new SortedDictionary<string, Entry>(StringComparer.Ordinal);
@@ -89,10 +94,13 @@ namespace SCP.Core.Sculpture
                             if (double.IsNaN(d) || d < 0 || d > 1) throw new InvalidDataException(Bad("`" + id + "`." + k + " 要在 0..1：" + d.ToString(CultureInfo.InvariantCulture)));
                             if (k == "metal") aE.Metal = (float)d; else aE.Rough = (float)d;
                             break;
+                        case "smooth":
+                            if (v.Type != SCP_JsonType.Bool) throw new InvalidDataException(Bad("`" + id + "`.smooth 要是 true／false"));
+                            aE.Smooth = v.AsBool(); break;
                         case "note":
                             break;
                         default:
-                            throw new InvalidDataException(Bad("`" + id + "` 不認得的鍵 `" + k + "`（只收 name、metal、rough、note）"));
+                            throw new InvalidDataException(Bad("`" + id + "` 不認得的鍵 `" + k + "`（只收 name、metal、rough、smooth、note）"));
                     }
                 }
                 t.List[id] = aE;
@@ -108,9 +116,39 @@ namespace SCP.Core.Sculpture
 
         public bool TryGet(string iId, out float oMetal, out float oRough)
         {
-            if (List.TryGetValue(iId, out Entry? e)) { oMetal = e.Metal; oRough = e.Rough; return true; }
+            if (TryLook(iId, out Entry? e)) { oMetal = e!.Metal; oRough = e.Rough; return true; }
             oMetal = 0; oRough = 0.5f; return false;
         }
+
+        /// <summary>
+        /// 材質 ID ⇒ 外觀（金屬度、粗糙度、smooth）：表裡的 ID 照表；混合寫法照第一個成分（TASK-0860，同 Blockside 05_material.js matMix／matPart）。
+        /// 不合（成分不在表裡、比例不在 (0, 1]、加起來 &gt; 1、第一個是 air）⇒ false。
+        /// </summary>
+        public bool TryLook(string iId, out Entry? oLook)
+        {
+            if (List.TryGetValue(iId, out oLook)) return true;
+            oLook = null;
+            if (iId.IndexOf('*') < 0 && iId.IndexOf('+') < 0) return false;
+            double aSum = 0;
+            string[] aParts = iId.Split('+');
+            for (int i = 0; i < aParts.Length; i++)
+            {
+                var m = s_Part.Match(aParts[i]);
+                if (!m.Success) return false;
+                double f = 1;
+                if (m.Groups[2].Success && !double.TryParse(m.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out f)) return false;
+                if (!(f > 0 && f <= 1)) return false;
+                string aBase = m.Groups[1].Value;
+                if (aBase == "air") { if (i == 0) return false; }
+                else if (!List.TryGetValue(aBase, out Entry? e)) return false;
+                else if (i == 0) oLook = e;
+                aSum += f;
+            }
+            if (aSum > 1 + 1e-9) { oLook = null; return false; }
+            return oLook != null;
+        }
+
+        static readonly System.Text.RegularExpressions.Regex s_Part = new System.Text.RegularExpressions.Regex(@"^([a-z][a-z0-9_]{0,31})(?:\*(\d*\.?\d+))?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     }
 
     /// <summary>
@@ -173,21 +211,26 @@ namespace SCP.Core.Sculpture
         /// <summary>
         /// 合併路徑（CLI view）：組裝器逐格記的 render／material（<see cref="SCP_SculptLinkComposer.LastRender"/>／LastMaterial）⇒ 這一份可見格的平滑面描述。
         /// 沒有任何可見格要平滑 ⇒ null（渲染器整條不走）。材質表沒有的 ID ⇒ 不反光、記進 <see cref="Unknown"/>。
+        /// 哪幾格平滑（TASK-0860，同 Blockside 05_material.js）：render=smooth；或沒寫 render、材質（混合的照第一個成分）在表裡標 smooth。render=voxel ⇒ 方塊。
         /// </summary>
         public static SCP_SculptSurface? FromCompose(IReadOnlyList<SCP_SculptVoxel> iVisible, Dictionary<long, string>? iRender, Dictionary<long, string>? iMaterial, SCP_SculptMaterials iMats)
         {
-            if (iRender == null || iRender.Count == 0) return null;
+            if ((iRender == null || iRender.Count == 0) && (iMaterial == null || iMaterial.Count == 0)) return null;
             var s = new SCP_SculptSurface();
             foreach (SCP_SculptVoxel v in iVisible)
             {
                 long k = Key(v.X, v.Y, v.Z);
-                string? aMat = null;
+                string? aMat = null, r = null;
                 if (iMaterial != null) iMaterial.TryGetValue(k, out aMat);
-                if (!iRender.TryGetValue(k, out string? r) || r != "smooth") { if (aMat != null) s.MaterialOnVoxel++; continue; }
+                if (iRender != null) iRender.TryGetValue(k, out r);
+                SCP_SculptMaterials.Entry? aLook = null;
+                bool aKnown = aMat != null && iMats.TryLook(aMat, out aLook);
+                bool aSmooth = r == "smooth" || (r == null && aKnown && aLook!.Smooth);
+                if (!aSmooth) { if (aMat != null) s.MaterialOnVoxel++; continue; }
                 s.Smooth.Add(k);
                 if (aMat == null) continue;
                 s.MaterialCounts[aMat] = s.MaterialCounts.TryGetValue(aMat, out int n) ? n + 1 : 1;
-                if (iMats.TryGet(aMat, out float m, out float ro)) { if (m > 0) s.Mat[k] = (m, ro); }
+                if (aKnown) { if (aLook!.Metal > 0) s.Mat[k] = (aLook.Metal, aLook.Rough); }
                 else s.Unknown.Add(aMat);
             }
             return s.Smooth.Count > 0 ? s : null;
