@@ -106,7 +106,7 @@ namespace SCP.Core.Tasks
             ["claim"] = new[] { "index", "role", "scope" },
             ["assign"] = new[] { "index", "target_persona", "role", "replace" },
             ["unassign"] = new[] { "index", "target_persona", "role" },
-            ["update"] = new[] { "index", "title", "description", "criteria", "status", "priority", "severity",
+            ["update"] = new[] { "index", "title", "type", "description", "criteria", "status", "priority", "severity",
                                  "milestone", "project", "memory_topic", "memory_archived_commit", "allow_shrink", "unset" },
             ["comment"] = new[] { "index", "body" },
             ["check"] = new[] { "index", "criteria_index", "expect_text" },
@@ -502,6 +502,16 @@ namespace SCP.Core.Tasks
             }
             SCP_TaskPriority? aPri = c.Trim("priority").Length > 0 ? ParseEnum(c, "priority", SCP_TaskPriority.normal) : (SCP_TaskPriority?)null;
             SCP_TaskSeverity? aSev = c.Trim("severity").Length > 0 ? ParseEnum(c, "severity", SCP_TaskSeverity.none) : (SCP_TaskSeverity?)null;
+            // 改種類（Tim 2026-10-24：舊的圖示單要改成 asset）。⛔ 改成 bug 不走這裡：bug 單的硬證只在 create 那一道閘收
+            SCP_TaskType? aType = null;
+            if (c.Trim("type").Length > 0)
+            {
+                var t = ParseEnum(c, "type", SCP_TaskType.feature);
+                if (t == SCP_TaskType.all) throw new SCP_TaskOpException("[Task] type=`all` 是篩選用的成員，不是任務種類");
+                if (t == SCP_TaskType.bug && e.type != SCP_TaskType.bug)
+                    throw new SCP_TaskOpException("[Task] 改成 bug 請另開 `op=create --arg type=bug`（要帶 evidence 硬證）—— update 沒有那道閘。");
+                aType = t;
+            }
             var aUnset = new List<string>();
             foreach (string aRawField in c.Trim("unset").Split(','))
             {
@@ -539,6 +549,9 @@ namespace SCP.Core.Tasks
                 }
                 if (aPri.HasValue) { aChanges.Add($"priority {m.priority} → {aPri.Value}"); m.priority = aPri.Value; }
                 if (aSev.HasValue) { aChanges.Add($"severity {m.severity} → {aSev.Value}"); m.severity = aSev.Value; }
+                // 種類一樣 ⇒ 不算變更（同 project）
+                if (aType.HasValue && m.type != aType.Value) { aChanges.Add($"type {m.type} → {aType.Value}"); m.type = aType.Value; }
+                else if (aType.HasValue) aUnsetNotes.Add($"`type` 本來就是 `{aType.Value}` ⇒ 沒有寫入");
                 string aTitle = c.Trim("title");
                 if (aTitle.Length > 0) { aChanges.Add("title 改寫"); m.title = aTitle; }
                 string aMilestone = c.Trim("milestone");
