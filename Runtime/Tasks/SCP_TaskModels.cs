@@ -26,6 +26,8 @@ namespace SCP.Core.Tasks
         subtask,
         bug,
         epic,
+        /// <summary>美術素材：要另外畫圖片、圖示這類素材的任務（Tim 2026-10-24）。加在最後 ⇒ 前面成員的序號不變。</summary>
+        asset,
     }
 
     public enum SCP_TaskPriority

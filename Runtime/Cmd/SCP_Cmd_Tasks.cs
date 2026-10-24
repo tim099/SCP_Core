@@ -51,7 +51,7 @@ namespace SCP.Core.Cmd
                 + "⛔ 認不得的值**不會靜默回 0 筆** —— 出聲並 exit 2（同 `senate ui --page` 的語意）"),
             new SCP_CmdArgSpec("type",
                 "只列這個種類。合法值＝`SCP_TaskType` 全體："
-                + "feature / improvement / refactor / spike / subtask / bug / epic，"
+                + "feature / improvement / refactor / spike / subtask / bug / epic / asset（美術素材），"
                 + "外加一個**篩選成員**：`all`（全部）。"
                 + "⛔ 認不得的值同 status：出聲並 exit 2，不回「0 張」。"
                 + "可與 status 同時給（兩個條件是 AND）"),
