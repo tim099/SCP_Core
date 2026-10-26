@@ -4,6 +4,7 @@
 //           路徑一律交給文件庫解析（根錨在宿主 repo）—— 呼叫端只給 skill 名。
 // 數值影響：純讀檔。
 // ⚠ **缺一塊就整份失敗**：宣告的文件不存在／撞名／章節找不到 ⇒ 回錯誤清單、**一個字的內容都不給**。
+//   ⚠ 只算**這個 skill 用到的**（TASK-0999）：文件庫裡別的名字撞名、不存在的根 ⇒ 警告（oWarnings），內容照給。
 //   印出「缺一塊的內容」當成功，是這支最不能有的失敗形狀 —— agent 會照著那份不完整的說明做事，而沒有一層會喊。
 // ⚠ 方言限制：C# 9 / netstandard2.1（Unity 那側也要編這份）。
 #nullable enable
@@ -29,9 +30,18 @@ namespace SCP.Core.Skills
         /// 任何一格失敗 ⇒ <paramref name="oParts"/> **清空**、錯誤逐條列在 <paramref name="oErrors"/>。
         /// </summary>
         public static bool TryCompose(string iSkillsRoot, string iSkill, out List<SCP_SkillPart> oParts, out List<string> oErrors)
+            => TryCompose(iSkillsRoot, iSkill, out oParts, out oErrors, out _);
+
+        /// <summary>
+        /// 同上，多回文件庫跟這個 skill **無關**的問題（<paramref name="oWarnings"/>：別的名字撞名、某個根不存在而用到的文件都找到了）——
+        /// 呼叫端要印出來（⛔ 不吞），但不擋（TASK-0999：Sirius 一份證據 README 撞名，以前讓所有人的所有 skill 一個字都印不出來）。
+        /// 跟這個 skill 有關的照舊整份失敗：用到的名字撞名 ⇒ 列出每一份的全名＋路徑（docs: 改寫成全名就解開）；用到的找不到 ⇒ 附上不存在的根（可能就是原因）。
+        /// </summary>
+        public static bool TryCompose(string iSkillsRoot, string iSkill, out List<SCP_SkillPart> oParts, out List<string> oErrors, out List<string> oWarnings)
         {
             oParts = new List<SCP_SkillPart>();
             oErrors = new List<string>();
+            oWarnings = new List<string>();
             string aFile = Path.Combine(iSkillsRoot, iSkill, SCP_SkillSource.SkillFileName);
             if (!File.Exists(aFile)) { oErrors.Add($"沒有這個 skill：`{iSkill}`（找的是 {aFile}）"); return false; }
 
@@ -39,18 +49,23 @@ namespace SCP.Core.Skills
             if (aRefs == null) { oErrors.Add($"`{iSkill}` 沒有宣告 `docs:` —— 它是鏡像模式的舊形狀，內容就在安裝出去的 SKILL.md 裡"); return false; }
             if (aRefs.Count == 0) { oErrors.Add($"`{iSkill}` 的 `docs:` 是空的 —— 宣告了零份文件"); return false; }
 
-            if (!SCP_DocStore.TryList(out List<SCP_DocEntry> aEntries, out List<string> aProblems, out string aListError))
+            if (!SCP_DocStore.TryList(out List<SCP_DocEntry> aEntries, out List<SCP_DocProblem> aProblems, out string aListError))
             {
                 oErrors.Add("文件庫查不了：" + aListError);
                 return false;
             }
-            foreach (string p in aProblems) oErrors.Add("文件庫有問題（清單不完整）：" + p);
+            var aMissingRoots = aProblems.FindAll(p => p.Kind == SCP_DocProblem.ProblemKind.RootMissing).ConvertAll(p => p.Text);
 
             foreach (SCP_SkillDocRef r in aRefs)
             {
                 List<SCP_DocEntry> aHits = SCP_DocStore.FindByName(aEntries, r.Doc);
-                if (aHits.Count == 0) { oErrors.Add($"`{r}`：沒有名叫 `{r.Doc}` 的文件"); continue; }
-                if (aHits.Count > 1) { oErrors.Add($"`{r}`：`{r.Doc}` 撞名 {aHits.Count} 份 —— 不替你挑"); continue; }
+                if (aHits.Count == 0) { oErrors.Add($"`{r}`：沒有名叫 `{r.Doc}` 的文件" + (aMissingRoots.Count > 0 ? "（⚠ " + string.Join("；", aMissingRoots) + "）" : "")); continue; }
+                if (aHits.Count > 1)
+                {
+                    oErrors.Add($"`{r}`：`{r.Doc}` 撞名 {aHits.Count} 份 —— 不替你挑；源檔的 docs: 改寫成其中一個全名（或改掉其中一份的檔名）：");
+                    foreach (string c in SCP_DocStore.ChoiceLines(aHits)) oErrors.Add("    " + c);
+                    continue;
+                }
                 string aBody = SCP_DocStore.ReadBody(aHits[0]).Replace("\r\n", "\n");
                 if (r.Section.Length > 0)
                 {
@@ -66,6 +81,8 @@ namespace SCP.Core.Skills
                 oParts.Add(new SCP_SkillPart { Ref = r, Doc = aHits[0], Body = aBody.Trim('\n') });
             }
             if (oErrors.Count > 0) { oParts.Clear(); return false; }
+            // 跟這個 skill 無關的（別的名字撞名、不存在的根而用到的都找到了）⇒ 警告，不擋（TASK-0999）
+            foreach (SCP_DocProblem p in aProblems) oWarnings.Add(p.Text);
             return true;
         }
 

@@ -83,7 +83,7 @@ namespace SCP.Core.Cmd
         static SCP_CmdResult Show(SCP_SkillRoots iRoots, string iName)
         {
             if (iName.Length == 0) return SCP_CmdResult.Fail(2, "✗ op=show 要 `--arg name=<skill 名>`（清單：" + SCP_CmdRegistry.Invoke("skill") + "）");
-            if (!SCP_SkillContent.TryCompose(iRoots.SkillsRoot, iName, out List<SCP_SkillPart> aParts, out List<string> aErrors))
+            if (!SCP_SkillContent.TryCompose(iRoots.SkillsRoot, iName, out List<SCP_SkillPart> aParts, out List<string> aErrors, out List<string> aWarnings))
             {
                 // ⛔ 一個字的內容都不給：照著半份說明做事比沒有說明更糟
                 var aFail = SCP_CmdResult.Fail(2, $"✗ skill `{iName}` 的內容組不出來（{aErrors.Count} 格）—— **這次沒有印任何內容，不要憑印象照做**");
@@ -93,6 +93,10 @@ namespace SCP.Core.Cmd
 
             var aResult = SCP_CmdResult.Success(
                 $"# 🧭 skill `{iName}` —— 由 {aParts.Count} 份文件組成（查詢當下現讀）", "");
+            // 文件庫裡跟這個 skill 無關的問題（別的名字撞名、不存在的根）⇒ 印在最前面、不擋（TASK-0999；印在最後的話 `| tail` 看不到）
+            foreach (string w in aWarnings) aResult.Lines.Add("⚠ 文件庫（跟這個 skill 無關，內容照樣完整）：" + w);
+            if (aWarnings.Count > 0) aResult.Lines.Add("");
+            aResult.AddValue("doc_warnings", aWarnings.Count.ToString());
             var aSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (SCP_SkillPart p in aParts)
             {

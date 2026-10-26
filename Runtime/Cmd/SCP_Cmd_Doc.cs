@@ -25,18 +25,20 @@ namespace SCP.Core.Cmd
 
         public override IReadOnlyList<SCP_CmdArgSpec> ArgSpecs => new[]
         {
-            new SCP_CmdArgSpec("op", "做什麼", iDefault: "list", iChoices: new[] { "list", "show", "search" }),
-            new SCP_CmdArgSpec("name", "op=show：文件名（檔名去掉 .md，不分大小寫）", iDefault: ""),
+            new SCP_CmdArgSpec("op", "做什麼（check ＝ 列出撞名、不存在的根，有 ⇒ exit 1；TASK-0999）", iDefault: "list", iChoices: new[] { "list", "show", "search", "check" }),
+            new SCP_CmdArgSpec("name", "op=show：文件名（檔名去掉 .md，不分大小寫）；撞名時用全名 `根/相對路徑`（例 blockside/README）指定一份", iDefault: ""),
             new SCP_CmdArgSpec("keyword", "op=search：關鍵字（不分大小寫、逐行比對）", iDefault: ""),
             new SCP_CmdArgSpec("limit", "op=search：最多印幾筆命中（全部命中數照樣印）", iDefault: "50"),
         };
 
         public override SCP_CmdResult Execute(SCP_CmdArgs iArgs)
         {
-            if (!SCP_DocStore.TryList(out List<SCP_DocEntry> aEntries, out List<string> aProblems, out string aError))
+            if (!SCP_DocStore.TryList(out List<SCP_DocEntry> aEntries, out List<SCP_DocProblem> aProblemList, out string aError))
                 return SCP_CmdResult.Fail(3, "✗ " + aError);
+            List<string> aProblems = aProblemList.ConvertAll(p => p.Text);
 
             string aOp = iArgs.Get("op").Trim();
+            if (aOp == "check") return Check(aEntries, aProblemList);
             SCP_CmdResult aResult;
             if (aOp == "show") aResult = Show(aEntries, iArgs.Get("name").Trim());
             else if (aOp == "search") aResult = Search(aEntries, iArgs.Get("keyword").Trim(), iArgs.Get("limit").Trim());
@@ -85,8 +87,11 @@ namespace SCP.Core.Cmd
             }
             if (aHits.Count > 1)
             {
-                var aFail = SCP_CmdResult.Fail(2, $"✗ `{iName}` 撞名 —— {aHits.Count} 份，⛔ 不替你挑：");
-                foreach (SCP_DocEntry aEntry in aHits) aFail.Lines.Add($"  {aEntry.RootLabel}/{aEntry.RelativePath}");
+                // 列出所有符合的（全名＋實際路徑）供挑（TASK-0999；Tim「查詢的文件撞名時 列出實際文件路徑供選擇(所有符合選項)」）
+                var aFail = SCP_CmdResult.Fail(2, $"✗ `{iName}` 撞名 —— {aHits.Count} 份，⛔ 不替你挑；用全名再查一次：");
+                foreach (string aLine in SCP_DocStore.ChoiceLines(aHits)) aFail.Lines.Add("  " + aLine);
+                aFail.Lines.Add("  例：" + SCP_CmdRegistry.Invoke("doc --arg op=show --arg name=" + SCP_DocStore.QualifiedName(aHits[0])));
+                foreach (SCP_DocEntry aEntry in aHits) aFail.AddValue("choice", SCP_DocStore.QualifiedName(aEntry));
                 return aFail;
             }
 
@@ -97,6 +102,32 @@ namespace SCP.Core.Cmd
             aResult.Lines.AddRange(SCP_DocStore.ReadBody(aDoc).TrimEnd('\n').Split('\n'));
             aResult.AddOutput(aDoc.FullPath);
             return aResult;
+        }
+
+        // 自檢（TASK-0999）：撞名（每一組列出全名＋實際路徑）、不存在的根 ⇒ exit 1；都沒有 ⇒ exit 0、明說掃了幾份
+        static SCP_CmdResult Check(List<SCP_DocEntry> iEntries, List<SCP_DocProblem> iProblems)
+        {
+            List<List<SCP_DocEntry>> aSame = SCP_DocStore.FindCollisions(iEntries);
+            List<SCP_DocProblem> aRoots = iProblems.FindAll(p => p.Kind == SCP_DocProblem.ProblemKind.RootMissing);
+            int aRootsMissing = aRoots.Count;
+            if (iProblems.Count == 0)
+            {
+                var aOk = SCP_CmdResult.Success($"✓ 文件庫 {iEntries.Count} 份：沒有撞名、裝上的根都在");
+                aOk.AddValue("doc_count", iEntries.Count.ToString());
+                aOk.AddValue("collisions", "0");
+                return aOk;
+            }
+            var aFail = SCP_CmdResult.Fail(1, $"✗ 文件庫 {iEntries.Count} 份：撞名 {aSame.Count} 組、不存在的根 {aRootsMissing} 個 —— 撞名只擋查那個名字的人（skill 用到才擋）");
+            foreach (List<SCP_DocEntry> g in aSame)
+            {
+                aFail.Lines.Add($"  · `{g[0].Name}` {g.Count} 份：");
+                foreach (string aLine in SCP_DocStore.ChoiceLines(g)) aFail.Lines.Add("      " + aLine);
+            }
+            foreach (SCP_DocProblem p in aRoots) aFail.Lines.Add("  · " + p.Text);
+            aFail.Lines.Add("  處理：改掉其中一份的檔名（證據、附檔用帶前綴的名字，例 CLASSES997_EVIDENCE.md），或查詢、skill 的 docs: 用全名");
+            aFail.AddValue("doc_count", iEntries.Count.ToString());
+            aFail.AddValue("collisions", aSame.Count.ToString());
+            return aFail;
         }
 
         static SCP_CmdResult Search(List<SCP_DocEntry> iEntries, string iKeyword, string iLimit)

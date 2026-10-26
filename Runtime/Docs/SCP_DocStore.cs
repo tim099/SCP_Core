@@ -8,6 +8,9 @@
 //   ① 宿主沒裝根 ⇒ 列表會是空的，而「沒有文件」與「沒接上」同形 ⇒ 回 error，⛔ 不回空清單。
 //   ② 某個根不存在（路徑推錯、repo 沒 clone）⇒ 那一邊的文件整批消失而其餘照常 ⇒ 記進 problems。
 //   ③ 兩邊有同名文件 ⇒ 「查名字」會安靜地挑一份 ⇒ 記進 problems，查名字時兩份都不給、明說撞名。
+//      ⚠ 撞名只擋「查那個名字」的人（TASK-0999；Tim「文件庫整份組不起來 是否有更好的處理方法防呆」）：
+//        problems 分種類（<see cref="SCP_DocProblem.Kind"/>）⇒ 呼叫端照自己用到的名字判斷要不要擋（SCP_SkillContent）；
+//        撞名時用**全名**（根/相對路徑，去 .md；<see cref="QualifiedName"/>）指定要哪一份 —— 查名字收全名，撞名的錯誤列出每一份的全名＋路徑供挑。
 //
 // 📌 「這支指令對應哪份文件」寫在**文件自己的 frontmatter**（`cmds: [a, b]`），⛔ 不寫在 Cmd 的 C# 裡：
 //   對應關係只能有一份，而文件是最常被改的那一邊 —— 改文件的人順手就改得到。
@@ -40,6 +43,16 @@ namespace SCP.Core.Docs
         public List<string> Cmds = new List<string>();
     }
 
+    /// <summary>文件庫的一個問題：哪一種、跟哪個名字有關（撞名 ⇒ 那個名字；根不存在 ⇒ 根的標籤）、印給人看的那一句。</summary>
+    public sealed class SCP_DocProblem
+    {
+        public enum ProblemKind { RootMissing, Collision }
+        public ProblemKind Kind;
+        public string Name = "";
+        public string Text = "";
+        public override string ToString() => Text;
+    }
+
     /// <summary>一筆搜尋命中。</summary>
     public sealed class SCP_DocHit
     {
@@ -62,8 +75,16 @@ namespace SCP.Core.Docs
         /// </summary>
         public static bool TryList(out List<SCP_DocEntry> oEntries, out List<string> oProblems, out string oError)
         {
+            bool aOk = TryList(out oEntries, out List<SCP_DocProblem> aProblems, out oError);
+            oProblems = aProblems.ConvertAll(p => p.Text);
+            return aOk;
+        }
+
+        /// <summary>同上，問題分種類（撞名／根不存在）—— 呼叫端照自己用到的名字判斷要不要擋（TASK-0999）。</summary>
+        public static bool TryList(out List<SCP_DocEntry> oEntries, out List<SCP_DocProblem> oProblems, out string oError)
+        {
             oEntries = new List<SCP_DocEntry>();
-            oProblems = new List<string>();
+            oProblems = new List<SCP_DocProblem>();
             oError = "";
             IReadOnlyList<SCP_DocRoot>? aRoots = RootsProvider?.Invoke();
             if (aRoots == null || aRoots.Count == 0)
@@ -77,7 +98,7 @@ namespace SCP.Core.Docs
             {
                 if (!Directory.Exists(aRoot.Path))
                 {
-                    oProblems.Add($"文件根不存在：{aRoot.Label} → {aRoot.Path}（這一邊的文件整批沒列進來）");
+                    oProblems.Add(new SCP_DocProblem { Kind = SCP_DocProblem.ProblemKind.RootMissing, Name = aRoot.Label, Text = $"文件根不存在：{aRoot.Label} → {aRoot.Path}（這一邊的文件整批沒列進來）" });
                     continue;
                 }
                 aExisting++;
@@ -91,28 +112,63 @@ namespace SCP.Core.Docs
             // （實測：dev build 的 exe 不在 repo 底下，根錨到 cwd，兩個根都不存在而清單回 exit 0。）
             if (aExisting == 0)
             {
-                oError = "裝上的文件根一個都不存在：" + string.Join("；", oProblems);
+                oError = "裝上的文件根一個都不存在：" + string.Join("；", oProblems.ConvertAll(p => p.Text));
                 return false;
             }
 
-            var aSeen = new Dictionary<string, SCP_DocEntry>(StringComparer.OrdinalIgnoreCase);
-            foreach (SCP_DocEntry aEntry in oEntries)
-            {
-                if (aSeen.TryGetValue(aEntry.Name, out SCP_DocEntry? aFirst))
-                    oProblems.Add($"文件撞名：`{aEntry.Name}` 同時在 {aFirst.RootLabel}/{aFirst.RelativePath} 與 {aEntry.RootLabel}/{aEntry.RelativePath} —— 查這個名字會被擋下，改掉其中一份的檔名");
-                else
-                    aSeen[aEntry.Name] = aEntry;
-            }
+            foreach (List<SCP_DocEntry> aSame in FindCollisions(oEntries))
+                oProblems.Add(new SCP_DocProblem
+                {
+                    Kind = SCP_DocProblem.ProblemKind.Collision,
+                    Name = aSame[0].Name,
+                    Text = $"文件撞名：`{aSame[0].Name}` 有 {aSame.Count} 份 —— 查這個名字會被擋下；用全名指定（{string.Join("、", aSame.ConvertAll(QualifiedName))}），或改掉其中一份的檔名",
+                });
             return true;
         }
 
-        /// <summary>依名字找（不分大小寫）。撞名時回空清單以外的**全部**命中，由呼叫端判斷（⛔ 不替它挑一份）。</summary>
+        /// <summary>全名 ＝ 根的標籤/相對路徑，去掉 `.md`（例 `blockside/README`）—— 撞名時用它指定要哪一份（TASK-0999）。</summary>
+        public static string QualifiedName(SCP_DocEntry iEntry)
+        {
+            string aRel = iEntry.RelativePath.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ? iEntry.RelativePath.Substring(0, iEntry.RelativePath.Length - 3) : iEntry.RelativePath;
+            return iEntry.RootLabel + "/" + aRel;
+        }
+
+        /// <summary>同名（不分大小寫）的文件，一組一份清單（照列出的順序）；沒有撞名 ⇒ 空。</summary>
+        public static List<List<SCP_DocEntry>> FindCollisions(IEnumerable<SCP_DocEntry> iEntries)
+        {
+            var aByName = new Dictionary<string, List<SCP_DocEntry>>(StringComparer.OrdinalIgnoreCase);
+            var aOrder = new List<string>();
+            foreach (SCP_DocEntry aEntry in iEntries)
+            {
+                if (!aByName.TryGetValue(aEntry.Name, out List<SCP_DocEntry>? aList)) { aList = new List<SCP_DocEntry>(); aByName[aEntry.Name] = aList; aOrder.Add(aEntry.Name); }
+                aList.Add(aEntry);
+            }
+            var aOut = new List<List<SCP_DocEntry>>();
+            foreach (string aName in aOrder) if (aByName[aName].Count > 1) aOut.Add(aByName[aName]);
+            return aOut;
+        }
+
+        /// <summary>
+        /// 依名字找（不分大小寫）。撞名時回空清單以外的**全部**命中，由呼叫端判斷（⛔ 不替它挑一份）。
+        /// <para>名字帶 `/` ⇒ 當成全名（<see cref="QualifiedName"/>；結尾的 `.md` 可寫可不寫）只比全名 —— 撞名時用它指定一份。</para>
+        /// </summary>
         public static List<SCP_DocEntry> FindByName(IEnumerable<SCP_DocEntry> iEntries, string iName)
         {
             var aHits = new List<SCP_DocEntry>();
+            string aName = iName.Replace('\\', '/').Trim();
+            bool aQualified = aName.IndexOf('/') >= 0;
+            if (aQualified && aName.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) aName = aName.Substring(0, aName.Length - 3);
             foreach (SCP_DocEntry aEntry in iEntries)
-                if (string.Equals(aEntry.Name, iName, StringComparison.OrdinalIgnoreCase)) aHits.Add(aEntry);
+                if (string.Equals(aQualified ? QualifiedName(aEntry) : aEntry.Name, aName, StringComparison.OrdinalIgnoreCase)) aHits.Add(aEntry);
             return aHits;
+        }
+
+        /// <summary>撞名時給人挑的那幾行：每一份一行「全名　（實際路徑）」。</summary>
+        public static List<string> ChoiceLines(IEnumerable<SCP_DocEntry> iHits)
+        {
+            var aOut = new List<string>();
+            foreach (SCP_DocEntry aEntry in iHits) aOut.Add($"{QualifiedName(aEntry)}　（{aEntry.FullPath.Replace('\\', '/')}）");
+            return aOut;
         }
 
         /// <summary>frontmatter 的 `cmds` 裡有這支指令的文件。</summary>
