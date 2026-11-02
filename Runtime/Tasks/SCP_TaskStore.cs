@@ -526,8 +526,9 @@ namespace SCP.Core.Tasks
         /// <summary>
         /// 勾未勾清單的第 <paramref name="iOneBased"/> 格並簽名。成功回那一行內容、<paramref name="ioCriteria"/> 換成新的整段；
         /// 越界回 null 且一個字元都不動。⚠ 多筆要**由大到小**呼叫（勾完未勾清單會縮短）。
+        /// <paramref name="iProxyNote"/> 非空 ＝ 代簽（OpCheck 的 qa_note）⇒ 簽名後面接「（代簽：理由）」。
         /// </summary>
-        public static string? CheckOffCriteria(ref string ioCriteria, int iOneBased, string iActor, DateTime iNowLocal)
+        public static string? CheckOffCriteria(ref string ioCriteria, int iOneBased, string iActor, DateTime iNowLocal, string iProxyNote = "")
         {
             if (iOneBased < 1) return null;
             var aLines = new List<string>((ioCriteria ?? "").Replace("\r", "").Split('\n'));
@@ -537,7 +538,8 @@ namespace SCP.Core.Tasks
                 if (CriteriaBoxWidth(aLines[i], out bool aChecked) == 0 || aChecked) continue;
                 if (++aSeen != iOneBased) continue;
                 string aBody = aLines[i].Substring(6);
-                aLines[i] = "- [x] " + aBody.TrimEnd() + $"　✅ {Nz2(iActor)} {iNowLocal.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}";
+                aLines[i] = "- [x] " + aBody.TrimEnd() + $"　✅ {Nz2(iActor)} {iNowLocal.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}"
+                    + (string.IsNullOrWhiteSpace(iProxyNote) ? "" : $"（代簽：{iProxyNote.Trim()}）");
                 ioCriteria = string.Join("\n", aLines);
                 return aBody.Trim();
             }

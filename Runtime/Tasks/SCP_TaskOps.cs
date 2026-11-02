@@ -109,7 +109,7 @@ namespace SCP.Core.Tasks
             ["update"] = new[] { "index", "title", "type", "description", "criteria", "status", "priority", "severity",
                                  "milestone", "project", "memory_topic", "memory_archived_commit", "allow_shrink", "unset" },
             ["comment"] = new[] { "index", "body" },
-            ["check"] = new[] { "index", "criteria_index", "expect_text" },
+            ["check"] = new[] { "index", "criteria_index", "expect_text", "qa_note" },
             ["link"] = new[] { "index", "target", "op_link", "remove" },
             ["resolve"] = new[] { "index", "status", "confirm", "note", "qa_note" },
             ["commit"] = new[] { "index", "sha", "mode" },
@@ -705,8 +705,11 @@ namespace SCP.Core.Tasks
         }
 
         // ===========================================================
-        // 區塊職責：勾驗收格並**留下是誰勾的**（TASK-0119）。⛔ 沒有 qa_note 代簽出口（沒勾的格不卡任何人）。
+        // 區塊職責：勾驗收格並**留下是誰勾的**（TASK-0119）。
         //   危害不是掉更新，是**簽到別的格子上** ⇒ 鎖內重讀並比對文字，對不上整批不做。
+        //   代簽（Tim 2026-11-02「全部都能勾」：後台頁用 Tim 署名要勾得掉每一格，含 [signer:X]）：帶 `qa_note=<理由>` ⇒
+        //   名單與 [signer:] 的閘放行，簽名寫成「✅ <署名> <日期>（代簽：<理由>）」、時間線同樣註明 —— 代簽看得出來是代簽。
+        //   ⚠ 這個出口是給人在後台頁用的；agent 照舊不帶（Task_Management §7）。
         // ===========================================================
         static void OpCheck(Ctx c)
         {
@@ -732,6 +735,7 @@ namespace SCP.Core.Tasks
             // TASK-0194：一格一個尺度的簽名人（`[signer:<persona>]`）—— 只有 owner 能簽，owner 不必先入列
             List<string?> aOwners = aOpen.Select(SCP_TaskStore.CriteriaSigner).ToList();
             bool aOwnsAny = aOwners.Any(o => o != null && string.Equals(o, c.Actor, StringComparison.OrdinalIgnoreCase));
+            string aProxy = c.Trim("qa_note");
             c.R.Index = aIndex;
 
             c.Rep.AppendLine($"## {e.Id} 驗收標準　已勾 **{aDone.Count}** / 未勾 **{aOpen.Count}**");
@@ -740,16 +744,18 @@ namespace SCP.Core.Tasks
             if (aOwners.Any(o => o != null))
                 c.Rep.AppendLine($"- ⭐ 本單有 **{aOwners.Count(o => o != null)}** 格帶 `[signer:…]` 指定簽名人 ⇒ 那幾格**只有本人**簽得掉（QA 與開單人也不行），且本人不必先入列。"
                     + $"　你{(aOwnsAny ? "**有**" : "沒有")}這樣的格子。");
+            if (aProxy.Length > 0)
+                c.Rep.AppendLine($"- ✍ **代簽**（`qa_note={aProxy}`）⇒ 名單與 `[signer:]` 的閘放行；簽名與時間線都會註明「代簽：{aProxy}」。");
             c.Rep.AppendLine();
             string aRuleText = aQa.Count > 0 ? "本單有指名 QA ⇒ 只有 " + string.Join(" / ", aQa) + " 能簽" : "本單沒有指名 QA ⇒ 參與者與開單人能簽";
-            if (!aAllowed && !aOwnsAny)
+            if (!aAllowed && !aOwnsAny && aProxy.Length == 0)
             {
                 c.Rep.AppendLine("## blocked");
                 c.Rep.AppendLine("- reason: 勾驗收標準是**簽名行為** —— 不在名單上的人勾了它，那個勾看起來跟真的驗收一模一樣，而它沒有任何人負責。");
                 c.Rep.AppendLine("- exits:");
                 c.Rep.AppendLine($"    · 先入列 → `{Cmd($"--arg op=claim --arg persona={c.Actor} --arg index={aIndex} --arg role=qa")}`");
                 c.Rep.AppendLine("    · 或請上面那些人跑，或請他們 `op=assign` 把你加進來");
-                c.Rep.AppendLine("- ⛔ 本 op **沒有** `qa_note=` 代簽出口（`resolve` 有）—— 沒勾的驗收格不卡任何人 ⇒ 沒有正當的破例用例。");
+                c.Rep.AppendLine("- ⛔ agent 不要帶 `qa_note=` 代簽 —— 那是給人在後台頁用的出口（Tim 2026-11-02），簽名會註明代簽。");
                 throw new SCP_TaskOpException($"[Task] op=check 擋下：`{c.Actor}` 不在 {e.Id} 的可簽名名單裡（{aRuleText}），不能替它簽名");
             }
 
@@ -802,6 +808,7 @@ namespace SCP.Core.Tasks
 
             foreach (int v in aWant)
             {
+                if (aProxy.Length > 0) break;   // 代簽：每一格的簽名人閘一起放行（簽名註明代簽）
                 string? aOwn = aOwners[v - 1];
                 if (aOwn == null)
                 {
@@ -856,13 +863,13 @@ namespace SCP.Core.Tasks
                         aRaceNote = $"序號 {v} 指到的已經不是同一條驗收標準了（我要簽的是「{Trunc(aAnchor[v], 40)}」，鎖內那一格是「{Trunc(aFreshOpen[v - 1], 40)}」）—— 序號位移了，整批不做";
                         return SCP_TaskWrite.Skip;
                     }
-                    string? aBody = SCP_TaskStore.CheckOffCriteria(ref aFresh, v, c.Actor, aNowLocal);
+                    string? aBody = SCP_TaskStore.CheckOffCriteria(ref aFresh, v, c.Actor, aNowLocal, aProxy);
                     if (aBody == null) { aRaceNote = $"序號 {v} 勾不起來（鎖內重讀的清單與預期不符）—— 整批不做"; return SCP_TaskWrite.Skip; }
                     aHit.Add(aBody);
                 }
                 aHit.Reverse();
                 m.updated_at = aNowUtc;
-                return SCP_TaskWrite.Body($"{aNowUtc}　`check`　{c.Actor} 勾了 {aHit.Count} 格驗收標準（{string.Join("，", aWant.OrderBy(x => x))}）", aFresh, "");
+                return SCP_TaskWrite.Body($"{aNowUtc}　`check`　{c.Actor} 勾了 {aHit.Count} 格驗收標準（{string.Join("，", aWant.OrderBy(x => x))}）" + (aProxy.Length > 0 ? $"（代簽：{aProxy}）" : ""), aFresh, "");
             }, out bool aFound);
             if (!aWrote)
             {
@@ -877,7 +884,7 @@ namespace SCP.Core.Tasks
             int aBackOpen = SCP_TaskStore.ListUncheckedCriteria(aBack).Count;
             c.R.Wrote = 1;
             c.R.Headline = $"✓ {e.Id} 勾了 {aHit.Count} 格（已勾 {aBackDone}／未勾 {aBackOpen}）";
-            c.Rep.AppendLine($"## ✅ 勾了 {aHit.Count} 格（署名 `{c.Actor}` {aNowLocal.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}）");
+            c.Rep.AppendLine($"## ✅ 勾了 {aHit.Count} 格（署名 `{c.Actor}` {aNowLocal.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" + (aProxy.Length > 0 ? $"，代簽：{aProxy}" : "") + "）");
             foreach (string s in aHit) c.Rep.AppendLine($"- [x] {Trunc(s, 160)}");
             c.Rep.AppendLine();
             c.Rep.AppendLine($"- 已勾 {aDone.Count} → **{aBackDone}**　未勾 {aOpen.Count} → **{aBackOpen}**（⭐ 這兩個後值是**回讀單檔**數的，不是寫入端的回傳值）");
