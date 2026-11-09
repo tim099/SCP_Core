@@ -22,6 +22,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using SCP.Core.Bank;
 using SCP.Core.Cmd;
+using SCP.Core.Glossary;
 using SCP.Core.Io;
 using SCP.Core.Json;
 using SCP.Core.Paths;
@@ -386,7 +387,7 @@ namespace SCP.Core.Letters
                 return (false, $"'{iPersona}' 的 lock 讀不了（{aLock.LockError}）—— 不以壞 lock 的身分發言", aLock, null, 0);
             if (FindGlossaryPersonaEntry(iR, iPersona) == null)
                 return (false,
-                    $"還沒有自我介紹（出生證明）—— `Docs/Glossary/personas/{iPersona}.md` 不存在。\n"
+                    $"還沒有自我介紹（出生證明）—— `{GlossaryPersonaPathShown(iR, iPersona)}` 不存在。\n"
                     + string.Join("\n", SelfIntroTodoLines(iR, iPersona))
                     + "\n  補完重跑本步即過（規矩見 " + SCP_CmdRegistry.Invoke("doc --arg op=show --arg name=Constitution") + " §5）。", aLock, null, 0);
             string aBrief = BriefPath(iR, iPersona);
@@ -714,10 +715,24 @@ namespace SCP.Core.Letters
             catch (Exception) { return ""; }
         }
 
+        /// <summary>
+        /// 提示裡印的詞典根（給人拿去找檔）：照宿主給的 <see cref="SCP_MorningRoots.GlossaryRoot"/> 算，
+        /// 跟酒館附註同一支 <see cref="SCP_Glossary.DisplayPrefix"/>（在專案根底下印相對、在外面印絕對）。
+        /// <para>🩸 2026-11-09：這裡原本寫死 `Docs/Glossary/` —— 判斷檔在不在走的是詞典根（對的），
+        /// 提示卻指著一個不存在的目錄，新 persona 照著找範本找不到。⛔ 不寫死，也不從 ProjectRoot 自己推（TASK-0390）。</para>
+        /// <para>詞典根沒給 ⇒ 明說沒設定，⛔ 不退回預設前綴（那會印一個看起來對、其實沒有的路徑）。</para>
+        /// </summary>
+        static string GlossaryPrefixShown(SCP_MorningRoots iR)
+            => string.IsNullOrEmpty(iR.GlossaryRoot) ? "<詞典根未設定>" : SCP_Glossary.DisplayPrefix(iR.ProjectRoot, iR.GlossaryRoot);
+
+        /// <summary>persona 出生證明的慣例位置（`&lt;詞典根&gt;/personas/&lt;persona&gt;.md`）—— 顯示用；存在與否看 <see cref="FindGlossaryPersonaEntry"/>。</summary>
+        public static string GlossaryPersonaPathShown(SCP_MorningRoots iR, string iPersona)
+            => $"{GlossaryPrefixShown(iR)}/personas/{iPersona}.md";
+
         public static List<string> SelfIntroTodoLines(SCP_MorningRoots iR, string iPersona)
         {
             string? aRef = FindGlossaryPersonaEntry(iR, INTRO_REFERENCE_SLUG);
-            string aRefHint = $"Docs/Glossary/personas/{INTRO_REFERENCE_SLUG}.md";
+            string aRefHint = GlossaryPersonaPathShown(iR, INTRO_REFERENCE_SLUG);
             if (aRef != null)
             {
                 string aRoot = Path.GetFullPath(iR.ProjectRoot).Replace('\\', '/').TrimEnd('/');
@@ -726,7 +741,7 @@ namespace SCP.Core.Letters
             }
             return new List<string>
             {
-                $"補**自我介紹**（出生證明）：`Docs/Glossary/personas/{iPersona}.md` 不存在 —— 沒有它 {SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningIntro>()} 會被擋。",
+                $"補**自我介紹**（出生證明）：`{GlossaryPersonaPathShown(iR, iPersona)}` 不存在 —— 沒有它 {SCP_CmdRegistry.InvokeOf<SCP_Cmd_MorningIntro>()} 會被擋。",
                 $"   內容＝初始風格自畫像（我是誰／擅長什麼／說話方式），**親筆**；參考同目錄其他人的寫法（最完整：`{aRefHint}`）。",
                 // TASK-0428：建立時寫下的角色設定是素材（⛔ 不是代筆 —— 那份是起點，自介要用自己的話）。
                 File.Exists(Path.Combine(SCP_LettersPaths.ProfileDir(iR.Letters, iPersona), "character.md"))
@@ -734,7 +749,7 @@ namespace SCP.Core.Letters
                     : "   （沒有建立時的角色設定檔 —— 全憑自己寫）",
                 // TASK-0313：入口 `senate cmd glossary`。⚠ term／one_line 是必填 —— 提示漏了這兩格，照著打一定被擋。
                 $"   寫法：{SCP_CmdRegistry.InvokeNamed("glossary", $"--arg op=register --arg persona={iPersona} --arg slug={iPersona} --arg term=\"{iPersona} 大小姐\" --arg category=persona --arg one_line=<一句話> --arg-file body=<檔>")}",
-                "   ⚠ 工具新建預設寫 Docs/Glossary/ 根層，persona 條目慣例放 personas/，寫完手動搬。",
+                $"   ⚠ 工具新建預設寫 {GlossaryPrefixShown(iR)}/ 根層，persona 條目慣例放 personas/，寫完手動搬。",
             };
         }
 
