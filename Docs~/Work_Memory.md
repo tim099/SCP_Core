@@ -56,6 +56,7 @@ $W --arg op=link --arg from=<topic/id> --arg to=<topic/id>             # 雙向
 - 長文一律 `--arg-file`。
 - `read` 會把記憶摘要與 `docs` 指到的本地檔（各前 100 行）寫成一份 briefing —— **讀那份**，不讀終端截斷的內容。
 - 收工時順手留「為什麼卡住」：`senate cmd task --arg op=wrapup … --arg-file why=<檔>` 會寫進單子 `memory_topic` 那個主題（單子要先有 `memory_topic`）。
+- **發現過時就當場取代**（Tim 2026-11-08「一旦發現過時要處理」）：讀到的 fragment 跟現在的程式、文件或讀數對不上 ⇒ 同一輪 `op=supersede`，新的寫現在的事實＋查證日期與依據；⛔ 不留到收工、不只在對話裡口頭更正。整條不再適用、也沒有新事實 ⇒ 一樣 supersede，新的那筆寫成 `pointer`：哪天、為什麼作廢、現在該看哪裡。
 
 ## 4. 跟單子的雙向錨點
 
