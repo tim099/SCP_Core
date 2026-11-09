@@ -142,7 +142,35 @@ namespace SCP.Core.Git
                 Message = "chore(plurk): sync post audit ledger (auto)",
                 DefaultOn = true,
             },
+            // `Tasks/` —— 本機任務板（Tim 2026-11-09：「本機版 但是住在D:\Senate\Valhalla的repo內 可以同步」）。
+            //   單檔 `Tasks/tasks/NNNN.md` 與配號 `Tasks/_index.txt` 只有一個寫入端（Server 的 task-write，SCP_TaskStore）
+            //   ⇒ 機器獨佔；單子裡的內文是人想的，但分界是「這個檔誰在寫」（同 `_keys_open.md`）。
+            // ⚠ 判準刻意是**白名單**，不是 `Tasks/` 前綴：`Tasks/attachments/TASK-<N>/` 住著單子的附件（腳本、素材），
+            //   有作者 ⇒ 落 __other，走 `senate cmd commit`。前綴會把它們當機器檔收走，而那種錯不會當場叫。
+            // 🩸 2026-11-09 第一張單 TASK-0001：結單時寫回的 commit SHA 與簽名落 `__other` ⇒ 要人記得顯式 `groups=__other`。
+            // ⚠ 設了 sync.tasks 的機器上 `Tasks/` 是自己的 repo，在本層只會以巢狀 repo 出現（走 __subptr），輪不到這裡。
+            new SCP_AutoCommitGroupDef
+            {
+                Key = "tasks",
+                Label = "任務板（Tasks/tasks/ 的單檔＋配號 _index.txt；⛔ 不含有作者的 attachments/）",
+                Match = IsTaskBoardFile,
+                Message = "chore(tasks): sync task board (auto)",
+                DefaultOn = true,
+            },
         };
+
+        /// <summary>
+        /// 任務板的機器檔：`Tasks/_index.txt`、`Tasks/tasks/` **直接底下**的 `*.md`（檔名與目錄名的權威在 SCP_TaskIO）。
+        /// 其他 `Tasks/` 底下的檔（附件、子目錄）⇒ false ⇒ 落 __other。
+        /// </summary>
+        public static bool IsTaskBoardFile(string iPath)
+        {
+            const string aTasks = "Tasks/tasks/";
+            if (iPath == "Tasks/_index.txt") return true;
+            return iPath.StartsWith(aTasks, StringComparison.Ordinal)
+                   && iPath.EndsWith(".md", StringComparison.Ordinal)
+                   && iPath.IndexOf('/', aTasks.Length) < 0;
+        }
 
         // ── persona 信件庫（letters/<persona>/，各自一個 repo）───────────
         // 區塊職責：persona 信件庫的分群規則

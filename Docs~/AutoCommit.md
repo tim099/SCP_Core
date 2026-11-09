@@ -56,6 +56,7 @@ related:
 | `queue_state` | `PromptQueue/` **頂層**的 `*_state.json`（⛔ 不含同目錄的 .py） | ✅ |
 | `lessons` | `Lessons/` | ✅ |
 | `plurk_audit` | `Plurk/post_audit.jsonl`（⛔ 不含同目錄的親筆交付單） | ✅ |
+| `tasks` | 本機任務板：`Tasks/_index.txt` 與 `Tasks/tasks/` **直接底下**的 `*.md`（唯一寫入端 task-write）。⛔ 不含 `Tasks/attachments/`：那是單子的附件，有作者 ⇒ 落 `__other`，走 `senate cmd commit`（Tim 2026-11-09：任務板「本機版 但是住在D:\Senate\Valhalla的repo內 可以同步」） | ✅ |
 
 ### persona 信件庫
 
