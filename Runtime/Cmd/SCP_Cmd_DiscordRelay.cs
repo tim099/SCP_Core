@@ -188,6 +188,7 @@ namespace SCP.Core.Cmd
             SCP.Core.Json.SCP_JsonData s = SCP_DiscordInbound.ReadState(iRoot);
             SCP_DiscordConfig c = SCP_DiscordConfigStore.Load(iRoot);
             var aR = SCP_CmdResult.Success($"# Inbound 狀態（開關：{(c.InboundEnabled ? "開" : "關")}）");
+            foreach (string w in SCP_DiscordReadiness.InboundWarnings(iRoot)) aR.Lines.Add("- " + w);
             SCP_DiscordGuildCache aCache = SCP_DiscordBot.LoadCache(iRoot);
             var aActive = new HashSet<string>(SCP_DiscordInboundConfig.ActiveRoutes(iRoot, out _).Select(x => x.ChannelId));
             string aGw = SCP_DiscordPaths.Dir(iRoot) + "/discord_gateway_status.json";
@@ -216,6 +217,10 @@ namespace SCP.Core.Cmd
             if (c.Error.Length > 0) return SCP_CmdResult.Fail(1, "✗ " + c.Error);
             var aR = SCP_CmdResult.Success("# Discord 收發設定");
             aR.Lines.Add($"- Inbound：{(c.InboundEnabled ? "開" : "關")}　Outbound：{(c.OutboundEnabled ? "開" : "關")}　（由酒館 Server 讀）");
+            // 開關開著不等於在跑（2026-11-10）：開關跟著資料樹同步，Bot token 不會 ⇒ 被擋住的原因印在開關的正下方。
+            List<string> aInBlock = SCP_DiscordReadiness.InboundWarnings(iRoot), aOutBlock = SCP_DiscordReadiness.OutboundWarnings(iRoot);
+            foreach (string w in aInBlock) aR.Lines.Add("  - " + w);
+            foreach (string w in aOutBlock) aR.Lines.Add("  - " + w);
             aR.Lines.Add($"- 頭像網址範本：{c.AvatarUrlTemplate}");
             aR.Lines.Add($"- webhook：{c.Webhooks.Count} 條（停用 {c.Webhooks.Count(w => !w.Enabled)}）");
             aR.Lines.Add("## 頻道分類 → webhook（未分類的頻道不送）");
@@ -230,6 +235,9 @@ namespace SCP.Core.Cmd
             aR.AddValue("inbound", c.InboundEnabled ? "1" : "0");
             aR.AddValue("outbound", c.OutboundEnabled ? "1" : "0");
             aR.AddValue("webhooks", c.Webhooks.Count.ToString(CultureInfo.InvariantCulture));
+            // 「開著而且跑得起來」：開關關著 ＝ 0（沒有在收／送），開著但被擋住 ＝ 0。
+            aR.AddValue("inbound_ready", c.InboundEnabled && aInBlock.Count == 0 ? "1" : "0");
+            aR.AddValue("outbound_ready", c.OutboundEnabled && aOutBlock.Count == 0 ? "1" : "0");
             return aR;
         }
 

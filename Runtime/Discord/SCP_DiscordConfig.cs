@@ -446,4 +446,69 @@ namespace SCP.Core.Discord
             SCP.Core.Io.SCP_TextFile.ReplaceOrMove(aTmp, iPath);
         }
     }
+
+    /// <summary>
+    /// 區塊職責：Discord 收發「開關開著，實際上跑不跑得起來」的判定 —— 給狀態指令印 ⚠ 用。
+    /// <para>物理意義：開關（discord_config.json）、對應表、白名單都跟著資料樹同步到每一台；
+    /// 讓它真的跑的東西（Bot token 的明文）住在 secrets 資料夾、不進 git ⇒ 換一台電腦之後
+    /// 「Inbound：開」照樣印，而那一台其實沒在收。</para>
+    /// <para>🩸 2026-11-10：一台新裝的機器 Inbound 開、4 條對應都開、token 沒有 ⇒ 別台酒館轉進 Discord 的訊息一則都沒收。
+    /// 警告只印在酒館 Server 的啟動紀錄裡，`discord-relay` 的狀態只說「開」—— 而「開著沒在跑」與「開著在跑」在那個畫面上同形。</para>
+    /// <para>數值影響：純函式，只吃已經量好的讀數（不讀檔、不連網）⇒ 可以淨室測。開關關著 ⇒ 一律回空（關著不叫「被擋住」）。</para>
+    /// </summary>
+    public static class SCP_DiscordReadiness
+    {
+        /// <summary>安裝文件的名字（`senate cmd doc --arg op=show --arg name=...`）。</summary>
+        public const string InstallDocName = "Discord_Install";
+
+        /// <summary>印在每一句 ⚠ 後面的指路。</summary>
+        public const string DocHint = "怎麼裝：senate cmd doc --arg op=show --arg name=" + InstallDocName;
+
+        /// <summary>Inbound 開著卻收不到的原因（空 ＝ 沒有被擋住，或開關本來就關著）。</summary>
+        public static List<string> InboundBlockers(bool iEnabled, bool iTokenReady, int iRoutes, int iActiveRoutes)
+        {
+            var a = new List<string>();
+            if (!iEnabled) return a;
+            if (!iTokenReady) a.Add("這台讀不到 Bot token ⇒ **沒有在收**（開關與對應表跟著資料樹同步，token 不會）");
+            if (iRoutes == 0) a.Add("沒有任何「Discord 頻道 → 酒館頻道」的對應 ⇒ 沒有東西可收");
+            else if (iActiveRoutes == 0) a.Add($"{iRoutes} 條對應全部沒在跑（對應關著，或所在的 Server 被關掉 Inbound）⇒ 沒有東西可收");
+            return a;
+        }
+
+        /// <summary>Outbound 開著卻送不出去的原因（空 ＝ 沒有被擋住，或開關本來就關著）。</summary>
+        public static List<string> OutboundBlockers(bool iEnabled, int iWebhooks, int iEnabledWebhooks, int iBoundCategories)
+        {
+            var a = new List<string>();
+            if (!iEnabled) return a;
+            if (iWebhooks == 0) a.Add("還沒登記任何 webhook ⇒ **沒有在送**");
+            else if (iEnabledWebhooks == 0) a.Add($"{iWebhooks} 條 webhook 全部停用 ⇒ **沒有在送**（Discord 回 401／403／404 時會自動停用）");
+            else if (iBoundCategories == 0) a.Add("沒有任何頻道分類綁到啟用中的 webhook ⇒ **沒有在送**");
+            return a;
+        }
+
+        /// <summary>從資料根量出讀數再判（狀態指令用；讀檔，⛔ 不連網）。</summary>
+        public static List<string> InboundBlockers(string iDataRoot)
+        {
+            SCP_DiscordConfig c = SCP_DiscordConfigStore.Load(iDataRoot);
+            return InboundBlockers(c.InboundEnabled, SCP_DiscordBot.Status(iDataRoot).Ready,
+                SCP_DiscordInboundConfig.LoadRoutes(iDataRoot, out _).Count, SCP_DiscordInboundConfig.ActiveRoutes(iDataRoot, out _).Count);
+        }
+
+        /// <summary>狀態指令印的那幾行（已經組好「⚠ … 怎麼裝：…」）。指令只負責縮排 —— 字句只有這一份。</summary>
+        public static List<string> InboundWarnings(string iDataRoot)
+            => InboundBlockers(iDataRoot).Select(b => $"⚠ Inbound 開著，但{b}　{DocHint}").ToList();
+
+        /// <summary>同上，Outbound 那一邊。</summary>
+        public static List<string> OutboundWarnings(string iDataRoot)
+            => OutboundBlockers(iDataRoot).Select(b => $"⚠ Outbound 開著，但{b}　{DocHint}").ToList();
+
+        /// <summary>從資料根量出讀數再判（狀態指令用；讀檔，⛔ 不連網）。</summary>
+        public static List<string> OutboundBlockers(string iDataRoot)
+        {
+            SCP_DiscordConfig c = SCP_DiscordConfigStore.Load(iDataRoot);
+            var aOn = new HashSet<string>(c.Webhooks.Where(w => w.Enabled).Select(w => w.Id));
+            int aBound = c.CategoryWebhooks.Count(kv => kv.Value.Any(id => aOn.Contains(id)));
+            return OutboundBlockers(c.OutboundEnabled, c.Webhooks.Count, aOn.Count, aBound);
+        }
+    }
 }

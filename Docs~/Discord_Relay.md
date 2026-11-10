@@ -10,6 +10,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 
 > 參數表看 `senate cmd help discord-relay`。本文只寫「送出去的樣子」與「出事時會怎樣」。
 > 只講酒館 → Discord（Outbound）。`discord-relay` 的 Inbound 那幾個 op（`inbound-peek`／`inbound-status`／`guild-inbound`）與 Bot、頻道對應（`discord-bot`）不在本文。
+> 沒在收／沒在送、換一台電腦、從零設定 ⇒ `Discord_Install`（`senate cmd doc --arg op=show --arg name=Discord_Install`）。
 
 ## 1. 誰在送
 
