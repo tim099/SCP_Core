@@ -1,6 +1,6 @@
 ---
 title: Discord 串接安裝（discord-bot）
-description: 沒在收／沒在送、換一台電腦、從零設定才讀：先量這台、什麼跟著資料樹走什麼不跟、Bot token 怎麼裝到這台、每台各自的 webhook、頻道對應、驗證與排查；哪幾步一定要使用者自己做、persona 該怎麼跟他說
+description: 把酒館接到 Discord（或沒在收／沒在送、換一台電腦）才讀：交給 persona 一路做完的流程（使用者只給 webhook 網址、Bot token、密碼，不用開後台）、先量這台、什麼跟著資料樹走什麼不跟、Bot token 怎麼裝到這台、每台各自的 webhook、頻道對應、驗證與排查、哪幾步一定要使用者自己做與 persona 怎麼說、想自己操作時的三個後台頁
 cmds: [discord-bot]
 last_updated: 2026-11-10
 target_audience: [AI_Agent, Tools_Maintainer]
@@ -12,6 +12,46 @@ target_audience: [AI_Agent, Tools_Maintainer]
 > 參數表看 `senate cmd help discord-bot`、`senate cmd help discord-relay`。送出去的樣子與失敗怎麼降級看 `Discord_Relay`。
 > 🩸 2026-11-10：一台新裝的機器 Inbound 開著、4 條對應都開、沒有 token ⇒ 別台酒館轉進 Discord 的訊息一則都沒收，
 > 而當時狀態指令只印「開」。現在狀態指令會印 ⚠ 並指到本文。
+
+兩個方向是兩套東西：**酒館 → Discord 走 webhook**（§4），**Discord → 酒館靠 Bot**（§3、§5）。只要單向就只裝那一邊。
+
+## 0. 交給 persona 一路做完（使用者不用開後台）
+
+使用者說「幫我把酒館接到 Discord」之類的話 ⇒ persona 照這一節從頭跑到尾。
+使用者只做兩種事：**在 Discord 那邊按幾個鈕**，以及**把複製到的東西貼進 persona 開好的記事本**。後台頁、指令都不用碰。
+
+### 0.1 使用者要給的東西
+
+| 要什麼 | 哪裡來 | 怎麼給 |
+|---|---|---|
+| 要接哪裡 | 自己決定：哪個 Discord 頻道、接到哪個酒館頻道（沒說就是主頻道 `tavern`）、單向還是雙向 | 口頭說，講頻道名稱就好 |
+| webhook 網址（酒館 → Discord；每個要送去的 Discord 頻道一條） | Discord：頻道 → 編輯頻道 → 整合 → Webhook → 新 Webhook → 複製 Webhook 網址（§4 第 1 步） | 貼進記事本 |
+| Bot token（Discord → 酒館） | Developer Portal 建 Bot、Reset Token；同一趟把 Message Content Intent 打開、把 Bot 邀進 Server（§6 的 1～3） | 貼進記事本 |
+| 一組加密密碼 | 自己取。之後換電腦要靠它解開 token，請記住 | 貼進記事本 |
+
+- 只送出去 ⇒ 只要 webhook 網址；只收進來 ⇒ 只要 Bot token 與密碼。
+- 別台已經設過同一顆 Bot、手上有 `.enc` ⇒ 可以不重拿 token，但解密要在後台視窗打密碼（§3 的 A）。想完全不開後台就照這一節重新給一次 token。
+
+### 0.2 persona 的流程
+
+每一步做完都回讀。要使用者動手的地方**一次只講一步、講完等他回**（講法在 §8）。
+
+1. **量**（§1 的三支）。已經在跑的那一邊跳過，只做缺的。
+2. **準備記事本檔**：在 repo 外面開一個暫存資料夾（例：使用者資料夾底下的 `senate-discord-setup`），建空檔 `webhook.txt`、`bot_token.txt`、`passphrase.txt`（用得到的才建），用記事本替使用者打開。
+   - 請使用者：貼上 → 存檔（Ctrl+S）→ 關掉記事本 → 回一聲。一個檔只放一樣東西，不加別的字。
+   - ⛔ 這幾個檔 persona **不讀、不印、不用 `@` 指**，只把路徑交給指令。
+3. **送出那一邊**（§4）：`webhook-add` → `webhooks` 看 id → `senate cmd channel` 看要送的酒館頻道有沒有分類（沒有 ⇒ `op=set-category`）→ `bind` → `webhook-verify`。
+4. **收進來那一邊**（§3 的 B、§5）：`set-token` → `op=test` 要印出 Bot 的名字 → `op=refresh` → `op=servers` 找到使用者說的那個頻道的 id → `op=route`。
+   - `op=servers` 裡找不到那個頻道 ⇒ Bot 還沒被邀進那個 Server，或看不到那個頻道 ⇒ 請使用者做 §6 第 3 步。
+5. **開關**（§6 第 7 步）：只開有設好的那一邊。
+6. **驗證**（§7）：`inbound-status` 有游標、最後輪詢是幾秒前；請使用者在 Discord 那個頻道說一句話 ⇒「累計」加一、酒館多一則；persona 在酒館發一則 ⇒ 請使用者確認 Discord 上看得到。
+7. **收尾**：
+   - 兩邊都驗過之後刪掉第 2 步的暫存資料夾（裡面是明文）。刪之前先確認 `senate cmd discord-bot` 印「讀得到 token」、`op=webhooks` 列得到那一條。
+   - `Secret/discord_bot_token.enc` 要不要提交：**問使用者**（資料樹是公開 repo 時尤其要問）。
+   - 用白話回報：接了哪個頻道、哪個方向、怎麼確認的。再提醒三件事：裝好之前的訊息不會補進來；自己從酒館發的不會再收回來；換電腦要用那組密碼。
+
+使用者想自己在後台操作 ⇒ §9。
+其他功能的安裝入口與每一種安裝都適用的規則（憑證不經過對話、一次講一步、回讀才算裝好）⇒ `Feature_Install`（skill：`scp-install`）。
 
 ## 1. 先量這台
 
@@ -88,6 +128,12 @@ senate cmd discord-relay --arg op=bind --arg category=<頻道分類> --arg ids=<
 senate cmd discord-relay --arg op=webhook-verify --arg id=<webhook id>
 ```
 
+- **分類**是酒館頻道的屬性：`senate cmd channel` 列每個頻道的分類，`--arg op=categories` 列分類清單，
+  `--arg op=set-category --arg room=<頻道> --arg category=<分類>` 設定（分類要先在清單裡：`op=add-category --arg name=<分類>`）。
+  主頻道 `tavern` 的分類是 `Main`。⚠ 沒分類的頻道**不會送**。
+- 一個分類可以綁多條 webhook（`ids` 用逗號分隔）⇒ 同一則訊息送到每一條。
+- persona 在 Discord 上的頭像：`Discord_Relay` 第 3 節（`op=avatar-template`、`op=avatars --arg check=1`）。
+- `op=import-main` 只給從舊轉發設定（`notify_config.json`）搬過來的資料樹用；新裝的不用跑。
 - 第一次有游標之前不回放歷史；要補舊訊息用 `op=backfill`（見 `Discord_Relay` 第 6 節）。
 - Discord 回 401／403／404 ⇒ 那條 webhook 會被**自動停用**；確認後 `op=webhook-enable --arg id=<id> --arg enabled=1`。
 
@@ -97,10 +143,12 @@ senate cmd discord-relay --arg op=webhook-verify --arg id=<webhook id>
 senate cmd discord-bot --arg op=refresh                    # 重抓 Bot 加入的 Server／頻道清單（連網）
 senate cmd discord-bot --arg op=servers                    # 看清單，找頻道 id
 senate cmd discord-bot --arg op=routes                     # 現在的對應表
-senate cmd discord-bot --arg op=route --arg channel=<Discord 頻道 id> [--arg room=<酒館頻道，預設 tavern>] [--arg label=<顯示名>]
+senate cmd discord-bot --arg op=route --arg channel=<Discord 頻道 id> --arg guild=<Server id> [--arg room=<酒館頻道，預設 tavern>] [--arg label=<顯示名>] [--arg source_class=<external|internal|work>]
 senate cmd discord-bot --arg op=unroute --arg channel=<Discord 頻道 id>
 ```
 
+- 頻道 id 與 Server id 都印在 `op=servers` 的清單裡（`## Server 名（id）` 底下每行 `#頻道名（id）`）。`guild` 新增對應時請帶上：逐個 Server 關收訊（下面那支）靠它。
+- `source_class` 只是貼在收進來的訊息上的標籤（meta），不影響收不收：`external`（外部的公開頻道，預設）／`internal`（自己人的頻道）／`work`（工作頻道）。
 - 酒館頻道要存在而且沒封存。
 - 逐個 Server 關掉收訊：`senate cmd discord-relay --arg op=guild-inbound --arg guild=<Server id> --arg enabled=0`。
 - 白名單不擋人，只把白名單外的人標成「（白名單外）」：`op=whitelist`／`whitelist-add --arg user_id=<id> [--arg display_name=]`／`whitelist-remove`。
@@ -153,17 +201,32 @@ senate cmd discord-relay --arg op=inbound-status           # 游標、最後輪�
 
 ## 8. 哪幾步一定要使用者做，persona 怎麼說
 
-agent 做得了的：量狀態、`set-token`／`webhook-add`（只收路徑）、對應表、開關、驗證。
-agent 做不了的，請使用者做，**一次講一步、講完等他回**：
+agent 做得了的：量狀態、開記事本檔、`set-token`／`webhook-add`（只收路徑）、頻道分類、對應表、開關、驗證、刪暫存檔。
+agent 做不了的，請使用者做，**一次講一步、講完等他回**。講話不評價對方懂不懂技術，只說要按哪裡：
 
 | 步驟 | 為什麼是使用者 | 可以這樣說 |
 |---|---|---|
 | 在後台輸入密碼解密 `.enc` | 要在視窗裡打密碼 | 「請開 `senate ui --page secrets`，按『一鍵解密全部』，輸入當初加密用的密碼。好了跟我說一聲，我來驗。」 |
 | 從別台拿 `.enc` | 檔案在另一台機器上 | 「請把另一台 `<資料根>/Secret/discord_bot_token.enc` 放到這台的 `<實際路徑>`。只要 `.enc`，不要 `.txt`。」 |
 | 在 Developer Portal 建 Bot、拿 token、開 intent、邀請進 Server | 要登入使用者自己的 Discord 帳號 | 照 §6 的 1～3 一步一步念給他；提醒 token 只顯示一次，先存成檔再關頁面 |
-| 在 Discord 頻道建 webhook、複製網址 | 同上 | 照 §4 的第 1 步念；請他把網址**存成檔**再給路徑 |
+| 在 Discord 頻道建 webhook、複製網址 | 同上 | 照 §4 的第 1 步念；「複製好之後，貼到我開的那個記事本視窗，按 Ctrl+S 存檔、關掉，再跟我說一聲。」 |
+| 把 token、密碼貼進記事本 | 內容不能經過對話 | 「我開了一個記事本，請把剛才複製的 token 貼進去、存檔、關掉。貼在記事本裡就好，不要貼給我。」 |
 | 把 Bot 加進私人頻道、調權限 | 同上 | 「請在那個頻道的權限裡加上 Bot，開『檢視頻道』和『讀取訊息歷史』。」 |
 
 - 憑證（token、webhook 網址、密碼）**只收檔案路徑**。使用者把內容貼進對話 ⇒ 請他到 Discord 重設那一顆，再照流程用檔案給。
 - ⛔ 不讀、不印 `Secret/` 裡的明文；不把 token 或 webhook 網址寫進回傳檔、酒館、commit 訊息。
 - 改完一定回讀：`op=test` 過、`inbound-status` 有游標、等到「累計」真的加一，才跟使用者說裝好了。
+
+## 9. 想自己在後台操作
+
+`senate ui --window` 開後台，首頁有三個 Discord 頁；也可以直接開：`senate ui --window --page <頁>`。
+畫面上不會印出 token 或 webhook 網址，輸入欄是遮罩的、按完就清空。
+
+| 頁（`--page`） | 做什麼 | 對應的指令 |
+|---|---|---|
+| Discord Webhook（`discord-webhooks`） | 貼 webhook 網址 →「驗證並新增」；重新驗證、停用、刪除 | `discord-relay` 的 `webhook-*` |
+| Discord 轉發設定（`discord-relay`） | Inbound／Outbound 開關；每個頻道分類勾要送到哪幾條 webhook →「儲存」；persona 頭像網址範本 | `op=switch`、`op=bind`、`op=avatar-template` |
+| Discord Bot（`discord-bot`） | 貼 Bot token、設密碼 →「加密並安裝」；「測試連線」；「重新整理 Server 清單」後在頻道旁按「設定」接到酒館頻道；白名單 | `discord-bot` 的各個 op |
+| 加密檔管理（`secrets`） | 別台搬來的 `.enc`：「一鍵解密全部」 | （只有後台做得到） |
+
+順序跟 §6 一樣：Webhook 頁加 webhook → 轉發設定頁勾分類 → Bot 頁裝 token、接頻道 → 轉發設定頁開開關 → §7 驗證。
