@@ -106,7 +106,7 @@ namespace SCP.Core.Tavern
             return aOut;
         }
         /// <summary>已知中繼來源前綴（白名單而非黑名單 —— meta.source 是自由字串，後台來源也會寫它）。</summary>
-        static readonly string[] s_RelayPrefixes = { "discord", "line", "telegram", "webhook" };
+        static readonly string[] s_RelayPrefixes = { "discord", "line", "telegram", "webhook", "peer" };   // peer＝跨主機連線轉進來的
 
         /// <summary>訊息是否源自系統外部中繼（Discord 等）。</summary>
         public static bool IsExternalRelay(IReadOnlyDictionary<string, string>? iMeta, string? iSenderId)
@@ -116,7 +116,7 @@ namespace SCP.Core.Tavern
                 string aLower = aSrc!.ToLowerInvariant();
                 foreach (string p in s_RelayPrefixes) if (aLower.StartsWith(p)) return true;
             }
-            return !string.IsNullOrEmpty(iSenderId) && iSenderId!.StartsWith("discord:");
+            return !string.IsNullOrEmpty(iSenderId) && (iSenderId!.StartsWith("discord:") || iSenderId.StartsWith("peer:"));
         }
 
         /// <summary>白名單：identities.json 的 id ∪ persona 池。每次呼叫重讀（檔小；⛔ 不做跨呼叫快取 —— 快取過期時的症狀是「新同事 @ 不到」且不叫）。</summary>

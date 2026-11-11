@@ -128,6 +128,7 @@ namespace SCP.Core.Tavern
             if (aLower == "system") return false;
             if (aLower == "tavern-keeper") return false;
             if (aLower.StartsWith("discord:")) return false;
+            if (aLower.StartsWith("peer:")) return false;   // 跨主機連線轉進來的：薪水只在原本發文的那一台算一次
             if (aLower.Contains("bot")) return false;
             if (aLower.EndsWith("-alter")) return false;
             return true;

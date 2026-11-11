@@ -61,6 +61,7 @@ namespace SCP.Core.Tavern
             sb.AppendLine();
 
             AppendOnline(sb, iLettersRoot, iPersona);
+            SCP_PeerPresence.AppendTo(sb, iDataRoot);   // 跨主機連線：另一台主機上在線的人（沒開就一行都不加）
 
             // ── 未讀 ──
             var unread = SCP_TavernCursor.ReadUnread(iDataRoot, iPersona, room, aSet.BacklogCap,

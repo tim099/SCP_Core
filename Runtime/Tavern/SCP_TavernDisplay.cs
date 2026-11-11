@@ -64,11 +64,11 @@ namespace SCP.Core.Tavern
             string? aPersona = null;
             if (!string.IsNullOrEmpty(iMsg.SenderPersona)) { aPersona = iMsg.SenderPersona; aRow.Why = "sender_persona"; }
             else if (aId == SCP_PersonaDisplay.TavernKeeperPersona) { aPersona = SCP_PersonaDisplay.TavernKeeperPersona; aRow.Why = "sender_id=tavern-keeper"; }
-            else if (aId.StartsWith("discord:", StringComparison.Ordinal))
+            else if (aId.StartsWith("discord:", StringComparison.Ordinal) || aId.StartsWith("peer:", StringComparison.Ordinal))
             {
                 aRow.SenderKind = SCP_TavernSenderKind.External;
                 aRow.Name = iMsg.HasSenderName ? iMsg.SenderName : aId;
-                aRow.Why = "discord 外部使用者";
+                aRow.Why = aId.StartsWith("peer:", StringComparison.Ordinal) ? "另一台主機轉進來的" : "discord 外部使用者";
             }
             else if (iMsg.Kind == "system" || aId == "system" || aId.StartsWith("_", StringComparison.Ordinal))
             { aPersona = SCP_PersonaDisplay.SystemPersona; aRow.Why = "系統訊息"; }

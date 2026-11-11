@@ -54,6 +54,8 @@ namespace SCP.Core.Discord
         public List<SCP_DiscordInboundItem> Items = new List<SCP_DiscordInboundItem>();
         public List<string> Skipped = new List<string>();
         public string CursorNote = "";
+        /// <summary>跨主機連線的主機公告（訊息原文）—— ⛔ 不寫進酒館（裡面有連線 token 與位址），交給宿主的連線工作。</summary>
+        public List<string> PeerSignals = new List<string>();
     }
 
     public static class SCP_DiscordInbound
@@ -62,6 +64,15 @@ namespace SCP.Core.Discord
         public const int FetchLimit = 50;
         /// <summary>白名單外的發言者，顯示名後面接這一段（見檔頭「白名單不擋人，只標記」）。</summary>
         public const string NotWhitelistedSuffix = "（白名單外）";
+
+        /// <summary>跨主機連線的主機公告標記。帶這個標記的訊息不轉進酒館，原文放進 <see cref="SCP_DiscordPollResult.PeerSignals"/>。</summary>
+        public const string PeerSignalMarker = "SENATE-HOST1";
+
+        /// <summary>
+        /// 已經用跨主機連線接上的節點的 webhook id —— 它們的訊息由連線送達（斷線期間的重連後會補），
+        /// ⇒ 這裡不再從 Discord 收一次（不然同一則會出現兩次）。宿主的連線工作整組換掉；沒開連線 ⇒ 空。
+        /// </summary>
+        public static volatile HashSet<string> LinkedWebhookIds = new HashSet<string>(StringComparer.Ordinal);
 
         static string StatePath(string iDataRoot) => SCP_DiscordPaths.Dir(iDataRoot) + "/" + StateFileName;
         static readonly object s_StateLock = new object();
@@ -169,6 +180,16 @@ namespace SCP.Core.Discord
             for (int i = aArr.Count - 1; i >= 0; i--)   // 舊 → 新
             {
                 SCP_JsonData m = aArr[i];
+                string aRaw = m.GetString("content", "");
+                if (aRaw.IndexOf(PeerSignalMarker, StringComparison.Ordinal) >= 0)
+                {
+                    // 自己貼的公告不理；設定讀不了 ⇒ 當成自己的（跟下面 webhook 訊息同一個保守判準）
+                    string aHook = m.GetString("webhook_id", "");
+                    bool aMine = aHook.Length > 0 && (!TryOwnWebhookIds(iDataRoot, out HashSet<string> aOwnIds) || aOwnIds.Contains(aHook));
+                    if (!aMine) r.PeerSignals.Add(aRaw);
+                    r.Skipped.Add(m.GetString("id", "") + (aMine ? ":own-peer-signal" : ":peer-signal"));
+                    continue;
+                }
                 string aWhy = Convert(iDataRoot, iRepoRoot, iRoute, iWhitelist, m, out SCP_DiscordInboundItem? aItem, !iPeek);
                 if (aItem != null) r.Items.Add(aItem);
                 else r.Skipped.Add(m.GetString("id", "") + ":" + aWhy);
@@ -215,6 +236,7 @@ namespace SCP.Core.Discord
                 // ⛔ 本機 Outbound 送出去的不收回來；別台 Senate 的 webhook ＝ 同伴，照收（webhook 的作者也帶 bot ⇒ 先判 webhook）
                 if (!TryOwnWebhookIds(iDataRoot, out HashSet<string> aOwn)) return "webhook-msg(本機 webhook 設定讀不了 ⇒ 當成自己的)";
                 if (aOwn.Contains(aWebhookId)) return "own-webhook";
+                if (LinkedWebhookIds.Contains(aWebhookId)) return "linked-peer-webhook(已由跨主機連線送達)";
                 aPeer = true;
             }
             else if (aAuthor.GetBool("bot", false)) return "bot-author";
