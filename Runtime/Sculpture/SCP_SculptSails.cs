@@ -138,6 +138,7 @@ namespace SCP.Core.Sculpture
         public int[]? Bind;
         public double Fullness;
         public int Battens;
+        public double[]? Roach;
     }
 
     /// <summary>一面帆這次觀測的讀數。</summary>
@@ -406,6 +407,7 @@ namespace SCP.Core.Sculpture
                     r.Geom.Bind = r.Sail.bind.ToArray();
                     r.Geom.Fullness = r.Sail.fullness;
                     r.Geom.Battens = SCP_SculptSails.BattensOf(r.Sail);
+                    r.Geom.Roach = SCP_SculptSails.RoachOf(r.Sail);
                     if (r.Texture != null)
                     {
                         var aUv = new double[pn * 2];
@@ -466,6 +468,7 @@ namespace SCP.Core.Sculpture
         public const double MaxWind = 60;    // m/s
         public const int MinRes = 3, MaxRes = 48;
         public const int MaxBattens = 16;
+        public const double MinRoach = -0.35, MaxRoach = 0.5;
         /// <summary>
         /// 有貼圖的 sails.json 寫這個 schema（TASK-0530；同 models.json 的 meta）。
         /// 🩸 為什麼要升號：舊版 senate.exe 的 <see cref="SCP_SculptSail"/> 沒有 texture ⇒ 讀到會**默默丟掉**、下一次寫回去就清光。
@@ -576,6 +579,7 @@ namespace SCP.Core.Sculpture
             if (s.res != 0 && (s.res < MinRes || s.res > MaxRes)) return "res（每邊幾格）要是 0（自動）或 " + MinRes + ".." + MaxRes + "：" + s.res;
             if (double.IsNaN(s.fullness) || s.fullness < 1 || s.fullness > MaxFullness) return "fullness（布比框多幾成）要在 1.." + MaxFullness.ToString(CultureInfo.InvariantCulture) + "：" + s.fullness.ToString(CultureInfo.InvariantCulture);
             if (TryParseBattens(s, out _) is string aBatBad) return aBatBad;
+            if (TryParseRoach(s, out _) is string aRoachBad) return aRoachBad;
             if (s.texture.Length > 0 && CheckTexturePath(s.texture) is string aTexBad) return aTexBad;
             return null;
         }
@@ -606,6 +610,29 @@ namespace SCP.Core.Sculpture
 
         /// <summary>硬骨帆竹骨根數（0 ＝ 一般軟帆）。</summary>
         public static int BattensOf(SCP_SculptSail s) => TryParseBattens(s, out int n) == null ? n : 0;
+
+        /// <summary>讀 meta roach（四邊形兩側外緣弧度 "r0,r1"：u=0 邊、u=1 邊往外拱出的弦長倍率）；無 ⇒ null。不合 ⇒ 回錯誤字串。</summary>
+        public static string? TryParseRoach(SCP_SculptSail s, out double[]? oRoach)
+        {
+            oRoach = null;
+            if (!s.meta.TryGetValue("roach", out SCP_JsonData? aVal) || aVal == null || aVal.IsMissing || aVal.IsNull) return null;
+            if (!aVal.IsString) return "meta roach（帆緣弧度）要是 \"r0,r1\" 字串（兩個數字）";
+            string aRaw = aVal.AsString().Trim();
+            if (aRaw.Length == 0) return null;
+            string[] aSegs = aRaw.Split(',');
+            if (aSegs.Length != 2
+                || !double.TryParse(aSegs[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double r0)
+                || !double.TryParse(aSegs[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double r1)
+                || double.IsNaN(r0) || double.IsInfinity(r0) || double.IsNaN(r1) || double.IsInfinity(r1)
+                || r0 < MinRoach || r0 > MaxRoach || r1 < MinRoach || r1 > MaxRoach)
+                return "meta roach（帆緣弧度）要是 \"r0,r1\"，每項介於 " + MinRoach.ToString(CultureInfo.InvariantCulture) + ".." + MaxRoach.ToString(CultureInfo.InvariantCulture);
+            if (s.corners.Count != 4) return "meta roach 只支援四邊形帆（三角帆不能設帆緣弧度）";
+            oRoach = new[] { r0, r1 };
+            return null;
+        }
+
+        /// <summary>四邊形兩側外緣弧度（無 ⇒ null）。</summary>
+        public static double[]? RoachOf(SCP_SculptSail s) => TryParseRoach(s, out double[]? r) == null ? r : null;
 
         /// <summary>
         /// 帆上記的貼圖路徑合不合（TASK-0530）：<c>textures/&lt;檔名&gt;.png</c>，檔名只用英數＿-.（⛔ 不准跳出作品資料夾、不准反斜線）。null ＝ 合法。
@@ -871,7 +898,10 @@ namespace SCP.Core.Sculpture
                     res = panels * bStep;
                 }
                 int p0 = W.Count, t0 = Tri.Count / 3;
-                // 格點：(i,j) → 局部索引；位置 ＝ 四邊形雙線性／三角形重心
+                double[]? aRoach = n == 4 ? RoachOf(s) : null;
+                bool aHasRoach = aRoach != null && (aRoach[0] != 0 || aRoach[1] != 0);
+                bool aTop0 = n == 4 && C[0][2] + C[1][2] >= C[2][2] + C[3][2];
+                // 格點：(i,j) → 局部索引；位置 ＝ 四邊形雙線性（含選用之兩側外緣弧度 roach）／三角形重心
                 var aLocal = new Dictionary<long, int>();
                 int Id(int i, int j) => aLocal.TryGetValue(((long)i << 32) | (uint)j, out int v) ? v : -1;
                 for (int j = 0; j <= res; j++)
@@ -879,9 +909,19 @@ namespace SCP.Core.Sculpture
                     {
                         if (n == 3 && i + j > res) continue;
                         double u = (double)i / res, v = (double)j / res;
-                        double[] P = n == 4
-                            ? Lerp4(C, u, v)
-                            : new[] { C[0][0] + (C[1][0] - C[0][0]) * u + (C[2][0] - C[0][0]) * v, C[0][1] + (C[1][1] - C[0][1]) * u + (C[2][1] - C[0][1]) * v, C[0][2] + (C[1][2] - C[0][2]) * u + (C[2][2] - C[0][2]) * v };
+                        double[] P;
+                        if (n == 4)
+                        {
+                            if (aHasRoach)
+                            {
+                                double vTop = aTop0 ? v : 1.0 - v;
+                                double aBulge = vTop <= 0.0 || vTop >= 1.0 ? 0.0 : Math.Sin(Math.PI * Math.Pow(vTop, 0.85));
+                                double uMapped = u + aBulge * (u * aRoach![1] - (1.0 - u) * aRoach[0]);
+                                P = Lerp4(C, uMapped, v);
+                            }
+                            else P = Lerp4(C, u, v);
+                        }
+                        else P = new[] { C[0][0] + (C[1][0] - C[0][0]) * u + (C[2][0] - C[0][0]) * v, C[0][1] + (C[1][1] - C[0][1]) * u + (C[2][1] - C[0][1]) * v, C[0][2] + (C[1][2] - C[0][2]) * u + (C[2][2] - C[0][2]) * v };
                         aLocal[((long)i << 32) | (uint)j] = W.Count - p0;
                         X.Add(P[0]); X.Add(P[1]); X.Add(P[2]);
                         Uv.Add(u); Uv.Add(v);
@@ -987,7 +1027,6 @@ namespace SCP.Core.Sculpture
                 //   ⛔ 照高度猜哪根桿是哪一列 —— 一律照模型的 meta batten；沒有桿 ⇒ 照舊只是比較硬的一排布（v1）。
                 if (bStep > 0 && ioRig.Models != null)
                 {
-                    bool aTop0 = C[0][2] + C[1][2] >= C[2][2] + C[3][2];
                     for (int mb = 1; mb <= battens; mb++)
                     {
                         if (!HasBattenRod(ioRig.Models, s.name, mb)) continue;

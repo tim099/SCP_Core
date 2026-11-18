@@ -295,6 +295,12 @@ namespace SCP.Core.Sculpture
             o.Set("res", SCP_JsonData.NewNumber((long)s.Res));
             o.Set("fullness", Num(s.Fullness));
             if (s.Battens > 0) o.Set("battens", SCP_JsonData.NewNumber((long)s.Battens));
+            if (s.Roach != null && (s.Roach[0] != 0 || s.Roach[1] != 0))
+            {
+                var aRoach = SCP_JsonData.NewArray();
+                aRoach.Add(Num(s.Roach[0])); aRoach.Add(Num(s.Roach[1]));
+                o.Set("roach", aRoach);
+            }
             if (s.Frame.Length > 0) o.Set("frame", SCP_JsonData.NewString(s.Frame));
             var aC = SCP_JsonData.NewArray(); var aN = SCP_JsonData.NewArray(); var aR = SCP_JsonData.NewArray(); var aP = SCP_JsonData.NewArray(); var aB = SCP_JsonData.NewArray();
             for (int k = 0; k < s.Corners!.Length; k++)
