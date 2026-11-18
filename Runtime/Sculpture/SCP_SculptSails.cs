@@ -157,6 +157,8 @@ namespace SCP.Core.Sculpture
         /// <summary>這次有沒有進模擬（所在或綁的那一層沒組進來、自己關著、壞掉 ⇒ 沒有）。</summary>
         public bool Simulated;
         public int Particles, Triangles, Resolution;
+        /// <summary>硬骨帆：有實體竹篾桿（外部模型 meta kind=yard、yard=batten、batten=m、sail=帆名）、那一列整排釘在桿上的根數（TASK-1320）。</summary>
+        public int BattenRods;
         /// <summary>最鼓那一點離綁點平面幾格（帶正負號：正 ＝ 往 <see cref="PlaneNormal"/> 那側）。</summary>
         public double Billow;
         /// <summary>綁點平面的法線（角依序繞一圈、右手定則；世界座標）。</summary>
@@ -980,6 +982,26 @@ namespace SCP.Core.Sculpture
                         SetPin(Pin, p, new[] { C[e][0] + (C[(e + 1) % n][0] - C[e][0]) * f, C[e][1] + (C[(e + 1) % n][1] - C[e][1]) * f, C[e][2] + (C[(e + 1) % n][2] - C[e][2]) * f });
                     }
                 }
+                // 硬骨帆的實體竹篾（TASK-1320；Tim 2026-11-18「讓硬骨類似帆桁(有實體 帆會有一段黏在上面)」「希望可以讓帆跟竹篾黏著」）：
+                //   第 m 根（從上往下數）有竹篾桿模型 ⇒ 那一列整排釘在設計位置（桿照規格擺在那一列上；同 Blockside 29_sailrecipe.js 的 200 ＋ m）。
+                //   ⛔ 照高度猜哪根桿是哪一列 —— 一律照模型的 meta batten；沒有桿 ⇒ 照舊只是比較硬的一排布（v1）。
+                if (bStep > 0 && ioRig.Models != null)
+                {
+                    bool aTop0 = C[0][2] + C[1][2] >= C[2][2] + C[3][2];
+                    for (int mb = 1; mb <= battens; mb++)
+                    {
+                        if (!HasBattenRod(ioRig.Models, s.name, mb)) continue;
+                        int jr = aTop0 ? mb * bStep : res - mb * bStep;
+                        for (int i = 0; i <= res; i++)
+                        {
+                            int p = Gl(i, jr);
+                            if (p < 0) continue;
+                            W[p] = 0;
+                            SetPin(Pin, p, new[] { X[p * 3], X[p * 3 + 1], X[p * 3 + 2] });
+                        }
+                        r.BattenRods++;
+                    }
+                }
                 // 質量 ＝ 相鄰三角形面積的三分之一（風是面積力，除以質量才是加速度 ⇒ 解析度變了，同樣的風吹出差不多的形狀）
                 for (int k = t0 * 3; k < Tri.Count; k += 3)
                 {
@@ -997,6 +1019,29 @@ namespace SCP.Core.Sculpture
             ioRig.m_CA = CA.ToArray(); ioRig.m_CB = CB.ToArray(); ioRig.m_CR = CR.ToArray(); ioRig.m_CK = CK.ToArray();
             ioRig.m_Tri = Tri.ToArray();
             ioRig.m_Uv = Uv.ToArray();
+        }
+
+        /// <summary>這面帆第 <paramref name="iBatten"/> 根竹篾有沒有桿：這次觀測的外部模型裡 meta kind=yard、yard=batten、sail ＝ 帆名、batten ＝ 第幾根（從上往下）、沒壞也沒關。</summary>
+        static bool HasBattenRod(SCP_SculptModelSet iModels, string iSail, int iBatten)
+        {
+            foreach (SCP_SculptModelReading m in iModels.Models)
+            {
+                if (m.State == SCP_SculptModelReading.Broken || m.State == SCP_SculptModelReading.Disabled) continue;
+                var mt = m.Model.meta;
+                if (MetaStr(mt, "kind") != "yard" || MetaStr(mt, "yard") != "batten" || MetaStr(mt, "sail") != iSail) continue;
+                if (!mt.TryGetValue("batten", out SCP_JsonData? b) || b == null || b.IsMissing || b.IsNull) continue;
+                int k;
+                if (b.Type == SCP_JsonType.Number) { double d = b.AsDouble(); if (d != Math.Floor(d)) continue; k = (int)d; }
+                else if (!b.IsString || !int.TryParse(b.AsString().Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out k)) continue;
+                if (k == iBatten) return true;
+            }
+            return false;
+        }
+
+        static string MetaStr(SortedDictionary<string, SCP_JsonData> iMeta, string iKey)
+        {
+            if (!iMeta.TryGetValue(iKey, out SCP_JsonData? v) || v == null || v.IsMissing || v.IsNull || !v.IsString) return "";
+            return v.AsString();
         }
 
         static void AddTri(List<int> ioTri, int a, int b, int c) { if (a >= 0 && b >= 0 && c >= 0) { ioTri.Add(a); ioTri.Add(b); ioTri.Add(c); } }
