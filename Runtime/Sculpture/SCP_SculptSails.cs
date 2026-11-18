@@ -137,6 +137,7 @@ namespace SCP.Core.Sculpture
         public bool[]? Pins;
         public int[]? Bind;
         public double Fullness;
+        public int Battens;
     }
 
     /// <summary>一面帆這次觀測的讀數。</summary>
@@ -402,6 +403,7 @@ namespace SCP.Core.Sculpture
                     for (int k = 0; k < nc; k++) { r.Geom.Corners[k] = (double[])r.Corners[k]!.Clone(); r.Geom.CornerNames[k] = r.Sail.corners[k].name; r.Geom.Pins[k] = r.Sail.corners[k].pin; r.Geom.CornerRefs[k] = r.Sail.corners[k].at; }
                     r.Geom.Bind = r.Sail.bind.ToArray();
                     r.Geom.Fullness = r.Sail.fullness;
+                    r.Geom.Battens = SCP_SculptSails.BattensOf(r.Sail);
                     if (r.Texture != null)
                     {
                         var aUv = new double[pn * 2];
@@ -461,6 +463,7 @@ namespace SCP.Core.Sculpture
         public const double MaxSeconds = 60;
         public const double MaxWind = 60;    // m/s
         public const int MinRes = 3, MaxRes = 48;
+        public const int MaxBattens = 16;
         /// <summary>
         /// 有貼圖的 sails.json 寫這個 schema（TASK-0530；同 models.json 的 meta）。
         /// 🩸 為什麼要升號：舊版 senate.exe 的 <see cref="SCP_SculptSail"/> 沒有 texture ⇒ 讀到會**默默丟掉**、下一次寫回去就清光。
@@ -570,9 +573,37 @@ namespace SCP.Core.Sculpture
             if (TryParseColorStored(s.color) is string aColorBad) return aColorBad;
             if (s.res != 0 && (s.res < MinRes || s.res > MaxRes)) return "res（每邊幾格）要是 0（自動）或 " + MinRes + ".." + MaxRes + "：" + s.res;
             if (double.IsNaN(s.fullness) || s.fullness < 1 || s.fullness > MaxFullness) return "fullness（布比框多幾成）要在 1.." + MaxFullness.ToString(CultureInfo.InvariantCulture) + "：" + s.fullness.ToString(CultureInfo.InvariantCulture);
+            if (TryParseBattens(s, out _) is string aBatBad) return aBatBad;
             if (s.texture.Length > 0 && CheckTexturePath(s.texture) is string aTexBad) return aTexBad;
             return null;
         }
+
+        /// <summary>讀 meta battens（硬骨帆竹骨根數，1..16、僅限四邊形）；無 ⇒ 0。不合 ⇒ 回錯誤字串。</summary>
+        public static string? TryParseBattens(SCP_SculptSail s, out int oBattens)
+        {
+            oBattens = 0;
+            if (!s.meta.TryGetValue("battens", out SCP_JsonData? aVal) || aVal == null || aVal.IsMissing || aVal.IsNull) return null;
+            int n;
+            if (aVal.Type == SCP_JsonType.Number)
+            {
+                double d = aVal.AsDouble();
+                if (double.IsNaN(d) || double.IsInfinity(d) || d != Math.Floor(d) || d < 1 || d > MaxBattens)
+                    return "meta battens（硬骨帆竹骨根數）要是 1.." + MaxBattens + " 的整數";
+                n = (int)d;
+            }
+            else if (aVal.IsString)
+            {
+                if (!int.TryParse(aVal.AsString().Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out n) || n < 1 || n > MaxBattens)
+                    return "meta battens（硬骨帆竹骨根數）要是 1.." + MaxBattens + " 的整數";
+            }
+            else return "meta battens（硬骨帆竹骨根數）要是 1.." + MaxBattens + " 的整數";
+            if (s.corners.Count != 4) return "meta battens 只支援四邊形帆（三角帆不能設竹骨）";
+            oBattens = n;
+            return null;
+        }
+
+        /// <summary>硬骨帆竹骨根數（0 ＝ 一般軟帆）。</summary>
+        public static int BattensOf(SCP_SculptSail s) => TryParseBattens(s, out int n) == null ? n : 0;
 
         /// <summary>
         /// 帆上記的貼圖路徑合不合（TASK-0530）：<c>textures/&lt;檔名&gt;.png</c>，檔名只用英數＿-.（⛔ 不准跳出作品資料夾、不准反斜線）。null ＝ 合法。
@@ -829,6 +860,14 @@ namespace SCP.Core.Sculpture
                 double aMaxEdge = 0;
                 for (int k = 0; k < n; k++) aMaxEdge = Math.Max(aMaxEdge, Dist(C[k], C[(k + 1) % n]));
                 int res = s.res > 0 ? s.res : Math.Max(6, Math.Min(24, (int)Math.Ceiling(aMaxEdge / 4)));
+                int battens = n == 4 ? BattensOf(s) : 0, bStep = 0;
+                if (battens > 0)
+                {
+                    int panels = battens + 1;
+                    bStep = Math.Max(4, (int)Math.Round(Math.Max((double)res, panels * 4.0) / panels));
+                    if (panels * bStep > MaxRes) bStep = Math.Max(2, MaxRes / panels);
+                    res = panels * bStep;
+                }
                 int p0 = W.Count, t0 = Tri.Count / 3;
                 // 格點：(i,j) → 局部索引；位置 ＝ 四邊形雙線性／三角形重心
                 var aLocal = new Dictionary<long, int>();
@@ -862,24 +901,64 @@ namespace SCP.Core.Sculpture
                             if (i + j < res - 1) AddTri(Tri, Gl(i + 1, j), Gl(i + 1, j + 1), Gl(i, j + 1));
                         }
                     }
-                // 距離約束：結構（相鄰）、剪切（對角）、彎曲（隔一格）；靜止長度 ＝ 設計距離 × fullness
-                void Con(int a, int b, double k)
+                // 距離約束：結構（相鄰）、剪切（對角）、彎曲（隔一格）；硬骨帆（battens > 0）對竹骨列鎖橫向剛性＋長弦、僅節間縱向鼓風
+                void ConScale(int a, int b, double scale, double k)
                 {
                     if (a < 0 || b < 0) return;
                     CA.Add(a); CB.Add(b); CK.Add(k);
-                    CR.Add(Math.Sqrt(Sq(X[a * 3] - X[b * 3]) + Sq(X[a * 3 + 1] - X[b * 3 + 1]) + Sq(X[a * 3 + 2] - X[b * 3 + 2])) * s.fullness);
+                    CR.Add(Math.Sqrt(Sq(X[a * 3] - X[b * 3]) + Sq(X[a * 3 + 1] - X[b * 3 + 1]) + Sq(X[a * 3 + 2] - X[b * 3 + 2])) * scale);
                 }
-                for (int j = 0; j <= res; j++)
-                    for (int i = 0; i <= res; i++)
+                bool IsBatten(int j) => bStep > 0 && (j % bStep) == 0;
+                if (bStep > 0)
+                {
+                    double panelFull = 1.0 + (s.fullness - 1.0) * 2.4;
+                    double shearScale = 0.5 * (1.001 + panelFull);
+                    for (int j = 0; j <= res; j++)
                     {
-                        int a = Gl(i, j);
-                        if (a < 0) continue;
-                        Con(a, Gl(i + 1, j), 1); Con(a, Gl(i, j + 1), 1);
-                        if (n == 4) { Con(a, Gl(i + 1, j + 1), 1); Con(Gl(i + 1, j), Gl(i, j + 1), 1); }
-                        else Con(Gl(i + 1, j), Gl(i, j + 1), 1);
-                        Con(a, Gl(i + 2, j), 0.2); Con(a, Gl(i, j + 2), 0.2);
-                        if (n == 3) Con(Gl(i + 2, j), Gl(i, j + 2), 0.2);
+                        bool bat = IsBatten(j);
+                        for (int i = 0; i <= res; i++)
+                        {
+                            int a = Gl(i, j);
+                            if (a < 0) continue;
+                            ConScale(a, Gl(i + 1, j), bat ? 1.0 : 1.001, 1);
+                            ConScale(a, Gl(i, j + 1), panelFull, 1);
+                            ConScale(a, Gl(i + 1, j + 1), shearScale, 1);
+                            ConScale(Gl(i + 1, j), Gl(i, j + 1), shearScale, 1);
+                            ConScale(a, Gl(i + 2, j), bat ? 1.0 : 1.001, bat ? 1.0 : 0.2);
+                            if (!IsBatten(j + 1)) ConScale(a, Gl(i, j + 2), panelFull, 0.2);
+                        }
                     }
+                    var aAncCols = new SortedSet<int> { 0, res / 4, res / 2, (3 * res) / 4, res };
+                    for (int jb = bStep; jb < res; jb += bStep)
+                    {
+                        ConScale(Gl(0, jb), Gl(res, jb), 1.0, 1);
+                        foreach (int hi in aAncCols)
+                        {
+                            if (hi > 0 && hi < res)
+                            {
+                                ConScale(Gl(0, jb), Gl(hi, jb), 1.0008, 1);
+                                ConScale(Gl(hi, jb), Gl(res, jb), 1.0008, 1);
+                            }
+                            double ancScale = (hi == 0 || hi == res) ? 1.0005 : 1.0010;
+                            ConScale(Gl(hi, jb), Gl(hi, 0), ancScale, 1);
+                            ConScale(Gl(hi, jb), Gl(hi, res), ancScale, 1);
+                        }
+                    }
+                }
+                else
+                {
+                    for (int j = 0; j <= res; j++)
+                        for (int i = 0; i <= res; i++)
+                        {
+                            int a = Gl(i, j);
+                            if (a < 0) continue;
+                            ConScale(a, Gl(i + 1, j), s.fullness, 1); ConScale(a, Gl(i, j + 1), s.fullness, 1);
+                            if (n == 4) { ConScale(a, Gl(i + 1, j + 1), s.fullness, 1); ConScale(Gl(i + 1, j), Gl(i, j + 1), s.fullness, 1); }
+                            else ConScale(Gl(i + 1, j), Gl(i, j + 1), s.fullness, 1);
+                            ConScale(a, Gl(i + 2, j), s.fullness, 0.2); ConScale(a, Gl(i, j + 2), s.fullness, 0.2);
+                            if (n == 3) ConScale(Gl(i + 2, j), Gl(i, j + 2), s.fullness, 0.2);
+                        }
+                }
                 // 釘住：角（pin）與 bind 的邊（整條沿線段）
                 var aCornerIj = n == 4 ? new[] { new[] { 0, 0 }, new[] { res, 0 }, new[] { res, res }, new[] { 0, res } } : new[] { new[] { 0, 0 }, new[] { res, 0 }, new[] { 0, res } };
                 for (int k = 0; k < n; k++)

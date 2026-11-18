@@ -294,6 +294,7 @@ namespace SCP.Core.Sculpture
             var o = SCP_JsonData.NewObject();
             o.Set("res", SCP_JsonData.NewNumber((long)s.Res));
             o.Set("fullness", Num(s.Fullness));
+            if (s.Battens > 0) o.Set("battens", SCP_JsonData.NewNumber((long)s.Battens));
             if (s.Frame.Length > 0) o.Set("frame", SCP_JsonData.NewString(s.Frame));
             var aC = SCP_JsonData.NewArray(); var aN = SCP_JsonData.NewArray(); var aR = SCP_JsonData.NewArray(); var aP = SCP_JsonData.NewArray(); var aB = SCP_JsonData.NewArray();
             for (int k = 0; k < s.Corners!.Length; k++)
